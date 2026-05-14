@@ -1,0 +1,24 @@
+* text=auto eol=lf
+
+# Unreal binary assets
+*.uasset binary
+*.umap binary
+
+# Common binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.tga binary
+*.bmp binary
+*.ico binary
+*.exr binary
+*.hdr binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.fbx binary
+*.obj binary
+*.blend binary
+*.zip binary
+*.7z binary
+*.rar binary
