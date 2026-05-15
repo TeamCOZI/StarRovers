@@ -74,6 +74,9 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera", meta = (ClampMin = "0.0"))
     float ZoomSpeed;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera", meta = (ClampMin = "0.0"))
+    float CameraSurfacePadding;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|Oblique View", meta = (DisplayName = "Use Oblique View"))
     bool bUseObliqueView;
 
@@ -133,13 +136,16 @@ private:
     bool GetMouseScreenPosition(FVector2D& OutMouseScreenPosition) const;
     FVector ConvertScreenDeltaToDragOffset(const FVector2D& ScreenDelta) const;
     float GetZoomSpeed() const;
-    float GetMinimumSafeZoomDistance() const;
-    float GetMaxZoomDistanceForMinimumSafeDistance(float MinimumSafeZoomDistance) const;
+    float GetMinimumZoomDistance() const;
+    float ClampZoomDistance(float ZoomDistance) const;
     float GetSpaceSphereRadius() const;
+    bool ResolveSpaceBoundary(FVector& OutCenter, float& OutRadius) const;
+    bool ResolveCelestialCameraAvoidanceSphere(const AActor* Actor, FVector& OutCenter, float& OutRadius) const;
+    FVector GetCameraDirectionFromPivot() const;
+    float ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance, const FVector& CandidatePawnLocation) const;
     float GetObliqueViewBlendAlpha(float ZoomDistance) const;
     FRotator GetViewRotationForZoom(float ZoomDistance) const;
     void ApplyZoomDrivenViewRotation(float ZoomDistance);
-    float ClampZoomDistanceTarget(float ProposedZoomDistanceTarget) const;
     void RefreshScreenSpaceThicknessReferenceView();
     bool ShouldRotateFocusedBody() const;
     void HandleFocusedBodyRotation(const FVector2D& DragDelta);

@@ -7,11 +7,11 @@
 
 namespace
 {
-	const FName GravityLineTag(TEXT("StarRovers.GravityLine"));
-	const FName GravityLineRootTag(TEXT("StarRovers.GravityLineRoot"));
+	const FName SRGravityParentLineTag(TEXT("StarRovers.GravityLine"));
+	const FName SRGravityParentLineRootTag(TEXT("StarRovers.GravityLineRoot"));
 	constexpr uint8 GravityLineDepthPriority = SDPG_World;
 
-	void AppendCircleLines(
+	void AppendGravityCircleLines(
 		ULineBatchComponent* LineBatcher,
 		const FVector& Center,
 		const float Radius,
@@ -230,7 +230,7 @@ void USRGravityParent::RefreshGravityLine()
 	float ReferenceFieldOfViewDegrees = FSRLineThicknessUtils::DefaultReferenceFieldOfViewDegrees;
 	FSRLineThicknessUtils::ResolveReferenceView(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
 
-	AppendCircleLines(
+	AppendGravityCircleLines(
 		GravityLineBatch,
 		GetOwner()->GetActorLocation(),
 		GravityRadius,
@@ -291,8 +291,8 @@ void USRGravityParent::EnsureGravityLineBatch()
 		GravityLineBatch->SetUsingAbsoluteLocation(true);
 		GravityLineBatch->SetUsingAbsoluteRotation(true);
 		GravityLineBatch->SetUsingAbsoluteScale(true);
-		GravityLineBatch->ComponentTags.AddUnique(GravityLineTag);
-		GravityLineBatch->ComponentTags.AddUnique(GravityLineRootTag);
+		GravityLineBatch->ComponentTags.AddUnique(SRGravityParentLineTag);
+		GravityLineBatch->ComponentTags.AddUnique(SRGravityParentLineRootTag);
 		return;
 	}
 

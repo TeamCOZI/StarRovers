@@ -24,11 +24,11 @@
 
 namespace
 {
-	static const FName GravityLineTag(TEXT("StarRovers.GravityLine"));
-	static const FName GravityLineRootTag(TEXT("StarRovers.GravityLineRoot"));
-	static const FName GravityLineSegmentTag(TEXT("StarRovers.GravityLineSegment"));
-	static const FName OrbitLineTag(TEXT("StarRovers.OrbitLine"));
-	static const FName OrbitLineRootTag(TEXT("StarRovers.OrbitLineRoot"));
+	static const FName OverviewGravityLineTag(TEXT("StarRovers.GravityLine"));
+	static const FName OverviewGravityLineRootTag(TEXT("StarRovers.GravityLineRoot"));
+	static const FName OverviewGravityLineSegmentTag(TEXT("StarRovers.GravityLineSegment"));
+	static const FName OverviewOrbitLineTag(TEXT("StarRovers.OrbitLine"));
+	static const FName OverviewOrbitLineRootTag(TEXT("StarRovers.OrbitLineRoot"));
 
 	int32 GetCategorySortRank(const AActor* CelestialBodyActor)
 	{
@@ -67,11 +67,11 @@ namespace
 	{
 		return IsValid(PrimitiveComponent)
 			&& PrimitiveComponent->IsVisible()
-			&& !PrimitiveComponent->ComponentHasTag(GravityLineTag)
-			&& !PrimitiveComponent->ComponentHasTag(GravityLineRootTag)
-			&& !PrimitiveComponent->ComponentHasTag(GravityLineSegmentTag)
-			&& !PrimitiveComponent->ComponentHasTag(OrbitLineTag)
-			&& !PrimitiveComponent->ComponentHasTag(OrbitLineRootTag);
+			&& !PrimitiveComponent->ComponentHasTag(OverviewGravityLineTag)
+			&& !PrimitiveComponent->ComponentHasTag(OverviewGravityLineRootTag)
+			&& !PrimitiveComponent->ComponentHasTag(OverviewGravityLineSegmentTag)
+			&& !PrimitiveComponent->ComponentHasTag(OverviewOrbitLineTag)
+			&& !PrimitiveComponent->ComponentHasTag(OverviewOrbitLineRootTag);
 	}
 
 	bool ResolveNameplateVisualBounds(const AActor* CelestialBodyActor, FVector& OutCenter, float& OutRadius)

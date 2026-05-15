@@ -7,11 +7,11 @@
 
 namespace
 {
-	const FName OrbitLineTag(TEXT("StarRovers.OrbitLine"));
-	const FName OrbitLineRootTag(TEXT("StarRovers.OrbitLineRoot"));
+	const FName SROrbitLineTag(TEXT("StarRovers.OrbitLine"));
+	const FName SROrbitLineRootTag(TEXT("StarRovers.OrbitLineRoot"));
 	constexpr uint8 OrbitLineDepthPriority = SDPG_World;
 
-	void AppendCircleLines(
+	void AppendOrbitCircleLines(
 		ULineBatchComponent* LineBatcher,
 		const FVector& Center,
 		const float Radius,
@@ -220,7 +220,7 @@ void USROrbit::RefreshOrbitLineVisual()
 	FSRLineThicknessUtils::ResolveReferenceView(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
 
 	const FLinearColor LineColor(OrbitLineColor.R, OrbitLineColor.G, OrbitLineColor.B, GetOrbitLineOpacity());
-	AppendCircleLines(
+	AppendOrbitCircleLines(
 		OrbitLineBatcher,
 		ComputeOrbitCenterLocation(),
 		OrbitRadius,
@@ -388,8 +388,8 @@ void USROrbit::EnsureOrbitLineBatcher()
 		OrbitLineBatcher->SetUsingAbsoluteLocation(true);
 		OrbitLineBatcher->SetUsingAbsoluteRotation(true);
 		OrbitLineBatcher->SetUsingAbsoluteScale(true);
-		OrbitLineBatcher->ComponentTags.AddUnique(OrbitLineTag);
-		OrbitLineBatcher->ComponentTags.AddUnique(OrbitLineRootTag);
+		OrbitLineBatcher->ComponentTags.AddUnique(SROrbitLineTag);
+		OrbitLineBatcher->ComponentTags.AddUnique(SROrbitLineRootTag);
 		return;
 	}
 

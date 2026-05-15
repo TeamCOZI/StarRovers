@@ -2,6 +2,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -27,9 +28,26 @@ namespace
 	constexpr float DefaultCameraFieldOfView = 30.0f;
 	constexpr float DefaultDragInterpSpeed = 10.0f;
 	constexpr float DefaultZoomInterpSpeed = 8.0f;
-	constexpr float DefaultMinimumZoomDistance = 1.0f;
-	constexpr float DefaultCelestialBodyCollisionPadding = 1.0f;
 	constexpr float DefaultFocusZoomMultiplier = 3.0f;
+
+	bool IsSpaceBoundaryActor(const AActor* Candidate)
+	{
+		if (!IsValid(Candidate))
+		{
+			return false;
+		}
+
+		const FString CandidateName = Candidate->GetName();
+		const FString CandidateClassName = Candidate->GetClass() ? Candidate->GetClass()->GetName() : FString();
+		return CandidateName.Contains(TEXT("SpaceSphere"), ESearchCase::IgnoreCase)
+			|| CandidateName.Contains(TEXT("SpaceSkySphere"), ESearchCase::IgnoreCase)
+			|| CandidateName.Contains(TEXT("Space Sky Sphere"), ESearchCase::IgnoreCase)
+			|| CandidateName.Equals(TEXT("BP_Space"), ESearchCase::IgnoreCase)
+			|| CandidateName.StartsWith(TEXT("BP_Space_"), ESearchCase::IgnoreCase)
+			|| CandidateClassName.Contains(TEXT("SpaceSphere"), ESearchCase::IgnoreCase)
+			|| CandidateClassName.Contains(TEXT("SpaceSkySphere"), ESearchCase::IgnoreCase)
+			|| CandidateClassName.Equals(TEXT("BP_Space_C"), ESearchCase::IgnoreCase);
+	}
 
 	FVector SmoothDampVector(
 		const FVector& Current,
@@ -72,14 +90,6 @@ ASRCameraPawn::ASRCameraPawn()
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(SceneRoot);
-	SpringArm->TargetArmLength = 12000.0f;
-	SpringArm->bDoCollisionTest = false;
-	SpringArm->bUsePawnControlRotation = false;
-	SpringArm->bInheritPitch = false;
-	SpringArm->bInheritYaw = false;
-	SpringArm->bInheritRoll = false;
-	SpringArm->SetUsingAbsoluteRotation(true);
-	SpringArm->SetRelativeRotation(FRotator::ZeroRotator);
 
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
@@ -96,6 +106,7 @@ ASRCameraPawn::ASRCameraPawn()
 	bUseControllerRotationRoll = false;
 
 	ZoomSpeed = 5000.0f;
+	CameraSurfacePadding = 100.0f;
 	if (Camera)
 	{
 		Camera->SetFieldOfView(DefaultCameraFieldOfView);
@@ -182,7 +193,11 @@ void ASRCameraPawn::BeginPlay()
 	FixedPlaneX = GetActorLocation().X;
 	DragTargetLocation = GetActorLocation();
 	DragTargetLocation.X = FixedPlaneX;
-	ZoomDistanceTarget = ClampZoomDistanceTarget(SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
+	ZoomDistanceTarget = ClampZoomDistance(SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
+	if (SpringArm)
+	{
+		SpringArm->TargetArmLength = ClampZoomDistance(SpringArm->TargetArmLength);
+	}
 	ApplyZoomDrivenViewRotation(SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
 	RefreshScreenSpaceThicknessReferenceView();
 	FocusTrackingDelta = FVector::ZeroVector;
@@ -253,19 +268,20 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 		NewLocation = FMath::VInterpTo(GetActorLocation(), DesiredLocation, DeltaSeconds, DefaultDragInterpSpeed);
 	}
 
-	NewLocation.X = FixedPlaneX;
-	SetActorLocation(NewLocation);
-
 	if (SpringArm)
 	{
-		const float MinimumSafeZoomDistance = GetMinimumSafeZoomDistance();
-		const float MaximumAllowedZoomDistance = GetMaxZoomDistanceForMinimumSafeDistance(MinimumSafeZoomDistance);
-		ZoomDistanceTarget = FMath::Clamp(ZoomDistanceTarget, MinimumSafeZoomDistance, MaximumAllowedZoomDistance);
+		ZoomDistanceTarget = ClampZoomDistance(ZoomDistanceTarget);
+		SpringArm->TargetArmLength = ClampZoomDistance(SpringArm->TargetArmLength);
+		ApplyZoomDrivenViewRotation(ZoomDistanceTarget);
+		ZoomDistanceTarget = ClampZoomDistanceAgainstCelestialBodies(ZoomDistanceTarget, NewLocation);
 
 		const float InterpolatedZoom = FMath::FInterpTo(SpringArm->TargetArmLength, ZoomDistanceTarget, DeltaSeconds, DefaultZoomInterpSpeed);
-		SpringArm->TargetArmLength = FMath::Clamp(InterpolatedZoom, MinimumSafeZoomDistance, MaximumAllowedZoomDistance);
+		SpringArm->TargetArmLength = ClampZoomDistanceAgainstCelestialBodies(ClampZoomDistance(InterpolatedZoom), NewLocation);
 		ApplyZoomDrivenViewRotation(SpringArm->TargetArmLength);
 	}
+
+	NewLocation.X = FixedPlaneX;
+	SetActorLocation(NewLocation);
 }
 
 void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -333,7 +349,7 @@ void ASRCameraPawn::FocusActor(AActor* NewFocusActor)
 			FocusedActor,
 			CurrentCameraFieldOfView,
 			DefaultFocusZoomMultiplier);
-		ZoomDistanceTarget = ClampZoomDistanceTarget(DesiredFocusZoom);
+		ZoomDistanceTarget = ClampZoomDistance(DesiredFocusZoom);
 	}
 
 	BroadcastFocusedActorChangedIfNeeded(PreviousFocusedActor);
@@ -361,7 +377,8 @@ AActor* ASRCameraPawn::GetFocusedActor() const
 
 float ASRCameraPawn::GetMaxZoomDistance() const
 {
-	return FMath::Max(GetMinimumSafeZoomDistance(), GetMaxZoomDistanceForMinimumSafeDistance(GetMinimumSafeZoomDistance()));
+	const float SpaceSphereRadius = GetSpaceSphereRadius();
+	return SpaceSphereRadius > KINDA_SMALL_NUMBER ? SpaceSphereRadius : BIG_NUMBER;
 }
 
 float ASRCameraPawn::GetScreenSpaceThicknessReferenceZoomDistance() const
@@ -394,16 +411,21 @@ void ASRCameraPawn::SnapToFocusTarget()
 {
 	FocusTrackingDelta = FVector::ZeroVector;
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
+	if (FocusedActor)
+	{
+		DragTargetLocation = GetFocusLocation() + FocusDragOffset;
+		DragTargetLocation.X = FixedPlaneX;
+	}
 
 	const FVector DesiredLocation(FixedPlaneX, DragTargetLocation.Y, DragTargetLocation.Z);
-	SetActorLocation(DesiredLocation);
 
 	if (SpringArm)
 	{
-		ZoomDistanceTarget = ClampZoomDistanceTarget(ZoomDistanceTarget);
+		ZoomDistanceTarget = ClampZoomDistance(ZoomDistanceTarget);
 		SpringArm->TargetArmLength = ZoomDistanceTarget;
 		ApplyZoomDrivenViewRotation(SpringArm->TargetArmLength);
 	}
+	SetActorLocation(DesiredLocation);
 }
 
 FSRFocusedActorChangedSignature& ASRCameraPawn::OnFocusedActorChanged()
@@ -531,7 +553,7 @@ void ASRCameraPawn::HandleZoom(const FInputActionValue& Value)
 		return;
 	}
 
-	ZoomDistanceTarget = ClampZoomDistanceTarget(ZoomDistanceTarget - (AxisValue * GetZoomSpeed()));
+	ZoomDistanceTarget = ClampZoomDistance(ZoomDistanceTarget - (AxisValue * GetZoomSpeed()));
 }
 
 float ASRCameraPawn::GetZoomSpeed() const
@@ -563,42 +585,54 @@ float ASRCameraPawn::GetZoomSpeed() const
 	return SafeBaseZoomSpeed * FMath::Max(ScreenSpaceZoomScale, UE_SMALL_NUMBER);
 }
 
-float ASRCameraPawn::GetMinimumSafeZoomDistance() const
+float ASRCameraPawn::GetMinimumZoomDistance() const
 {
 	if (!IsValid(FocusedActor))
-	{
-		return DefaultMinimumZoomDistance;
-	}
-
-	const float FocusedBodyRadius = USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(FocusedActor);
-	if (FocusedBodyRadius <= KINDA_SMALL_NUMBER)
-	{
-		return DefaultMinimumZoomDistance;
-	}
-
-	return FMath::Max(DefaultMinimumZoomDistance, FocusedBodyRadius + DefaultCelestialBodyCollisionPadding);
-}
-
-float ASRCameraPawn::GetMaxZoomDistanceForMinimumSafeDistance(float MinimumSafeZoomDistance) const
-{
-	const float SpaceSphereRadius = GetSpaceSphereRadius();
-	if (SpaceSphereRadius > KINDA_SMALL_NUMBER)
-	{
-		return FMath::Max(MinimumSafeZoomDistance, SpaceSphereRadius);
-	}
-
-	return BIG_NUMBER;
-}
-
-float ASRCameraPawn::GetSpaceSphereRadius() const
-{
-	UWorld* World = GetWorld();
-	if (!World)
 	{
 		return 0.0f;
 	}
 
-	float LargestRadius = 0.0f;
+	FVector BodyCenter = FVector::ZeroVector;
+	float BodyRadius = 0.0f;
+	if (!ResolveCelestialCameraAvoidanceSphere(FocusedActor, BodyCenter, BodyRadius))
+	{
+		return 0.0f;
+	}
+
+	return BodyRadius;
+}
+
+float ASRCameraPawn::GetSpaceSphereRadius() const
+{
+	FVector SpaceCenter = FVector::ZeroVector;
+	float SpaceRadius = 0.0f;
+	return ResolveSpaceBoundary(SpaceCenter, SpaceRadius) ? SpaceRadius : 0.0f;
+}
+
+float ASRCameraPawn::ClampZoomDistance(float ZoomDistance) const
+{
+	const float MaximumZoomDistance = GetMaxZoomDistance();
+	if (!FMath::IsFinite(MaximumZoomDistance))
+	{
+		return FMath::Max(0.0f, ZoomDistance);
+	}
+
+	const float MinimumZoomDistance = FMath::Max(0.0f, GetMinimumZoomDistance());
+	const float SafeMaximumZoomDistance = FMath::Max(MinimumZoomDistance, MaximumZoomDistance);
+	return FMath::Clamp(ZoomDistance, MinimumZoomDistance, SafeMaximumZoomDistance);
+}
+
+bool ASRCameraPawn::ResolveSpaceBoundary(FVector& OutCenter, float& OutRadius) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	OutCenter = FVector::ZeroVector;
+	OutRadius = 0.0f;
+
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		const AActor* Candidate = *It;
@@ -607,26 +641,182 @@ float ASRCameraPawn::GetSpaceSphereRadius() const
 			continue;
 		}
 
-		const FString CandidateName = Candidate->GetName();
-		const FString CandidateClassName = Candidate->GetClass() ? Candidate->GetClass()->GetName() : FString();
-		const bool bLooksLikeSpaceSphere =
-			CandidateName.Contains(TEXT("SpaceSphere"), ESearchCase::IgnoreCase)
-			|| CandidateName.Contains(TEXT("SpaceSkySphere"), ESearchCase::IgnoreCase)
-			|| CandidateName.Contains(TEXT("Space Sky Sphere"), ESearchCase::IgnoreCase)
-			|| CandidateName.Equals(TEXT("BP_Space"), ESearchCase::IgnoreCase)
-			|| CandidateName.StartsWith(TEXT("BP_Space_"), ESearchCase::IgnoreCase)
-			|| CandidateClassName.Contains(TEXT("SpaceSphere"), ESearchCase::IgnoreCase)
-			|| CandidateClassName.Contains(TEXT("SpaceSkySphere"), ESearchCase::IgnoreCase)
-			|| CandidateClassName.Equals(TEXT("BP_Space_C"), ESearchCase::IgnoreCase);
-		if (!bLooksLikeSpaceSphere)
+		if (!IsSpaceBoundaryActor(Candidate))
 		{
 			continue;
 		}
 
-		LargestRadius = FMath::Max(LargestRadius, Candidate->GetActorScale3D().GetAbsMax() * 49.0f);
+		TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(Candidate);
+		Candidate->GetComponents(PrimitiveComponents);
+		for (const UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+		{
+			if (!IsValid(PrimitiveComponent))
+			{
+				continue;
+			}
+
+			const float CandidateRadius = PrimitiveComponent->Bounds.SphereRadius;
+			if (CandidateRadius > OutRadius)
+			{
+				OutCenter = PrimitiveComponent->Bounds.Origin;
+				OutRadius = CandidateRadius;
+			}
+		}
+
+		if (OutRadius <= KINDA_SMALL_NUMBER)
+		{
+			FVector ActorOrigin = FVector::ZeroVector;
+			FVector ActorExtent = FVector::ZeroVector;
+			Candidate->GetActorBounds(false, ActorOrigin, ActorExtent);
+			const float ActorRadius = ActorExtent.Size();
+			if (ActorRadius > OutRadius)
+			{
+				OutCenter = ActorOrigin;
+				OutRadius = ActorRadius;
+			}
+		}
 	}
 
-	return LargestRadius;
+	return OutRadius > KINDA_SMALL_NUMBER;
+}
+
+bool ASRCameraPawn::ResolveCelestialCameraAvoidanceSphere(const AActor* Actor, FVector& OutCenter, float& OutRadius) const
+{
+	OutCenter = FVector::ZeroVector;
+	OutRadius = 0.0f;
+
+	if (!USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(Actor))
+	{
+		return false;
+	}
+
+	OutRadius = USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(Actor);
+	if (OutRadius <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	OutCenter = Actor->GetActorLocation();
+
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(Actor);
+	Actor->GetComponents(PrimitiveComponents);
+	float BestRadius = 0.0f;
+	for (const UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+	{
+		if (!IsValid(PrimitiveComponent)
+			|| !PrimitiveComponent->IsVisible()
+			|| PrimitiveComponent->ComponentHasTag(TEXT("StarRovers.GravityLine"))
+			|| PrimitiveComponent->ComponentHasTag(TEXT("StarRovers.GravityLineRoot"))
+			|| PrimitiveComponent->ComponentHasTag(TEXT("StarRovers.GravityLineSegment")))
+		{
+			continue;
+		}
+
+		const float CandidateRadius = PrimitiveComponent->Bounds.SphereRadius;
+		if (CandidateRadius > BestRadius)
+		{
+			BestRadius = CandidateRadius;
+			OutCenter = PrimitiveComponent->Bounds.Origin;
+		}
+	}
+
+	OutRadius += FMath::Max(0.0f, CameraSurfacePadding);
+	return true;
+}
+
+FVector ASRCameraPawn::GetCameraDirectionFromPivot() const
+{
+	if (Camera)
+	{
+		const FVector CurrentCameraOffset = Camera->GetComponentLocation() - GetActorLocation();
+		if (CurrentCameraOffset.SizeSquared() > UE_SMALL_NUMBER)
+		{
+			return CurrentCameraOffset.GetSafeNormal();
+		}
+	}
+
+	if (SpringArm)
+	{
+		return (-SpringArm->GetForwardVector()).GetSafeNormal();
+	}
+
+	return FVector::ForwardVector;
+}
+
+float ASRCameraPawn::ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance, const FVector& CandidatePawnLocation) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return ZoomDistance;
+	}
+
+	const FVector CameraDirection = GetCameraDirectionFromPivot();
+	if (CameraDirection.SizeSquared() <= UE_SMALL_NUMBER)
+	{
+		return ZoomDistance;
+	}
+
+	float AdjustedZoomDistance = FMath::Max(0.0f, ZoomDistance);
+
+	constexpr int32 MaxAvoidancePasses = 3;
+	for (int32 PassIndex = 0; PassIndex < MaxAvoidancePasses; ++PassIndex)
+	{
+		bool bAdjustedThisPass = false;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			const AActor* CandidateBody = *It;
+			if (!IsValid(CandidateBody) || CandidateBody == this)
+			{
+				continue;
+			}
+
+			FVector BodyCenter = FVector::ZeroVector;
+			float BodyRadius = 0.0f;
+			if (!ResolveCelestialCameraAvoidanceSphere(CandidateBody, BodyCenter, BodyRadius))
+			{
+				continue;
+			}
+
+			const FVector PivotToBody = CandidatePawnLocation - BodyCenter;
+			const float B = FVector::DotProduct(PivotToBody, CameraDirection);
+			const float C = PivotToBody.SizeSquared() - FMath::Square(BodyRadius);
+			const float Discriminant = FMath::Square(B) - C;
+			if (Discriminant < 0.0f)
+			{
+				continue;
+			}
+
+			const float SqrtDiscriminant = FMath::Sqrt(Discriminant);
+			const float EntryDistance = -B - SqrtDiscriminant;
+			const float ExitDistance = -B + SqrtDiscriminant;
+			if (ExitDistance < 0.0f)
+			{
+				continue;
+			}
+
+			constexpr float BoundaryTolerance = 0.1f;
+			const float SafeEntryDistance = FMath::Max(0.0f, EntryDistance);
+			const bool bPivotIsInsideBody = EntryDistance <= 0.0f;
+			const bool bCameraWouldBeInsideBody = bPivotIsInsideBody
+				? AdjustedZoomDistance < ExitDistance - BoundaryTolerance
+				: AdjustedZoomDistance > EntryDistance + BoundaryTolerance && AdjustedZoomDistance < ExitDistance - BoundaryTolerance;
+			if (!bCameraWouldBeInsideBody)
+			{
+				continue;
+			}
+
+			AdjustedZoomDistance = EntryDistance > 0.0f ? SafeEntryDistance : ExitDistance;
+			bAdjustedThisPass = true;
+		}
+
+		if (!bAdjustedThisPass)
+		{
+			break;
+		}
+	}
+
+	return AdjustedZoomDistance;
 }
 
 float ASRCameraPawn::GetObliqueViewBlendAlpha(float ZoomDistance) const
@@ -636,12 +826,12 @@ float ASRCameraPawn::GetObliqueViewBlendAlpha(float ZoomDistance) const
 		return 0.0f;
 	}
 
-	const float MinimumSafeZoomDistance = GetMinimumSafeZoomDistance();
-	const float MaximumZoomDistance = FMath::Max(MinimumSafeZoomDistance, GetMaxZoomDistanceForMinimumSafeDistance(MinimumSafeZoomDistance));
+	const float MinimumZoomDistance = 0.0f;
+	const float MaximumZoomDistance = FMath::Max(1.0f, GetMaxZoomDistance());
 	const float StartRatio = FMath::Clamp(ObliqueViewStart, 0.0f, 1.0f);
 	const float EndRatio = FMath::Clamp(ObliqueViewEnd, StartRatio + UE_SMALL_NUMBER, 1.0f);
-	const float StartZoomDistance = FMath::Lerp(MinimumSafeZoomDistance, MaximumZoomDistance, StartRatio);
-	const float EndZoomDistance = FMath::Lerp(MinimumSafeZoomDistance, MaximumZoomDistance, EndRatio);
+	const float StartZoomDistance = FMath::Lerp(MinimumZoomDistance, MaximumZoomDistance, StartRatio);
+	const float EndZoomDistance = FMath::Lerp(MinimumZoomDistance, MaximumZoomDistance, EndRatio);
 	const float RawAlpha = (FMath::Max(0.0f, ZoomDistance) - StartZoomDistance) / FMath::Max(EndZoomDistance - StartZoomDistance, UE_SMALL_NUMBER);
 	const float ClampedAlpha = FMath::Clamp(RawAlpha, 0.0f, 1.0f);
 	const float SmoothAlpha = ClampedAlpha * ClampedAlpha * (3.0f - (2.0f * ClampedAlpha));
@@ -667,13 +857,6 @@ void ASRCameraPawn::ApplyZoomDrivenViewRotation(float ZoomDistance)
 	ObliqueViewStart = FMath::Clamp(ObliqueViewStart, 0.0f, 1.0f);
 	ObliqueViewEnd = FMath::Clamp(ObliqueViewEnd, ObliqueViewStart + UE_SMALL_NUMBER, 1.0f);
 	SpringArm->SetWorldRotation(GetViewRotationForZoom(ZoomDistance));
-}
-
-float ASRCameraPawn::ClampZoomDistanceTarget(float ProposedZoomDistanceTarget) const
-{
-	const float MinimumSafeZoomDistance = GetMinimumSafeZoomDistance();
-	const float MaximumZoomDistance = GetMaxZoomDistanceForMinimumSafeDistance(MinimumSafeZoomDistance);
-	return FMath::Clamp(ProposedZoomDistanceTarget, MinimumSafeZoomDistance, MaximumZoomDistance);
 }
 
 void ASRCameraPawn::RefreshScreenSpaceThicknessReferenceView()

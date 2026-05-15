@@ -45,7 +45,7 @@ namespace
 		return DisplayText;
 	}
 
-	FProperty* FindPropertyInClassHierarchy(const UClass* InClass, const FName PropertyName)
+	FProperty* FindRuntimeLibraryPropertyInClassHierarchy(const UClass* InClass, const FName PropertyName)
 	{
 		for (const UStruct* Struct = InClass; Struct; Struct = Struct->GetSuperStruct())
 		{
@@ -87,7 +87,7 @@ namespace
 			return false;
 		}
 
-		FProperty* Property = FindPropertyInClassHierarchy(Actor->GetClass(), PropertyName);
+		FProperty* Property = FindRuntimeLibraryPropertyInClassHierarchy(Actor->GetClass(), PropertyName);
 		if (!Property)
 		{
 			return false;
@@ -125,7 +125,7 @@ namespace
 			return false;
 		}
 
-		FProperty* Property = FindPropertyInClassHierarchy(Actor->GetClass(), PropertyName);
+		FProperty* Property = FindRuntimeLibraryPropertyInClassHierarchy(Actor->GetClass(), PropertyName);
 		const FBoolProperty* BoolProperty = CastField<FBoolProperty>(Property);
 		if (!BoolProperty)
 		{
@@ -145,7 +145,7 @@ namespace
 			return false;
 		}
 
-		FProperty* Property = FindPropertyInClassHierarchy(Actor->GetClass(), PropertyName);
+		FProperty* Property = FindRuntimeLibraryPropertyInClassHierarchy(Actor->GetClass(), PropertyName);
 		if (!Property)
 		{
 			return false;
@@ -168,7 +168,7 @@ namespace
 			return false;
 		}
 
-		FProperty* Property = FindPropertyInClassHierarchy(Actor->GetClass(), PropertyName);
+		FProperty* Property = FindRuntimeLibraryPropertyInClassHierarchy(Actor->GetClass(), PropertyName);
 		if (!Property)
 		{
 			return false;

@@ -49,18 +49,12 @@ ASRPlanet::ASRPlanet()
 	CastShadowStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Cast Shadow Static Mesh"));
 	CastShadowStaticMesh->SetupAttachment(SceneRoot);
 	CastShadowStaticMesh->SetMobility(EComponentMobility::Movable);
-	CastShadowStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	CastShadowStaticMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-	CastShadowStaticMesh->SetGenerateOverlapEvents(false);
 	CastShadowStaticMesh->SetVisibility(false);
 	CastShadowStaticMesh->SetHiddenInGame(true);
 
 	OceanStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Ocean Static Mesh"));
 	OceanStaticMesh->SetupAttachment(SceneRoot);
 	OceanStaticMesh->SetMobility(EComponentMobility::Movable);
-	OceanStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	OceanStaticMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-	OceanStaticMesh->SetGenerateOverlapEvents(false);
 	OceanStaticMesh->SetVisibility(false);
 	OceanStaticMesh->SetHiddenInGame(true);
 
@@ -229,7 +223,6 @@ void ASRPlanet::ApplyCastShadowStaticMeshSettings()
 
 		CastShadowStaticMesh->SetVisibility(false);
 		CastShadowStaticMesh->SetHiddenInGame(true);
-		CastShadowStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		return;
 	}
 
@@ -242,9 +235,6 @@ void ASRPlanet::ApplyCastShadowStaticMeshSettings()
 	CastShadowStaticMesh->SetRelativeLocation(FVector::ZeroVector);
 	CastShadowStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
 	CastShadowStaticMesh->SetRelativeScale3D(FVector(FMath::Max(0.01f, BodyScale * CastShadowScaleMultiplier)));
-	CastShadowStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	CastShadowStaticMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-	CastShadowStaticMesh->SetGenerateOverlapEvents(false);
 	CastShadowStaticMesh->SetVisibility(false);
 	CastShadowStaticMesh->SetHiddenInGame(true);
 	CastShadowStaticMesh->LightingChannels.bChannel0 = true;
@@ -280,7 +270,6 @@ void ASRPlanet::ApplyOceanStaticMeshSettings()
 	{
 		OceanStaticMesh->SetVisibility(false);
 		OceanStaticMesh->SetHiddenInGame(true);
-		OceanStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		return;
 	}
 
@@ -295,7 +284,6 @@ void ASRPlanet::ApplyOceanStaticMeshSettings()
 		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires OceanMaterial while ocean is enabled."), *GetName());
 		OceanStaticMesh->SetVisibility(false);
 		OceanStaticMesh->SetHiddenInGame(true);
-		OceanStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		return;
 	}
 
@@ -305,9 +293,6 @@ void ASRPlanet::ApplyOceanStaticMeshSettings()
 	OceanStaticMesh->SetRelativeLocation(FVector::ZeroVector);
 	OceanStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
 	OceanStaticMesh->SetRelativeScale3D(FVector(OceanScale));
-	OceanStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	OceanStaticMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-	OceanStaticMesh->SetGenerateOverlapEvents(false);
 	OceanStaticMesh->SetVisibility(true);
 	OceanStaticMesh->SetHiddenInGame(false);
 	OceanStaticMesh->LightingChannels.bChannel0 = true;

@@ -15,7 +15,7 @@
 
 namespace
 {
-	FProperty* FindPropertyInClassHierarchy(const UClass* InClass, const FName PropertyName)
+	FProperty* FindCelestialBodyPropertyInClassHierarchy(const UClass* InClass, const FName PropertyName)
 	{
 		for (const UStruct* Struct = InClass; Struct; Struct = Struct->GetSuperStruct())
 		{
@@ -35,8 +35,8 @@ namespace
 			return false;
 		}
 
-		FProperty* DestinationProperty = FindPropertyInClassHierarchy(DestinationObject->GetClass(), PropertyName);
-		FProperty* SourceProperty = FindPropertyInClassHierarchy(SourceObject->GetClass(), PropertyName);
+		FProperty* DestinationProperty = FindCelestialBodyPropertyInClassHierarchy(DestinationObject->GetClass(), PropertyName);
+		FProperty* SourceProperty = FindCelestialBodyPropertyInClassHierarchy(SourceObject->GetClass(), PropertyName);
 		if (!DestinationProperty || !SourceProperty || !DestinationProperty->SameType(SourceProperty))
 		{
 			return false;
@@ -55,7 +55,7 @@ namespace
 			return false;
 		}
 
-		FProperty* SourceProperty = FindPropertyInClassHierarchy(SourceObject->GetClass(), PropertyName);
+		FProperty* SourceProperty = FindCelestialBodyPropertyInClassHierarchy(SourceObject->GetClass(), PropertyName);
 		if (!SourceProperty)
 		{
 			return false;
@@ -94,7 +94,7 @@ namespace
 			return false;
 		}
 
-		FProperty* SourceProperty = FindPropertyInClassHierarchy(SourceObject->GetClass(), PropertyName);
+		FProperty* SourceProperty = FindCelestialBodyPropertyInClassHierarchy(SourceObject->GetClass(), PropertyName);
 		const FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(SourceProperty);
 		if (!ObjectProperty)
 		{
@@ -175,18 +175,10 @@ ASRCelestialBody::ASRCelestialBody()
 	CelestialBodyStaticMesh_ = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CelestialBodyStaticMesh"));
 	CelestialBodyStaticMesh_->SetupAttachment(SceneRoot);
 	CelestialBodyStaticMesh_->SetMobility(EComponentMobility::Movable);
-	CelestialBodyStaticMesh_->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	CelestialBodyStaticMesh_->SetCollisionResponseToAllChannels(ECR_Block);
-	CelestialBodyStaticMesh_->SetGenerateOverlapEvents(false);
 
 	ClickSphereCollision = CreateDefaultSubobject<USphereComponent>(TEXT("ClickSphereCollision"));
 	ClickSphereCollision->SetupAttachment(SceneRoot);
 	ClickSphereCollision->SetMobility(EComponentMobility::Movable);
-	ClickSphereCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	ClickSphereCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
-	ClickSphereCollision->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
-	ClickSphereCollision->SetGenerateOverlapEvents(false);
-	ClickSphereCollision->SetCanEverAffectNavigation(false);
 
 	GravityParent = CreateDefaultSubobject<USRGravityParent>(TEXT("GravityParent"));
 
