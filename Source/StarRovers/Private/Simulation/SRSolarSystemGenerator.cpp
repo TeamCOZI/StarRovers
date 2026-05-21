@@ -98,12 +98,12 @@ namespace
 		OutSpec.TerrainFrequency = BiomeSpec.TerrainFrequency;
 		OutSpec.TerrainOctaves = BiomeSpec.TerrainOctaves;
 		OutSpec.TerrainPersistence = BiomeSpec.TerrainPersistence;
+		OutSpec.TerrainSettings = BiomeSpec.TerrainSettings;
 		OutSpec.bHasOcean = BiomeSpec.bHasOcean;
 		OutSpec.OceanMesh = BiomeSpec.OceanMesh;
 		OutSpec.OceanMaterial = BiomeSpec.OceanMaterial;
 		OutSpec.OceanScaleMultiplier = BiomeSpec.OceanScaleMultiplier;
 		OutSpec.SurfaceGridSurfaceOffset = BiomeSpec.SurfaceGridSurfaceOffset;
-		OutSpec.ShadowCasterScaleMultiplier = BiomeSpec.ShadowCasterScaleMultiplier;
 		OutSpec.OrbitPeriodInPeriods = BiomeSpec.OrbitSpeed > KINDA_SMALL_NUMBER
 			? 1.0f / BiomeSpec.OrbitSpeed
 			: 0.0f;
@@ -208,8 +208,8 @@ ASRSolarSystemGenerator::ASRSolarSystemGenerator()
 	MaxMoon = 1;
 	PlanetInitialOrbit = 30000.0f;
 	PlanetOrbitIncrease = 20000.0f;
-	MoonInitialOrbit = 5000.0f;
-	MoonOrbitIncrease = 2500.0f;
+	MoonInitialOrbit = 6000.0f;
+	MoonOrbitIncrease = 4000.0f;
 }
 
 void ASRSolarSystemGenerator::BeginPlay()
@@ -369,6 +369,8 @@ void ASRSolarSystemGenerator::BuildOrbitingBodyRequests(
 	{
 		CandidateCelestialBodies[Index].BodySpec.OrbitRadius = PackedOrbitRadii[Index];
 		CandidateCelestialBodies[Index].BodySpec.StartingPhase = RandomStream.FRandRange(0.0f, 360.0f);
+		CandidateCelestialBodies[Index].BodySpec.TerrainSeed = RandomStream.RandRange(1, TNumericLimits<int32>::Max() - 1);
+		CandidateCelestialBodies[Index].BodySpec.TerrainSettings.TerrainSeed = CandidateCelestialBodies[Index].BodySpec.TerrainSeed;
 	}
 
 	OutResolvedCelestialBodyRequests = MoveTemp(CandidateCelestialBodies);

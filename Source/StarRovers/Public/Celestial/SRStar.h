@@ -19,7 +19,7 @@ public:
 	virtual void ApplyConfiguredBodyState() override;
 
 protected:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "StarPointLight"))
 	TObjectPtr<UPointLightComponent> StarPointLight;
 
 	float StarMaterialEmissiveStrength = 30.0f;

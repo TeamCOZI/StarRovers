@@ -207,7 +207,7 @@ void USRGravityParent::RefreshGravityLine()
 			UE_LOG(
 				LogTemp,
 				Error,
-				TEXT("USRGravityParent cannot draw gravity line for owner '%s': GravityLineBatch is null after lookup, bShowGravityLine=true, GravityRadius=%.2f, and no registered ULineBatchComponent named 'Gravity Line Batch' was available."),
+				TEXT("USRGravityParent cannot draw gravity line for owner '%s': GravityLineBatch is null after lookup, bShowGravityLine=true, GravityRadius=%.2f, and no registered ULineBatchComponent named 'GravityLineBatch' was available."),
 				*Owner->GetName(),
 				GravityRadius);
 		}
@@ -278,7 +278,7 @@ void USRGravityParent::EnsureGravityLineBatch()
 	Owner->GetComponents(LineBatchComponents);
 	for (ULineBatchComponent* LineBatchComponent : LineBatchComponents)
 	{
-		if (IsValid(LineBatchComponent) && LineBatchComponent->GetFName() == TEXT("Gravity Line Batch"))
+		if (IsValid(LineBatchComponent) && LineBatchComponent->GetFName() == TEXT("GravityLineBatch"))
 		{
 			GravityLineBatch = LineBatchComponent;
 			break;

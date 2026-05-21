@@ -1,18 +1,23 @@
 ﻿#include "Camera/SRCameraPawn.h"
 
 #include "Camera/CameraComponent.h"
+#include "Celestial/SRCelestialBody.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Gravity/SRGravityParent.h"
+#include "Engine/DirectionalLight.h"
 #include "Engine/LocalPlayer.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
+#include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace StarRoversInputPaths
@@ -21,6 +26,8 @@ namespace StarRoversInputPaths
 	static constexpr TCHAR DragHoldAction[] = TEXT("/Game/BlueprintClasses/Core/IA_DragHold.IA_DragHold");
 	static constexpr TCHAR DragDeltaAction[] = TEXT("/Game/BlueprintClasses/Core/IA_DragDelta.IA_DragDelta");
 	static constexpr TCHAR ZoomAction[] = TEXT("/Game/BlueprintClasses/Core/IA_Zoom.IA_Zoom");
+	static constexpr TCHAR FocusedSurfaceLookAction[] = TEXT("/Game/BlueprintClasses/Core/IA_FocusedSurfaceLook.IA_FocusedSurfaceLook");
+	static constexpr TCHAR ResetFocusCameraAction[] = TEXT("/Game/BlueprintClasses/Core/IA_ResetFocusCamera.IA_ResetFocusCamera");
 }
 
 namespace
@@ -118,11 +125,14 @@ ASRCameraPawn::ASRCameraPawn()
 	ObliqueViewEnd = 1.0f;
 	FocusFollowSmoothTime = 0.35f;
 	SurfaceRotateSensitivity = 0.2f;
+	FocusedSurfaceLookSpeed = 60.0f;
+	FocusedSurfaceLookMaxPitch = 75.0f;
 	DragTargetLocation = FVector::ZeroVector;
 	ZoomDistanceTarget = SpringArm->TargetArmLength;
 	bIsDragging = false;
 	bMappingContextApplied = false;
 	bIsRotatingFocusedBody = false;
+	bIsFocusedSurfaceLookActive = false;
 	bHasDragStartMousePosition = false;
 	FocusDragOffset = FVector::ZeroVector;
 	FixedPlaneX = 0.0f;
@@ -133,6 +143,8 @@ ASRCameraPawn::ASRCameraPawn()
 	DragStartMouseScreenPosition = FVector2D::ZeroVector;
 	DragStartFocusDragOffset = FVector::ZeroVector;
 	DragStartTargetLocation = FVector::ZeroVector;
+	FocusedSurfaceLookInput = FVector2D::ZeroVector;
+	FocusedSurfaceLookOffset = FRotator::ZeroRotator;
 
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> DefaultMappingContextFinder(StarRoversInputPaths::DefaultMappingContext);
 	if (DefaultMappingContextFinder.Succeeded())
@@ -174,6 +186,26 @@ ASRCameraPawn::ASRCameraPawn()
 		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires ZoomAction at '%s'."), StarRoversInputPaths::ZoomAction);
 	}
 
+	static ConstructorHelpers::FObjectFinder<UInputAction> FocusedSurfaceLookFinder(StarRoversInputPaths::FocusedSurfaceLookAction);
+	if (FocusedSurfaceLookFinder.Succeeded())
+	{
+		FocusedSurfaceLookAction = FocusedSurfaceLookFinder.Object;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusedSurfaceLookAction at '%s' for focused surface camera look."), StarRoversInputPaths::FocusedSurfaceLookAction);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UInputAction> ResetFocusCameraFinder(StarRoversInputPaths::ResetFocusCameraAction);
+	if (ResetFocusCameraFinder.Succeeded())
+	{
+		ResetFocusCameraAction = ResetFocusCameraFinder.Object;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusCameraAction at '%s' for focused camera reset."), StarRoversInputPaths::ResetFocusCameraAction);
+	}
+
 	ApplyZoomDrivenViewRotation(SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
 	RefreshScreenSpaceThicknessReferenceView();
 }
@@ -205,6 +237,7 @@ void ASRCameraPawn::BeginPlay()
 
 	ApplyMappingContext();
 	ApplyZoomDrivenViewRotation(SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
+	UpdateDynamicMeshVisibility();
 }
 
 void ASRCameraPawn::Tick(float DeltaSeconds)
@@ -212,6 +245,7 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	ApplyMappingContext();
+	UpdateFocusedSurfaceLook(DeltaSeconds);
 
 	if (FocusedActor)
 	{
@@ -282,6 +316,7 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 
 	NewLocation.X = FixedPlaneX;
 	SetActorLocation(NewLocation);
+	UpdateDynamicMeshVisibility();
 }
 
 void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -318,6 +353,26 @@ void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 		{
 			UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires ZoomAction before input binding."));
 		}
+
+		if (FocusedSurfaceLookAction)
+		{
+			EnhancedInputComponent->BindAction(FocusedSurfaceLookAction, ETriggerEvent::Triggered, this, &ASRCameraPawn::HandleFocusedSurfaceLook);
+			EnhancedInputComponent->BindAction(FocusedSurfaceLookAction, ETriggerEvent::Completed, this, &ASRCameraPawn::HandleFocusedSurfaceLookCompleted);
+			EnhancedInputComponent->BindAction(FocusedSurfaceLookAction, ETriggerEvent::Canceled, this, &ASRCameraPawn::HandleFocusedSurfaceLookCompleted);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusedSurfaceLookAction before focused surface look input binding."));
+		}
+
+		if (ResetFocusCameraAction)
+		{
+			EnhancedInputComponent->BindAction(ResetFocusCameraAction, ETriggerEvent::Started, this, &ASRCameraPawn::HandleResetFocusedCameraView);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusCameraAction before focused camera reset input binding."));
+		}
 	}
 }
 
@@ -326,6 +381,9 @@ void ASRCameraPawn::FocusActor(AActor* NewFocusActor)
 	AActor* PreviousFocusedActor = FocusedActor.Get();
 	FocusedActor = NewFocusActor;
 	FocusDragOffset = FVector::ZeroVector;
+	FocusedSurfaceLookInput = FVector2D::ZeroVector;
+	FocusedSurfaceLookOffset = FRotator::ZeroRotator;
+	bIsFocusedSurfaceLookActive = false;
 
 	if (FocusedActor)
 	{
@@ -367,6 +425,9 @@ void ASRCameraPawn::ClearFocusActor()
 	FocusDragOffset = FVector::ZeroVector;
 	FocusTrackingDelta = FVector::ZeroVector;
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
+	FocusedSurfaceLookInput = FVector2D::ZeroVector;
+	FocusedSurfaceLookOffset = FRotator::ZeroRotator;
+	bIsFocusedSurfaceLookActive = false;
 	BroadcastFocusedActorChangedIfNeeded(PreviousFocusedActor);
 }
 
@@ -426,6 +487,44 @@ void ASRCameraPawn::SnapToFocusTarget()
 		ApplyZoomDrivenViewRotation(SpringArm->TargetArmLength);
 	}
 	SetActorLocation(DesiredLocation);
+}
+
+void ASRCameraPawn::ResetFocusedCameraView()
+{
+	if (!IsValid(FocusedActor))
+	{
+		return;
+	}
+
+	FocusDragOffset = FVector::ZeroVector;
+	FocusedSurfaceLookInput = FVector2D::ZeroVector;
+	FocusedSurfaceLookOffset = FRotator::ZeroRotator;
+	bIsFocusedSurfaceLookActive = false;
+	bIsDragging = false;
+	bIsRotatingFocusedBody = false;
+	bHasDragStartMousePosition = false;
+
+	DragTargetLocation = GetFocusLocation();
+	DragTargetLocation.X = FixedPlaneX;
+
+	const FVector CurrentLocation(FixedPlaneX, GetActorLocation().Y, GetActorLocation().Z);
+	const FVector DesiredLocation(FixedPlaneX, DragTargetLocation.Y, DragTargetLocation.Z);
+	FocusTrackingDelta = DesiredLocation - CurrentLocation;
+	FocusTrackingDelta.X = 0.0f;
+	FocusTrackingDeltaVelocity = FVector::ZeroVector;
+
+	if (!Camera)
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires Camera before resetting focused camera view."));
+		return;
+	}
+
+	const float DesiredFocusZoom = USRCelestialBodyRuntimeLibrary::GetCelestialFocusZoomDistance(
+		FocusedActor,
+		Camera->FieldOfView,
+		DefaultFocusZoomMultiplier);
+	ZoomDistanceTarget = ClampZoomDistance(DesiredFocusZoom);
+	ApplyZoomDrivenViewRotation(ZoomDistanceTarget);
 }
 
 FSRFocusedActorChangedSignature& ASRCameraPawn::OnFocusedActorChanged()
@@ -554,6 +653,29 @@ void ASRCameraPawn::HandleZoom(const FInputActionValue& Value)
 	}
 
 	ZoomDistanceTarget = ClampZoomDistance(ZoomDistanceTarget - (AxisValue * GetZoomSpeed()));
+}
+
+void ASRCameraPawn::HandleFocusedSurfaceLook(const FInputActionValue& Value)
+{
+	FocusedSurfaceLookInput = Value.Get<FVector2D>();
+	if (FocusedSurfaceLookInput.IsNearlyZero())
+	{
+		bIsFocusedSurfaceLookActive = false;
+		return;
+	}
+
+	bIsFocusedSurfaceLookActive = ShouldAllowFocusedSurfaceLook();
+}
+
+void ASRCameraPawn::HandleFocusedSurfaceLookCompleted()
+{
+	FocusedSurfaceLookInput = FVector2D::ZeroVector;
+	bIsFocusedSurfaceLookActive = false;
+}
+
+void ASRCameraPawn::HandleResetFocusedCameraView()
+{
+	ResetFocusedCameraView();
 }
 
 float ASRCameraPawn::GetZoomSpeed() const
@@ -856,7 +978,53 @@ void ASRCameraPawn::ApplyZoomDrivenViewRotation(float ZoomDistance)
 
 	ObliqueViewStart = FMath::Clamp(ObliqueViewStart, 0.0f, 1.0f);
 	ObliqueViewEnd = FMath::Clamp(ObliqueViewEnd, ObliqueViewStart + UE_SMALL_NUMBER, 1.0f);
-	SpringArm->SetWorldRotation(GetViewRotationForZoom(ZoomDistance));
+	const FRotator BaseViewRotation = GetViewRotationForZoom(ZoomDistance);
+	if (ShouldAllowFocusedSurfaceLook())
+	{
+		const FQuat BaseViewQuat = BaseViewRotation.Quaternion();
+		const FQuat SurfaceLookQuat = FQuat(FocusedSurfaceLookOffset);
+		SpringArm->SetWorldRotation((BaseViewQuat * SurfaceLookQuat).Rotator().GetNormalized());
+		return;
+	}
+
+	SpringArm->SetWorldRotation(BaseViewRotation);
+}
+
+bool ASRCameraPawn::ShouldAllowFocusedSurfaceLook() const
+{
+	if (!IsValid(FocusedActor) || !USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(FocusedActor))
+	{
+		return false;
+	}
+
+	return !USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(FocusedActor);
+}
+
+void ASRCameraPawn::UpdateFocusedSurfaceLook(float DeltaSeconds)
+{
+	const FVector2D CombinedLookInput = FocusedSurfaceLookInput.GetClampedToMaxSize(1.0f);
+	if (CombinedLookInput.IsNearlyZero() || DeltaSeconds <= UE_SMALL_NUMBER || !ShouldAllowFocusedSurfaceLook())
+	{
+		bIsFocusedSurfaceLookActive = false;
+		return;
+	}
+
+	const float SafeLookSpeed = FMath::Max(0.0f, FocusedSurfaceLookSpeed);
+	if (SafeLookSpeed <= KINDA_SMALL_NUMBER)
+	{
+		bIsFocusedSurfaceLookActive = false;
+		return;
+	}
+
+	const float MaxPitch = FMath::Clamp(FocusedSurfaceLookMaxPitch, 0.0f, 89.0f);
+	FocusedSurfaceLookOffset.Yaw += CombinedLookInput.X * SafeLookSpeed * DeltaSeconds;
+	FocusedSurfaceLookOffset.Pitch = FMath::Clamp(
+		FocusedSurfaceLookOffset.Pitch + (CombinedLookInput.Y * SafeLookSpeed * DeltaSeconds),
+		-MaxPitch,
+		MaxPitch);
+	FocusedSurfaceLookOffset.Roll = 0.0f;
+	FocusedSurfaceLookOffset.Normalize();
+	bIsFocusedSurfaceLookActive = true;
 }
 
 void ASRCameraPawn::RefreshScreenSpaceThicknessReferenceView()
@@ -869,6 +1037,198 @@ void ASRCameraPawn::RefreshScreenSpaceThicknessReferenceView()
 		return;
 	}
 	ScreenSpaceThicknessReferenceFieldOfView = FMath::Clamp(Camera->FieldOfView, 5.0f, 170.0f);
+}
+
+void ASRCameraPawn::UpdateDynamicMeshVisibility()
+{
+	AActor* DirectionalLightTarget = nullptr;
+	if (ApplyCelestialBodyMeshVisibility(DirectionalLightTarget))
+	{
+		ConfigureDirectionalLight(DirectionalLightTarget);
+	}
+	else
+	{
+		ConfigureDirectionalLight(nullptr);
+	}
+}
+
+bool ASRCameraPawn::ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLightTarget)
+{
+	OutDirectionalLightTarget = nullptr;
+
+	USRCelestialBodyRegistrySubsystem* CelestialRegistry = FindCelestialRegistry();
+	if (!CelestialRegistry)
+	{
+		return false;
+	}
+
+	TArray<AActor*> CelestialBodies;
+	CelestialRegistry->GetCelestialBodies(CelestialBodies);
+	if (CelestialBodies.IsEmpty())
+	{
+		CelestialRegistry->RefreshCelestialBodies();
+		CelestialRegistry->GetCelestialBodies(CelestialBodies);
+		if (CelestialBodies.IsEmpty())
+		{
+			return false;
+		}
+	}
+
+	bool bHasStaticMeshBody = false;
+	float BestDynamicMeshTargetScreenSizeRatio = 0.0f;
+	for (AActor* BodyActor : CelestialBodies)
+	{
+		ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(BodyActor);
+		if (!IsValid(CelestialBody))
+		{
+			continue;
+		}
+
+		float ScreenSizeRatio = 0.0f;
+		const bool bUseDynamicMesh = ShouldUseDynamicMesh(BodyActor, ScreenSizeRatio);
+		CelestialBody->SetDynamicMeshEnabled(bUseDynamicMesh);
+		bHasStaticMeshBody |= !bUseDynamicMesh;
+
+		if (!bUseDynamicMesh || USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(BodyActor))
+		{
+			continue;
+		}
+
+		if (BodyActor == FocusedActor.Get())
+		{
+			OutDirectionalLightTarget = BodyActor;
+			BestDynamicMeshTargetScreenSizeRatio = TNumericLimits<float>::Max();
+			continue;
+		}
+
+		if (!IsValid(OutDirectionalLightTarget) && ScreenSizeRatio > BestDynamicMeshTargetScreenSizeRatio)
+		{
+			OutDirectionalLightTarget = BodyActor;
+			BestDynamicMeshTargetScreenSizeRatio = ScreenSizeRatio;
+		}
+	}
+
+	if (AActor* PrimaryStarActor = CelestialRegistry->GetPrimaryStarActor())
+	{
+		if (UPointLightComponent* StarPointLight = PrimaryStarActor->FindComponentByClass<UPointLightComponent>())
+		{
+			StarPointLight->SetVisibility(bHasStaticMeshBody || !IsValid(OutDirectionalLightTarget));
+		}
+	}
+
+	return true;
+}
+
+bool ASRCameraPawn::ShouldUseDynamicMesh(const AActor* BodyActor, float& OutScreenSizeRatio) const
+{
+	OutScreenSizeRatio = 0.0f;
+	const ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(BodyActor);
+	if (!IsValid(CelestialBody) || !Camera)
+	{
+		return false;
+	}
+
+	const FVector CameraLocation = Camera->GetComponentLocation();
+	const FVector CameraForward = Camera->GetForwardVector().GetSafeNormal();
+	const FVector CameraToBody = BodyActor->GetActorLocation() - CameraLocation;
+	const float Depth = FVector::DotProduct(CameraToBody, CameraForward);
+	if (Depth <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const float BodyRadius = USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(BodyActor);
+	if (BodyRadius <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const float SafeFieldOfViewDegrees = FMath::Clamp(Camera->FieldOfView, 5.0f, 170.0f);
+	const float TanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(SafeFieldOfViewDegrees * 0.5f));
+	if (TanHalfFieldOfView <= UE_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	float AspectRatio = 16.0f / 9.0f;
+	if (const APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		int32 ViewportWidth = 0;
+		int32 ViewportHeight = 0;
+		PlayerController->GetViewportSize(ViewportWidth, ViewportHeight);
+		if (ViewportWidth > 0 && ViewportHeight > 0)
+		{
+			AspectRatio = static_cast<float>(ViewportWidth) / static_cast<float>(ViewportHeight);
+		}
+	}
+
+	const float HalfFrustumHeight = Depth * TanHalfFieldOfView;
+	const float HalfFrustumWidth = HalfFrustumHeight * FMath::Max(AspectRatio, UE_SMALL_NUMBER);
+	const float HorizontalOffset = FMath::Abs(FVector::DotProduct(CameraToBody, Camera->GetRightVector()));
+	const float VerticalOffset = FMath::Abs(FVector::DotProduct(CameraToBody, Camera->GetUpVector()));
+	if (HorizontalOffset > HalfFrustumWidth + BodyRadius || VerticalOffset > HalfFrustumHeight + BodyRadius)
+	{
+		return false;
+	}
+
+	OutScreenSizeRatio = FMath::Clamp(BodyRadius / (Depth * TanHalfFieldOfView), 0.0f, BIG_NUMBER);
+	const float ThresholdRatio = CelestialBody->GetDynamicMeshThreshold();
+	return OutScreenSizeRatio >= ThresholdRatio;
+}
+
+void ASRCameraPawn::ConfigureDirectionalLight(AActor* LightingTarget)
+{
+	ADirectionalLight* DirectionalLightActor = FindDirectionalLightActor();
+	UDirectionalLightComponent* DirectionalLightComponent = IsValid(DirectionalLightActor)
+		? DirectionalLightActor->FindComponentByClass<UDirectionalLightComponent>()
+		: nullptr;
+	if (!IsValid(DirectionalLightComponent))
+	{
+		return;
+	}
+
+	USRCelestialBodyRegistrySubsystem* CelestialRegistry = FindCelestialRegistry();
+	const AActor* PrimaryStarActor = CelestialRegistry ? CelestialRegistry->GetPrimaryStarActor() : nullptr;
+	const bool bCanUseDirectionalLight = IsValid(PrimaryStarActor) && IsValid(LightingTarget);
+	DirectionalLightComponent->SetVisibility(bCanUseDirectionalLight);
+	if (!bCanUseDirectionalLight)
+	{
+		return;
+	}
+
+	const FVector StarToTargetDirection = (LightingTarget->GetActorLocation() - PrimaryStarActor->GetActorLocation()).GetSafeNormal();
+	if (StarToTargetDirection.SizeSquared() <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	DirectionalLightActor->SetActorRotation(StarToTargetDirection.Rotation());
+}
+
+ADirectionalLight* ASRCameraPawn::FindDirectionalLightActor() const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	for (TActorIterator<ADirectionalLight> It(World); It; ++It)
+	{
+		ADirectionalLight* CandidateLight = *It;
+		if (IsValid(CandidateLight))
+		{
+			return CandidateLight;
+		}
+	}
+
+	return nullptr;
+}
+
+USRCelestialBodyRegistrySubsystem* ASRCameraPawn::FindCelestialRegistry() const
+{
+	UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<USRCelestialBodyRegistrySubsystem>() : nullptr;
 }
 
 bool ASRCameraPawn::HasExitedFocusedActorGravityField() const

@@ -36,25 +36,25 @@ public:
 	AActor* GetCurrentPrimaryGravityActor() const;
 
 protected:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Gravity")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Gravity", meta = (DisplayName = "bGravityEnabled"))
 	bool bGravityEnabled;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Gravity")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Gravity", meta = (DisplayName = "bUsePhysicsIfAvailable"))
 	bool bUsePhysicsIfAvailable;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Gravity")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Gravity", meta = (DisplayName = "bUseStrongestSourceOnly"))
 	bool bUseStrongestSourceOnly;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Gravity", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Gravity", meta = (DisplayName = "ManualLinearDamping", ClampMin = "0.0"))
 	float ManualLinearDamping;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Gravity")
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "LinearVelocity"))
 	FVector LinearVelocity;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Gravity")
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "CurrentGravityAcceleration"))
 	FVector CurrentGravityAcceleration;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Gravity")
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "CurrentPrimaryGravityActor"))
 	TObjectPtr<AActor> CurrentPrimaryGravityActor;
 
 private:

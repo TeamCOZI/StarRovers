@@ -44,13 +44,13 @@ public:
 	FSRStarRoversAssemblyModeRequestedSignature& OnAssemblyModeRequested();
 
 protected:
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus")
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "FocusInfo"))
 	FSRCelestialBodyFocusInfo FocusInfo;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus")
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bHasFocusInfo"))
 	bool bHasFocusInfo = false;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Assembly")
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "bAssemblyModeActive"))
 	bool bAssemblyModeActive = false;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "StarRovers|Focus")

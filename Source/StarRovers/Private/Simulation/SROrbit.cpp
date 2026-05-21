@@ -198,7 +198,7 @@ void USROrbit::RefreshOrbitLineVisual()
 			UE_LOG(
 				LogTemp,
 				Error,
-				TEXT("USROrbit cannot draw orbit line for owner '%s': OrbitLineBatcher is null after lookup, bShowOrbitLine=true, OrbitRadius=%.2f, OrbitPeriodSeconds=%.2f, and no registered ULineBatchComponent named 'Orbit Line Batch' was available."),
+				TEXT("USROrbit cannot draw orbit line for owner '%s': OrbitLineBatcher is null after lookup, bShowOrbitLine=true, OrbitRadius=%.2f, OrbitPeriodSeconds=%.2f, and no registered ULineBatchComponent named 'OrbitLineBatch' was available."),
 				*Owner->GetName(),
 				OrbitRadius,
 				OrbitPeriodSeconds);
@@ -375,7 +375,7 @@ void USROrbit::EnsureOrbitLineBatcher()
 	Owner->GetComponents(LineBatchComponents);
 	for (ULineBatchComponent* LineBatchComponent : LineBatchComponents)
 	{
-		if (IsValid(LineBatchComponent) && LineBatchComponent->GetFName() == TEXT("Orbit Line Batch"))
+		if (IsValid(LineBatchComponent) && LineBatchComponent->GetFName() == TEXT("OrbitLineBatch"))
 		{
 			OrbitLineBatcher = LineBatchComponent;
 			break;

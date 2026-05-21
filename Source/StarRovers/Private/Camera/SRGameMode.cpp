@@ -1,4 +1,4 @@
-﻿#include "Camera/SRGameMode.h"
+#include "Camera/SRGameMode.h"
 
 #include "Camera/SRCameraPawn.h"
 #include "Camera/SRPlayerController.h"

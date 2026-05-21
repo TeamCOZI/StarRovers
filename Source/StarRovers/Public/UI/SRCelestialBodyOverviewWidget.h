@@ -76,49 +76,49 @@ public:
 	FSRStarRoversCelestialBodyRequestedSignature& OnCelestialBodyRequested();
 
 protected:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial", meta = (DisplayName = "StarSystemText"))
 	FText StarSystemText = NSLOCTEXT("StarRoversOverview", "StarSystemText", "System Objects");
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial", meta = (DisplayName = "StarSystemNameplateIndentPixels", ClampMin = "0.0"))
 	float StarSystemNameplateIndentPixels = 18.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial", meta = (DisplayName = "OverviewBorderColor"))
 	FLinearColor OverviewBorderColor = FLinearColor(0.015f, 0.025f, 0.04f, 0.88f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial", meta = (DisplayName = "StarSystemScrollBoxButtonColor"))
 	FLinearColor StarSystemScrollBoxButtonColor = FLinearColor(0.08f, 0.11f, 0.15f, 0.82f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial", meta = (DisplayName = "SelectedStarSystemScrollBoxButtonColor"))
 	FLinearColor SelectedStarSystemScrollBoxButtonColor = FLinearColor(0.18f, 0.36f, 0.42f, 0.95f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial", meta = (DisplayName = "StarSystemNameplateTextColor"))
 	FLinearColor StarSystemNameplateTextColor = FLinearColor(0.86f, 0.92f, 0.97f, 1.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "bShowNameplateButtons"))
 	bool bShowNameplateButtons = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "NameplateButtonColor"))
 	FLinearColor NameplateButtonColor = FLinearColor(0.02f, 0.04f, 0.06f, 0.78f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "SelectedNameplateButtonColor"))
 	FLinearColor SelectedNameplateButtonColor = FLinearColor(0.20f, 0.48f, 0.56f, 0.92f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (ClampMin = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "NameplateOutlineMinRadiusPixels", ClampMin = "1.0"))
 	float NameplateOutlineMinRadiusPixels = 18.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (ClampMin = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "NameplateOutlineMaxRadiusPixels", ClampMin = "1.0"))
 	float NameplateOutlineMaxRadiusPixels = 72.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "NameplateOutlinePaddingPixels", ClampMin = "0.0"))
 	float NameplateOutlinePaddingPixels = 6.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "NameplateLeaderLengthPixels", ClampMin = "0.0"))
 	float NameplateLeaderLengthPixels = 72.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (ClampMin = "3"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "NameplateOutlineSegments", ClampMin = "3"))
 	int32 NameplateOutlineSegments = 40;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "NameplateOutlineLineThickness", ClampMin = "0.0"))
 	float NameplateOutlineLineThickness = 2.0f;
 
 	UPROPERTY(Transient)

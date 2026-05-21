@@ -18,7 +18,7 @@ ASRPlanet::ASRPlanet()
 	ConstructionHeightOffset = 15.0f;
 	GridLineColor = FLinearColor(0.15f, 0.85f, 1.0f, 1.0f);
 	GridLineOpacity = 1.0f;
-	GridLineThickness = 10.0f;
+	GridLineThickness = 1.0f;
 	HoveredCellColor = FLinearColor(1.0f, 0.85f, 0.2f, 1.0f);
 	SelectedCellColor = FLinearColor(0.25f, 1.0f, 0.35f, 1.0f);
 	OccupiedCellColor = FLinearColor(1.0f, 0.35f, 0.35f, 1.0f);
@@ -28,8 +28,7 @@ ASRPlanet::ASRPlanet()
 	OrbitLineThickness = 20.0f;
 	OrbitLineSegments = 96;
 	CanConstruct = false;
-	SurfaceGridSurfaceOffset = 8.0f;
-	CastShadowScaleMultiplier = 0.95f;
+	SurfaceGridSurfaceOffset = 0.0f;
 	bHasOcean = false;
 	OceanMesh = nullptr;
 	OceanMaterial = nullptr;
@@ -37,7 +36,7 @@ ASRPlanet::ASRPlanet()
 
 	Orbit = CreateDefaultSubobject<USROrbit>(TEXT("Orbit"));
 
-	OrbitLineBatch = CreateDefaultSubobject<ULineBatchComponent>(TEXT("Orbit Line Batch"));
+	OrbitLineBatch = CreateDefaultSubobject<ULineBatchComponent>(TEXT("OrbitLineBatch"));
 	OrbitLineBatch->SetupAttachment(SceneRoot);
 	OrbitLineBatch->SetMobility(EComponentMobility::Movable);
 	OrbitLineBatch->SetUsingAbsoluteLocation(true);
@@ -46,13 +45,7 @@ ASRPlanet::ASRPlanet()
 	OrbitLineBatch->ComponentTags.AddUnique(TEXT("StarRovers.OrbitLine"));
 	OrbitLineBatch->ComponentTags.AddUnique(TEXT("StarRovers.OrbitLineRoot"));
 
-	CastShadowStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Cast Shadow Static Mesh"));
-	CastShadowStaticMesh->SetupAttachment(SceneRoot);
-	CastShadowStaticMesh->SetMobility(EComponentMobility::Movable);
-	CastShadowStaticMesh->SetVisibility(false);
-	CastShadowStaticMesh->SetHiddenInGame(true);
-
-	OceanStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Ocean Static Mesh"));
+	OceanStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("OceanStaticMesh"));
 	OceanStaticMesh->SetupAttachment(SceneRoot);
 	OceanStaticMesh->SetMobility(EComponentMobility::Movable);
 	OceanStaticMesh->SetVisibility(false);
@@ -66,7 +59,6 @@ void ASRPlanet::ApplySpec(const FSRCelestialBodySpec& NewSpec)
 {
 	CanConstruct = NewSpec.bCanConstruct;
 	SurfaceGridSurfaceOffset = NewSpec.SurfaceGridSurfaceOffset;
-	CastShadowScaleMultiplier = NewSpec.ShadowCasterScaleMultiplier;
 	bHasOcean = NewSpec.bHasOcean;
 	OceanMesh = NewSpec.OceanMesh;
 	OceanMaterial = NewSpec.OceanMaterial;
@@ -100,10 +92,9 @@ void ASRPlanet::ApplyConfiguredBodyState()
 {
 	Super::ApplyConfiguredBodyState();
 	ConstructionHeightOffset = FMath::Max(0.0f, ConstructionHeightOffset);
-	GridLineThickness = FMath::Max(0.0f, GridLineThickness);
+	GridLineThickness = FMath::Clamp(GridLineThickness, 0.0f, 2.0f);
 	GridLineOpacity = FMath::Clamp(GridLineOpacity, 0.0f, 1.0f);
-	SurfaceGridSurfaceOffset = FMath::Max(0.0f, SurfaceGridSurfaceOffset);
-	CastShadowScaleMultiplier = FMath::Max(0.01f, CastShadowScaleMultiplier);
+	SurfaceGridSurfaceOffset = FMath::Clamp(SurfaceGridSurfaceOffset, 0.0f, 1.0f);
 	OceanScaleMultiplier = FMath::Max(0.01f, OceanScaleMultiplier);
 	OrbitLineOpacity = FMath::Clamp(OrbitLineOpacity, 0.0f, 1.0f);
 	OrbitLineSegments = FMath::Max(3, OrbitLineSegments);
@@ -117,7 +108,6 @@ void ASRPlanet::ApplyConfiguredBodyState()
 	}
 
 	ApplyOceanStaticMeshSettings();
-	ApplyCastShadowStaticMeshSettings();
 	SyncApproximateRadiusFromPlanetVisuals();
 	if (IsValid(ClickSphereCollision))
 	{
@@ -129,7 +119,7 @@ void ASRPlanet::ApplyConfiguredBodyState()
 		EnsureSurfaceGrid();
 		if (IsValid(SurfaceGrid))
 		{
-			const float SurfaceGridPlanetRadius = FMath::Max(ComputeCelestialBodyStaticMeshRadius(), 1.0f);
+			const float SurfaceGridPlanetRadius = FMath::Max(ComputeCelestialBodyDynamicMeshRadius(), 1.0f);
 			const int32 ResolvedSurfaceGridResolution = FMath::Clamp(
 				FMath::RoundToInt((SurfaceGridPlanetRadius * 2.0f) / SurfaceGridTargetCellSize),
 				1,
@@ -145,6 +135,7 @@ void ASRPlanet::ApplyConfiguredBodyState()
 				OccupiedCellColor,
 				SurfaceGridSurfaceOffset);
 			SurfaceGrid->ConfigureConstructionHeightOffset(ConstructionHeightOffset);
+			SurfaceGrid->ConfigureTerrain(TerrainSettings);
 			SurfaceGrid->RebuildGrid();
 		}
 	}
@@ -182,8 +173,8 @@ FSRCelestialBodySpec ASRPlanet::GetSpec() const
 	CurrentSpec.OccupiedCellColor = OccupiedCellColor;
 	CurrentSpec.SurfaceGridSurfaceOffset = SurfaceGridSurfaceOffset;
 	CurrentSpec.ConstructionHeightOffset = ConstructionHeightOffset;
-	CurrentSpec.ShadowCasterScaleMultiplier = CastShadowScaleMultiplier;
 	CurrentSpec.TerrainSeed = GenerationSeed;
+	CurrentSpec.TerrainSettings = TerrainSettings;
 	CurrentSpec.bHasOcean = bHasOcean;
 	CurrentSpec.OceanMesh = OceanMesh;
 	CurrentSpec.OceanMaterial = OceanMaterial;
@@ -196,52 +187,6 @@ FSRCelestialBodySpec ASRPlanet::GetSpec() const
 	return CurrentSpec;
 }
 
-void ASRPlanet::ApplyCastShadowStaticMeshSettings()
-{
-	if (!IsValid(CastShadowStaticMesh))
-	{
-		return;
-	}
-
-	const bool bEnableShadowCaster =
-		IsValid(CelestialBodyStaticMesh_)
-		&& CelestialBodyStaticMesh_->CastShadow
-		&& BodyCategory != ESRCelestialBodyCategory::Star;
-
-	UStaticMesh* DesiredCasterMesh = nullptr;
-	if (IsValid(CelestialBodyStaticMesh))
-	{
-		DesiredCasterMesh = CelestialBodyStaticMesh.Get();
-	}
-
-	if (!bEnableShadowCaster || !IsValid(DesiredCasterMesh))
-	{
-		if (bEnableShadowCaster)
-		{
-			UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires CelestialBodyStaticMesh for shadow caster."), *GetName());
-		}
-
-		CastShadowStaticMesh->SetVisibility(false);
-		CastShadowStaticMesh->SetHiddenInGame(true);
-		return;
-	}
-
-	if (CastShadowStaticMesh->GetStaticMesh() != DesiredCasterMesh)
-	{
-		CastShadowStaticMesh->SetStaticMesh(DesiredCasterMesh);
-	}
-
-	CastShadowStaticMesh->SetMaterial(0, nullptr);
-	CastShadowStaticMesh->SetRelativeLocation(FVector::ZeroVector);
-	CastShadowStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
-	CastShadowStaticMesh->SetRelativeScale3D(FVector(FMath::Max(0.01f, BodyScale * CastShadowScaleMultiplier)));
-	CastShadowStaticMesh->SetVisibility(false);
-	CastShadowStaticMesh->SetHiddenInGame(true);
-	CastShadowStaticMesh->LightingChannels.bChannel0 = true;
-	CastShadowStaticMesh->LightingChannels.bChannel1 = false;
-	CastShadowStaticMesh->LightingChannels.bChannel2 = false;
-}
-
 USROrbit* ASRPlanet::GetOrbitComponent() const
 {
 	return Orbit;
@@ -250,6 +195,18 @@ USROrbit* ASRPlanet::GetOrbitComponent() const
 USRPlanetSurfaceGrid* ASRPlanet::GetSurfaceGrid() const
 {
 	return SurfaceGrid;
+}
+
+void ASRPlanet::SetDynamicMeshEnabled(bool bUseDynamicMesh)
+{
+	Super::SetDynamicMeshEnabled(bUseDynamicMesh);
+
+	if (IsValid(OceanStaticMesh))
+	{
+		const bool bEnableOcean = bUseDynamicMesh && bHasOcean && IsValid(OceanMesh.Get()) && IsValid(OceanMaterial.Get());
+		OceanStaticMesh->SetVisibility(bEnableOcean);
+		OceanStaticMesh->SetHiddenInGame(!bEnableOcean);
+	}
 }
 
 void ASRPlanet::ApplyOceanStaticMeshSettings()
@@ -295,17 +252,14 @@ void ASRPlanet::ApplyOceanStaticMeshSettings()
 	OceanStaticMesh->SetRelativeScale3D(FVector(OceanScale));
 	OceanStaticMesh->SetVisibility(true);
 	OceanStaticMesh->SetHiddenInGame(false);
-	OceanStaticMesh->LightingChannels.bChannel0 = true;
-	OceanStaticMesh->LightingChannels.bChannel1 = false;
-	OceanStaticMesh->LightingChannels.bChannel2 = false;
 }
 
 void ASRPlanet::SyncApproximateRadiusFromPlanetVisuals()
 {
-	ApproximateRadius = ComputeCelestialBodyStaticMeshRadius();
+	ApproximateRadius = ComputeCelestialBodyDynamicMeshRadius();
 	if (bHasOcean)
 	{
-		ApproximateRadius = FMath::Max(ApproximateRadius, ComputeCelestialBodyStaticMeshRadius() * OceanScaleMultiplier);
+		ApproximateRadius = FMath::Max(ApproximateRadius, ComputeCelestialBodyDynamicMeshRadius() * OceanScaleMultiplier);
 	}
 }
 

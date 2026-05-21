@@ -56,16 +56,16 @@ public:
     void ToggleAssemblyMode();
 
 protected:
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "LeftClickAction"))
     TObjectPtr<UInputAction> LeftClickAction;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "FocusParentAction"))
     TObjectPtr<UInputAction> FocusParentAction;
 
-    UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Selection")
+    UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Selection", meta = (DisplayName = "SelectedActor"))
     TObjectPtr<AActor> SelectedActor;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "FocusInfoWidgetClass"))
     TSubclassOf<USRCelestialBodyFocusInfoWidget> FocusInfoWidgetClass;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "FocusInfoWidgetZOrder"))
@@ -74,7 +74,7 @@ protected:
     UPROPERTY()
     TObjectPtr<USRCelestialBodyFocusInfoWidget> FocusInfoWidget;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "OverviewWidgetClass"))
     TSubclassOf<USRCelestialBodyOverviewWidget> OverviewWidgetClass;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "OverviewWidgetZOrder"))
@@ -86,7 +86,7 @@ protected:
     UPROPERTY()
     FSRCelestialBodyFocusInfo SelectedActorFocusInfo;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "TimeControlWidgetClass"))
     TSubclassOf<USRTimeControlWidget> TimeControlWidgetClass;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "TimeControlWidgetZOrder"))

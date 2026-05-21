@@ -13,6 +13,8 @@ public class StarRovers : ModuleRules
                 "CoreUObject",
                 "Engine",
                 "EnhancedInput",
+                "GeometryCore",
+                "GeometryFramework",
                 "InputCore",
                 "UMG",
             }

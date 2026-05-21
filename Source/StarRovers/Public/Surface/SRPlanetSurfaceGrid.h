@@ -1,13 +1,21 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Components/SceneComponent.h"
+#include "Components/DynamicMeshComponent.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
+#include "Surface/SRPlanetTerrainTypes.h"
 #include "Visual/SRLineThicknessUtils.h"
 #include "SRPlanetSurfaceGrid.generated.h"
 
+namespace UE::Geometry
+{
+    class FDynamicMesh3;
+}
+
+class UMaterialInterface;
+
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
-class STARROVERS_API USRPlanetSurfaceGrid : public USceneComponent
+class STARROVERS_API USRPlanetSurfaceGrid : public UDynamicMeshComponent
 {
     GENERATED_BODY()
 
@@ -102,6 +110,9 @@ public:
         FLinearColor NewOccupiedCellColor,
         float NewSurfaceOffset);
 
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Debug")
+    void SetGridMaterial(UMaterialInterface* NewGridMaterial);
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     void ConfigureConstructionHeightOffset(float NewConstructionHeightOffset);
 
@@ -113,6 +124,12 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Terrain")
     void ConfigureProceduralTerrain(bool bNewUseProceduralTerrain, int32 NewTerrainSeed, float NewTerrainHeight, float NewTerrainFrequency, int32 NewTerrainOctaves, float NewTerrainPersistence);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Terrain")
+    void ConfigureTerrain(const FSRPlanetTerrainSettings& NewTerrainSettings);
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Terrain")
+    FSRPlanetTerrainSample GetTerrainSampleAtDirection(FVector LocalUnitDirection) const;
 
 protected:
     UPROPERTY()
@@ -154,23 +171,11 @@ protected:
     UPROPERTY()
     float GridSurfaceOffset;
 
-    UPROPERTY()
-    bool bUseProceduralTerrain;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Surface|Debug", meta = (DisplayName = "GridMaterial"))
+    TObjectPtr<UMaterialInterface> GridMaterial;
 
     UPROPERTY()
-    int32 TerrainSeed;
-
-    UPROPERTY()
-    float TerrainHeight;
-
-    UPROPERTY()
-    float TerrainFrequency;
-
-    UPROPERTY()
-    int32 TerrainOctaves;
-
-    UPROPERTY()
-    float TerrainPersistence;
+    FSRPlanetTerrainSettings TerrainSettings;
 
     UPROPERTY()
     TArray<FSRPlanetSurfaceGridCell> Cells;
@@ -191,6 +196,12 @@ private:
     bool GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const;
     void RebuildCellIndex();
     void UpdateDebugTickState();
+    void RebuildGridMesh();
+    bool AppendOwnerDynamicMeshWire(UE::Geometry::FDynamicMesh3& GridMesh, const FLinearColor& LineColor, float LineThickness) const;
+    void AppendGridWireCell(UE::Geometry::FDynamicMesh3& GridMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness, bool bIncludeInEdgeSet, TSet<uint64>* DrawnEdges) const;
+    void AppendGridWireEdge(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FLinearColor& LineColor, float LineThickness) const;
+    void AppendGridWireSegment(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalPointA, const FVector& LocalPointB, const FLinearColor& LineColor, float LineThickness) const;
+    void ApplyGridMaterial();
     float GetEffectiveWorldRadius() const;
     void DrawDebugSurfaceLine(const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FColor& LineColor, float Duration, float LineThickness, const FSRCameraInfo& CameraInfo, float ReferenceViewDepth, float ReferenceFieldOfViewDegrees) const;
     FVector ResolveLocalSurfacePoint(const FVector& LocalUnitDirection, float HeightOffset = 0.0f) const;

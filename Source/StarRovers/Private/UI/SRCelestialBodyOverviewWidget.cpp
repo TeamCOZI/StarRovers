@@ -51,18 +51,6 @@ namespace
 		}
 	}
 
-	void AppendCirclePoints(const FVector2D& Center, float Radius, int32 SegmentCount, TArray<FVector2D>& OutPoints)
-	{
-		OutPoints.Reset();
-		const int32 SafeSegmentCount = FMath::Max(3, SegmentCount);
-		for (int32 SegmentIndex = 0; SegmentIndex <= SafeSegmentCount; ++SegmentIndex)
-		{
-			const float Alpha = static_cast<float>(SegmentIndex) / static_cast<float>(SafeSegmentCount);
-			const float AngleRadians = Alpha * 2.0f * PI;
-			OutPoints.Add(Center + FVector2D(FMath::Cos(AngleRadians), FMath::Sin(AngleRadians)) * Radius);
-		}
-	}
-
 	bool IsNameplateVisualComponent(const UPrimitiveComponent* PrimitiveComponent)
 	{
 		return IsValid(PrimitiveComponent)
@@ -180,7 +168,6 @@ int32 USRCelestialBodyOverviewWidget::NativePaint(
 	}
 
 	const int32 NameplateButtonLayerId = LayerId;
-	TArray<FVector2D> NameplateOutlinePoints;
 	for (const FSRNameplateButtonLayout& Layout : NameplateButtonLayouts)
 	{
 		if (!Layout.bIsVisible)
@@ -191,17 +178,6 @@ int32 USRCelestialBodyOverviewWidget::NativePaint(
 		const FLinearColor NameplateOutlineColor = Layout.CelestialBodyActor.Get() == SelectedActor
 			? FLinearColor(0.9f, 1.0f, 1.0f, 0.95f)
 			: FLinearColor(0.72f, 0.86f, 0.9f, 0.9f);
-
-		AppendCirclePoints(Layout.Center, Layout.OutlineRadius, NameplateOutlineSegments, NameplateOutlinePoints);
-		FSlateDrawElement::MakeLines(
-			OutDrawElements,
-			NameplateButtonLayerId,
-			AllottedGeometry.ToPaintGeometry(),
-			NameplateOutlinePoints,
-			ESlateDrawEffect::None,
-			NameplateOutlineColor,
-			true,
-			NameplateOutlineLineThickness);
 
 		TArray<FVector2D> NameplateLeaderPoints;
 		NameplateLeaderPoints.Add(Layout.LeaderStart);

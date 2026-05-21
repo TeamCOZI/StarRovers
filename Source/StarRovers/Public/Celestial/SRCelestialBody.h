@@ -1,8 +1,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Components/DynamicMeshComponent.h"
 #include "GameFramework/Actor.h"
 #include "Celestial/SRCelestialBodyCategory.h"
+#include "Surface/SRPlanetTerrainTypes.h"
 #include "SRCelestialBody.generated.h"
 
 #if WITH_EDITOR
@@ -21,6 +23,7 @@ class USRStarDataAsset;
 class USROrbit;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UWidgetComponent;
 class USRGravityParent;
 class USRCelestialBodyRegistrySubsystem;
 class USRTimeControlSubsystem;
@@ -32,28 +35,28 @@ struct STARROVERS_API FSRCelestialBodySpec
 
 	FSRCelestialBodySpec();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|01 Identity")
+	UPROPERTY()
 	FText DisplayName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|01 Identity")
+	UPROPERTY()
 	ESRCelestialBodyCategory BodyCategory = ESRCelestialBodyCategory::Unknown;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|02 Orbit")
+	UPROPERTY()
 	TObjectPtr<AActor> ParentBody = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|02 Orbit", meta = (ClampMin = "0.0"))
+	UPROPERTY()
 	float OrbitRadius = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|02 Orbit", meta = (ClampMin = "0.0"))
+	UPROPERTY()
 	float OrbitPeriodInPeriods = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|02 Orbit")
+	UPROPERTY()
 	float StartingPhase = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Focus", meta = (ClampMin = "0.0", ToolTip = "Multiplier applied to the auto-computed focus distance derived from this body's visual scale."))
+	UPROPERTY()
 	float FocusZoomMultiplier = 3.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|04 Surface|Construction")
+	UPROPERTY()
 	bool bCanConstruct = false;
 
 	UPROPERTY()
@@ -75,58 +78,59 @@ struct STARROVERS_API FSRCelestialBodySpec
 	FLinearColor OccupiedCellColor = FLinearColor(1.0f, 0.35f, 0.35f, 1.0f);
 
 	UPROPERTY()
-	float SurfaceGridSurfaceOffset = 8.0f;
+	float SurfaceGridSurfaceOffset = 0.0f;
 
 	UPROPERTY()
 	float ConstructionHeightOffset = 15.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|05 Body", meta = (ClampMin = "0.0"))
+	UPROPERTY()
 	float BodyScale = 1000.0f;
 
 	float ApproximateRadius = 50000.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|10 Gravity|Source", meta = (ClampMin = "0.0"))
+	UPROPERTY()
 	float Mass = 2000.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|07 Lighting|Star", meta = (ClampMin = "-1.0", UIMin = "0.0", ToolTip = "Point light intensity for stars. Negative values are treated as missing data."))
+	UPROPERTY()
 	float StarPointLightIntensity = -1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|07 Lighting|Star", meta = (ClampMin = "-1.0", UIMin = "0.0", ToolTip = "Emissive scalar applied to star materials. Negative values are treated as missing data."))
+	UPROPERTY()
 	float StarMaterialEmissiveStrength = -1.0f;
 
-	float ShadowCasterScaleMultiplier = 0.95f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|07 Lighting|Star")
+	UPROPERTY()
 	FLinearColor StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|08 Terrain|Shape")
+	UPROPERTY()
 	bool bUseProceduralTerrain = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|08 Terrain|Shape")
+	UPROPERTY()
 	int32 TerrainSeed = 1337;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|08 Terrain|Shape", meta = (ClampMin = "0.0"))
+	UPROPERTY()
 	float TerrainHeight = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|08 Terrain|Shape", meta = (ClampMin = "0.01"))
+	UPROPERTY()
 	float TerrainFrequency = 3.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "StarRovers|08 Terrain|Shape", meta = (ClampMin = "1"))
+	UPROPERTY()
 	int32 TerrainOctaves = 4;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "StarRovers|08 Terrain|Shape", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY()
 	float TerrainPersistence = 0.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|09 Ocean", meta = (ToolTip = "Render a water/base sphere at the configured sea level. Land terrain rises above this sphere; lower terrain is visually covered by it."))
+	UPROPERTY()
+	FSRPlanetTerrainSettings TerrainSettings;
+
+	UPROPERTY()
 	bool bHasOcean = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|09 Ocean", meta = (EditCondition = "bHasOcean", ToolTip = "Optional mesh used by the visible ocean/base sphere."))
+	UPROPERTY()
 	TObjectPtr<UStaticMesh> OceanMesh = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|09 Ocean", meta = (EditCondition = "bHasOcean", ToolTip = "Optional material used by the visible ocean/base sphere."))
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> OceanMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|09 Ocean", meta = (EditCondition = "bHasOcean", ClampMin = "0.01", ToolTip = "Scale multiplier applied to CelestialBodyStaticMesh scale for the visible ocean mesh."))
+	UPROPERTY()
 	float OceanScaleMultiplier = 0.97f;
 
 	UPROPERTY()
@@ -144,25 +148,25 @@ struct STARROVERS_API FSRCelestialBodySpec
 	UPROPERTY()
 	float OrbitLineThickness = 20.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|10 Gravity|Source", meta = (ClampMin = "0.0"))
+	UPROPERTY()
 	float GravityRatio = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|10 Gravity|Source", meta = (ClampMin = "0.0"))
+	UPROPERTY()
 	float GravityRadiusRatio = 10.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|10 Gravity|Visual")
+	UPROPERTY()
 	bool bShowGravityLine = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|10 Gravity|Visual")
+	UPROPERTY()
 	FLinearColor GravityLineColor = FLinearColor(0.45f, 1.0f, 0.45f, 1.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|10 Gravity|Visual", meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	UPROPERTY()
 	float GravityLineOpacity = 0.85f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "StarRovers|10 Gravity|Visual", meta = (ClampMin = "3", UIMin = "3"))
+	UPROPERTY()
 	int32 GravityLineSegments = 96;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "StarRovers|10 Gravity|Visual", meta = (ClampMin = "0.0", ToolTip = "Per-body gravity field line thickness used by the owned gravity source visual."))
+	UPROPERTY()
 	float GravityLineThickness = 20.0f;
 };
 
@@ -173,55 +177,55 @@ struct STARROVERS_API FSRCelestialBodyBiomeSpec
 
 	FSRCelestialBodyBiomeSpec();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|01 Biome Identity")
+	UPROPERTY()
 	FText DisplayName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|02 Terrain")
+	UPROPERTY()
 	bool bUseProceduralTerrain = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|02 Terrain")
+	UPROPERTY()
 	int32 TerrainSeed = 1337;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|02 Terrain", meta = (ClampMin = "0.0"))
+	UPROPERTY()
 	float TerrainHeight = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|02 Terrain", meta = (ClampMin = "0.01"))
+	UPROPERTY()
 	float TerrainFrequency = 3.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "StarRovers|02 Terrain", meta = (ClampMin = "1"))
+	UPROPERTY()
 	int32 TerrainOctaves = 4;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "StarRovers|02 Terrain", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY()
 	float TerrainPersistence = 0.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|03 Ocean")
+	UPROPERTY()
+	FSRPlanetTerrainSettings TerrainSettings;
+
+	UPROPERTY()
 	bool bHasOcean = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|03 Ocean", meta = (EditCondition = "bHasOcean"))
+	UPROPERTY()
 	TObjectPtr<UStaticMesh> OceanMesh = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|03 Ocean", meta = (EditCondition = "bHasOcean"))
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> OceanMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|03 Ocean", meta = (EditCondition = "bHasOcean", ClampMin = "0.01"))
+	UPROPERTY()
 	float OceanScaleMultiplier = 0.97f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "StarRovers|04 Surface Grid", meta = (ClampMin = "0.0"))
-	float SurfaceGridSurfaceOffset = 8.0f;
+	UPROPERTY()
+	float SurfaceGridSurfaceOffset = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|05 Shadow", meta = (ClampMin = "0.01"))
-	float ShadowCasterScaleMultiplier = 0.95f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|06 Orbit", meta = (DisplayName = "Orbit Speed", ClampMin = "0.0", ToolTip = "Orbit revolutions per simulation period. Zero disables orbit movement."))
+	UPROPERTY()
 	float OrbitSpeed = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|04 Star Appearance", meta = (ClampMin = "-1.0", UIMin = "0.0", ToolTip = "Point light intensity for star biomes. Negative values are treated as missing data."))
+	UPROPERTY()
 	float StarPointLightIntensity = -1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|04 Star Appearance", meta = (ClampMin = "-1.0", UIMin = "0.0", ToolTip = "Emissive scalar for star biomes. Negative values are treated as missing data."))
+	UPROPERTY()
 	float StarMaterialEmissiveStrength = -1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|04 Star Appearance")
+	UPROPERTY()
 	FLinearColor StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 
 };
@@ -259,7 +263,13 @@ public:
 	float ConvertPeriodsToSeconds(float PeriodValue) const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
-	UStaticMeshComponent* GetCelestialBodyStaticMesh() const;
+	UDynamicMeshComponent* GetCelestialBodyDynamicMesh() const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Lighting")
+	virtual void SetDynamicMeshEnabled(bool bUseDynamicMesh);
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Lighting")
+	float GetDynamicMeshThreshold() const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
 	ESRCelestialBodyCategory GetBodyCategory() const;
@@ -279,22 +289,28 @@ public:
 protected:
 	static constexpr const TCHAR* HideForStarEditCondition = TEXT("BodyCategory != ESRCelestialBodyCategory::Star");
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SceneRoot"))
 	TObjectPtr<USceneComponent> SceneRoot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "CelestialBodyDynamicMesh"))
+	TObjectPtr<UDynamicMeshComponent> CelestialBodyDynamicMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "CelestialBodyStaticMesh"))
 	TObjectPtr<UStaticMeshComponent> CelestialBodyStaticMesh_;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "ClickSphereCollision"))
 	TObjectPtr<USphereComponent> ClickSphereCollision;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "GravityParent"))
 	TObjectPtr<USRGravityParent> GravityParent;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "GravityLineBatch"))
 	TObjectPtr<ULineBatchComponent> GravityLineBatch;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "CircleWidget"))
+	TObjectPtr<UWidgetComponent> CircleWidget;
+
+	UPROPERTY()
 	FText DisplayName;
 
 	UPROPERTY()
@@ -314,26 +330,32 @@ protected:
 	UPROPERTY()
 	float GravityRadiusRatio;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "Show Gravity Line"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "ShowGravityLine"))
 	bool bShowGravityLine;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "Gravity Line Color"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "GravityLineColor"))
 	FLinearColor GravityLineColor;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "Gravity Line Opacity", ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "GravityLineOpacity", ClampMin = "0.0", ClampMax = "1.0"))
 	float GravityLineOpacity;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "Gravity Line Thickness", ClampMin = "0.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "GravityLineThickness", ClampMin = "0.0"))
 	float GravityLineThickness;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "Gravity Line Segments", ClampMin = "3"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "GravityLineSegments", ClampMin = "3"))
 	int32 GravityLineSegments;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "Focus Zoom Multiplier", ClampMin = "0.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Lighting", meta = (DisplayName = "DynamicMeshThreshold", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float DynamicMeshThreshold;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "FocusZoomMultiplier", ClampMin = "0.0"))
 	float FocusZoomMultiplier;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "Generation Seed"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "GenerationSeed"))
 	int32 GenerationSeed;
+
+	UPROPERTY()
+	FSRPlanetTerrainSettings TerrainSettings;
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> CelestialBodyStaticMesh;
@@ -341,14 +363,16 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> CelestialBodyMaterial;
 
-	float ComputeCelestialBodyStaticMeshRadius() const;
+	float ComputeCelestialBodyDynamicMeshRadius() const;
 
 	UMaterialInstanceDynamic* GetActiveBodyDynamicMaterial() const;
 
 private:
 	void ApplyGravityLineSettings();
-	void EnsureCelestialBodyStaticMeshVisuals();
-	void SyncApproximateRadiusFromCelestialBodyStaticMesh();
+	void EnsureCelestialBodyDynamicMeshVisuals();
+	bool CopySourceStaticMeshToCelestialBodyDynamicMesh();
+	void SyncApproximateRadiusFromCelestialBodyDynamicMesh();
+	void UpdateCircleWidgetDrawSize();
 	USRCelestialBodyRegistrySubsystem* FindCelestialRegistry() const;
 	USRTimeControlSubsystem* FindTimeControlSubsystem() const;
 	bool IsStellarBody() const;

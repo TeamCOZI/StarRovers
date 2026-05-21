@@ -1,8 +1,8 @@
 #include "Celestial/SRStar.h"
 
 #include "Celestial/SRCelestialBodyCategory.h"
+#include "Components/MeshComponent.h"
 #include "Components/PointLightComponent.h"
-#include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
 namespace
@@ -35,9 +35,6 @@ ASRStar::ASRStar()
 	StarPointLight->SetMobility(EComponentMobility::Movable);
 	StarPointLight->SetVisibility(true);
 	StarPointLight->SetUseInverseSquaredFalloff(false);
-	StarPointLight->LightingChannels.bChannel0 = true;
-	StarPointLight->LightingChannels.bChannel1 = false;
-	StarPointLight->LightingChannels.bChannel2 = false;
 }
 
 void ASRStar::ApplySpec(const FSRCelestialBodySpec& NewSpec)
@@ -78,16 +75,16 @@ void ASRStar::ApplyStarAppearance()
 
 UMaterialInstanceDynamic* ASRStar::ResolveStarMaterialInstanceDynamic()
 {
-	UStaticMeshComponent* BodyStaticMesh = GetCelestialBodyStaticMesh();
-	if (!IsValid(BodyStaticMesh))
+	UMeshComponent* BodyMesh = GetCelestialBodyDynamicMesh();
+	if (!IsValid(BodyMesh))
 	{
 		return nullptr;
 	}
 
-	if (UMaterialInstanceDynamic* ExistingDynamicMaterial = Cast<UMaterialInstanceDynamic>(BodyStaticMesh->GetMaterial(0)))
+	if (UMaterialInstanceDynamic* ExistingDynamicMaterial = Cast<UMaterialInstanceDynamic>(BodyMesh->GetMaterial(0)))
 	{
 		return ExistingDynamicMaterial;
 	}
 
-	return BodyStaticMesh->CreateDynamicMaterialInstance(0);
+	return BodyMesh->CreateDynamicMaterialInstance(0);
 }
