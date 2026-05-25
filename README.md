@@ -70,11 +70,11 @@ flowchart TD
 
 `BP_Planet`은 행성과 위성이 함께 사용하는 단일 Blueprint Class로 정리한다. C++ 부모 클래스는 `ASRPlanet`이며, 공통 `BP_CelestialBody` 기능에 더해 `Orbit`, `Ocean Static Mesh`, `SurfaceGrid` 컴포넌트를 Native 컴포넌트로 가진다. 표면 그리드 C++ 컴포넌트 타입은 현재 `USRPlanetSurfaceGrid`다. 행성과 위성의 차이는 별도 Moon Blueprint Class가 아니라 Data Asset 수치와 `BodyCategory` 값으로 구분한다. Planet/Moon nameplate 이름은 생성 시 Data Asset의 `DisplayName`을 `BodySpec.DisplayName`으로 전달해서 표시한다. Moon DA는 Planet DA와 동일한 항목 구조를 사용하며 `BodyCategory` 기본값만 Moon으로 둔다.
 
-`BP_Planet(Self)`의 `Star Rovers` 항목에는 Planet 전용 `Surface`, `Orbit`과 `BP_CelestialBody`에서 상속받은 `Gravity`, `Focus`, `Generation Seed`를 노출한다. `Surface` 하위에는 `Construction Height Offset`, `Grid Line Color`, `Grid Line Opacity`, `Grid Line Thickness`, `Hovered Cell Color`, `Selected Cell Color`, `Occupied Cell Color`를 남기며 `Construction Height Offset` 초기값은 `15`다. `Orbit` 하위에는 `Show Orbit Line`, `Orbit Line Color`, `Orbit Line Opacity`, `Orbit Line Thickness`만 남긴다. `Orbit` 컴포넌트의 Orbit Visual 값은 컴포넌트 Details에서 따로 편집하지 않고 Self의 `Orbit` 값과 Data Asset의 내부 수치를 받아 적용한다. `Orbit Speed`, Orbit line segment 수와 Shadow scale 수치는 `BP_Planet` Details가 아니라 Data Asset에서 조정한다.
+`BP_Planet(Self)`의 `Star Rovers` 항목에는 Planet 전용 `Surface`, `Orbit`과 `BP_CelestialBody`에서 상속받은 `Gravity`, `Focus`, `Generation Seed`를 노출한다. `Surface` 하위에는 `Grid Line Color`, `Grid Line Opacity`, `Grid Line Thickness`, `Hovered Cell Color`, `Selected Cell Color`, `Occupied Cell Color`를 남긴다. `Construction Height Offset`은 BP Self가 아니라 Planet/Moon Data Asset의 `Surface` 항목에서 조정하며 초기값은 `15`다. `Orbit` 하위에는 `Show Orbit Line`, `Orbit Line Color`, `Orbit Line Opacity`, `Orbit Line Thickness`만 남긴다. `Orbit` 컴포넌트의 Orbit Visual 값은 컴포넌트 Details에서 따로 편집하지 않고 Self의 `Orbit` 값과 Data Asset의 내부 수치를 받아 적용한다. `Orbit Speed`, Orbit line segment 수와 Shadow scale 수치는 `BP_Planet` Details가 아니라 Data Asset에서 조정한다.
 
 Star Data Asset의 `Star Rovers` 항목 순서는 `Identity`, `Celestial Body`, `Gravity`, `Star`다. `Identity`에는 `Display Name`과 `Celestial Body Category`, `Celestial Body`에는 `Scale`, `Body Mesh`, `Material`, `Gravity`에는 `Mass`, `Gravity Ratio`, `Gravity Radius Ratio`, `Star`에는 `Star Material Emissive Strength`, `Star Point Light Intensity`, `Star Point Light Color`를 둔다. Star DA의 runtime spec은 이 전용 필드에서 생성한다.
 
-Planet/Moon Data Asset의 `Star Rovers` 항목 순서는 `Identity`, `Celestial Body`, `Gravity`, `Orbit`, `Surface`, `Terrain`, `Ocean`이다. Planet DA와 Moon DA는 동일한 노출 항목을 사용하며, Moon DA는 `BodyCategory` 기본값만 Moon으로 둔다.
+Planet/Moon Data Asset의 `Star Rovers` 항목 순서는 `Identity`, `Celestial Body`, `Gravity`, `Orbit`, `Surface`, `Terrain`, `Ocean`이다. `Surface`에는 `SurfaceGridHeightOffset`과 `ConstructionHeightOffset`을 노출한다. Planet DA와 Moon DA는 동일한 노출 항목을 사용하며, Moon DA는 `BodyCategory` 기본값만 Moon으로 둔다.
 
 `Ocean`은 보이는 물 표면용 Static Mesh Component다. 현재 Ocean 값은 Data Asset에서 `bHasOcean`, `OceanMesh`, `OceanMaterial`, `OceanScaleMultiplier`만 받으며, `OceanScaleMultiplier` 초기값은 `0.97`이다. Ocean wave, color, opacity, sea level offset, Dynamic Ocean Material 기반 런타임 파라미터 갱신은 현재 사용하지 않는다.
 
@@ -144,7 +144,7 @@ C++ 클래스/프로퍼티 리다이렉트는 현재 사용하지 않는다. 이
 
 `ASRCameraPawn`은 `SpringArm`의 `TargetArmLength`로 zoom을 제어한다. 카메라가 `BP_Space`의 Space Static Mesh 밖으로 나가지 않도록, 런타임에 `BP_Space` 후보 Actor의 PrimitiveComponent bounds를 읽어 Space sphere 중심과 반지름을 구하고, Spring Arm 방향과 현재 Pawn 위치를 기준으로 최대 zoom 길이와 drag/focus pivot 위치를 함께 제한한다. `SpringArm`의 collision test는 사용하지 않는다.
 
-`ASRPlanet`의 Details 노출은 `Surface`의 `Construction Height Offset`, `Grid Line Color`, `Grid Line Opacity`, `Grid Line Thickness`, `Hovered Cell Color`, `Selected Cell Color`, `Occupied Cell Color`와 `Orbit`의 `Show Orbit Line`, `Orbit Line Color`, `Orbit Line Opacity`, `Orbit Line Thickness`, `Orbit Line Segments`로 제한한다. `USROrbit` 컴포넌트의 Orbit Visual UPROPERTY는 Details 편집 대상에서 제외하고, `ASRPlanet`이 Self/Data Asset에서 정리된 값을 전달한다. `USRPlanetSurfaceGrid` 컴포넌트의 Face Resolution, Planet Radius, Rebuild Grid On Register, Debug Grid 표시 옵션, Draw Debug Normals, Grid Subdivision, Normal Length, Terrain 수치는 Details 편집 대상에서 제외한다. Orbit Speed는 `FSRCelestialBodyBiomeSpec`에 포함되어 Planet/Moon Data Asset에서 조정한다. `USRPlanetDataAsset`과 `USRMoonDataAsset`은 동일한 노출 항목을 사용하며, 생성기는 두 타입 모두 `BuildBiomeSpec()`와 Scale/Mass/Gravity 값을 통해 spec을 구성한다.
+`ASRPlanet`의 Details 노출은 `Surface`의 `Grid Line Color`, `Grid Line Opacity`, `Grid Line Thickness`, `Hovered Cell Color`, `Selected Cell Color`, `Occupied Cell Color`와 `Orbit`의 `Show Orbit Line`, `Orbit Line Color`, `Orbit Line Opacity`, `Orbit Line Thickness`, `Orbit Line Segments`로 제한한다. `Construction Height Offset`은 Planet/Moon Data Asset의 `Surface` 항목에서 받은 값을 적용한다. `USROrbit` 컴포넌트의 Orbit Visual UPROPERTY는 Details 편집 대상에서 제외하고, `ASRPlanet`이 Self/Data Asset에서 정리된 값을 전달한다. `USRPlanetSurfaceGrid` 컴포넌트의 Face Resolution, Planet Radius, Rebuild Grid On Register, Debug Grid 표시 옵션, Draw Debug Normals, Grid Subdivision, Normal Length, Terrain 수치는 Details 편집 대상에서 제외한다. Orbit Speed는 `FSRCelestialBodyBiomeSpec`에 포함되어 Planet/Moon Data Asset에서 조정한다. `USRPlanetDataAsset`과 `USRMoonDataAsset`은 동일한 노출 항목을 사용하며, 생성기는 두 타입 모두 `BuildBiomeSpec()`와 Scale/Mass/Gravity 값을 통해 spec을 구성한다.
 
 ### 5.3 현재 BP/DA 에셋 상태
 
@@ -173,8 +173,9 @@ C++ 클래스/프로퍼티 리다이렉트는 현재 사용하지 않는다. 이
 - `Content/BlueprintClasses/Core/IA_DragDelta.uasset`
 - `Content/BlueprintClasses/Core/IA_DragHold.uasset`
 - `Content/BlueprintClasses/Core/IA_FocusParent.uasset`
+- `Content/BlueprintClasses/Core/IA_FocusSurface.uasset`
 - `Content/BlueprintClasses/Core/IA_LeftClick.uasset`
-- `Content/BlueprintClasses/Core/IA_ResetFocusCamera.uasset`
+- `Content/BlueprintClasses/Core/IA_ResetFocus.uasset`
 - `Content/BlueprintClasses/Core/IA_Zoom.uasset`
 - `Content/BlueprintClasses/Core/IMC_SR.uasset`
 - `Content/Levels/SolarSystem.umap`

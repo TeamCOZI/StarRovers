@@ -1,4 +1,4 @@
-﻿#include "UI/SRCelestialBodyFocusInfoWidget.h"
+#include "UI/SRCelestialBodyFocusInfoWidget.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -116,18 +116,18 @@ void USRCelestialBodyFocusInfoWidget::BuildFocusInfoWidgetTree()
 	UVerticalBox* FocusInfoVerticalBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FocusInfoVerticalBox"));
 	FocusInfoBorder->SetContent(FocusInfoVerticalBox);
 
-	DisplayNameTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DisplayNameTextBlock"));
+	VariableNameTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("VariableNameTextBlock"));
 
-	if (DisplayNameTextBlock)
+	if (VariableNameTextBlock)
 	{
-		FSlateFontInfo DisplayNameFont = DisplayNameTextBlock->GetFont();
-		DisplayNameFont.Size = 20;
-		DisplayNameTextBlock->SetFont(DisplayNameFont);
-		DisplayNameTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::White));
-		DisplayNameTextBlock->SetAutoWrapText(true);
-		if (UVerticalBoxSlot* DisplayNameTextBlockSlot = FocusInfoVerticalBox->AddChildToVerticalBox(DisplayNameTextBlock))
+		FSlateFontInfo VariableNameFont = VariableNameTextBlock->GetFont();
+		VariableNameFont.Size = 20;
+		VariableNameTextBlock->SetFont(VariableNameFont);
+		VariableNameTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		VariableNameTextBlock->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* VariableNameTextBlockSlot = FocusInfoVerticalBox->AddChildToVerticalBox(VariableNameTextBlock))
 		{
-			DisplayNameTextBlockSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+			VariableNameTextBlockSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
 		}
 	}
 
@@ -227,11 +227,11 @@ void USRCelestialBodyFocusInfoWidget::BindAssemblyModeButtonHandler()
 
 void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 {
-	if (DisplayNameTextBlock)
+	if (VariableNameTextBlock)
 	{
-		DisplayNameTextBlock->SetText(
+		VariableNameTextBlock->SetText(
 			bHasFocusInfo
-				? FocusInfo.DisplayName
+				? FocusInfo.VariableName
 				: NSLOCTEXT("StarRoversFocusInfo", "NoSelectionTitle", "No body selected")
 		);
 	}

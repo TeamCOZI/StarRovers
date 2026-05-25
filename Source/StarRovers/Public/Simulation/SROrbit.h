@@ -21,7 +21,7 @@ public:
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Orbit")
-	void ConfigureOrbit(AActor* NewParentBody, float NewOrbitRadius, float NewOrbitPeriodInPeriods, float NewStartingPhaseDegrees);
+	void ConfigureOrbit(AActor* NewParentBody, float NewOrbitRadius, float NewOrbitPeriod, float NewInitialAngleDegrees);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Orbit|Visual")
 	void ConfigureOrbitLineVisual(bool bNewShowOrbitLine, FLinearColor NewOrbitLineColor, float NewOrbitLineOpacity, int32 NewOrbitLineSegments, float NewOrbitLineThickness);
@@ -54,13 +54,13 @@ public:
 	float GetOrbitRadius() const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Orbit")
-	float GetOrbitPeriodInPeriods() const;
+	float GetOrbitPeriod() const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Orbit")
 	float GetOrbitPeriodSeconds() const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Orbit")
-	float GetStartingPhaseDegrees() const;
+	float GetInitialAngleDegrees() const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Orbit")
 	bool HasOrbit() const;
@@ -89,10 +89,10 @@ private:
 	float OrbitRadius = 0.0f;
 
 	UPROPERTY()
-	float OrbitPeriodInPeriods = 0.0f;
+	float OrbitPeriod = 0.0f;
 
 	UPROPERTY()
-	float StartingPhaseDegrees = 0.0f;
+	float InitialAngleDegrees = 0.0f;
 
 	UPROPERTY()
 	float OrbitPeriodSeconds = 0.0f;

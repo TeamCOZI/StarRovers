@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
@@ -36,19 +36,19 @@ public:
 	static bool GetCelestialOrbitPeriod(const AActor* Actor, float& OutOrbitPeriod);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
-	static bool GetCelestialStartingPhase(const AActor* Actor, float& OutStartingPhaseDegrees);
+	static bool GetCelestialInitialAngle(const AActor* Actor, float& OutInitialAngleDegrees);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
 	static float GetCelestialFocusZoomDistance(const AActor* Actor, float CameraFieldOfViewDegrees = 90.0f, float FramingPadding = 3.0f);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
-	static FText GetCelestialDisplayName(const AActor* Actor);
+	static FText GetCelestialVariableName(const AActor* Actor);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
 	static bool GetCelestialCanConstruct(const AActor* Actor);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
-	static float GetCelestialApproximateRadius(const AActor* Actor);
+	static float GetScreenScale(const AActor* Actor, const FVector& CameraLocation, const FVector& CameraForward, float CameraFieldOfViewDegrees);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
 	static USRPlanetSurfaceGrid* FindPlanetSurfaceGrid(const AActor* Actor);

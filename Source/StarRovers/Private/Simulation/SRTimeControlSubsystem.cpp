@@ -1,4 +1,4 @@
-﻿#include "Simulation/SRTimeControlSubsystem.h"
+#include "Simulation/SRTimeControlSubsystem.h"
 
 void USRTimeControlSubsystem::PauseSimulation()
 {

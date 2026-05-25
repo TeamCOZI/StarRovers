@@ -1,4 +1,4 @@
-﻿#include "Visual/SRLineThicknessUtils.h"
+#include "Visual/SRLineThicknessUtils.h"
 
 #include "Camera/SRCameraPawn.h"
 #include "Camera/PlayerCameraManager.h"

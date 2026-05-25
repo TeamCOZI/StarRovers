@@ -37,19 +37,19 @@ ASRStar::ASRStar()
 	StarPointLight->SetUseInverseSquaredFalloff(false);
 }
 
-void ASRStar::ApplySpec(const FSRCelestialBodySpec& NewSpec)
+void ASRStar::SetData(const FSRCelestialBodyData& NewData)
 {
-	StarMaterialEmissiveStrength = NewSpec.StarMaterialEmissiveStrength;
-	StarPointLightIntensity = NewSpec.StarPointLightIntensity;
-	StarPointLightColor = NewSpec.StarPointLightColor;
+	StarMaterialEmissiveStrength = NewData.StarMaterialEmissiveStrength;
+	StarPointLightIntensity = NewData.StarPointLightIntensity;
+	StarPointLightColor = NewData.StarPointLightColor;
 
-	Super::ApplySpec(NewSpec);
+	Super::SetData(NewData);
 	ApplyStarAppearance();
 }
 
-void ASRStar::ApplyConfiguredBodyState()
+void ASRStar::ApplyData()
 {
-	Super::ApplyConfiguredBodyState();
+	Super::ApplyData();
 	ApplyStarAppearance();
 }
 
@@ -75,16 +75,16 @@ void ASRStar::ApplyStarAppearance()
 
 UMaterialInstanceDynamic* ASRStar::ResolveStarMaterialInstanceDynamic()
 {
-	UMeshComponent* BodyMesh = GetCelestialBodyDynamicMesh();
-	if (!IsValid(BodyMesh))
+	UMeshComponent* BodyMeshComponent = GetCelestialBodyDynamicMesh();
+	if (!IsValid(BodyMeshComponent))
 	{
 		return nullptr;
 	}
 
-	if (UMaterialInstanceDynamic* ExistingDynamicMaterial = Cast<UMaterialInstanceDynamic>(BodyMesh->GetMaterial(0)))
+	if (UMaterialInstanceDynamic* ExistingDynamicMaterial = Cast<UMaterialInstanceDynamic>(BodyMeshComponent->GetMaterial(0)))
 	{
 		return ExistingDynamicMaterial;
 	}
 
-	return BodyMesh->CreateDynamicMaterialInstance(0);
+	return BodyMeshComponent->CreateDynamicMaterialInstance(0);
 }

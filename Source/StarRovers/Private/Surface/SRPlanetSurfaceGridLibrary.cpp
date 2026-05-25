@@ -1,4 +1,4 @@
-﻿#include "Surface/SRPlanetSurfaceGridLibrary.h"
+#include "Surface/SRPlanetSurfaceGridLibrary.h"
 
 #include "Math/UnrealMathUtility.h"
 

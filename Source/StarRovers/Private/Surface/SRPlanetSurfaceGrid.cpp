@@ -1,4 +1,4 @@
-﻿#include "Surface/SRPlanetSurfaceGrid.h"
+#include "Surface/SRPlanetSurfaceGrid.h"
 
 #include "Celestial/SRCelestialBody.h"
 #include "DrawDebugHelpers.h"
@@ -6,8 +6,6 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
 #include "Engine/World.h"
-#include "Materials/Material.h"
-#include "Materials/MaterialInterface.h"
 #include "Math/RotationMatrix.h"
 #include "SceneManagement.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
@@ -53,10 +51,9 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 	OccupiedCellColor = FLinearColor(1.0f, 0.35f, 0.35f, 1.0f);
 	DebugLineThickness = 1.0f;
 	GridSurfaceOffset = 0.0f;
-	GridMaterial = nullptr;
-	TerrainSettings = FSRPlanetTerrainSettings();
-	TerrainSettings.bUseProceduralTerrain = false;
-	TerrainSettings.TerrainHeight = 0.0f;
+	DynamicMeshGeneration = FSRDynamicMeshGeneration();
+	DynamicMeshGeneration.bUseProceduralTerrain = false;
+	DynamicMeshGeneration.TerrainHeight = 0.0f;
 	bHasHoveredCell = false;
 	bHasSelectedCell = false;
 
@@ -71,7 +68,6 @@ void USRPlanetSurfaceGrid::OnRegister()
 {
 	Super::OnRegister();
 	UpdateDebugTickState();
-	ApplyGridMaterial();
 
 	if (bRebuildGridOnRegister && !IsTemplate())
 	{
@@ -415,7 +411,6 @@ void USRPlanetSurfaceGrid::SetGridVisible(bool bNewGridVisible)
 	else
 	{
 		RebuildGridMesh();
-		ApplyGridMaterial();
 	}
 	UpdateDebugTickState();
 }
@@ -444,12 +439,6 @@ void USRPlanetSurfaceGrid::ConfigureDebugGrid(
 	RebuildGridMesh();
 }
 
-void USRPlanetSurfaceGrid::SetGridMaterial(UMaterialInterface* NewGridMaterial)
-{
-	GridMaterial = NewGridMaterial;
-	ApplyGridMaterial();
-}
-
 void USRPlanetSurfaceGrid::ConfigureConstructionHeightOffset(float NewConstructionHeightOffset)
 {
 	ConstructionHeightOffset = NewConstructionHeightOffset;
@@ -468,41 +457,41 @@ void USRPlanetSurfaceGrid::ConfigureProceduralTerrain(
 	int32 NewTerrainOctaves,
 	float NewTerrainPersistence)
 {
-	FSRPlanetTerrainSettings NewTerrainSettings = TerrainSettings;
-	NewTerrainSettings.TerrainProfile = ESRPlanetTerrainProfile::EarthLike;
-	NewTerrainSettings.bUseProceduralTerrain = bNewUseProceduralTerrain;
-	NewTerrainSettings.TerrainSeed = NewTerrainSeed;
-	NewTerrainSettings.TerrainHeight = FMath::Max(0.0f, NewTerrainHeight);
-	NewTerrainSettings.DetailFrequency = FMath::Max(0.01f, NewTerrainFrequency);
-	NewTerrainSettings.TerrainOctaves = FMath::Max(1, NewTerrainOctaves);
-	NewTerrainSettings.TerrainPersistence = FMath::Clamp(NewTerrainPersistence, 0.0f, 1.0f);
-	ConfigureTerrain(NewTerrainSettings);
+	FSRDynamicMeshGeneration NewDynamicMeshGeneration = DynamicMeshGeneration;
+	NewDynamicMeshGeneration.TerrainProfile = ESRPlanetTerrainProfile::EarthLike;
+	NewDynamicMeshGeneration.bUseProceduralTerrain = bNewUseProceduralTerrain;
+	NewDynamicMeshGeneration.TerrainSeed = NewTerrainSeed;
+	NewDynamicMeshGeneration.TerrainHeight = FMath::Max(0.0f, NewTerrainHeight);
+	NewDynamicMeshGeneration.DetailFrequency = FMath::Max(0.01f, NewTerrainFrequency);
+	NewDynamicMeshGeneration.TerrainOctaves = FMath::Max(1, NewTerrainOctaves);
+	NewDynamicMeshGeneration.TerrainPersistence = FMath::Clamp(NewTerrainPersistence, 0.0f, 1.0f);
+	ConfigureTerrain(NewDynamicMeshGeneration);
 }
 
-void USRPlanetSurfaceGrid::ConfigureTerrain(const FSRPlanetTerrainSettings& NewTerrainSettings)
+void USRPlanetSurfaceGrid::ConfigureTerrain(const FSRDynamicMeshGeneration& NewDynamicMeshGeneration)
 {
-	TerrainSettings = NewTerrainSettings;
-	TerrainSettings.TerrainHeight = FMath::Max(0.0f, TerrainSettings.TerrainHeight);
-	TerrainSettings.ContinentFrequency = FMath::Max(0.01f, TerrainSettings.ContinentFrequency);
-	TerrainSettings.MountainFrequency = FMath::Max(0.01f, TerrainSettings.MountainFrequency);
-	TerrainSettings.DetailFrequency = FMath::Max(0.01f, TerrainSettings.DetailFrequency);
-	TerrainSettings.ValleyStrength = FMath::Clamp(TerrainSettings.ValleyStrength, 0.0f, 1.0f);
-	TerrainSettings.MountainSharpness = FMath::Clamp(TerrainSettings.MountainSharpness, 0.5f, 4.0f);
-	TerrainSettings.DomainWarpStrength = FMath::Clamp(TerrainSettings.DomainWarpStrength, 0.0f, 1.0f);
-	TerrainSettings.RiverStrength = FMath::Clamp(TerrainSettings.RiverStrength, 0.0f, 1.0f);
-	TerrainSettings.LakeStrength = FMath::Clamp(TerrainSettings.LakeStrength, 0.0f, 1.0f);
-	TerrainSettings.MicroDetailStrength = FMath::Clamp(TerrainSettings.MicroDetailStrength, 0.0f, 1.0f);
-	TerrainSettings.MoistureFrequency = FMath::Max(0.01f, TerrainSettings.MoistureFrequency);
-	TerrainSettings.TemperatureNoiseFrequency = FMath::Max(0.01f, TerrainSettings.TemperatureNoiseFrequency);
-	TerrainSettings.TerrainOctaves = FMath::Max(1, TerrainSettings.TerrainOctaves);
-	TerrainSettings.TerrainPersistence = FMath::Clamp(TerrainSettings.TerrainPersistence, 0.0f, 1.0f);
-	TerrainSettings.SeaLevel = FMath::Clamp(TerrainSettings.SeaLevel, -1.0f, 1.0f);
+	DynamicMeshGeneration = NewDynamicMeshGeneration;
+	DynamicMeshGeneration.TerrainHeight = FMath::Max(0.0f, DynamicMeshGeneration.TerrainHeight);
+	DynamicMeshGeneration.ContinentFrequency = FMath::Max(0.01f, DynamicMeshGeneration.ContinentFrequency);
+	DynamicMeshGeneration.MountainFrequency = FMath::Max(0.01f, DynamicMeshGeneration.MountainFrequency);
+	DynamicMeshGeneration.DetailFrequency = FMath::Max(0.01f, DynamicMeshGeneration.DetailFrequency);
+	DynamicMeshGeneration.ValleyStrength = FMath::Clamp(DynamicMeshGeneration.ValleyStrength, 0.0f, 1.0f);
+	DynamicMeshGeneration.MountainSharpness = FMath::Clamp(DynamicMeshGeneration.MountainSharpness, 0.5f, 4.0f);
+	DynamicMeshGeneration.DomainWarpStrength = FMath::Clamp(DynamicMeshGeneration.DomainWarpStrength, 0.0f, 1.0f);
+	DynamicMeshGeneration.RiverStrength = FMath::Clamp(DynamicMeshGeneration.RiverStrength, 0.0f, 1.0f);
+	DynamicMeshGeneration.LakeStrength = FMath::Clamp(DynamicMeshGeneration.LakeStrength, 0.0f, 1.0f);
+	DynamicMeshGeneration.MicroDetailStrength = FMath::Clamp(DynamicMeshGeneration.MicroDetailStrength, 0.0f, 1.0f);
+	DynamicMeshGeneration.MoistureFrequency = FMath::Max(0.01f, DynamicMeshGeneration.MoistureFrequency);
+	DynamicMeshGeneration.TemperatureNoiseFrequency = FMath::Max(0.01f, DynamicMeshGeneration.TemperatureNoiseFrequency);
+	DynamicMeshGeneration.TerrainOctaves = FMath::Max(1, DynamicMeshGeneration.TerrainOctaves);
+	DynamicMeshGeneration.TerrainPersistence = FMath::Clamp(DynamicMeshGeneration.TerrainPersistence, 0.0f, 1.0f);
+	DynamicMeshGeneration.SeaLevel = FMath::Clamp(DynamicMeshGeneration.SeaLevel, -1.0f, 1.0f);
 	RebuildGridMesh();
 }
 
 FSRPlanetTerrainSample USRPlanetSurfaceGrid::GetTerrainSampleAtDirection(FVector LocalUnitDirection) const
 {
-	return FSRPlanetTerrainGenerator::SampleTerrain(LocalUnitDirection, TerrainSettings);
+	return FSRPlanetTerrainGenerator::SampleTerrain(LocalUnitDirection, DynamicMeshGeneration);
 }
 
 bool USRPlanetSurfaceGrid::GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const
@@ -576,7 +565,6 @@ void USRPlanetSurfaceGrid::RebuildGridMesh()
 	SetMesh(MoveTemp(GridMesh));
 	SetVisibility(bGridVisible);
 	SetHiddenInGame(!bGridVisible);
-	ApplyGridMaterial();
 }
 
 bool USRPlanetSurfaceGrid::AppendOwnerDynamicMeshWire(
@@ -752,20 +740,6 @@ void USRPlanetSurfaceGrid::AppendGridWireSegment(
 	}
 }
 
-void USRPlanetSurfaceGrid::ApplyGridMaterial()
-{
-	if (IsValid(GridMaterial))
-	{
-		SetMaterial(0, GridMaterial);
-		return;
-	}
-
-	if (UMaterialInterface* DefaultMaterial = UMaterial::GetDefaultMaterial(MD_Surface))
-	{
-		SetMaterial(0, DefaultMaterial);
-	}
-}
-
 float USRPlanetSurfaceGrid::GetEffectiveWorldRadius() const
 {
 	const FVector Scale3D = GetComponentTransform().GetScale3D().GetAbs();
@@ -830,7 +804,7 @@ FVector USRPlanetSurfaceGrid::ResolveLocalSurfacePoint(const FVector& LocalUnitD
 
 	const float SurfaceHeightOffset = GetSurfaceHeightOffsetAtDirection(LocalDirection);
 	const FVector LocalBasePoint = LocalDirection * FMath::Max(1.0f, PlanetRadius + SurfaceHeightOffset);
-	const FVector LocalSurfaceNormal = TerrainSettings.bUseProceduralTerrain
+	const FVector LocalSurfaceNormal = DynamicMeshGeneration.bUseProceduralTerrain
 		? ComputeProceduralSurfaceNormal(LocalDirection)
 		: LocalDirection;
 	return LocalBasePoint + (LocalSurfaceNormal.GetSafeNormal() * HeightOffset);
@@ -903,7 +877,7 @@ bool USRPlanetSurfaceGrid::IntersectRayWithSurfaceSphere(const FVector& RayOrigi
 
 	const FVector SphereCenter = GetComponentLocation();
 	const float SphereRadius = GetEffectiveWorldRadius()
-		+ (TerrainSettings.bUseProceduralTerrain ? FMath::Max(0.0f, TerrainSettings.TerrainHeight) * GetComponentTransform().GetScale3D().GetAbsMax() : 0.0f);
+		+ (DynamicMeshGeneration.bUseProceduralTerrain ? FMath::Max(0.0f, DynamicMeshGeneration.TerrainHeight) * GetComponentTransform().GetScale3D().GetAbsMax() : 0.0f);
 	if (SphereRadius <= KINDA_SMALL_NUMBER)
 	{
 		return false;

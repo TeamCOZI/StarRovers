@@ -1,4 +1,4 @@
-﻿#include "Gravity/SRGravityParent.h"
+#include "Gravity/SRGravityParent.h"
 
 #include "Components/LineBatchComponent.h"
 #include "Components/SceneComponent.h"
@@ -129,6 +129,27 @@ void USRGravityParent::RecomputeDerivedValues()
 	Gravity = Mass * GravityRatio;
 	GravityRadius = Mass * GravityRadiusRatio;
 	RefreshGravityLine();
+}
+
+void USRGravityParent::ConfigureGravity(
+	float NewMass,
+	float NewGravityRatio,
+	float NewGravityRadiusRatio,
+	bool bNewShowGravityLine,
+	const FLinearColor& NewGravityLineColor,
+	float NewGravityLineOpacity,
+	int32 NewGravityLineSegments,
+	float NewGravityLineThickness)
+{
+	Mass = NewMass;
+	GravityRatio = NewGravityRatio;
+	GravityRadiusRatio = NewGravityRadiusRatio;
+	bShowGravityLine = bNewShowGravityLine;
+	GravityLineColor = NewGravityLineColor;
+	GravityLineOpacity = NewGravityLineOpacity;
+	GravityLineSegments = NewGravityLineSegments;
+	GravityLineThickness = NewGravityLineThickness;
+	RecomputeDerivedValues();
 }
 
 float USRGravityParent::GetMass() const

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
@@ -50,7 +50,7 @@ public:
     void SnapToFocusTarget();
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Focus")
-    void ResetFocusedCameraView();
+    void ResetFocus();
 
     FSRFocusedActorChangedSignature& OnFocusedActorChanged();
 
@@ -76,11 +76,11 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "ZoomAction"))
     TObjectPtr<UInputAction> ZoomAction;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "FocusedSurfaceLookAction"))
-    TObjectPtr<UInputAction> FocusedSurfaceLookAction;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "FocusSurfaceAction"))
+    TObjectPtr<UInputAction> FocusSurfaceAction;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "ResetFocusCameraAction"))
-    TObjectPtr<UInputAction> ResetFocusCameraAction;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "ResetFocusAction"))
+    TObjectPtr<UInputAction> ResetFocusAction;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera", meta = (DisplayName = "ZoomSpeed", ClampMin = "0.0"))
     float ZoomSpeed;
@@ -109,11 +109,11 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "SurfaceRotateSensitivity", ClampMin = "0.0"))
     float SurfaceRotateSensitivity;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusedSurfaceLookSpeed", ClampMin = "0.0"))
-    float FocusedSurfaceLookSpeed;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusSurfaceSpeed", ClampMin = "0.0"))
+    float FocusSurfaceSpeed;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusedSurfaceLookMaxPitch", ClampMin = "0.0", ClampMax = "89.0", UIMin = "0.0", UIMax = "89.0"))
-    float FocusedSurfaceLookMaxPitch;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusSurfaceMaxPitch", ClampMin = "0.0", ClampMax = "89.0", UIMin = "0.0", UIMax = "89.0"))
+    float FocusSurfaceMaxPitch;
 
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Camera", meta = (DisplayName = "bIsDragging"))
     bool bIsDragging;
@@ -124,8 +124,8 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "bIsRotatingFocusedBody"))
     bool bIsRotatingFocusedBody;
 
-    UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "bIsFocusedSurfaceLookActive"))
-    bool bIsFocusedSurfaceLookActive;
+    UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "bIsFocusSurfaceActive"))
+    bool bIsFocusSurfaceActive;
 
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Camera", meta = (DisplayName = "bHasDragStartMousePosition"))
     bool bHasDragStartMousePosition;
@@ -152,9 +152,9 @@ private:
     void HandleDragHoldCompleted();
     void HandleDragDelta(const FInputActionValue& Value);
     void HandleZoom(const FInputActionValue& Value);
-    void HandleFocusedSurfaceLook(const FInputActionValue& Value);
-    void HandleFocusedSurfaceLookCompleted();
-    void HandleResetFocusedCameraView();
+    void HandleFocusSurface(const FInputActionValue& Value);
+    void HandleFocusSurfaceCompleted();
+    void HandleResetFocus();
     bool HasExitedFocusedActorGravityField() const;
     bool GetMouseScreenPosition(FVector2D& OutMouseScreenPosition) const;
     FVector ConvertScreenDeltaToDragOffset(const FVector2D& ScreenDelta) const;
@@ -169,8 +169,8 @@ private:
     float GetObliqueViewBlendAlpha(float ZoomDistance) const;
     FRotator GetViewRotationForZoom(float ZoomDistance) const;
     void ApplyZoomDrivenViewRotation(float ZoomDistance);
-    bool ShouldAllowFocusedSurfaceLook() const;
-    void UpdateFocusedSurfaceLook(float DeltaSeconds);
+    bool ShouldAllowFocusSurface() const;
+    void UpdateFocusSurface(float DeltaSeconds);
     void RefreshScreenSpaceThicknessReferenceView();
     void UpdateDynamicMeshVisibility();
     bool ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLightTarget);
@@ -190,6 +190,6 @@ private:
     FVector2D DragStartMouseScreenPosition;
     FVector DragStartFocusDragOffset;
     FVector DragStartTargetLocation;
-    FVector2D FocusedSurfaceLookInput;
-    FRotator FocusedSurfaceLookOffset;
+    FVector2D FocusSurfaceInput;
+    FRotator FocusSurfaceOffset;
 };

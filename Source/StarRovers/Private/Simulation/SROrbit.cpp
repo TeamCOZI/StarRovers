@@ -123,12 +123,12 @@ void USROrbit::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorCo
 	}
 }
 
-void USROrbit::ConfigureOrbit(AActor* NewParentBody, float NewOrbitRadius, float NewOrbitPeriodInPeriods, float NewStartingPhaseDegrees)
+void USROrbit::ConfigureOrbit(AActor* NewParentBody, float NewOrbitRadius, float NewOrbitPeriod, float NewInitialAngleDegrees)
 {
 	ParentBody = NewParentBody;
 	OrbitRadius = FMath::Max(0.0f, NewOrbitRadius);
-	OrbitPeriodInPeriods = FMath::Max(0.0f, NewOrbitPeriodInPeriods);
-	StartingPhaseDegrees = NewStartingPhaseDegrees;
+	this->OrbitPeriod = FMath::Max(0.0f, NewOrbitPeriod);
+	InitialAngleDegrees = NewInitialAngleDegrees;
 	RefreshDerivedState();
 	UpdateTickDependency();
 	ResetOrbitSimulation();
@@ -242,9 +242,9 @@ float USROrbit::GetOrbitRadius() const
 	return OrbitRadius;
 }
 
-float USROrbit::GetOrbitPeriodInPeriods() const
+float USROrbit::GetOrbitPeriod() const
 {
-	return OrbitPeriodInPeriods;
+	return OrbitPeriod;
 }
 
 float USROrbit::GetOrbitPeriodSeconds() const
@@ -252,9 +252,9 @@ float USROrbit::GetOrbitPeriodSeconds() const
 	return OrbitPeriodSeconds;
 }
 
-float USROrbit::GetStartingPhaseDegrees() const
+float USROrbit::GetInitialAngleDegrees() const
 {
-	return StartingPhaseDegrees;
+	return InitialAngleDegrees;
 }
 
 bool USROrbit::HasOrbit() const
@@ -309,7 +309,7 @@ float USROrbit::ResolveSecondsPerPeriod() const
 
 void USROrbit::RefreshDerivedState()
 {
-	OrbitPeriodSeconds = FMath::Max(0.0f, OrbitPeriodInPeriods) * ResolveSecondsPerPeriod();
+	OrbitPeriodSeconds = FMath::Max(0.0f, OrbitPeriod) * ResolveSecondsPerPeriod();
 }
 
 void USROrbit::UpdateTickDependency()
@@ -348,10 +348,10 @@ float USROrbit::ComputeOrbitAngleRadians() const
 {
 	if (OrbitPeriodSeconds <= KINDA_SMALL_NUMBER)
 	{
-		return FMath::DegreesToRadians(StartingPhaseDegrees);
+		return FMath::DegreesToRadians(InitialAngleDegrees);
 	}
 
-	return FMath::DegreesToRadians(StartingPhaseDegrees) + ((OrbitElapsedTimeSeconds / OrbitPeriodSeconds) * UE_TWO_PI);
+	return FMath::DegreesToRadians(InitialAngleDegrees) + ((OrbitElapsedTimeSeconds / OrbitPeriodSeconds) * UE_TWO_PI);
 }
 
 FVector USROrbit::ComputeOrbitLocationAtAngle(float AngleRadians) const

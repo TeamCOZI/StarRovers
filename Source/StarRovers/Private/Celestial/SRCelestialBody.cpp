@@ -1,20 +1,15 @@
 #include "Celestial/SRCelestialBody.h"
 
 #include "Algo/Reverse.h"
-#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/DynamicMeshComponent.h"
 #include "Components/LineBatchComponent.h"
 #include "Components/MeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Components/WidgetComponent.h"
-#include "Camera/PlayerCameraManager.h"
-#include "GameFramework/PlayerController.h"
 #include "Gravity/SRGravityParent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
-#include "Simulation/SRTimeControlSubsystem.h"
 #include "Components/SphereComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
@@ -23,84 +18,55 @@
 #include "Rendering/PositionVertexBuffer.h"
 #include "Rendering/StaticMeshVertexBuffer.h"
 #include "Surface/SRPlanetTerrainGenerator.h"
-#include "UI/SRCelestialBodyCircleWidget.h"
 #if WITH_EDITOR
 #include "UObject/UnrealType.h"
 #endif
 
 namespace
 {
-	FProperty* FindCelestialBodyPropertyInClassHierarchy(const UClass* InClass, const FName PropertyName)
+	int32 GetTerrainBiomeMaterialSlotIndex(const ESRPlanetBiome Biome)
 	{
-		for (const UStruct* Struct = InClass; Struct; Struct = Struct->GetSuperStruct())
+		switch (Biome)
 		{
-			if (FProperty* Property = Struct->FindPropertyByName(PropertyName))
-			{
-				return Property;
-			}
+		case ESRPlanetBiome::Ocean:
+			return 1;
+		case ESRPlanetBiome::Coast:
+			return 2;
+		case ESRPlanetBiome::Plains:
+			return 3;
+		case ESRPlanetBiome::Forest:
+			return 4;
+		case ESRPlanetBiome::Desert:
+			return 5;
+		case ESRPlanetBiome::Mountain:
+			return 6;
+		case ESRPlanetBiome::Snow:
+			return 7;
+		case ESRPlanetBiome::Ice:
+			return 8;
+		default:
+			return 0;
+		}
+	}
+
+	UMaterialInterface* GetTerrainBiomeMaterial(const FSRDynamicMeshGeneration& DynamicMeshGeneration, const ESRPlanetBiome Biome)
+	{
+		if (const TObjectPtr<UMaterialInterface>* Material = DynamicMeshGeneration.BiomeMaterials.Find(Biome))
+		{
+			return Material->Get();
 		}
 
 		return nullptr;
 	}
 
-	bool CopyPropertyValueByName(UObject* DestinationObject, const UObject* SourceObject, const FName PropertyName)
+	int32 GetTerrainBiomeMaterialId(const FSRDynamicMeshGeneration& DynamicMeshGeneration, const ESRPlanetBiome Biome)
 	{
-		if (!IsValid(DestinationObject) || !IsValid(SourceObject))
-		{
-			return false;
-		}
-
-		FProperty* DestinationProperty = FindCelestialBodyPropertyInClassHierarchy(DestinationObject->GetClass(), PropertyName);
-		FProperty* SourceProperty = FindCelestialBodyPropertyInClassHierarchy(SourceObject->GetClass(), PropertyName);
-		if (!DestinationProperty || !SourceProperty || !DestinationProperty->SameType(SourceProperty))
-		{
-			return false;
-		}
-
-		void* DestinationValuePtr = DestinationProperty->ContainerPtrToValuePtr<void>(DestinationObject);
-		const void* SourceValuePtr = SourceProperty->ContainerPtrToValuePtr<void>(SourceObject);
-		DestinationProperty->CopyCompleteValue(DestinationValuePtr, SourceValuePtr);
-		return true;
+		return IsValid(GetTerrainBiomeMaterial(DynamicMeshGeneration, Biome))
+			? GetTerrainBiomeMaterialSlotIndex(Biome)
+			: 0;
 	}
 
-	bool TryGetFloatPropertyValue(const UObject* SourceObject, const FName PropertyName, float& OutValue)
-	{
-		if (!IsValid(SourceObject))
-		{
-			return false;
-		}
-
-		FProperty* SourceProperty = FindCelestialBodyPropertyInClassHierarchy(SourceObject->GetClass(), PropertyName);
-		if (!SourceProperty)
-		{
-			return false;
-		}
-
-		if (const FFloatProperty* FloatProperty = CastField<FFloatProperty>(SourceProperty))
-		{
-			OutValue = FloatProperty->GetPropertyValue_InContainer(SourceObject);
-			return true;
-		}
-
-		if (const FDoubleProperty* DoubleProperty = CastField<FDoubleProperty>(SourceProperty))
-		{
-			OutValue = static_cast<float>(DoubleProperty->GetPropertyValue_InContainer(SourceObject));
-			return true;
-		}
-
-		if (const FNumericProperty* NumericProperty = CastField<FNumericProperty>(SourceProperty))
-		{
-			const void* ValuePtr = SourceProperty->ContainerPtrToValuePtr<void>(SourceObject);
-			OutValue = NumericProperty->IsFloatingPoint()
-				? static_cast<float>(NumericProperty->GetFloatingPointPropertyValue(ValuePtr))
-				: static_cast<float>(NumericProperty->GetSignedIntPropertyValue(ValuePtr));
-			return true;
-		}
-
-		return false;
-	}
-
-	FVector EstimateProceduralTerrainNormal(const FVector& LocalUnitDirection, float BaseRadius, const FSRPlanetTerrainSettings& TerrainSettings)
+	FVector EstimateProceduralTerrainNormal(const FVector& LocalUnitDirection, float BaseRadius, const FSRDynamicMeshGeneration& DynamicMeshGeneration)
 	{
 		const FVector Direction = LocalUnitDirection.GetSafeNormal();
 		if (Direction.IsNearlyZero())
@@ -117,9 +83,9 @@ namespace
 
 		const FVector DirectionA = (Direction + (Tangent0 * SampleStep)).GetSafeNormal();
 		const FVector DirectionB = (Direction + (Tangent1 * SampleStep)).GetSafeNormal();
-		const float Height0 = FSRPlanetTerrainGenerator::SampleTerrain(Direction, TerrainSettings).HeightOffset;
-		const float HeightA = FSRPlanetTerrainGenerator::SampleTerrain(DirectionA, TerrainSettings).HeightOffset;
-		const float HeightB = FSRPlanetTerrainGenerator::SampleTerrain(DirectionB, TerrainSettings).HeightOffset;
+		const float Height0 = FSRPlanetTerrainGenerator::SampleTerrain(Direction, DynamicMeshGeneration).HeightOffset;
+		const float HeightA = FSRPlanetTerrainGenerator::SampleTerrain(DirectionA, DynamicMeshGeneration).HeightOffset;
+		const float HeightB = FSRPlanetTerrainGenerator::SampleTerrain(DirectionB, DynamicMeshGeneration).HeightOffset;
 
 		const FVector Point0 = Direction * FMath::Max(1.0f, BaseRadius + Height0);
 		const FVector PointA = DirectionA * FMath::Max(1.0f, BaseRadius + HeightA);
@@ -131,45 +97,6 @@ namespace
 		}
 
 		return Normal.IsNearlyZero() ? Direction : Normal;
-	}
-
-	bool TryGetActorPropertyValue(const UObject* SourceObject, const FName PropertyName, AActor*& OutValue)
-	{
-		OutValue = nullptr;
-
-		if (!IsValid(SourceObject))
-		{
-			return false;
-		}
-
-		FProperty* SourceProperty = FindCelestialBodyPropertyInClassHierarchy(SourceObject->GetClass(), PropertyName);
-		const FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(SourceProperty);
-		if (!ObjectProperty)
-		{
-			return false;
-		}
-
-		OutValue = Cast<AActor>(ObjectProperty->GetObjectPropertyValue_InContainer(SourceObject));
-		return true;
-	}
-
-	float ComputeScaledMeshRadius(const UStaticMesh* MeshAsset, const UMeshComponent* MeshComponent, const float BodyScale)
-	{
-		if (!IsValid(MeshAsset))
-		{
-			return 0.0f;
-		}
-
-		const float MeshRadius = MeshAsset->GetBounds().SphereRadius;
-		const FVector AppliedScale = IsValid(MeshComponent)
-			? MeshComponent->GetRelativeScale3D()
-			: FVector(FMath::Max(0.0f, BodyScale));
-		const float UniformScale = FMath::Max3(
-			FMath::Abs(AppliedScale.X),
-			FMath::Abs(AppliedScale.Y),
-			FMath::Abs(AppliedScale.Z));
-
-		return FMath::Max(0.0f, MeshRadius * UniformScale);
 	}
 
 	struct FSRSourceTriangle
@@ -430,11 +357,11 @@ namespace
 		return SourceQuads;
 	}
 
-	FSRPlanetTerrainSample SampleSteppedTerrain(const FVector& LocalUnitDirection, const FSRPlanetTerrainSettings& TerrainSettings)
+	FSRPlanetTerrainSample SampleSteppedTerrain(const FVector& LocalUnitDirection, const FSRDynamicMeshGeneration& DynamicMeshGeneration)
 	{
-		FSRPlanetTerrainSample Sample = FSRPlanetTerrainGenerator::SampleTerrain(LocalUnitDirection, TerrainSettings);
-		const float SafeTerrainHeight = FMath::Max(0.0f, TerrainSettings.TerrainHeight);
-		if (!TerrainSettings.bUseProceduralTerrain || SafeTerrainHeight <= KINDA_SMALL_NUMBER)
+		FSRPlanetTerrainSample Sample = FSRPlanetTerrainGenerator::SampleTerrain(LocalUnitDirection, DynamicMeshGeneration);
+		const float SafeTerrainHeight = FMath::Max(0.0f, DynamicMeshGeneration.TerrainHeight);
+		if (!DynamicMeshGeneration.bUseProceduralTerrain || SafeTerrainHeight <= KINDA_SMALL_NUMBER)
 		{
 			return Sample;
 		}
@@ -444,54 +371,27 @@ namespace
 		return Sample;
 	}
 
-	constexpr float CircleWidgetDefaultSizePixels = 64.0f;
-	constexpr float CircleWidgetMinSizePixels = 12.0f;
-	constexpr float CircleWidgetPaddingPixels = 8.0f;
 }
 
 DEFINE_LOG_CATEGORY_STATIC(LogStarRoversCelestial, Log, All);
 
-FSRCelestialBodySpec::FSRCelestialBodySpec()
+FSRCelestialBodyData::FSRCelestialBodyData()
 {
-	DisplayName = FText::FromString(TEXT("Primary Star"));
+	VariableName = FText::FromString(TEXT("Primary Star"));
 	BodyCategory = ESRCelestialBodyCategory::Star;
-	OrbitPeriodInPeriods = 0.0f;
+	OrbitPeriod = 0.0f;
 	ConstructionHeightOffset = 15.0f;
-	TerrainSettings = FSRPlanetTerrainSettings();
-	TerrainSettings.bUseProceduralTerrain = false;
-	TerrainSettings.TerrainHeight = 0.0f;
+	DynamicMeshGeneration = FSRDynamicMeshGeneration();
+	DynamicMeshGeneration.bUseProceduralTerrain = false;
+	DynamicMeshGeneration.TerrainHeight = 0.0f;
 	bHasOcean = false;
 	OceanMesh = nullptr;
 	OceanMaterial = nullptr;
-	OceanScaleMultiplier = 0.97f;
-}
-
-FSRCelestialBodyBiomeSpec::FSRCelestialBodyBiomeSpec()
-{
-	DisplayName = FText::FromString(TEXT("Biome"));
-	bUseProceduralTerrain = true;
-	TerrainSeed = 1337;
-	TerrainHeight = 0.0f;
-	TerrainFrequency = 3.0f;
-	TerrainOctaves = 4;
-	TerrainPersistence = 0.5f;
-	TerrainSettings = FSRPlanetTerrainSettings();
-	bHasOcean = false;
-	OceanMesh = nullptr;
-	OceanMaterial = nullptr;
-	OceanScaleMultiplier = 0.97f;
-	SurfaceGridSurfaceOffset = 0.0f;
-	OrbitSpeed = 1.0f;
-	StarPointLightIntensity = -1.0f;
-	StarMaterialEmissiveStrength = -1.0f;
-	StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
+	OceanScaleMultiplier = 1.0f;
 }
 
 ASRCelestialBody::ASRCelestialBody()
 {
-	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickGroup = TG_PrePhysics;
-
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
 
@@ -499,8 +399,8 @@ ASRCelestialBody::ASRCelestialBody()
 	CelestialBodyDynamicMesh->SetupAttachment(SceneRoot);
 	CelestialBodyDynamicMesh->SetMobility(EComponentMobility::Movable);
 
-	CelestialBodyStaticMesh_ = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CelestialBodyStaticMesh"));
-	CelestialBodyStaticMesh_->SetupAttachment(SceneRoot);
+	CelestialBodyStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CelestialBodyStaticMesh"));
+	CelestialBodyStaticMesh->SetupAttachment(SceneRoot);
 
 	ClickSphereCollision = CreateDefaultSubobject<USphereComponent>(TEXT("ClickSphereCollision"));
 	ClickSphereCollision->SetupAttachment(SceneRoot);
@@ -517,26 +417,15 @@ ASRCelestialBody::ASRCelestialBody()
 	GravityLineBatch->ComponentTags.AddUnique(TEXT("StarRovers.GravityLine"));
 	GravityLineBatch->ComponentTags.AddUnique(TEXT("StarRovers.GravityLineRoot"));
 
-	CircleWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("CircleWidget"));
-	CircleWidget->SetupAttachment(SceneRoot);
-	CircleWidget->SetMobility(EComponentMobility::Movable);
-	CircleWidget->SetWidgetSpace(EWidgetSpace::Screen);
-	CircleWidget->SetWidgetClass(USRCelestialBodyCircleWidget::StaticClass());
-	CircleWidget->SetDrawSize(FVector2D(CircleWidgetDefaultSizePixels, CircleWidgetDefaultSizePixels));
-	CircleWidget->SetPivot(FVector2D(0.5f, 0.5f));
-	CircleWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-	DisplayName = FText::FromString(TEXT("Celestial Body"));
+	VariableName = FText::FromString(TEXT("Celestial Body"));
 	BodyCategory = ESRCelestialBodyCategory::Unknown;
 	FocusZoomMultiplier = 3.0f;
-	DynamicMeshThreshold = 0.1f;
 	BodyScale = 1000.0f;
-	ApproximateRadius = 50000.0f;
 	Mass = 2000.0f;
 	GenerationSeed = 1000;
-	TerrainSettings = FSRPlanetTerrainSettings();
-	TerrainSettings.bUseProceduralTerrain = false;
-	TerrainSettings.TerrainHeight = 0.0f;
+	DynamicMeshGeneration = FSRDynamicMeshGeneration();
+	DynamicMeshGeneration.bUseProceduralTerrain = false;
+	DynamicMeshGeneration.TerrainHeight = 0.0f;
 	GravityRatio = 1.0f;
 	GravityRadiusRatio = 10.0f;
 	bShowGravityLine = true;
@@ -550,21 +439,18 @@ void ASRCelestialBody::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 
-	ApplyConfiguredBodyState();
+	ApplyData();
 }
 
 void ASRCelestialBody::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (!bHasAppliedSpec)
+	if (!bHasAppliedData)
 	{
-		LogMissingSpecErrorOnce(TEXT("BeginPlay"));
-		SetActorTickEnabled(false);
+		LogMissingDataErrorOnce(TEXT("BeginPlay"));
 		return;
 	}
-
-	SetActorTickEnabled(true);
 
 	if (USRCelestialBodyRegistrySubsystem* CelestialRegistry = FindCelestialRegistry())
 	{
@@ -583,68 +469,48 @@ void ASRCelestialBody::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-void ASRCelestialBody::Tick(float DeltaSeconds)
-{
-	Super::Tick(DeltaSeconds);
-	UpdateCircleWidgetDrawSize();
-}
-
 #if WITH_EDITOR
 void ASRCelestialBody::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	ApplyConfiguredBodyState();
+	ApplyData();
 }
 #endif
 
-void ASRCelestialBody::ApplySpec(const FSRCelestialBodySpec& NewSpec)
+void ASRCelestialBody::SetData(const FSRCelestialBodyData& NewData)
 {
-	bHasAppliedSpec = true;
-	bHasLoggedMissingSpecError = false;
-	DisplayName = NewSpec.DisplayName;
-	BodyCategory = NewSpec.BodyCategory;
-	FocusZoomMultiplier = NewSpec.FocusZoomMultiplier;
-	GenerationSeed = NewSpec.TerrainSeed;
-	TerrainSettings = NewSpec.TerrainSettings;
-	BodyScale = NewSpec.BodyScale;
-	Mass = NewSpec.Mass;
-	GravityRatio = NewSpec.GravityRatio;
-	GravityRadiusRatio = NewSpec.GravityRadiusRatio;
-	bShowGravityLine = NewSpec.bShowGravityLine;
-	GravityLineColor = NewSpec.GravityLineColor;
-	GravityLineOpacity = NewSpec.GravityLineOpacity;
-	GravityLineSegments = NewSpec.GravityLineSegments;
-	GravityLineThickness = NewSpec.GravityLineThickness;
+	bHasAppliedData = true;
+	bHasLoggedMissingDataError = false;
+	VariableName = NewData.VariableName;
+	BodyCategory = NewData.BodyCategory;
+	FocusZoomMultiplier = NewData.FocusZoomMultiplier;
+	GenerationSeed = NewData.GenerationSeed;
+	DynamicMeshGeneration = NewData.DynamicMeshGeneration;
+	BodyScale = NewData.BodyScale;
+	StaticMesh = NewData.StaticMesh;
+	Material = NewData.Material;
+	Mass = NewData.Mass;
+	GravityRatio = NewData.GravityRatio;
+	GravityRadiusRatio = NewData.GravityRadiusRatio;
+	bShowGravityLine = NewData.bShowGravityLine;
+	GravityLineColor = NewData.GravityLineColor;
+	GravityLineOpacity = NewData.GravityLineOpacity;
+	GravityLineSegments = NewData.GravityLineSegments;
+	GravityLineThickness = NewData.GravityLineThickness;
 
-	if (HasActorBegunPlay() && GetWorld() && GetWorld()->IsGameWorld() && IsValid(CelestialBodyStaticMesh) && IsValid(CelestialBodyMaterial))
+	if (HasActorBegunPlay() && GetWorld() && GetWorld()->IsGameWorld() && IsValid(StaticMesh) && IsValid(Material))
 	{
-		ApplyConfiguredBodyState();
+		ApplyData();
 	}
 }
 
-void ASRCelestialBody::ApplyBiomeSpec(const FSRCelestialBodyBiomeSpec& NewBiomeSpec)
+void ASRCelestialBody::ApplyData()
 {
-	bHasAppliedSpec = true;
-	bHasLoggedMissingSpecError = false;
-
-	DisplayName = NewBiomeSpec.DisplayName;
-	GenerationSeed = NewBiomeSpec.TerrainSeed;
-
-	ApplyConfiguredBodyState();
-}
-
-void ASRCelestialBody::ApplyConfiguredBodyState()
-{
-	if (!bHasAppliedSpec && GetWorld() && GetWorld()->IsGameWorld())
+	if (!bHasAppliedData && GetWorld() && GetWorld()->IsGameWorld())
 	{
-		LogMissingSpecErrorOnce(TEXT("ApplyConfiguredBodyState"));
+		LogMissingDataErrorOnce(TEXT("ApplyData"));
 		return;
-	}
-
-	if (PrimaryActorTick.bCanEverTick)
-	{
-		SetActorTickEnabled(true);
 	}
 
 	BodyScale = FMath::Max(0.0f, BodyScale);
@@ -655,7 +521,6 @@ void ASRCelestialBody::ApplyConfiguredBodyState()
 	GravityLineSegments = FMath::Max(3, GravityLineSegments);
 	GravityLineThickness = FMath::Max(0.0f, GravityLineThickness);
 	FocusZoomMultiplier = FMath::Max(0.0f, FocusZoomMultiplier);
-	DynamicMeshThreshold = FMath::Clamp(DynamicMeshThreshold, 0.0f, 1.0f);
 
 	SetActorScale3D(FVector::OneVector);
 	if (IsValid(CelestialBodyDynamicMesh.Get()))
@@ -664,11 +529,11 @@ void ASRCelestialBody::ApplyConfiguredBodyState()
 		CelestialBodyDynamicMesh->SetRelativeRotation(FRotator::ZeroRotator);
 		CelestialBodyDynamicMesh->SetRelativeScale3D(FVector(BodyScale));
 	}
-	if (IsValid(CelestialBodyStaticMesh_.Get()))
+	if (IsValid(CelestialBodyStaticMesh.Get()))
 	{
-		CelestialBodyStaticMesh_->SetRelativeLocation(FVector::ZeroVector);
-		CelestialBodyStaticMesh_->SetRelativeRotation(FRotator::ZeroRotator);
-		CelestialBodyStaticMesh_->SetRelativeScale3D(FVector(BodyScale));
+		CelestialBodyStaticMesh->SetRelativeLocation(FVector::ZeroVector);
+		CelestialBodyStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
+		CelestialBodyStaticMesh->SetRelativeScale3D(FVector(BodyScale));
 	}
 
 	EnsureCelestialBodyDynamicMeshVisuals();
@@ -678,96 +543,33 @@ void ASRCelestialBody::ApplyConfiguredBodyState()
 		ClickSphereCollision->SetRelativeLocation(FVector::ZeroVector);
 		ClickSphereCollision->SetRelativeRotation(FRotator::ZeroRotator);
 		ClickSphereCollision->SetRelativeScale3D(FVector::OneVector);
-		ClickSphereCollision->SetSphereRadius(FMath::Max(ComputeCelestialBodyDynamicMeshRadius(), 1.0f));
+		const float BodyRadius = IsValid(StaticMesh.Get())
+			? StaticMesh->GetBounds().SphereRadius * BodyScale
+			: 0.0f;
+		ClickSphereCollision->SetSphereRadius(FMath::Max(BodyRadius, 1.0f));
 	}
 	ApplyGravityLineSettings();
-	SyncApproximateRadiusFromCelestialBodyDynamicMesh();
-	UpdateCircleWidgetDrawSize();
 }
 
-void ASRCelestialBody::SyncApproximateRadiusFromCelestialBodyDynamicMesh()
+FSRCelestialBodyData ASRCelestialBody::GetData() const
 {
-	ApproximateRadius = ComputeCelestialBodyDynamicMeshRadius();
-}
-
-void ASRCelestialBody::UpdateCircleWidgetDrawSize()
-{
-	if (!IsValid(CircleWidget))
-	{
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
-	if (!IsValid(PlayerController) || !IsValid(PlayerController->PlayerCameraManager))
-	{
-		CircleWidget->SetDrawSize(FVector2D(CircleWidgetDefaultSizePixels, CircleWidgetDefaultSizePixels));
-		return;
-	}
-
-	const FVector BodyLocation = GetActorLocation();
-	const float BodyRadius = FMath::Max(0.0f, ApproximateRadius);
-	if (BodyRadius <= KINDA_SMALL_NUMBER)
-	{
-		CircleWidget->SetVisibility(false);
-		return;
-	}
-
-	const FVector CameraLocation = PlayerController->PlayerCameraManager->GetCameraLocation();
-	const FVector CameraForward = PlayerController->PlayerCameraManager->GetCameraRotation().Vector().GetSafeNormal();
-	if (FVector::DotProduct(BodyLocation - CameraLocation, CameraForward) <= KINDA_SMALL_NUMBER)
-	{
-		CircleWidget->SetVisibility(false);
-		return;
-	}
-
-	const FRotator CameraRotation = PlayerController->PlayerCameraManager->GetCameraRotation();
-	const FVector CameraRight = CameraRotation.RotateVector(FVector::RightVector).GetSafeNormal();
-	const FVector CameraUp = CameraRotation.RotateVector(FVector::UpVector).GetSafeNormal();
-
-	FVector2D CenterScreenPosition = FVector2D::ZeroVector;
-	FVector2D RadiusRightScreenPosition = FVector2D::ZeroVector;
-	FVector2D RadiusUpScreenPosition = FVector2D::ZeroVector;
-	const bool bProjectedCenter = UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PlayerController, BodyLocation, CenterScreenPosition, true);
-	const bool bProjectedRight = UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PlayerController, BodyLocation + CameraRight * BodyRadius, RadiusRightScreenPosition, true);
-	const bool bProjectedUp = UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PlayerController, BodyLocation + CameraUp * BodyRadius, RadiusUpScreenPosition, true);
-	if (!bProjectedCenter || !bProjectedRight || !bProjectedUp)
-	{
-		CircleWidget->SetVisibility(false);
-		return;
-	}
-
-	const float ProjectedRadius = FMath::Max(
-		FVector2D::Distance(CenterScreenPosition, RadiusRightScreenPosition),
-		FVector2D::Distance(CenterScreenPosition, RadiusUpScreenPosition));
-	const float DrawSizePixels = FMath::Max(CircleWidgetMinSizePixels, (ProjectedRadius * 2.0f) + CircleWidgetPaddingPixels);
-	CircleWidget->SetDrawSize(FVector2D(DrawSizePixels, DrawSizePixels));
-	CircleWidget->SetVisibility(true);
-}
-
-FSRCelestialBodySpec ASRCelestialBody::GetSpec() const
-{
-	FSRCelestialBodySpec CurrentSpec;
-	CurrentSpec.DisplayName = DisplayName;
-	CurrentSpec.BodyCategory = BodyCategory;
-	CurrentSpec.FocusZoomMultiplier = FocusZoomMultiplier;
-	CurrentSpec.TerrainSeed = GenerationSeed;
-	CurrentSpec.BodyScale = BodyScale;
-	CurrentSpec.ApproximateRadius = ApproximateRadius;
-	CurrentSpec.Mass = Mass;
-	CurrentSpec.GravityRatio = GravityRatio;
-	CurrentSpec.GravityRadiusRatio = GravityRadiusRatio;
-	CurrentSpec.bShowGravityLine = bShowGravityLine;
-	CurrentSpec.GravityLineColor = GravityLineColor;
-	CurrentSpec.GravityLineOpacity = GravityLineOpacity;
-	CurrentSpec.GravityLineSegments = GravityLineSegments;
-	CurrentSpec.GravityLineThickness = GravityLineThickness;
-	return CurrentSpec;
-}
-
-float ASRCelestialBody::ConvertPeriodsToSeconds(float PeriodValue) const
-{
-	return FMath::Max(0.0f, PeriodValue) * FMath::Max(0.0f, ResolveSecondsPerPeriod());
+	FSRCelestialBodyData CurrentData;
+	CurrentData.VariableName = VariableName;
+	CurrentData.BodyCategory = BodyCategory;
+	CurrentData.FocusZoomMultiplier = FocusZoomMultiplier;
+	CurrentData.GenerationSeed = GenerationSeed;
+	CurrentData.BodyScale = BodyScale;
+	CurrentData.StaticMesh = StaticMesh;
+	CurrentData.Material = Material;
+	CurrentData.Mass = Mass;
+	CurrentData.GravityRatio = GravityRatio;
+	CurrentData.GravityRadiusRatio = GravityRadiusRatio;
+	CurrentData.bShowGravityLine = bShowGravityLine;
+	CurrentData.GravityLineColor = GravityLineColor;
+	CurrentData.GravityLineOpacity = GravityLineOpacity;
+	CurrentData.GravityLineSegments = GravityLineSegments;
+	CurrentData.GravityLineThickness = GravityLineThickness;
+	return CurrentData;
 }
 
 UDynamicMeshComponent* ASRCelestialBody::GetCelestialBodyDynamicMesh() const
@@ -775,7 +577,7 @@ UDynamicMeshComponent* ASRCelestialBody::GetCelestialBodyDynamicMesh() const
 	return CelestialBodyDynamicMesh;
 }
 
-void ASRCelestialBody::SetDynamicMeshEnabled(bool bUseDynamicMesh)
+void ASRCelestialBody::SetCelestialBodyMesh(bool bUseDynamicMesh)
 {
 	if (IsValid(CelestialBodyDynamicMesh.Get()))
 	{
@@ -783,16 +585,11 @@ void ASRCelestialBody::SetDynamicMeshEnabled(bool bUseDynamicMesh)
 		CelestialBodyDynamicMesh->SetHiddenInGame(!bUseDynamicMesh);
 	}
 
-	if (IsValid(CelestialBodyStaticMesh_.Get()))
+	if (IsValid(CelestialBodyStaticMesh.Get()))
 	{
-		CelestialBodyStaticMesh_->SetVisibility(!bUseDynamicMesh);
-		CelestialBodyStaticMesh_->SetHiddenInGame(bUseDynamicMesh);
+		CelestialBodyStaticMesh->SetVisibility(!bUseDynamicMesh);
+		CelestialBodyStaticMesh->SetHiddenInGame(bUseDynamicMesh);
 	}
-}
-
-float ASRCelestialBody::GetDynamicMeshThreshold() const
-{
-	return FMath::Clamp(DynamicMeshThreshold, 0.0f, 1.0f);
 }
 
 ESRCelestialBodyCategory ASRCelestialBody::GetBodyCategory() const
@@ -805,7 +602,7 @@ USRGravityParent* ASRCelestialBody::GetGravityParent() const
 	return GravityParent;
 }
 
-USROrbit* ASRCelestialBody::GetOrbitComponent() const
+USROrbit* ASRCelestialBody::GetOrbit() const
 {
 	return nullptr;
 }
@@ -815,16 +612,6 @@ USRPlanetSurfaceGrid* ASRCelestialBody::GetSurfaceGrid() const
 	return nullptr;
 }
 
-void ASRCelestialBody::SetCelestialBodyAssets(UStaticMesh* NewCelestialBodyStaticMesh, UMaterialInterface* NewCelestialBodyMaterial)
-{
-	CelestialBodyStaticMesh = NewCelestialBodyStaticMesh;
-	CelestialBodyMaterial = NewCelestialBodyMaterial;
-	if (bHasAppliedSpec && HasActorBegunPlay())
-	{
-		ApplyConfiguredBodyState();
-	}
-}
-
 void ASRCelestialBody::ApplyGravityLineSettings()
 {
 	if (!IsValid(GravityParent))
@@ -832,24 +619,15 @@ void ASRCelestialBody::ApplyGravityLineSettings()
 		return;
 	}
 
-	static const FName GravityPropertyNames[] =
-	{
-		TEXT("Mass"),
-		TEXT("GravityRatio"),
-		TEXT("GravityRadiusRatio"),
-		TEXT("bShowGravityLine"),
-		TEXT("GravityLineColor"),
-		TEXT("GravityLineOpacity"),
-		TEXT("GravityLineSegments"),
-		TEXT("GravityLineThickness")
-	};
-
-	for (const FName PropertyName : GravityPropertyNames)
-	{
-		CopyPropertyValueByName(GravityParent, this, PropertyName);
-	}
-
-	GravityParent->RecomputeDerivedValues();
+	GravityParent->ConfigureGravity(
+		Mass,
+		GravityRatio,
+		GravityRadiusRatio,
+		bShowGravityLine,
+		GravityLineColor,
+		GravityLineOpacity,
+		GravityLineSegments,
+		GravityLineThickness);
 }
 
 void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals()
@@ -860,24 +638,24 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals()
 	}
 
 	UStaticMesh* DesiredMesh = nullptr;
-	if (IsValid(CelestialBodyStaticMesh))
+	if (IsValid(StaticMesh))
 	{
-		DesiredMesh = CelestialBodyStaticMesh.Get();
+		DesiredMesh = StaticMesh.Get();
 	}
 	if (!IsValid(DesiredMesh))
 	{
-		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires CelestialBodyStaticMesh."), *GetName());
+		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires StaticMesh."), *GetName());
 		return;
 	}
 
-	if (IsValid(CelestialBodyStaticMesh_.Get()) && CelestialBodyStaticMesh_->GetStaticMesh() != DesiredMesh)
+	if (IsValid(CelestialBodyStaticMesh.Get()) && CelestialBodyStaticMesh->GetStaticMesh() != DesiredMesh)
 	{
-		CelestialBodyStaticMesh_->SetStaticMesh(DesiredMesh);
+		CelestialBodyStaticMesh->SetStaticMesh(DesiredMesh);
 	}
 
-	CopySourceStaticMeshToCelestialBodyDynamicMesh();
+	CopyStaticMeshToCelestialBodyDynamicMesh();
 
-	UMaterialInterface* DesiredBaseMaterial = CelestialBodyMaterial;
+	UMaterialInterface* DesiredBaseMaterial = Material;
 	UMaterialInterface* CurrentAssignedMaterial = CelestialBodyDynamicMesh->GetMaterial(0);
 
 	if (!IsValid(DesiredBaseMaterial))
@@ -890,13 +668,13 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals()
 
 	if (!IsValid(DesiredBaseMaterial))
 	{
-		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires CelestialBodyMaterial."), *GetName());
+		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires Material."), *GetName());
 		return;
 	}
 
-	if (IsValid(CelestialBodyStaticMesh_.Get()))
+	if (IsValid(CelestialBodyStaticMesh.Get()))
 	{
-		CelestialBodyStaticMesh_->SetMaterial(0, DesiredBaseMaterial);
+		CelestialBodyStaticMesh->SetMaterial(0, DesiredBaseMaterial);
 	}
 
 	UMaterialInstanceDynamic* ActiveDynamicMaterial = GetActiveBodyDynamicMaterial();
@@ -913,19 +691,29 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals()
 			CelestialBodyDynamicMesh->SetMaterial(0, DesiredBaseMaterial);
 		}
 	}
+
+	for (const TPair<ESRPlanetBiome, TObjectPtr<UMaterialInterface>>& BiomeMaterialPair : DynamicMeshGeneration.BiomeMaterials)
+	{
+		UMaterialInterface* BiomeMaterial = BiomeMaterialPair.Value.Get();
+		const int32 MaterialSlotIndex = GetTerrainBiomeMaterialSlotIndex(BiomeMaterialPair.Key);
+		if (IsValid(BiomeMaterial) && MaterialSlotIndex > 0)
+		{
+			CelestialBodyDynamicMesh->SetMaterial(MaterialSlotIndex, BiomeMaterial);
+		}
+	}
 }
 
-bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
+bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 {
-	if (!IsValid(CelestialBodyDynamicMesh.Get()) || !IsValid(CelestialBodyStaticMesh.Get()))
+	if (!IsValid(CelestialBodyDynamicMesh.Get()) || !IsValid(StaticMesh.Get()))
 	{
 		return false;
 	}
 
-	const FStaticMeshRenderData* RenderData = CelestialBodyStaticMesh->GetRenderData();
+	const FStaticMeshRenderData* RenderData = StaticMesh->GetRenderData();
 	if (!RenderData || RenderData->LODResources.IsEmpty())
 	{
-		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires render data on CelestialBodyStaticMesh."), *GetName());
+		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires render data on StaticMesh."), *GetName());
 		return false;
 	}
 
@@ -937,20 +725,22 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 	const int32 IndexCount = static_cast<int32>(IndexBuffer.GetNumIndices());
 	if (VertexCount <= 0 || IndexCount < 3)
 	{
-		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires valid vertices and triangles on CelestialBodyStaticMesh."), *GetName());
+		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires valid vertices and triangles on StaticMesh."), *GetName());
 		return false;
 	}
 
 	UE::Geometry::FDynamicMesh3 DynamicMesh;
 	DynamicMesh.EnableAttributes();
 	DynamicMesh.Attributes()->EnablePrimaryColors();
+	DynamicMesh.Attributes()->EnableMaterialID();
 	UE::Geometry::FDynamicMeshNormalOverlay* NormalOverlay = DynamicMesh.Attributes()->PrimaryNormals();
 	auto* ColorOverlay = DynamicMesh.Attributes()->PrimaryColors();
+	auto* MaterialIdAttribute = DynamicMesh.Attributes()->GetMaterialID();
 
 	const bool bShouldGenerateSteppedQuadTerrain =
 		(BodyCategory == ESRCelestialBodyCategory::Planet || BodyCategory == ESRCelestialBodyCategory::Moon)
-		&& TerrainSettings.bUseProceduralTerrain
-		&& TerrainSettings.TerrainHeight > KINDA_SMALL_NUMBER;
+		&& DynamicMeshGeneration.bUseProceduralTerrain
+		&& DynamicMeshGeneration.TerrainHeight > KINDA_SMALL_NUMBER;
 	if (bShouldGenerateSteppedQuadTerrain)
 	{
 		const TArray<FSRSourceQuad> SourceQuads = RecoverSourceQuads(PositionVertexBuffer, IndexBuffer, IndexCount);
@@ -963,14 +753,16 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 				FVector PointA = FVector::ZeroVector;
 				FVector PointB = FVector::ZeroVector;
 				FLinearColor SurfaceColor = FLinearColor::White;
+				int32 MaterialId = 0;
 			};
 
-			auto AppendFlatColoredQuad = [&DynamicMesh, NormalOverlay, ColorOverlay](
+			auto AppendFlatColoredQuad = [&DynamicMesh, NormalOverlay, ColorOverlay, MaterialIdAttribute](
 				const FVector& Point0,
 				const FVector& Point1,
 				const FVector& Point2,
 				const FVector& Point3,
 				const FLinearColor& SurfaceColor,
+				const int32 MaterialId,
 				bool bDoubleSided = false)
 			{
 				FVector QuadPoints[4] = { Point0, Point1, Point2, Point3 };
@@ -1007,11 +799,19 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 				{
 					NormalOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Normal0, Normal2, Normal1));
 					ColorOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Color0, Color2, Color1));
+					if (MaterialIdAttribute)
+					{
+						MaterialIdAttribute->SetValue(Triangle0, MaterialId);
+					}
 				}
 				if (Triangle1 >= 0)
 				{
 					NormalOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Normal0, Normal3, Normal2));
 					ColorOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Color0, Color3, Color2));
+					if (MaterialIdAttribute)
+					{
+						MaterialIdAttribute->SetValue(Triangle1, MaterialId);
+					}
 				}
 
 				if (bDoubleSided)
@@ -1037,11 +837,19 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 					{
 						NormalOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(BackNormal0, BackNormal1, BackNormal2));
 						ColorOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(BackColor0, BackColor1, BackColor2));
+						if (MaterialIdAttribute)
+						{
+							MaterialIdAttribute->SetValue(BackTriangle0, MaterialId);
+						}
 					}
 					if (BackTriangle1 >= 0)
 					{
 						NormalOverlay->SetTriangle(BackTriangle1, UE::Geometry::FIndex3i(BackNormal0, BackNormal2, BackNormal3));
 						ColorOverlay->SetTriangle(BackTriangle1, UE::Geometry::FIndex3i(BackColor0, BackColor2, BackColor3));
+						if (MaterialIdAttribute)
+						{
+							MaterialIdAttribute->SetValue(BackTriangle1, MaterialId);
+						}
 					}
 				}
 			};
@@ -1053,7 +861,8 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 				const FVector& SourcePointB,
 				const FVector& PointA,
 				const FVector& PointB,
-				const FLinearColor& SurfaceColor)
+				const FLinearColor& SurfaceColor,
+				const int32 MaterialId)
 			{
 				const uint32 EndpointHashA = HashSourcePosition(SourcePointA);
 				const uint32 EndpointHashB = HashSourcePosition(SourcePointB);
@@ -1087,6 +896,7 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 							OrderedPointB,
 							OrderedPointA,
 							WallColor,
+							ExistingEdge->MaterialId != 0 ? ExistingEdge->MaterialId : MaterialId,
 							true);
 					}
 					PendingTerrainEdges.Remove(EdgeKey);
@@ -1099,6 +909,7 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 				NewEdge.PointA = OrderedPointA;
 				NewEdge.PointB = OrderedPointB;
 				NewEdge.SurfaceColor = SurfaceColor;
+				NewEdge.MaterialId = MaterialId;
 				PendingTerrainEdges.Add(EdgeKey, NewEdge);
 			};
 
@@ -1131,7 +942,7 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 					continue;
 				}
 
-				const FSRPlanetTerrainSample TerrainSample = SampleSteppedTerrain(CellDirection, TerrainSettings);
+				const FSRPlanetTerrainSample TerrainSample = SampleSteppedTerrain(CellDirection, DynamicMeshGeneration);
 				FVector TargetPositions[4];
 				const float SourceCellRadius = FMath::Max(CellCenter.Length(), 1.0f);
 				const float CellScale = FMath::Max(0.01f, (SourceCellRadius + TerrainSample.HeightOffset) / SourceCellRadius);
@@ -1154,11 +965,12 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 					CellNormal = CellDirection;
 				}
 
-				AppendFlatColoredQuad(TargetPositions[0], TargetPositions[1], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor);
-				RegisterTerrainEdge(SourcePositions[0], SourcePositions[1], TargetPositions[0], TargetPositions[1], TerrainSample.SurfaceColor);
-				RegisterTerrainEdge(SourcePositions[1], SourcePositions[2], TargetPositions[1], TargetPositions[2], TerrainSample.SurfaceColor);
-				RegisterTerrainEdge(SourcePositions[2], SourcePositions[3], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor);
-				RegisterTerrainEdge(SourcePositions[3], SourcePositions[0], TargetPositions[3], TargetPositions[0], TerrainSample.SurfaceColor);
+				const int32 MaterialId = GetTerrainBiomeMaterialId(DynamicMeshGeneration, TerrainSample.Biome);
+				AppendFlatColoredQuad(TargetPositions[0], TargetPositions[1], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor, MaterialId);
+				RegisterTerrainEdge(SourcePositions[0], SourcePositions[1], TargetPositions[0], TargetPositions[1], TerrainSample.SurfaceColor, MaterialId);
+				RegisterTerrainEdge(SourcePositions[1], SourcePositions[2], TargetPositions[1], TargetPositions[2], TerrainSample.SurfaceColor, MaterialId);
+				RegisterTerrainEdge(SourcePositions[2], SourcePositions[3], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor, MaterialId);
+				RegisterTerrainEdge(SourcePositions[3], SourcePositions[0], TargetPositions[3], TargetPositions[0], TerrainSample.SurfaceColor, MaterialId);
 			}
 
 			for (const TPair<uint64, FSRGeneratedTerrainEdge>& PendingEdgePair : PendingTerrainEdges)
@@ -1179,6 +991,7 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 					PendingEdge.SourcePointB,
 					PendingEdge.SourcePointA,
 					WallColor,
+					PendingEdge.MaterialId,
 					true);
 			}
 
@@ -1189,7 +1002,7 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 		UE_LOG(
 			LogStarRoversCelestial,
 			Warning,
-			TEXT("Celestial body '%s' could not recover quad terrain cells from CelestialBodyStaticMesh; falling back to triangle mesh copy."),
+			TEXT("Celestial body '%s' could not recover quad terrain cells from StaticMesh; falling back to triangle mesh copy."),
 			*GetName());
 	}
 
@@ -1252,6 +1065,10 @@ bool ASRCelestialBody::CopySourceStaticMeshToCelestialBodyDynamicMesh()
 					DynamicColorIds[SourceVertexIndex0],
 					DynamicColorIds[SourceVertexIndex1],
 					DynamicColorIds[SourceVertexIndex2]));
+			if (MaterialIdAttribute)
+			{
+				MaterialIdAttribute->SetValue(TriangleId, 0);
+			}
 		}
 	}
 
@@ -1266,29 +1083,18 @@ UMaterialInstanceDynamic* ASRCelestialBody::GetActiveBodyDynamicMaterial() const
 		: nullptr;
 }
 
-float ASRCelestialBody::ComputeCelestialBodyDynamicMeshRadius() const
+void ASRCelestialBody::LogMissingDataErrorOnce(const TCHAR* Context) const
 {
-	const float CelestialBodyDynamicMeshRadius = ComputeScaledMeshRadius(CelestialBodyStaticMesh.Get(), CelestialBodyDynamicMesh.Get(), BodyScale);
-	if (CelestialBodyDynamicMeshRadius <= KINDA_SMALL_NUMBER)
-	{
-		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires a valid CelestialBodyDynamicMesh to compute approximate radius."), *GetName());
-	}
-
-	return CelestialBodyDynamicMeshRadius;
-}
-
-void ASRCelestialBody::LogMissingSpecErrorOnce(const TCHAR* Context) const
-{
-	if (bHasLoggedMissingSpecError)
+	if (bHasLoggedMissingDataError)
 	{
 		return;
 	}
 
-	bHasLoggedMissingSpecError = true;
+	bHasLoggedMissingDataError = true;
 	UE_LOG(
 		LogStarRoversCelestial,
 		Error,
-		TEXT("%s '%s' requires a data-driven body spec before runtime use. ApplySpec() was never called. Configure it through a data asset-driven spawn path instead of Blueprint defaults."),
+		TEXT("%s '%s' requires body data before runtime use. SetData() was never called. Configure it through a data asset-driven spawn path instead of Blueprint defaults."),
 		Context ? Context : TEXT("ASRCelestialBody"),
 		*GetName());
 }
@@ -1299,23 +1105,7 @@ USRCelestialBodyRegistrySubsystem* ASRCelestialBody::FindCelestialRegistry() con
 	return World ? World->GetSubsystem<USRCelestialBodyRegistrySubsystem>() : nullptr;
 }
 
-USRTimeControlSubsystem* ASRCelestialBody::FindTimeControlSubsystem() const
-{
-	UWorld* World = GetWorld();
-	return World ? World->GetSubsystem<USRTimeControlSubsystem>() : nullptr;
-}
-
 bool ASRCelestialBody::IsStellarBody() const
 {
 	return BodyCategory == ESRCelestialBodyCategory::Star;
-}
-
-float ASRCelestialBody::ResolveSecondsPerPeriod() const
-{
-	if (const USRTimeControlSubsystem* TimeControlSubsystem = FindTimeControlSubsystem())
-	{
-		return FMath::Max(0.0f, TimeControlSubsystem->GetSecondsPerPeriod());
-	}
-
-	return 20.0f;
 }

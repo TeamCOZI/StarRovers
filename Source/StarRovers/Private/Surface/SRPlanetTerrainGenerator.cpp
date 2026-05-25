@@ -1,6 +1,6 @@
 #include "Surface/SRPlanetTerrainGenerator.h"
 
-FSRPlanetTerrainSample FSRPlanetTerrainGenerator::SampleTerrain(const FVector& LocalUnitDirection, const FSRPlanetTerrainSettings& Settings)
+FSRPlanetTerrainSample FSRPlanetTerrainGenerator::SampleTerrain(const FVector& LocalUnitDirection, const FSRDynamicMeshGeneration& Settings)
 {
 	if (!Settings.bUseProceduralTerrain || Settings.TerrainHeight <= KINDA_SMALL_NUMBER)
 	{
@@ -19,7 +19,7 @@ FSRPlanetTerrainSample FSRPlanetTerrainGenerator::SampleTerrain(const FVector& L
 	}
 }
 
-FSRPlanetTerrainSample FSRPlanetTerrainGenerator::SampleMinecraftOverworldTerrain(const FVector& LocalUnitDirection, const FSRPlanetTerrainSettings& Settings)
+FSRPlanetTerrainSample FSRPlanetTerrainGenerator::SampleMinecraftOverworldTerrain(const FVector& LocalUnitDirection, const FSRDynamicMeshGeneration& Settings)
 {
 	FSRPlanetTerrainSample Sample;
 
@@ -235,7 +235,7 @@ float FSRPlanetTerrainGenerator::SampleRidgedNoise(const FVector& LocalUnitDirec
 	return AmplitudeSum > KINDA_SMALL_NUMBER ? NoiseSum / AmplitudeSum : 0.0f;
 }
 
-FVector FSRPlanetTerrainGenerator::ApplyDomainWarp(const FVector& LocalUnitDirection, const FSRPlanetTerrainSettings& Settings, float Strength)
+FVector FSRPlanetTerrainGenerator::ApplyDomainWarp(const FVector& LocalUnitDirection, const FSRDynamicMeshGeneration& Settings, float Strength)
 {
 	const FVector Direction = LocalUnitDirection.GetSafeNormal();
 	if (Direction.IsNearlyZero())
@@ -258,7 +258,7 @@ FVector FSRPlanetTerrainGenerator::ApplyDomainWarp(const FVector& LocalUnitDirec
 	return (Direction + (Warp * SafeStrength * 0.42f)).GetSafeNormal();
 }
 
-float FSRPlanetTerrainGenerator::SampleRiverMask(const FVector& LocalUnitDirection, const FSRPlanetTerrainSettings& Settings, float LandMask, float MountainMask)
+float FSRPlanetTerrainGenerator::SampleRiverMask(const FVector& LocalUnitDirection, const FSRDynamicMeshGeneration& Settings, float LandMask, float MountainMask)
 {
 	const float Strength = FMath::Clamp(Settings.RiverStrength, 0.0f, 1.0f);
 	if (Strength <= KINDA_SMALL_NUMBER || LandMask <= KINDA_SMALL_NUMBER)
@@ -281,7 +281,7 @@ float FSRPlanetTerrainGenerator::SampleRiverMask(const FVector& LocalUnitDirecti
 	return FMath::Clamp(RiverMask * Strength, 0.0f, 1.0f);
 }
 
-float FSRPlanetTerrainGenerator::SampleLakeMask(const FVector& LocalUnitDirection, const FSRPlanetTerrainSettings& Settings, float LandMask, float HeightAlpha)
+float FSRPlanetTerrainGenerator::SampleLakeMask(const FVector& LocalUnitDirection, const FSRDynamicMeshGeneration& Settings, float LandMask, float HeightAlpha)
 {
 	const float Strength = FMath::Clamp(Settings.LakeStrength, 0.0f, 1.0f);
 	if (Strength <= KINDA_SMALL_NUMBER || LandMask <= KINDA_SMALL_NUMBER)

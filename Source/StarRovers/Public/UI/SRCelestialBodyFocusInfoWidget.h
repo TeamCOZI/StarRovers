@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -63,7 +63,7 @@ protected:
 	TObjectPtr<UBorder> FocusInfoBorder;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UTextBlock> DisplayNameTextBlock;
+	TObjectPtr<UTextBlock> VariableNameTextBlock;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> AssemblyModeButton;

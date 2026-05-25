@@ -5,11 +5,24 @@
 #include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "Simulation/SROrbit.h"
+#include "Surface/SRPlanetTerrainGenerator.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 namespace
 {
 	constexpr float SurfaceGridTargetCellSize = 12500.0f;
+	constexpr int32 OceanScaleSampleCount = 512;
+	constexpr float OceanSurfacePaddingRatio = 0.01f;
+
+	FVector BuildFibonacciSphereDirection(const int32 Index, const int32 Count)
+	{
+		constexpr float GoldenAngle = PI * (3.0f - 2.2360679775f);
+		const float SafeCount = FMath::Max(1.0f, static_cast<float>(Count));
+		const float Z = 1.0f - ((static_cast<float>(Index) + 0.5f) * 2.0f / SafeCount);
+		const float Radius = FMath::Sqrt(FMath::Max(0.0f, 1.0f - (Z * Z)));
+		const float Theta = GoldenAngle * static_cast<float>(Index);
+		return FVector(FMath::Cos(Theta) * Radius, FMath::Sin(Theta) * Radius, Z).GetSafeNormal();
+	}
 }
 
 ASRPlanet::ASRPlanet()
@@ -28,11 +41,11 @@ ASRPlanet::ASRPlanet()
 	OrbitLineThickness = 20.0f;
 	OrbitLineSegments = 96;
 	CanConstruct = false;
-	SurfaceGridSurfaceOffset = 0.0f;
+	SurfaceGridHeightOffset = 0.0f;
 	bHasOcean = false;
 	OceanMesh = nullptr;
 	OceanMaterial = nullptr;
-	OceanScaleMultiplier = 0.97f;
+	OceanScaleMultiplier = 1.0f;
 
 	Orbit = CreateDefaultSubobject<USROrbit>(TEXT("Orbit"));
 
@@ -55,46 +68,46 @@ ASRPlanet::ASRPlanet()
 	SurfaceGrid->SetupAttachment(SceneRoot);
 }
 
-void ASRPlanet::ApplySpec(const FSRCelestialBodySpec& NewSpec)
+void ASRPlanet::SetData(const FSRCelestialBodyData& NewData)
 {
-	CanConstruct = NewSpec.bCanConstruct;
-	SurfaceGridSurfaceOffset = NewSpec.SurfaceGridSurfaceOffset;
-	bHasOcean = NewSpec.bHasOcean;
-	OceanMesh = NewSpec.OceanMesh;
-	OceanMaterial = NewSpec.OceanMaterial;
-	OceanScaleMultiplier = NewSpec.OceanScaleMultiplier;
-	bShowOrbitLine = NewSpec.bShowOrbitLine;
-	OrbitLineColor = NewSpec.OrbitLineColor;
-	OrbitLineOpacity = NewSpec.OrbitLineOpacity;
-	OrbitLineThickness = NewSpec.OrbitLineThickness;
-	OrbitLineSegments = NewSpec.OrbitLineSegments;
-	ConstructionHeightOffset = NewSpec.ConstructionHeightOffset;
-	GridLineColor = NewSpec.GridLineColor;
-	GridLineOpacity = NewSpec.GridLineOpacity;
-	GridLineThickness = NewSpec.GridLineThickness;
-	HoveredCellColor = NewSpec.HoveredCellColor;
-	SelectedCellColor = NewSpec.SelectedCellColor;
-	OccupiedCellColor = NewSpec.OccupiedCellColor;
+	CanConstruct = NewData.bCanConstruct;
+	SurfaceGridHeightOffset = NewData.SurfaceGridHeightOffset;
+	bHasOcean = NewData.bHasOcean;
+	OceanMesh = NewData.OceanMesh;
+	OceanMaterial = NewData.OceanMaterial;
+	OceanScaleMultiplier = NewData.OceanScaleMultiplier;
+	bShowOrbitLine = NewData.bShowOrbitLine;
+	OrbitLineColor = NewData.OrbitLineColor;
+	OrbitLineOpacity = NewData.OrbitLineOpacity;
+	OrbitLineThickness = NewData.OrbitLineThickness;
+	OrbitLineSegments = NewData.OrbitLineSegments;
+	ConstructionHeightOffset = NewData.ConstructionHeightOffset;
+	GridLineColor = NewData.GridLineColor;
+	GridLineOpacity = NewData.GridLineOpacity;
+	GridLineThickness = NewData.GridLineThickness;
+	HoveredCellColor = NewData.HoveredCellColor;
+	SelectedCellColor = NewData.SelectedCellColor;
+	OccupiedCellColor = NewData.OccupiedCellColor;
 
 	if (IsValid(Orbit))
 	{
 		Orbit->ConfigureOrbit(
-			NewSpec.ParentBody,
-			NewSpec.OrbitRadius,
-			NewSpec.OrbitPeriodInPeriods,
-			NewSpec.StartingPhase);
+			NewData.ParentBody,
+			NewData.OrbitRadius,
+			NewData.OrbitPeriod,
+			NewData.InitialAngle);
 	}
 
-	Super::ApplySpec(NewSpec);
+	Super::SetData(NewData);
 }
 
-void ASRPlanet::ApplyConfiguredBodyState()
+void ASRPlanet::ApplyData()
 {
-	Super::ApplyConfiguredBodyState();
+	Super::ApplyData();
 	ConstructionHeightOffset = FMath::Max(0.0f, ConstructionHeightOffset);
 	GridLineThickness = FMath::Clamp(GridLineThickness, 0.0f, 2.0f);
 	GridLineOpacity = FMath::Clamp(GridLineOpacity, 0.0f, 1.0f);
-	SurfaceGridSurfaceOffset = FMath::Clamp(SurfaceGridSurfaceOffset, 0.0f, 1.0f);
+	SurfaceGridHeightOffset = FMath::Clamp(SurfaceGridHeightOffset, 0.0f, 1.0f);
 	OceanScaleMultiplier = FMath::Max(0.01f, OceanScaleMultiplier);
 	OrbitLineOpacity = FMath::Clamp(OrbitLineOpacity, 0.0f, 1.0f);
 	OrbitLineSegments = FMath::Max(3, OrbitLineSegments);
@@ -104,14 +117,19 @@ void ASRPlanet::ApplyConfiguredBodyState()
 	{
 		OceanStaticMesh->SetRelativeLocation(FVector::ZeroVector);
 		OceanStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
-		OceanStaticMesh->SetRelativeScale3D(FVector(BodyScale * OceanScaleMultiplier));
+		OceanStaticMesh->SetRelativeScale3D(FVector(ResolveOceanScale()));
 	}
 
 	ApplyOceanStaticMeshSettings();
-	SyncApproximateRadiusFromPlanetVisuals();
 	if (IsValid(ClickSphereCollision))
 	{
-		ClickSphereCollision->SetSphereRadius(FMath::Max(ApproximateRadius, 1.0f));
+		const float BodyRadius = IsValid(StaticMesh.Get())
+			? StaticMesh->GetBounds().SphereRadius * BodyScale
+			: 0.0f;
+		const float OceanRadius = bHasOcean && IsValid(OceanMesh.Get())
+			? OceanMesh->GetBounds().SphereRadius * ResolveOceanScale()
+			: 0.0f;
+		ClickSphereCollision->SetSphereRadius(FMath::Max(FMath::Max(BodyRadius, OceanRadius), 1.0f));
 	}
 
 	if (SupportsSurfaceGrid())
@@ -119,7 +137,10 @@ void ASRPlanet::ApplyConfiguredBodyState()
 		EnsureSurfaceGrid();
 		if (IsValid(SurfaceGrid))
 		{
-			const float SurfaceGridPlanetRadius = FMath::Max(ComputeCelestialBodyDynamicMeshRadius(), 1.0f);
+			const float BodyRadius = IsValid(StaticMesh.Get())
+				? StaticMesh->GetBounds().SphereRadius * BodyScale
+				: 0.0f;
+			const float SurfaceGridPlanetRadius = FMath::Max(BodyRadius, 1.0f);
 			const int32 ResolvedSurfaceGridResolution = FMath::Clamp(
 				FMath::RoundToInt((SurfaceGridPlanetRadius * 2.0f) / SurfaceGridTargetCellSize),
 				1,
@@ -133,9 +154,9 @@ void ASRPlanet::ApplyConfiguredBodyState()
 				HoveredCellColor,
 				SelectedCellColor,
 				OccupiedCellColor,
-				SurfaceGridSurfaceOffset);
+				SurfaceGridHeightOffset);
 			SurfaceGrid->ConfigureConstructionHeightOffset(ConstructionHeightOffset);
-			SurfaceGrid->ConfigureTerrain(TerrainSettings);
+			SurfaceGrid->ConfigureTerrain(DynamicMeshGeneration);
 			SurfaceGrid->RebuildGrid();
 		}
 	}
@@ -157,37 +178,37 @@ void ASRPlanet::ApplyConfiguredBodyState()
 	}
 }
 
-FSRCelestialBodySpec ASRPlanet::GetSpec() const
+FSRCelestialBodyData ASRPlanet::GetData() const
 {
-	FSRCelestialBodySpec CurrentSpec = Super::GetSpec();
-	CurrentSpec.ParentBody = IsValid(Orbit) ? Orbit->GetParentBody() : nullptr;
-	CurrentSpec.OrbitRadius = IsValid(Orbit) ? Orbit->GetOrbitRadius() : 0.0f;
-	CurrentSpec.OrbitPeriodInPeriods = IsValid(Orbit) ? Orbit->GetOrbitPeriodInPeriods() : 0.0f;
-	CurrentSpec.StartingPhase = IsValid(Orbit) ? Orbit->GetStartingPhaseDegrees() : 0.0f;
-	CurrentSpec.bCanConstruct = CanConstruct;
-	CurrentSpec.GridLineThickness = GridLineThickness;
-	CurrentSpec.GridLineColor = GridLineColor;
-	CurrentSpec.GridLineOpacity = GridLineOpacity;
-	CurrentSpec.HoveredCellColor = HoveredCellColor;
-	CurrentSpec.SelectedCellColor = SelectedCellColor;
-	CurrentSpec.OccupiedCellColor = OccupiedCellColor;
-	CurrentSpec.SurfaceGridSurfaceOffset = SurfaceGridSurfaceOffset;
-	CurrentSpec.ConstructionHeightOffset = ConstructionHeightOffset;
-	CurrentSpec.TerrainSeed = GenerationSeed;
-	CurrentSpec.TerrainSettings = TerrainSettings;
-	CurrentSpec.bHasOcean = bHasOcean;
-	CurrentSpec.OceanMesh = OceanMesh;
-	CurrentSpec.OceanMaterial = OceanMaterial;
-	CurrentSpec.OceanScaleMultiplier = OceanScaleMultiplier;
-	CurrentSpec.bShowOrbitLine = bShowOrbitLine;
-	CurrentSpec.OrbitLineColor = OrbitLineColor;
-	CurrentSpec.OrbitLineOpacity = OrbitLineOpacity;
-	CurrentSpec.OrbitLineSegments = OrbitLineSegments;
-	CurrentSpec.OrbitLineThickness = OrbitLineThickness;
-	return CurrentSpec;
+	FSRCelestialBodyData CurrentData = Super::GetData();
+	CurrentData.ParentBody = IsValid(Orbit) ? Orbit->GetParentBody() : nullptr;
+	CurrentData.OrbitRadius = IsValid(Orbit) ? Orbit->GetOrbitRadius() : 0.0f;
+	CurrentData.OrbitPeriod = IsValid(Orbit) ? Orbit->GetOrbitPeriod() : 0.0f;
+	CurrentData.InitialAngle = IsValid(Orbit) ? Orbit->GetInitialAngleDegrees() : 0.0f;
+	CurrentData.bCanConstruct = CanConstruct;
+	CurrentData.GridLineThickness = GridLineThickness;
+	CurrentData.GridLineColor = GridLineColor;
+	CurrentData.GridLineOpacity = GridLineOpacity;
+	CurrentData.HoveredCellColor = HoveredCellColor;
+	CurrentData.SelectedCellColor = SelectedCellColor;
+	CurrentData.OccupiedCellColor = OccupiedCellColor;
+	CurrentData.SurfaceGridHeightOffset = SurfaceGridHeightOffset;
+	CurrentData.ConstructionHeightOffset = ConstructionHeightOffset;
+	CurrentData.GenerationSeed = GenerationSeed;
+	CurrentData.DynamicMeshGeneration = DynamicMeshGeneration;
+	CurrentData.bHasOcean = bHasOcean;
+	CurrentData.OceanMesh = OceanMesh;
+	CurrentData.OceanMaterial = OceanMaterial;
+	CurrentData.OceanScaleMultiplier = OceanScaleMultiplier;
+	CurrentData.bShowOrbitLine = bShowOrbitLine;
+	CurrentData.OrbitLineColor = OrbitLineColor;
+	CurrentData.OrbitLineOpacity = OrbitLineOpacity;
+	CurrentData.OrbitLineSegments = OrbitLineSegments;
+	CurrentData.OrbitLineThickness = OrbitLineThickness;
+	return CurrentData;
 }
 
-USROrbit* ASRPlanet::GetOrbitComponent() const
+USROrbit* ASRPlanet::GetOrbit() const
 {
 	return Orbit;
 }
@@ -197,9 +218,9 @@ USRPlanetSurfaceGrid* ASRPlanet::GetSurfaceGrid() const
 	return SurfaceGrid;
 }
 
-void ASRPlanet::SetDynamicMeshEnabled(bool bUseDynamicMesh)
+void ASRPlanet::SetCelestialBodyMesh(bool bUseDynamicMesh)
 {
-	Super::SetDynamicMeshEnabled(bUseDynamicMesh);
+	Super::SetCelestialBodyMesh(bUseDynamicMesh);
 
 	if (IsValid(OceanStaticMesh))
 	{
@@ -246,7 +267,7 @@ void ASRPlanet::ApplyOceanStaticMeshSettings()
 
 	OceanStaticMesh->SetMaterial(0, DesiredOceanMaterial);
 
-	const float OceanScale = FMath::Max(0.01f, BodyScale * OceanScaleMultiplier);
+	const float OceanScale = ResolveOceanScale();
 	OceanStaticMesh->SetRelativeLocation(FVector::ZeroVector);
 	OceanStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
 	OceanStaticMesh->SetRelativeScale3D(FVector(OceanScale));
@@ -254,14 +275,61 @@ void ASRPlanet::ApplyOceanStaticMeshSettings()
 	OceanStaticMesh->SetHiddenInGame(false);
 }
 
-void ASRPlanet::SyncApproximateRadiusFromPlanetVisuals()
+float ASRPlanet::ResolveOceanScale() const
 {
-	ApproximateRadius = ComputeCelestialBodyDynamicMeshRadius();
-	if (bHasOcean)
-	{
-		ApproximateRadius = FMath::Max(ApproximateRadius, ComputeCelestialBodyDynamicMeshRadius() * OceanScaleMultiplier);
-	}
+	const float AutoOceanScaleMultiplier = EstimateProceduralOceanScaleMultiplier();
+	const float ResolvedOceanScaleMultiplier = AutoOceanScaleMultiplier > KINDA_SMALL_NUMBER
+		? AutoOceanScaleMultiplier
+		: OceanScaleMultiplier;
+	return FMath::Max(0.01f, BodyScale * ResolvedOceanScaleMultiplier);
 }
+
+float ASRPlanet::EstimateProceduralOceanScaleMultiplier() const
+{
+	if (!DynamicMeshGeneration.bUseProceduralTerrain || DynamicMeshGeneration.TerrainHeight <= KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	if (!IsValid(StaticMesh.Get()) || !IsValid(OceanMesh.Get()))
+	{
+		return 0.0f;
+	}
+
+	const float BodyMeshRadius = StaticMesh->GetBounds().SphereRadius;
+	const float OceanMeshRadius = OceanMesh->GetBounds().SphereRadius;
+	if (BodyMeshRadius <= KINDA_SMALL_NUMBER || OceanMeshRadius <= KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	bool bHasWaterSample = false;
+	float HighestWaterHeightOffset = -BIG_NUMBER;
+	for (int32 SampleIndex = 0; SampleIndex < OceanScaleSampleCount; ++SampleIndex)
+	{
+		const FVector Direction = BuildFibonacciSphereDirection(SampleIndex, OceanScaleSampleCount);
+		const FSRPlanetTerrainSample TerrainSample = FSRPlanetTerrainGenerator::SampleTerrain(Direction, DynamicMeshGeneration);
+		const bool bWaterBiome = TerrainSample.Biome == ESRPlanetBiome::Ocean
+			|| (TerrainSample.Biome == ESRPlanetBiome::Coast && (TerrainSample.RiverMask > 0.58f || TerrainSample.LakeMask > 0.38f));
+		if (!bWaterBiome)
+		{
+			continue;
+		}
+
+		bHasWaterSample = true;
+		HighestWaterHeightOffset = FMath::Max(HighestWaterHeightOffset, TerrainSample.HeightOffset);
+	}
+
+	if (!bHasWaterSample)
+	{
+		return 0.0f;
+	}
+
+	const float SurfacePadding = FMath::Max(0.0f, DynamicMeshGeneration.TerrainHeight) * OceanSurfacePaddingRatio;
+	const float DesiredOceanRadius = FMath::Max(1.0f, BodyMeshRadius + HighestWaterHeightOffset + SurfacePadding);
+	return DesiredOceanRadius / OceanMeshRadius;
+}
+
 
 void ASRPlanet::EnsureSurfaceGrid()
 {

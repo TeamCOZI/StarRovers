@@ -12,8 +12,6 @@ namespace UE::Geometry
     class FDynamicMesh3;
 }
 
-class UMaterialInterface;
-
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
 class STARROVERS_API USRPlanetSurfaceGrid : public UDynamicMeshComponent
 {
@@ -110,9 +108,6 @@ public:
         FLinearColor NewOccupiedCellColor,
         float NewSurfaceOffset);
 
-    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Debug")
-    void SetGridMaterial(UMaterialInterface* NewGridMaterial);
-
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     void ConfigureConstructionHeightOffset(float NewConstructionHeightOffset);
 
@@ -126,7 +121,7 @@ public:
     void ConfigureProceduralTerrain(bool bNewUseProceduralTerrain, int32 NewTerrainSeed, float NewTerrainHeight, float NewTerrainFrequency, int32 NewTerrainOctaves, float NewTerrainPersistence);
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Terrain")
-    void ConfigureTerrain(const FSRPlanetTerrainSettings& NewTerrainSettings);
+    void ConfigureTerrain(const FSRDynamicMeshGeneration& NewDynamicMeshGeneration);
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Terrain")
     FSRPlanetTerrainSample GetTerrainSampleAtDirection(FVector LocalUnitDirection) const;
@@ -171,11 +166,8 @@ protected:
     UPROPERTY()
     float GridSurfaceOffset;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Surface|Debug", meta = (DisplayName = "GridMaterial"))
-    TObjectPtr<UMaterialInterface> GridMaterial;
-
     UPROPERTY()
-    FSRPlanetTerrainSettings TerrainSettings;
+    FSRDynamicMeshGeneration DynamicMeshGeneration;
 
     UPROPERTY()
     TArray<FSRPlanetSurfaceGridCell> Cells;
@@ -201,7 +193,6 @@ private:
     void AppendGridWireCell(UE::Geometry::FDynamicMesh3& GridMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness, bool bIncludeInEdgeSet, TSet<uint64>* DrawnEdges) const;
     void AppendGridWireEdge(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FLinearColor& LineColor, float LineThickness) const;
     void AppendGridWireSegment(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalPointA, const FVector& LocalPointB, const FLinearColor& LineColor, float LineThickness) const;
-    void ApplyGridMaterial();
     float GetEffectiveWorldRadius() const;
     void DrawDebugSurfaceLine(const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FColor& LineColor, float Duration, float LineThickness, const FSRCameraInfo& CameraInfo, float ReferenceViewDepth, float ReferenceFieldOfViewDegrees) const;
     FVector ResolveLocalSurfacePoint(const FVector& LocalUnitDirection, float HeightOffset = 0.0f) const;

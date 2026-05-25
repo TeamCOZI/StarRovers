@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -28,6 +28,16 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Gravity")
 	void RecomputeDerivedValues();
+
+	void ConfigureGravity(
+		float NewMass,
+		float NewGravityRatio,
+		float NewGravityRadiusRatio,
+		bool bNewShowGravityLine,
+		const FLinearColor& NewGravityLineColor,
+		float NewGravityLineOpacity,
+		int32 NewGravityLineSegments,
+		float NewGravityLineThickness);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Gravity")
 	float GetMass() const;

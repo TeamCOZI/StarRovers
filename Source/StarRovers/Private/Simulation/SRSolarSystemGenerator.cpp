@@ -1,4 +1,4 @@
-﻿#include "Simulation/SRSolarSystemGenerator.h"
+#include "Simulation/SRSolarSystemGenerator.h"
 
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Celestial/SRMoonDataAsset.h"
@@ -7,6 +7,7 @@
 #include "Celestial/SRStarDataAsset.h"
 #include "Celestial/SRStar.h"
 #include "Components/SceneComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Gravity/SRGravityParent.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 
@@ -28,50 +29,62 @@ namespace
 			IsValid(SourceObject) ? *SourceObject->GetName() : TEXT("<InvalidObject>"));
 	}
 
-	bool TryGetRequiredDisplayName(const UObject* DataAsset, const FText& DisplayName, FText& OutDisplayName)
+	bool TryComputeScaledBodyRadiusFromCelestialBodyRequest(const FSRCelestialBodyGenerateRequest& CelestialBodyRequest, float& OutRadius)
 	{
-		OutDisplayName = FText::GetEmpty();
+		OutRadius = 0.0f;
+		const UStaticMesh* MeshAsset = CelestialBodyRequest.BodyData.StaticMesh.Get();
+		if (!IsValid(MeshAsset))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Solar system generation requires StaticMesh for '%s'."), *CelestialBodyRequest.BodyData.VariableName.ToString());
+			return false;
+		}
+
+		OutRadius = FMath::Max(0.0f, MeshAsset->GetBounds().SphereRadius * FMath::Max(0.0f, CelestialBodyRequest.BodyData.BodyScale));
+		return true;
+	}
+
+	float ComputeScaledBodyRadius(const ASRCelestialBody* CelestialBody)
+	{
+		if (!IsValid(CelestialBody))
+		{
+			return 0.0f;
+		}
+
+		const FSRCelestialBodyData BodyData = CelestialBody->GetData();
+		return IsValid(BodyData.StaticMesh.Get())
+			? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.BodyScale)
+			: 0.0f;
+	}
+
+	float ComputeGravityRadiusFromCelestialBodyRequest(const FSRCelestialBodyGenerateRequest& CelestialBodyRequest)
+	{
+		return FMath::Max(0.0f, CelestialBodyRequest.BodyData.Mass)
+			* FMath::Max(0.0f, CelestialBodyRequest.BodyData.GravityRadiusRatio);
+	}
+
+	bool TryGetRequiredVariableName(const UObject* DataAsset, const FText& VariableName, FText& OutVariableName)
+	{
+		OutVariableName = FText::GetEmpty();
 		if (!IsValid(DataAsset))
 		{
 			LogGeneratorMissingData(DataAsset, TEXT("DataAsset"));
 			return false;
 		}
 
-		if (DisplayName.IsEmpty())
+		if (VariableName.IsEmpty())
 		{
-			LogGeneratorMissingData(DataAsset, TEXT("DisplayName"));
+			LogGeneratorMissingData(DataAsset, TEXT("VariableName"));
 			return false;
 		}
 
-		OutDisplayName = DisplayName;
+		OutVariableName = VariableName;
 		return true;
 	}
 
-	bool TryComputeApproximateRadiusFromCelestialBodyRequest(const FSRCelestialBodyGenerateRequest& CelestialBodyRequest, float& OutRadius)
-	{
-		OutRadius = 0.0f;
-		const UStaticMesh* MeshAsset = CelestialBodyRequest.BodyMesh.Get();
-		if (!IsValid(MeshAsset))
-		{
-			UE_LOG(LogTemp, Error, TEXT("Solar system generation requires BodyMesh for '%s'."), *CelestialBodyRequest.BodySpec.DisplayName.ToString());
-			return false;
-		}
-
-		OutRadius = FMath::Max(0.0f, MeshAsset->GetBounds().SphereRadius * FMath::Max(0.0f, CelestialBodyRequest.BodySpec.BodyScale));
-		return true;
-	}
-
-	float ComputeGravityRadiusFromCelestialBodyRequest(const FSRCelestialBodyGenerateRequest& CelestialBodyRequest)
-	{
-		return FMath::Max(0.0f, CelestialBodyRequest.BodySpec.Mass)
-			* FMath::Max(0.0f, CelestialBodyRequest.BodySpec.GravityRadiusRatio);
-	}
-
-	bool TryBuildSpecFromClassDefaultsAndBiome(
+	bool TryBuildDataFromClassDefaultsAndDataAsset(
 		const TSubclassOf<ASRCelestialBody>& BodyClass,
-		const FSRCelestialBodyBiomeSpec& BiomeSpec,
-		const ESRCelestialBodyCategory BodyCategory,
-		FSRCelestialBodySpec& OutSpec)
+		const FSRCelestialBodyData& DataAssetData,
+		FSRCelestialBodyData& OutData)
 	{
 		if (!BodyClass || BodyClass == ASRCelestialBody::StaticClass())
 		{
@@ -89,27 +102,26 @@ namespace
 			return false;
 		}
 
-		OutSpec = DefaultBody->GetSpec();
-		OutSpec.BodyCategory = BodyCategory;
-		OutSpec.DisplayName = BiomeSpec.DisplayName;
-		OutSpec.bUseProceduralTerrain = BiomeSpec.bUseProceduralTerrain;
-		OutSpec.TerrainSeed = BiomeSpec.TerrainSeed;
-		OutSpec.TerrainHeight = BiomeSpec.TerrainHeight;
-		OutSpec.TerrainFrequency = BiomeSpec.TerrainFrequency;
-		OutSpec.TerrainOctaves = BiomeSpec.TerrainOctaves;
-		OutSpec.TerrainPersistence = BiomeSpec.TerrainPersistence;
-		OutSpec.TerrainSettings = BiomeSpec.TerrainSettings;
-		OutSpec.bHasOcean = BiomeSpec.bHasOcean;
-		OutSpec.OceanMesh = BiomeSpec.OceanMesh;
-		OutSpec.OceanMaterial = BiomeSpec.OceanMaterial;
-		OutSpec.OceanScaleMultiplier = BiomeSpec.OceanScaleMultiplier;
-		OutSpec.SurfaceGridSurfaceOffset = BiomeSpec.SurfaceGridSurfaceOffset;
-		OutSpec.OrbitPeriodInPeriods = BiomeSpec.OrbitSpeed > KINDA_SMALL_NUMBER
-			? 1.0f / BiomeSpec.OrbitSpeed
-			: 0.0f;
-		OutSpec.StarPointLightIntensity = BiomeSpec.StarPointLightIntensity;
-		OutSpec.StarMaterialEmissiveStrength = BiomeSpec.StarMaterialEmissiveStrength;
-		OutSpec.StarPointLightColor = BiomeSpec.StarPointLightColor;
+		OutData = DefaultBody->GetData();
+		OutData.VariableName = DataAssetData.VariableName;
+		OutData.BodyCategory = DataAssetData.BodyCategory;
+		OutData.BodyScale = FMath::Max(0.0f, DataAssetData.BodyScale);
+		OutData.StaticMesh = DataAssetData.StaticMesh;
+		OutData.Material = DataAssetData.Material;
+		OutData.Mass = FMath::Max(0.0f, DataAssetData.Mass);
+		OutData.GravityRatio = FMath::Max(0.0f, DataAssetData.GravityRatio);
+		OutData.GravityRadiusRatio = FMath::Max(0.0f, DataAssetData.GravityRadiusRatio);
+		OutData.DynamicMeshGeneration = DataAssetData.DynamicMeshGeneration;
+		OutData.GenerationSeed = DataAssetData.GenerationSeed;
+		OutData.bHasOcean = DataAssetData.bHasOcean;
+		OutData.OceanMesh = DataAssetData.OceanMesh;
+		OutData.OceanMaterial = DataAssetData.OceanMaterial;
+		OutData.OceanScaleMultiplier = DataAssetData.OceanScaleMultiplier;
+		OutData.SurfaceGridHeightOffset = DataAssetData.SurfaceGridHeightOffset;
+		OutData.OrbitPeriod = FMath::Max(0.0f, DataAssetData.OrbitPeriod);
+		OutData.StarPointLightIntensity = DataAssetData.StarPointLightIntensity;
+		OutData.StarMaterialEmissiveStrength = DataAssetData.StarMaterialEmissiveStrength;
+		OutData.StarPointLightColor = DataAssetData.StarPointLightColor;
 		return true;
 	}
 
@@ -140,35 +152,28 @@ namespace
 		}
 
 		OutRequest.BodyClass = BodyClass;
-		if (!TryBuildSpecFromClassDefaultsAndBiome(BodyClass, DataAsset->BuildBiomeSpec(), DataAsset->BodyCategory, OutRequest.BodySpec))
+		if (!TryBuildDataFromClassDefaultsAndDataAsset(BodyClass, DataAsset->BuildData(), OutRequest.BodyData))
 		{
 			return false;
 		}
 
-		OutRequest.BodySpec.BodyScale = FMath::Max(0.0f, DataAsset->BodyScale);
-		OutRequest.BodySpec.Mass = FMath::Max(0.0f, DataAsset->Mass);
-		OutRequest.BodySpec.GravityRatio = FMath::Max(0.0f, DataAsset->GravityRatio);
-		OutRequest.BodySpec.GravityRadiusRatio = FMath::Max(0.0f, DataAsset->GravityRadiusRatio);
-		OutRequest.BodyMesh = DataAsset->BodyMesh;
-		OutRequest.BodyMaterial = DataAsset->BodyMaterial;
-
-		if (!IsValid(OutRequest.BodyMesh))
+		if (!IsValid(OutRequest.BodyData.StaticMesh))
 		{
-			LogGeneratorMissingData(DataAsset, TEXT("BodyMesh"));
+			LogGeneratorMissingData(DataAsset, TEXT("StaticMesh"));
 			return false;
 		}
-		if (!IsValid(OutRequest.BodyMaterial))
+		if (!IsValid(OutRequest.BodyData.Material))
 		{
-			LogGeneratorMissingData(DataAsset, TEXT("BodyMaterial"));
+			LogGeneratorMissingData(DataAsset, TEXT("Material"));
 			return false;
 		}
 
-		FText DisplayName;
-		if (!TryGetRequiredDisplayName(DataAsset, DataAsset->DisplayName, DisplayName))
+		FText VariableName;
+		if (!TryGetRequiredVariableName(DataAsset, DataAsset->VariableName, VariableName))
 		{
 			return false;
 		}
-		OutRequest.BodySpec.DisplayName = DisplayName;
+		OutRequest.BodyData.VariableName = VariableName;
 		return true;
 	}
 
@@ -291,10 +296,10 @@ ASRCelestialBody* ASRSolarSystemGenerator::SpawnPrimaryStar(FRandomStream& Rando
 	{
 		return nullptr;
 	}
-	StarCelestialBodyRequest.BodySpec.ParentBody = nullptr;
-	StarCelestialBodyRequest.BodySpec.OrbitRadius = 0.0f;
-	StarCelestialBodyRequest.BodySpec.OrbitPeriodInPeriods = 0.0f;
-	StarCelestialBodyRequest.BodySpec.StartingPhase = 0.0f;
+	StarCelestialBodyRequest.BodyData.ParentBody = nullptr;
+	StarCelestialBodyRequest.BodyData.OrbitRadius = 0.0f;
+	StarCelestialBodyRequest.BodyData.OrbitPeriod = 0.0f;
+	StarCelestialBodyRequest.BodyData.InitialAngle = 0.0f;
 
 	return SpawnOrbitingBody(ResolvedPrimaryStarClass, StarCelestialBodyRequest, nullptr);
 }
@@ -308,7 +313,7 @@ ASRCelestialBody* ASRSolarSystemGenerator::SpawnOrbitingBody(const TSubclassOf<A
 	}
 
 	const FVector SpawnLocation = IsValid(ParentBody)
-		? ComputeOrbitWorldLocation(ParentBody, CelestialBodyRequest.BodySpec.OrbitRadius, CelestialBodyRequest.BodySpec.StartingPhase)
+		? ComputeOrbitWorldLocation(ParentBody, CelestialBodyRequest.BodyData.OrbitRadius, CelestialBodyRequest.BodyData.InitialAngle)
 		: GetActorLocation();
 	const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation);
 
@@ -324,14 +329,13 @@ ASRCelestialBody* ASRSolarSystemGenerator::SpawnOrbitingBody(const TSubclassOf<A
 		return nullptr;
 	}
 
-	GeneratedCelestialBody->ApplySpec(CelestialBodyRequest.BodySpec);
-	GeneratedCelestialBody->SetCelestialBodyAssets(CelestialBodyRequest.BodyMesh, CelestialBodyRequest.BodyMaterial);
+	GeneratedCelestialBody->SetData(CelestialBodyRequest.BodyData);
 	GeneratedCelestialBody->FinishSpawning(SpawnTransform);
 
 #if WITH_EDITOR
-	if (!CelestialBodyRequest.BodySpec.DisplayName.IsEmpty())
+	if (!CelestialBodyRequest.BodyData.VariableName.IsEmpty())
 	{
-		GeneratedCelestialBody->SetActorLabel(CelestialBodyRequest.BodySpec.DisplayName.ToString());
+		GeneratedCelestialBody->SetActorLabel(CelestialBodyRequest.BodyData.VariableName.ToString());
 	}
 #endif
 
@@ -367,10 +371,10 @@ void ASRSolarSystemGenerator::BuildOrbitingBodyRequests(
 
 	for (int32 Index = 0; Index < CandidateCelestialBodies.Num(); ++Index)
 	{
-		CandidateCelestialBodies[Index].BodySpec.OrbitRadius = PackedOrbitRadii[Index];
-		CandidateCelestialBodies[Index].BodySpec.StartingPhase = RandomStream.FRandRange(0.0f, 360.0f);
-		CandidateCelestialBodies[Index].BodySpec.TerrainSeed = RandomStream.RandRange(1, TNumericLimits<int32>::Max() - 1);
-		CandidateCelestialBodies[Index].BodySpec.TerrainSettings.TerrainSeed = CandidateCelestialBodies[Index].BodySpec.TerrainSeed;
+		CandidateCelestialBodies[Index].BodyData.OrbitRadius = PackedOrbitRadii[Index];
+		CandidateCelestialBodies[Index].BodyData.InitialAngle = RandomStream.FRandRange(0.0f, 360.0f);
+		CandidateCelestialBodies[Index].BodyData.GenerationSeed = RandomStream.RandRange(1, TNumericLimits<int32>::Max() - 1);
+		CandidateCelestialBodies[Index].BodyData.DynamicMeshGeneration.TerrainSeed = CandidateCelestialBodies[Index].BodyData.GenerationSeed;
 	}
 
 	OutResolvedCelestialBodyRequests = MoveTemp(CandidateCelestialBodies);
@@ -385,7 +389,7 @@ bool ASRSolarSystemGenerator::TrySolvePackedOrbitRadii(ASRCelestialBody* ParentB
 		return false;
 	}
 
-	const float ParentVisualRadius = USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(ParentBody);
+	const float ParentBodyRadius = ComputeScaledBodyRadius(ParentBody);
 	const USRGravityParent* ParentGravityParent = ParentBody->GetGravityParent();
 	if (!IsValid(ParentGravityParent))
 	{
@@ -404,7 +408,7 @@ bool ASRSolarSystemGenerator::TrySolvePackedOrbitRadii(ASRCelestialBody* ParentB
 	for (int32 BodyIndex = 0; BodyIndex < CelestialBodyRequests.Num(); ++BodyIndex)
 	{
 		float BodyRadius = 0.0f;
-		if (!TryComputeApproximateRadiusFromCelestialBodyRequest(CelestialBodyRequests[BodyIndex], BodyRadius))
+		if (!TryComputeScaledBodyRadiusFromCelestialBodyRequest(CelestialBodyRequests[BodyIndex], BodyRadius))
 		{
 			return false;
 		}
@@ -415,7 +419,7 @@ bool ASRSolarSystemGenerator::TrySolvePackedOrbitRadii(ASRCelestialBody* ParentB
 	}
 
 	OutOrbitRadii.SetNumUninitialized(OrbitInfos.Num());
-	float NextMinimumInnerEdge = ParentVisualRadius;
+	float NextMinimumInnerEdge = ParentBodyRadius;
 	float RequiredParentGravityRadius = NextMinimumInnerEdge;
 	for (int32 BodyIndex = 0; BodyIndex < OrbitInfos.Num(); ++BodyIndex)
 	{
@@ -461,7 +465,7 @@ void ASRSolarSystemGenerator::EnsureParentGravityContainsOrbitingBody(ASRCelesti
 	const float ParentGravityRadius = ParentGravityParent->GetGravityRadius();
 
 	const float OrbitRadius = FVector::Dist(ParentBody->GetActorLocation(), OrbitingBody->GetActorLocation());
-	const float OrbitingBodyVisualRadius = USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(OrbitingBody);
+	const float OrbitingBodyRadius = ComputeScaledBodyRadius(OrbitingBody);
 	const USRGravityParent* OrbitingBodyGravityParent = OrbitingBody->GetGravityParent();
 	if (!IsValid(OrbitingBodyGravityParent))
 	{
@@ -469,7 +473,7 @@ void ASRSolarSystemGenerator::EnsureParentGravityContainsOrbitingBody(ASRCelesti
 		return;
 	}
 	const float OrbitingBodyGravityRadius = OrbitingBodyGravityParent->GetGravityRadius();
-	const float OrbitingBodyExtent = FMath::Max(OrbitingBodyVisualRadius, OrbitingBodyGravityRadius);
+	const float OrbitingBodyExtent = FMath::Max(OrbitingBodyRadius, OrbitingBodyGravityRadius);
 	const float RequiredParentGravityRadius = OrbitRadius + OrbitingBodyExtent;
 	if (ParentGravityRadius + KINDA_SMALL_NUMBER >= RequiredParentGravityRadius)
 	{
@@ -486,10 +490,10 @@ void ASRSolarSystemGenerator::EnsureParentGravityContainsOrbitingBody(ASRCelesti
 		*OrbitingBody->GetName());
 }
 
-FVector ASRSolarSystemGenerator::ComputeOrbitWorldLocation(const AActor* ParentBody, float OrbitRadius, float StartingPhaseDegrees) const
+FVector ASRSolarSystemGenerator::ComputeOrbitWorldLocation(const AActor* ParentBody, float OrbitRadius, float InitialAngleDegrees) const
 {
 	const FVector ParentLocation = IsValid(ParentBody) ? ParentBody->GetActorLocation() : GetActorLocation();
-	const float PhaseRadians = FMath::DegreesToRadians(StartingPhaseDegrees);
+	const float PhaseRadians = FMath::DegreesToRadians(InitialAngleDegrees);
 
 	return FVector(
 		ParentLocation.X,
@@ -535,7 +539,7 @@ void ASRSolarSystemGenerator::SpawnPlanets(ASRCelestialBody* ParentStar, const U
 			return;
 		}
 
-		PlanetCelestialBodyRequest.BodySpec.ParentBody = ParentStar;
+		PlanetCelestialBodyRequest.BodyData.ParentBody = ParentStar;
 		CandidatePlanetCelestialBodyRequests.Add(PlanetCelestialBodyRequest);
 	}
 
@@ -596,7 +600,7 @@ void ASRSolarSystemGenerator::SpawnMoons(ASRCelestialBody* ParentPlanet, FRandom
 			return;
 		}
 
-		MoonCelestialBodyRequest.BodySpec.ParentBody = ParentPlanet;
+		MoonCelestialBodyRequest.BodyData.ParentBody = ParentPlanet;
 		CandidateMoonCelestialBodyRequests.Add(MoonCelestialBodyRequest);
 	}
 

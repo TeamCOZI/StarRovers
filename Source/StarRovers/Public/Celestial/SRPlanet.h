@@ -19,12 +19,12 @@ class STARROVERS_API ASRPlanet : public ASRCelestialBody
 public:
 	ASRPlanet();
 
-	virtual void ApplySpec(const FSRCelestialBodySpec& NewSpec) override;
-	virtual void ApplyConfiguredBodyState() override;
-	virtual FSRCelestialBodySpec GetSpec() const override;
-	virtual USROrbit* GetOrbitComponent() const override;
+	virtual void SetData(const FSRCelestialBodyData& NewData) override;
+	virtual void ApplyData() override;
+	virtual FSRCelestialBodyData GetData() const override;
+	virtual USROrbit* GetOrbit() const override;
 	virtual USRPlanetSurfaceGrid* GetSurfaceGrid() const override;
-	virtual void SetDynamicMeshEnabled(bool bUseDynamicMesh) override;
+	virtual void SetCelestialBodyMesh(bool bUseDynamicMesh) override;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "OceanStaticMesh"))
@@ -36,7 +36,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SurfaceGrid"))
 	TObjectPtr<USRPlanetSurfaceGrid> SurfaceGrid;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "ConstructionHeightOffset"))
+	UPROPERTY()
 	float ConstructionHeightOffset;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "GridLineColor"))
@@ -74,7 +74,8 @@ protected:
 
 private:
 	void ApplyOceanStaticMeshSettings();
-	void SyncApproximateRadiusFromPlanetVisuals();
+	float ResolveOceanScale() const;
+	float EstimateProceduralOceanScaleMultiplier() const;
 	void EnsureSurfaceGrid();
 	void HideSurfaceGrid();
 	bool SupportsSurfaceGrid() const;
@@ -86,7 +87,7 @@ private:
 	bool CanConstruct;
 
 	UPROPERTY()
-	float SurfaceGridSurfaceOffset;
+	float SurfaceGridHeightOffset;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "bHasOcean", AllowPrivateAccess = "true"))
 	bool bHasOcean;

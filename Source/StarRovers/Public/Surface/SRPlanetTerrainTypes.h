@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "SRPlanetTerrainTypes.generated.h"
 
+class UMaterialInterface;
+
 UENUM(BlueprintType)
 enum class ESRPlanetTerrainProfile : uint8
 {
@@ -30,7 +32,7 @@ enum class ESRPlanetBiome : uint8
 };
 
 USTRUCT(BlueprintType)
-struct STARROVERS_API FSRPlanetTerrainSettings
+struct STARROVERS_API FSRDynamicMeshGeneration
 {
 	GENERATED_BODY()
 
@@ -87,6 +89,9 @@ struct STARROVERS_API FSRPlanetTerrainSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Terrain", meta = (DisplayName = "TerrainPersistence", ClampMin = "0.0", ClampMax = "1.0"))
 	float TerrainPersistence = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Terrain|BiomeMaterials", meta = (DisplayName = "BiomeMaterials"))
+	TMap<ESRPlanetBiome, TObjectPtr<UMaterialInterface>> BiomeMaterials;
 };
 
 USTRUCT(BlueprintType)

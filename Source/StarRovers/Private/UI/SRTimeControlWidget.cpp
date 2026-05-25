@@ -1,4 +1,4 @@
-﻿#include "UI/SRTimeControlWidget.h"
+#include "UI/SRTimeControlWidget.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"

@@ -1,4 +1,4 @@
-﻿#include "Simulation/SRCelestialBodyRegistrySubsystem.h"
+#include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "EngineUtils.h"

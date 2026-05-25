@@ -1,8 +1,9 @@
-﻿#include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 
 #include "Celestial/SRCelestialBody.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/Actor.h"
 #include "Simulation/SROrbit.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
@@ -10,13 +11,12 @@
 
 namespace CelestialBodyPropertyNames
 {
-	static const FName DisplayName(TEXT("DisplayName"));
+	static const FName VariableName(TEXT("VariableName"));
 	static const FName ParentBody(TEXT("ParentBody"));
 	static const FName OrbitRadius(TEXT("OrbitRadius"));
 	static const FName OrbitPeriod(TEXT("OrbitPeriod"));
-	static const FName StartingPhase(TEXT("StartingPhase"));
+	static const FName InitialAngle(TEXT("InitialAngle"));
 	static const FName FocusZoomMultiplier(TEXT("FocusZoomMultiplier"));
-	static const FName ApproximateRadius(TEXT("ApproximateRadius"));
 	static const FName CanConstruct(TEXT("CanConstruct"));
 }
 
@@ -247,7 +247,7 @@ namespace
 			FieldName ? FieldName : TEXT("<UnknownField>"));
 	}
 
-	bool IsExcludedCelestialVisualComponent(const UPrimitiveComponent* PrimitiveComponent)
+	bool IsExcludedCelestialBodyComponent(const UPrimitiveComponent* PrimitiveComponent)
 	{
 		if (!IsValid(PrimitiveComponent))
 		{
@@ -259,7 +259,7 @@ namespace
 			|| PrimitiveComponent->ComponentHasTag(CelestialBodyComponentTags::GravityLineSegment);
 	}
 
-	float GetLargestVisualSphereRadius(const AActor* Actor)
+	float GetLargestPrimitiveRadius(const AActor* Actor)
 	{
 		if (!IsValid(Actor))
 		{
@@ -272,7 +272,7 @@ namespace
 		Actor->GetComponents(PrimitiveComponents);
 		for (const UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
 		{
-			if (!IsValid(PrimitiveComponent) || IsExcludedCelestialVisualComponent(PrimitiveComponent))
+			if (!IsValid(PrimitiveComponent) || IsExcludedCelestialBodyComponent(PrimitiveComponent))
 			{
 				continue;
 			}
@@ -292,7 +292,7 @@ namespace
 
 		if (const UStaticMeshComponent* RootStaticMeshComponent = Cast<UStaticMeshComponent>(Actor->GetRootComponent()))
 		{
-			if (!IsExcludedCelestialVisualComponent(RootStaticMeshComponent)
+			if (!IsExcludedCelestialBodyComponent(RootStaticMeshComponent)
 				&& IsValid(RootStaticMeshComponent->GetStaticMesh())
 				&& RootStaticMeshComponent->Bounds.SphereRadius > KINDA_SMALL_NUMBER)
 			{
@@ -303,26 +303,19 @@ namespace
 		return 0.0f;
 	}
 
-	float GetAuthoredCelestialRadius(const AActor* Actor)
+	float GetScaledBodyRadius(const AActor* Actor)
 	{
 		if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(Actor))
 		{
-			const FSRCelestialBodySpec BodySpec = ProceduralBody->GetSpec();
-			if (BodySpec.ApproximateRadius > KINDA_SMALL_NUMBER)
-			{
-				return BodySpec.ApproximateRadius;
-			}
+			const FSRCelestialBodyData BodyData = ProceduralBody->GetData();
+			return IsValid(BodyData.StaticMesh.Get())
+				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.BodyScale)
+				: 0.0f;
 		}
 
-		float AuthoredApproximateRadius = 0.0f;
-		if (TryGetFloatPropertyValue(Actor, CelestialBodyPropertyNames::ApproximateRadius, AuthoredApproximateRadius)
-			&& AuthoredApproximateRadius > KINDA_SMALL_NUMBER)
-		{
-			return AuthoredApproximateRadius;
-		}
-
-		return 0.0f;
+		return GetLargestPrimitiveRadius(Actor);
 	}
+
 }
 
 bool USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(const AActor* Actor)
@@ -339,7 +332,7 @@ bool USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(const AActor* Actor)
 		|| (TryGetActorPropertyValue(Actor, CelestialBodyPropertyNames::ParentBody, UnusedParent)
 		&& TryGetFloatPropertyValue(Actor, CelestialBodyPropertyNames::OrbitRadius, UnusedFloat)
 		&& TryGetFloatPropertyValue(Actor, CelestialBodyPropertyNames::OrbitPeriod, UnusedFloat)
-		&& TryGetFloatPropertyValue(Actor, CelestialBodyPropertyNames::StartingPhase, UnusedFloat)
+		&& TryGetFloatPropertyValue(Actor, CelestialBodyPropertyNames::InitialAngle, UnusedFloat)
 		&& TryGetFloatPropertyValue(Actor, CelestialBodyPropertyNames::FocusZoomMultiplier, UnusedFloat));
 }
 
@@ -367,7 +360,7 @@ bool USRCelestialBodyRuntimeLibrary::GetCelestialParentBody(const AActor* Actor,
 {
 	if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(Actor))
 	{
-		if (const USROrbit* OrbitComponent = ProceduralBody->GetOrbitComponent())
+		if (const USROrbit* OrbitComponent = ProceduralBody->GetOrbit())
 		{
 			OutParentBody = OrbitComponent->GetParentBody();
 			return true;
@@ -438,7 +431,7 @@ bool USRCelestialBodyRuntimeLibrary::GetCelestialOrbitRadius(const AActor* Actor
 {
 	if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(Actor))
 	{
-		if (const USROrbit* OrbitComponent = ProceduralBody->GetOrbitComponent())
+		if (const USROrbit* OrbitComponent = ProceduralBody->GetOrbit())
 		{
 			OutOrbitRadius = OrbitComponent->GetOrbitRadius();
 			return true;
@@ -452,7 +445,7 @@ bool USRCelestialBodyRuntimeLibrary::GetCelestialOrbitPeriod(const AActor* Actor
 {
 	if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(Actor))
 	{
-		if (const USROrbit* OrbitComponent = ProceduralBody->GetOrbitComponent())
+		if (const USROrbit* OrbitComponent = ProceduralBody->GetOrbit())
 		{
 			OutOrbitPeriod = OrbitComponent->GetOrbitPeriodSeconds();
 			return true;
@@ -462,18 +455,18 @@ bool USRCelestialBodyRuntimeLibrary::GetCelestialOrbitPeriod(const AActor* Actor
 	return TryGetFloatPropertyValue(Actor, CelestialBodyPropertyNames::OrbitPeriod, OutOrbitPeriod);
 }
 
-bool USRCelestialBodyRuntimeLibrary::GetCelestialStartingPhase(const AActor* Actor, float& OutStartingPhaseDegrees)
+bool USRCelestialBodyRuntimeLibrary::GetCelestialInitialAngle(const AActor* Actor, float& OutInitialAngleDegrees)
 {
 	if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(Actor))
 	{
-		if (const USROrbit* OrbitComponent = ProceduralBody->GetOrbitComponent())
+		if (const USROrbit* OrbitComponent = ProceduralBody->GetOrbit())
 		{
-			OutStartingPhaseDegrees = OrbitComponent->GetStartingPhaseDegrees();
+			OutInitialAngleDegrees = OrbitComponent->GetInitialAngleDegrees();
 			return true;
 		}
 	}
 
-	return TryGetFloatPropertyValue(Actor, CelestialBodyPropertyNames::StartingPhase, OutStartingPhaseDegrees);
+	return TryGetFloatPropertyValue(Actor, CelestialBodyPropertyNames::InitialAngle, OutInitialAngleDegrees);
 }
 
 float USRCelestialBodyRuntimeLibrary::GetCelestialFocusZoomDistance(const AActor* Actor, float CameraFieldOfViewDegrees, float FramingPadding)
@@ -493,31 +486,27 @@ float USRCelestialBodyRuntimeLibrary::GetCelestialFocusZoomDistance(const AActor
 	}
 	FocusZoomMultiplier = FMath::Max(0.0f, FocusZoomMultiplier);
 
-	float VisualRadius = GetAuthoredCelestialRadius(Actor);
-	if (VisualRadius <= KINDA_SMALL_NUMBER)
-	{
-		VisualRadius = GetLargestVisualSphereRadius(Actor);
-	}
-	if (VisualRadius > KINDA_SMALL_NUMBER)
+	const float ScaledBodyRadius = GetScaledBodyRadius(Actor);
+	if (ScaledBodyRadius > KINDA_SMALL_NUMBER)
 	{
 		const float HalfFieldOfViewRadians = FMath::DegreesToRadians(SafeFieldOfViewDegrees * 0.5f);
-		const float FramedDistance = VisualRadius / FMath::Tan(HalfFieldOfViewRadians);
+		const float FramedDistance = ScaledBodyRadius / FMath::Tan(HalfFieldOfViewRadians);
 		return FMath::Max(0.0f, FramedDistance * FocusZoomMultiplier);
 	}
 
-	LogMissingCelestialData(Actor, TEXT("ApproximateRadius"));
+	LogMissingCelestialData(Actor, TEXT("ScaledBodyRadius"));
 	return 0.0f;
 }
 
-FText USRCelestialBodyRuntimeLibrary::GetCelestialDisplayName(const AActor* Actor)
+FText USRCelestialBodyRuntimeLibrary::GetCelestialVariableName(const AActor* Actor)
 {
-	FText DisplayName;
-	if (TryGetTextLikePropertyValue(Actor, CelestialBodyPropertyNames::DisplayName, DisplayName) && !DisplayName.IsEmpty())
+	FText VariableName;
+	if (TryGetTextLikePropertyValue(Actor, CelestialBodyPropertyNames::VariableName, VariableName) && !VariableName.IsEmpty())
 	{
-		return DisplayName;
+		return VariableName;
 	}
 
-	LogMissingCelestialData(Actor, TEXT("DisplayName"));
+	LogMissingCelestialData(Actor, TEXT("VariableName"));
 	return FText::GetEmpty();
 }
 
@@ -525,7 +514,7 @@ bool USRCelestialBodyRuntimeLibrary::GetCelestialCanConstruct(const AActor* Acto
 {
 	if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(Actor))
 	{
-		return ProceduralBody->GetSpec().bCanConstruct;
+		return ProceduralBody->GetData().bCanConstruct;
 	}
 
 	bool bCanConstruct = false;
@@ -533,7 +522,11 @@ bool USRCelestialBodyRuntimeLibrary::GetCelestialCanConstruct(const AActor* Acto
 	return bCanConstruct;
 }
 
-float USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(const AActor* Actor)
+float USRCelestialBodyRuntimeLibrary::GetScreenScale(
+	const AActor* Actor,
+	const FVector& CameraLocation,
+	const FVector& CameraForward,
+	float CameraFieldOfViewDegrees)
 {
 	if (!IsValid(Actor))
 	{
@@ -541,20 +534,33 @@ float USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(const AActor
 		return 0.0f;
 	}
 
-	const float AuthoredRadius = GetAuthoredCelestialRadius(Actor);
-	if (AuthoredRadius > KINDA_SMALL_NUMBER)
+	const FVector SafeCameraForward = CameraForward.GetSafeNormal();
+	if (SafeCameraForward.IsNearlyZero())
 	{
-		return AuthoredRadius;
+		return 0.0f;
 	}
 
-	const float LargestRadius = GetLargestVisualSphereRadius(Actor);
-	if (LargestRadius > KINDA_SMALL_NUMBER)
+	const FVector CameraToBody = Actor->GetActorLocation() - CameraLocation;
+	const float Depth = FVector::DotProduct(CameraToBody, SafeCameraForward);
+	if (Depth <= KINDA_SMALL_NUMBER)
 	{
-		return LargestRadius;
+		return 0.0f;
 	}
 
-	LogMissingCelestialData(Actor, TEXT("ApproximateRadius"));
-	return 0.0f;
+	const float ScaledBodyRadius = GetScaledBodyRadius(Actor);
+	if (ScaledBodyRadius <= KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	const float SafeFieldOfViewDegrees = FMath::Clamp(CameraFieldOfViewDegrees, 5.0f, 170.0f);
+	const float TanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(SafeFieldOfViewDegrees * 0.5f));
+	if (TanHalfFieldOfView <= UE_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	return FMath::Clamp(ScaledBodyRadius / (Depth * TanHalfFieldOfView), 0.0f, BIG_NUMBER);
 }
 
 USRPlanetSurfaceGrid* USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(const AActor* Actor)
@@ -578,7 +584,7 @@ FSRCelestialBodyFocusInfo USRCelestialBodyRuntimeLibrary::BuildCelestialBodyFocu
 	}
 
 	FocusInfo.Actor = const_cast<AActor*>(Actor);
-	FocusInfo.DisplayName = GetCelestialDisplayName(Actor);
+	FocusInfo.VariableName = GetCelestialVariableName(Actor);
 	FocusInfo.bCanConstruct = GetCelestialCanConstruct(Actor);
 	FocusInfo.bHasSurfaceGrid = IsValid(FindPlanetSurfaceGrid(Actor));
 	FocusInfo.bIsValid = true;

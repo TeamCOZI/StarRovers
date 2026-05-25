@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
@@ -16,10 +16,10 @@ class STARROVERS_API USRMoonDataAsset : public UDataAsset
 public:
 	USRMoonDataAsset();
 
-	FSRCelestialBodyBiomeSpec BuildBiomeSpec() const;
+	FSRCelestialBodyData BuildData() const;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Identity", meta = (DisplayName = "DisplayName"))
-	FText DisplayName;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Identity", meta = (DisplayName = "VariableName"))
+	FText VariableName;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Identity", meta = (DisplayName = "BodyCategory"))
 	ESRCelestialBodyCategory BodyCategory = ESRCelestialBodyCategory::Moon;
@@ -27,11 +27,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "Scale", ClampMin = "0.0"))
 	float BodyScale = 5.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "BodyMesh"))
-	TObjectPtr<UStaticMesh> BodyMesh = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "StaticMesh"))
+	TObjectPtr<UStaticMesh> StaticMesh = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "Material"))
-	TObjectPtr<UMaterialInterface> BodyMaterial = nullptr;
+	TObjectPtr<UMaterialInterface> Material = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "Mass", ClampMin = "0.0"))
 	float Mass = 50.0f;
@@ -42,25 +42,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "GravityRadiusRatio", ClampMin = "0.0"))
 	float GravityRadiusRatio = 100.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Orbit", meta = (DisplayName = "OrbitSpeed", ClampMin = "0.0", ToolTip = "Orbit revolutions per simulation period. Zero disables orbit movement."))
-	float OrbitSpeed = 1.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Orbit", meta = (DisplayName = "OrbitPeriod", ClampMin = "0.0", ToolTip = "Orbit period measured in simulation periods. Zero disables orbit movement."))
+	float OrbitPeriod = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "SurfaceGridSurfaceOffset", ClampMin = "0.0"))
-	float SurfaceGridSurfaceOffset = 0.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "SurfaceGridHeightOffset", ClampMin = "0.0"))
+	float SurfaceGridHeightOffset = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Terrain", meta = (DisplayName = "TerrainSettings"))
-	FSRPlanetTerrainSettings TerrainSettings;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "ConstructionHeightOffset", ClampMin = "0.0"))
+	float ConstructionHeightOffset = 15.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Terrain", meta = (DisplayName = "DynamicMeshGeneration"))
+	FSRDynamicMeshGeneration DynamicMeshGeneration;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "bHasOcean"))
 	bool bHasOcean = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "Scale", EditCondition = "bHasOcean", ClampMin = "0.01"))
-	float OceanScaleMultiplier = 0.97f;
+	UPROPERTY()
+	float OceanScaleMultiplier = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "BodyMesh", EditCondition = "bHasOcean"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "OceanMesh", EditCondition = "bHasOcean"))
 	TObjectPtr<UStaticMesh> OceanMesh = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "Material", EditCondition = "bHasOcean"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "OceanMaterial", EditCondition = "bHasOcean"))
 	TObjectPtr<UMaterialInterface> OceanMaterial = nullptr;
 
 };

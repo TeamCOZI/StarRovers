@@ -4,7 +4,7 @@
 
 USRStarDataAsset::USRStarDataAsset()
 {
-	DisplayName = FText::FromString(TEXT("Star"));
+	VariableName = FText::FromString(TEXT("Star"));
 	BodyCategory = ESRCelestialBodyCategory::Star;
 	BodyScale = 100.0f;
 	Mass = 2000.0f;
@@ -15,11 +15,19 @@ USRStarDataAsset::USRStarDataAsset()
 	StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 }
 
-FSRCelestialBodyBiomeSpec USRStarDataAsset::BuildBiomeSpec() const
+FSRCelestialBodyData USRStarDataAsset::BuildData() const
 {
-	FSRCelestialBodyBiomeSpec Result;
-	Result.DisplayName = DisplayName;
-	Result.bUseProceduralTerrain = false;
+	FSRCelestialBodyData Result;
+	Result.VariableName = VariableName;
+	Result.BodyCategory = BodyCategory;
+	Result.BodyScale = FMath::Max(0.0f, BodyScale);
+	Result.StaticMesh = StaticMesh;
+	Result.Material = Material;
+	Result.Mass = FMath::Max(0.0f, Mass);
+	Result.GravityRatio = FMath::Max(0.0f, GravityRatio);
+	Result.GravityRadiusRatio = FMath::Max(0.0f, GravityRadiusRatio);
+	Result.DynamicMeshGeneration.bUseProceduralTerrain = false;
+	Result.GenerationSeed = Result.DynamicMeshGeneration.TerrainSeed;
 	Result.bHasOcean = false;
 	Result.StarMaterialEmissiveStrength = FMath::Max(0.0f, StarMaterialEmissiveStrength);
 	Result.StarPointLightIntensity = FMath::Max(0.0f, StarPointLightIntensity);

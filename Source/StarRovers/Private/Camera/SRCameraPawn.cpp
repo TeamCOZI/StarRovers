@@ -1,4 +1,4 @@
-﻿#include "Camera/SRCameraPawn.h"
+#include "Camera/SRCameraPawn.h"
 
 #include "Camera/CameraComponent.h"
 #include "Celestial/SRCelestialBody.h"
@@ -7,6 +7,7 @@
 #include "Components/PointLightComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
+#include "Engine/StaticMesh.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Gravity/SRGravityParent.h"
@@ -26,8 +27,8 @@ namespace StarRoversInputPaths
 	static constexpr TCHAR DragHoldAction[] = TEXT("/Game/BlueprintClasses/Core/IA_DragHold.IA_DragHold");
 	static constexpr TCHAR DragDeltaAction[] = TEXT("/Game/BlueprintClasses/Core/IA_DragDelta.IA_DragDelta");
 	static constexpr TCHAR ZoomAction[] = TEXT("/Game/BlueprintClasses/Core/IA_Zoom.IA_Zoom");
-	static constexpr TCHAR FocusedSurfaceLookAction[] = TEXT("/Game/BlueprintClasses/Core/IA_FocusedSurfaceLook.IA_FocusedSurfaceLook");
-	static constexpr TCHAR ResetFocusCameraAction[] = TEXT("/Game/BlueprintClasses/Core/IA_ResetFocusCamera.IA_ResetFocusCamera");
+	static constexpr TCHAR FocusSurfaceAction[] = TEXT("/Game/BlueprintClasses/Core/IA_FocusSurface.IA_FocusSurface");
+	static constexpr TCHAR ResetFocusAction[] = TEXT("/Game/BlueprintClasses/Core/IA_ResetFocus.IA_ResetFocus");
 }
 
 namespace
@@ -54,6 +55,19 @@ namespace
 			|| CandidateClassName.Contains(TEXT("SpaceSphere"), ESearchCase::IgnoreCase)
 			|| CandidateClassName.Contains(TEXT("SpaceSkySphere"), ESearchCase::IgnoreCase)
 			|| CandidateClassName.Equals(TEXT("BP_Space_C"), ESearchCase::IgnoreCase);
+	}
+
+	float ComputeScaledBodyRadius(const AActor* Actor)
+	{
+		if (const ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(Actor))
+		{
+			const FSRCelestialBodyData BodyData = CelestialBody->GetData();
+			return IsValid(BodyData.StaticMesh.Get())
+				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.BodyScale)
+				: 0.0f;
+		}
+
+		return 0.0f;
 	}
 
 	FVector SmoothDampVector(
@@ -125,14 +139,14 @@ ASRCameraPawn::ASRCameraPawn()
 	ObliqueViewEnd = 1.0f;
 	FocusFollowSmoothTime = 0.35f;
 	SurfaceRotateSensitivity = 0.2f;
-	FocusedSurfaceLookSpeed = 60.0f;
-	FocusedSurfaceLookMaxPitch = 75.0f;
+	FocusSurfaceSpeed = 60.0f;
+	FocusSurfaceMaxPitch = 75.0f;
 	DragTargetLocation = FVector::ZeroVector;
 	ZoomDistanceTarget = SpringArm->TargetArmLength;
 	bIsDragging = false;
 	bMappingContextApplied = false;
 	bIsRotatingFocusedBody = false;
-	bIsFocusedSurfaceLookActive = false;
+	bIsFocusSurfaceActive = false;
 	bHasDragStartMousePosition = false;
 	FocusDragOffset = FVector::ZeroVector;
 	FixedPlaneX = 0.0f;
@@ -143,8 +157,8 @@ ASRCameraPawn::ASRCameraPawn()
 	DragStartMouseScreenPosition = FVector2D::ZeroVector;
 	DragStartFocusDragOffset = FVector::ZeroVector;
 	DragStartTargetLocation = FVector::ZeroVector;
-	FocusedSurfaceLookInput = FVector2D::ZeroVector;
-	FocusedSurfaceLookOffset = FRotator::ZeroRotator;
+	FocusSurfaceInput = FVector2D::ZeroVector;
+	FocusSurfaceOffset = FRotator::ZeroRotator;
 
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> DefaultMappingContextFinder(StarRoversInputPaths::DefaultMappingContext);
 	if (DefaultMappingContextFinder.Succeeded())
@@ -186,24 +200,24 @@ ASRCameraPawn::ASRCameraPawn()
 		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires ZoomAction at '%s'."), StarRoversInputPaths::ZoomAction);
 	}
 
-	static ConstructorHelpers::FObjectFinder<UInputAction> FocusedSurfaceLookFinder(StarRoversInputPaths::FocusedSurfaceLookAction);
-	if (FocusedSurfaceLookFinder.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UInputAction> FocusSurfaceFinder(StarRoversInputPaths::FocusSurfaceAction);
+	if (FocusSurfaceFinder.Succeeded())
 	{
-		FocusedSurfaceLookAction = FocusedSurfaceLookFinder.Object;
+		FocusSurfaceAction = FocusSurfaceFinder.Object;
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusedSurfaceLookAction at '%s' for focused surface camera look."), StarRoversInputPaths::FocusedSurfaceLookAction);
+		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusSurfaceAction at '%s' for focus surface camera input."), StarRoversInputPaths::FocusSurfaceAction);
 	}
 
-	static ConstructorHelpers::FObjectFinder<UInputAction> ResetFocusCameraFinder(StarRoversInputPaths::ResetFocusCameraAction);
-	if (ResetFocusCameraFinder.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UInputAction> ResetFocusFinder(StarRoversInputPaths::ResetFocusAction);
+	if (ResetFocusFinder.Succeeded())
 	{
-		ResetFocusCameraAction = ResetFocusCameraFinder.Object;
+		ResetFocusAction = ResetFocusFinder.Object;
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusCameraAction at '%s' for focused camera reset."), StarRoversInputPaths::ResetFocusCameraAction);
+		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusAction at '%s' for focus reset."), StarRoversInputPaths::ResetFocusAction);
 	}
 
 	ApplyZoomDrivenViewRotation(SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
@@ -245,7 +259,7 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	ApplyMappingContext();
-	UpdateFocusedSurfaceLook(DeltaSeconds);
+	UpdateFocusSurface(DeltaSeconds);
 
 	if (FocusedActor)
 	{
@@ -354,24 +368,24 @@ void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 			UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires ZoomAction before input binding."));
 		}
 
-		if (FocusedSurfaceLookAction)
+		if (FocusSurfaceAction)
 		{
-			EnhancedInputComponent->BindAction(FocusedSurfaceLookAction, ETriggerEvent::Triggered, this, &ASRCameraPawn::HandleFocusedSurfaceLook);
-			EnhancedInputComponent->BindAction(FocusedSurfaceLookAction, ETriggerEvent::Completed, this, &ASRCameraPawn::HandleFocusedSurfaceLookCompleted);
-			EnhancedInputComponent->BindAction(FocusedSurfaceLookAction, ETriggerEvent::Canceled, this, &ASRCameraPawn::HandleFocusedSurfaceLookCompleted);
+			EnhancedInputComponent->BindAction(FocusSurfaceAction, ETriggerEvent::Triggered, this, &ASRCameraPawn::HandleFocusSurface);
+			EnhancedInputComponent->BindAction(FocusSurfaceAction, ETriggerEvent::Completed, this, &ASRCameraPawn::HandleFocusSurfaceCompleted);
+			EnhancedInputComponent->BindAction(FocusSurfaceAction, ETriggerEvent::Canceled, this, &ASRCameraPawn::HandleFocusSurfaceCompleted);
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusedSurfaceLookAction before focused surface look input binding."));
+			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusSurfaceAction before focus surface input binding."));
 		}
 
-		if (ResetFocusCameraAction)
+		if (ResetFocusAction)
 		{
-			EnhancedInputComponent->BindAction(ResetFocusCameraAction, ETriggerEvent::Started, this, &ASRCameraPawn::HandleResetFocusedCameraView);
+			EnhancedInputComponent->BindAction(ResetFocusAction, ETriggerEvent::Started, this, &ASRCameraPawn::HandleResetFocus);
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusCameraAction before focused camera reset input binding."));
+			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusAction before focus reset input binding."));
 		}
 	}
 }
@@ -381,9 +395,9 @@ void ASRCameraPawn::FocusActor(AActor* NewFocusActor)
 	AActor* PreviousFocusedActor = FocusedActor.Get();
 	FocusedActor = NewFocusActor;
 	FocusDragOffset = FVector::ZeroVector;
-	FocusedSurfaceLookInput = FVector2D::ZeroVector;
-	FocusedSurfaceLookOffset = FRotator::ZeroRotator;
-	bIsFocusedSurfaceLookActive = false;
+	FocusSurfaceInput = FVector2D::ZeroVector;
+	FocusSurfaceOffset = FRotator::ZeroRotator;
+	bIsFocusSurfaceActive = false;
 
 	if (FocusedActor)
 	{
@@ -425,9 +439,9 @@ void ASRCameraPawn::ClearFocusActor()
 	FocusDragOffset = FVector::ZeroVector;
 	FocusTrackingDelta = FVector::ZeroVector;
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
-	FocusedSurfaceLookInput = FVector2D::ZeroVector;
-	FocusedSurfaceLookOffset = FRotator::ZeroRotator;
-	bIsFocusedSurfaceLookActive = false;
+	FocusSurfaceInput = FVector2D::ZeroVector;
+	FocusSurfaceOffset = FRotator::ZeroRotator;
+	bIsFocusSurfaceActive = false;
 	BroadcastFocusedActorChangedIfNeeded(PreviousFocusedActor);
 }
 
@@ -489,7 +503,7 @@ void ASRCameraPawn::SnapToFocusTarget()
 	SetActorLocation(DesiredLocation);
 }
 
-void ASRCameraPawn::ResetFocusedCameraView()
+void ASRCameraPawn::ResetFocus()
 {
 	if (!IsValid(FocusedActor))
 	{
@@ -497,9 +511,9 @@ void ASRCameraPawn::ResetFocusedCameraView()
 	}
 
 	FocusDragOffset = FVector::ZeroVector;
-	FocusedSurfaceLookInput = FVector2D::ZeroVector;
-	FocusedSurfaceLookOffset = FRotator::ZeroRotator;
-	bIsFocusedSurfaceLookActive = false;
+	FocusSurfaceInput = FVector2D::ZeroVector;
+	FocusSurfaceOffset = FRotator::ZeroRotator;
+	bIsFocusSurfaceActive = false;
 	bIsDragging = false;
 	bIsRotatingFocusedBody = false;
 	bHasDragStartMousePosition = false;
@@ -655,27 +669,27 @@ void ASRCameraPawn::HandleZoom(const FInputActionValue& Value)
 	ZoomDistanceTarget = ClampZoomDistance(ZoomDistanceTarget - (AxisValue * GetZoomSpeed()));
 }
 
-void ASRCameraPawn::HandleFocusedSurfaceLook(const FInputActionValue& Value)
+void ASRCameraPawn::HandleFocusSurface(const FInputActionValue& Value)
 {
-	FocusedSurfaceLookInput = Value.Get<FVector2D>();
-	if (FocusedSurfaceLookInput.IsNearlyZero())
+	FocusSurfaceInput = Value.Get<FVector2D>();
+	if (FocusSurfaceInput.IsNearlyZero())
 	{
-		bIsFocusedSurfaceLookActive = false;
+		bIsFocusSurfaceActive = false;
 		return;
 	}
 
-	bIsFocusedSurfaceLookActive = ShouldAllowFocusedSurfaceLook();
+	bIsFocusSurfaceActive = ShouldAllowFocusSurface();
 }
 
-void ASRCameraPawn::HandleFocusedSurfaceLookCompleted()
+void ASRCameraPawn::HandleFocusSurfaceCompleted()
 {
-	FocusedSurfaceLookInput = FVector2D::ZeroVector;
-	bIsFocusedSurfaceLookActive = false;
+	FocusSurfaceInput = FVector2D::ZeroVector;
+	bIsFocusSurfaceActive = false;
 }
 
-void ASRCameraPawn::HandleResetFocusedCameraView()
+void ASRCameraPawn::HandleResetFocus()
 {
-	ResetFocusedCameraView();
+	ResetFocus();
 }
 
 float ASRCameraPawn::GetZoomSpeed() const
@@ -812,7 +826,7 @@ bool ASRCameraPawn::ResolveCelestialCameraAvoidanceSphere(const AActor* Actor, F
 		return false;
 	}
 
-	OutRadius = USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(Actor);
+	OutRadius = ComputeScaledBodyRadius(Actor);
 	if (OutRadius <= KINDA_SMALL_NUMBER)
 	{
 		return false;
@@ -979,10 +993,10 @@ void ASRCameraPawn::ApplyZoomDrivenViewRotation(float ZoomDistance)
 	ObliqueViewStart = FMath::Clamp(ObliqueViewStart, 0.0f, 1.0f);
 	ObliqueViewEnd = FMath::Clamp(ObliqueViewEnd, ObliqueViewStart + UE_SMALL_NUMBER, 1.0f);
 	const FRotator BaseViewRotation = GetViewRotationForZoom(ZoomDistance);
-	if (ShouldAllowFocusedSurfaceLook())
+	if (ShouldAllowFocusSurface())
 	{
 		const FQuat BaseViewQuat = BaseViewRotation.Quaternion();
-		const FQuat SurfaceLookQuat = FQuat(FocusedSurfaceLookOffset);
+		const FQuat SurfaceLookQuat = FQuat(FocusSurfaceOffset);
 		SpringArm->SetWorldRotation((BaseViewQuat * SurfaceLookQuat).Rotator().GetNormalized());
 		return;
 	}
@@ -990,7 +1004,7 @@ void ASRCameraPawn::ApplyZoomDrivenViewRotation(float ZoomDistance)
 	SpringArm->SetWorldRotation(BaseViewRotation);
 }
 
-bool ASRCameraPawn::ShouldAllowFocusedSurfaceLook() const
+bool ASRCameraPawn::ShouldAllowFocusSurface() const
 {
 	if (!IsValid(FocusedActor) || !USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(FocusedActor))
 	{
@@ -1000,31 +1014,31 @@ bool ASRCameraPawn::ShouldAllowFocusedSurfaceLook() const
 	return !USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(FocusedActor);
 }
 
-void ASRCameraPawn::UpdateFocusedSurfaceLook(float DeltaSeconds)
+void ASRCameraPawn::UpdateFocusSurface(float DeltaSeconds)
 {
-	const FVector2D CombinedLookInput = FocusedSurfaceLookInput.GetClampedToMaxSize(1.0f);
-	if (CombinedLookInput.IsNearlyZero() || DeltaSeconds <= UE_SMALL_NUMBER || !ShouldAllowFocusedSurfaceLook())
+	const FVector2D CombinedLookInput = FocusSurfaceInput.GetClampedToMaxSize(1.0f);
+	if (CombinedLookInput.IsNearlyZero() || DeltaSeconds <= UE_SMALL_NUMBER || !ShouldAllowFocusSurface())
 	{
-		bIsFocusedSurfaceLookActive = false;
+		bIsFocusSurfaceActive = false;
 		return;
 	}
 
-	const float SafeLookSpeed = FMath::Max(0.0f, FocusedSurfaceLookSpeed);
+	const float SafeLookSpeed = FMath::Max(0.0f, FocusSurfaceSpeed);
 	if (SafeLookSpeed <= KINDA_SMALL_NUMBER)
 	{
-		bIsFocusedSurfaceLookActive = false;
+		bIsFocusSurfaceActive = false;
 		return;
 	}
 
-	const float MaxPitch = FMath::Clamp(FocusedSurfaceLookMaxPitch, 0.0f, 89.0f);
-	FocusedSurfaceLookOffset.Yaw += CombinedLookInput.X * SafeLookSpeed * DeltaSeconds;
-	FocusedSurfaceLookOffset.Pitch = FMath::Clamp(
-		FocusedSurfaceLookOffset.Pitch + (CombinedLookInput.Y * SafeLookSpeed * DeltaSeconds),
+	const float MaxPitch = FMath::Clamp(FocusSurfaceMaxPitch, 0.0f, 89.0f);
+	FocusSurfaceOffset.Yaw += CombinedLookInput.X * SafeLookSpeed * DeltaSeconds;
+	FocusSurfaceOffset.Pitch = FMath::Clamp(
+		FocusSurfaceOffset.Pitch + (CombinedLookInput.Y * SafeLookSpeed * DeltaSeconds),
 		-MaxPitch,
 		MaxPitch);
-	FocusedSurfaceLookOffset.Roll = 0.0f;
-	FocusedSurfaceLookOffset.Normalize();
-	bIsFocusedSurfaceLookActive = true;
+	FocusSurfaceOffset.Roll = 0.0f;
+	FocusSurfaceOffset.Normalize();
+	bIsFocusSurfaceActive = true;
 }
 
 void ASRCameraPawn::RefreshScreenSpaceThicknessReferenceView()
@@ -1086,7 +1100,7 @@ bool ASRCameraPawn::ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLigh
 
 		float ScreenSizeRatio = 0.0f;
 		const bool bUseDynamicMesh = ShouldUseDynamicMesh(BodyActor, ScreenSizeRatio);
-		CelestialBody->SetDynamicMeshEnabled(bUseDynamicMesh);
+		CelestialBody->SetCelestialBodyMesh(bUseDynamicMesh);
 		bHasStaticMeshBody |= !bUseDynamicMesh;
 
 		if (!bUseDynamicMesh || USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(BodyActor))
@@ -1137,7 +1151,7 @@ bool ASRCameraPawn::ShouldUseDynamicMesh(const AActor* BodyActor, float& OutScre
 		return false;
 	}
 
-	const float BodyRadius = USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(BodyActor);
+	const float BodyRadius = ComputeScaledBodyRadius(BodyActor);
 	if (BodyRadius <= KINDA_SMALL_NUMBER)
 	{
 		return false;
@@ -1171,9 +1185,12 @@ bool ASRCameraPawn::ShouldUseDynamicMesh(const AActor* BodyActor, float& OutScre
 		return false;
 	}
 
-	OutScreenSizeRatio = FMath::Clamp(BodyRadius / (Depth * TanHalfFieldOfView), 0.0f, BIG_NUMBER);
-	const float ThresholdRatio = CelestialBody->GetDynamicMeshThreshold();
-	return OutScreenSizeRatio >= ThresholdRatio;
+	OutScreenSizeRatio = USRCelestialBodyRuntimeLibrary::GetScreenScale(
+		BodyActor,
+		CameraLocation,
+		CameraForward,
+		Camera->FieldOfView);
+	return true;
 }
 
 void ASRCameraPawn::ConfigureDirectionalLight(AActor* LightingTarget)

@@ -13,30 +13,25 @@ struct FPropertyChangedEvent;
 
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
-class USRMoonDataAsset;
 class ULineBatchComponent;
-class USRPlanetDataAsset;
 class USRPlanetSurfaceGrid;
 class USceneComponent;
 class USphereComponent;
-class USRStarDataAsset;
 class USROrbit;
 class UStaticMesh;
 class UStaticMeshComponent;
-class UWidgetComponent;
 class USRGravityParent;
 class USRCelestialBodyRegistrySubsystem;
-class USRTimeControlSubsystem;
 
 USTRUCT(BlueprintType)
-struct STARROVERS_API FSRCelestialBodySpec
+struct STARROVERS_API FSRCelestialBodyData
 {
 	GENERATED_BODY()
 
-	FSRCelestialBodySpec();
+	FSRCelestialBodyData();
 
 	UPROPERTY()
-	FText DisplayName;
+	FText VariableName;
 
 	UPROPERTY()
 	ESRCelestialBodyCategory BodyCategory = ESRCelestialBodyCategory::Unknown;
@@ -48,10 +43,10 @@ struct STARROVERS_API FSRCelestialBodySpec
 	float OrbitRadius = 0.0f;
 
 	UPROPERTY()
-	float OrbitPeriodInPeriods = 0.0f;
+	float OrbitPeriod = 0.0f;
 
 	UPROPERTY()
-	float StartingPhase = 0.0f;
+	float InitialAngle = 0.0f;
 
 	UPROPERTY()
 	float FocusZoomMultiplier = 3.0f;
@@ -78,7 +73,7 @@ struct STARROVERS_API FSRCelestialBodySpec
 	FLinearColor OccupiedCellColor = FLinearColor(1.0f, 0.35f, 0.35f, 1.0f);
 
 	UPROPERTY()
-	float SurfaceGridSurfaceOffset = 0.0f;
+	float SurfaceGridHeightOffset = 0.0f;
 
 	UPROPERTY()
 	float ConstructionHeightOffset = 15.0f;
@@ -86,7 +81,11 @@ struct STARROVERS_API FSRCelestialBodySpec
 	UPROPERTY()
 	float BodyScale = 1000.0f;
 
-	float ApproximateRadius = 50000.0f;
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> StaticMesh = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> Material = nullptr;
 
 	UPROPERTY()
 	float Mass = 2000.0f;
@@ -101,25 +100,10 @@ struct STARROVERS_API FSRCelestialBodySpec
 	FLinearColor StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 
 	UPROPERTY()
-	bool bUseProceduralTerrain = false;
+	int32 GenerationSeed = 1337;
 
 	UPROPERTY()
-	int32 TerrainSeed = 1337;
-
-	UPROPERTY()
-	float TerrainHeight = 0.0f;
-
-	UPROPERTY()
-	float TerrainFrequency = 3.0f;
-
-	UPROPERTY()
-	int32 TerrainOctaves = 4;
-
-	UPROPERTY()
-	float TerrainPersistence = 0.5f;
-
-	UPROPERTY()
-	FSRPlanetTerrainSettings TerrainSettings;
+	FSRDynamicMeshGeneration DynamicMeshGeneration;
 
 	UPROPERTY()
 	bool bHasOcean = false;
@@ -131,7 +115,7 @@ struct STARROVERS_API FSRCelestialBodySpec
 	TObjectPtr<UMaterialInterface> OceanMaterial = nullptr;
 
 	UPROPERTY()
-	float OceanScaleMultiplier = 0.97f;
+	float OceanScaleMultiplier = 1.0f;
 
 	UPROPERTY()
 	bool bShowOrbitLine = true;
@@ -170,66 +154,6 @@ struct STARROVERS_API FSRCelestialBodySpec
 	float GravityLineThickness = 20.0f;
 };
 
-USTRUCT(BlueprintType)
-struct STARROVERS_API FSRCelestialBodyBiomeSpec
-{
-	GENERATED_BODY()
-
-	FSRCelestialBodyBiomeSpec();
-
-	UPROPERTY()
-	FText DisplayName;
-
-	UPROPERTY()
-	bool bUseProceduralTerrain = true;
-
-	UPROPERTY()
-	int32 TerrainSeed = 1337;
-
-	UPROPERTY()
-	float TerrainHeight = 0.0f;
-
-	UPROPERTY()
-	float TerrainFrequency = 3.0f;
-
-	UPROPERTY()
-	int32 TerrainOctaves = 4;
-
-	UPROPERTY()
-	float TerrainPersistence = 0.5f;
-
-	UPROPERTY()
-	FSRPlanetTerrainSettings TerrainSettings;
-
-	UPROPERTY()
-	bool bHasOcean = false;
-
-	UPROPERTY()
-	TObjectPtr<UStaticMesh> OceanMesh = nullptr;
-
-	UPROPERTY()
-	TObjectPtr<UMaterialInterface> OceanMaterial = nullptr;
-
-	UPROPERTY()
-	float OceanScaleMultiplier = 0.97f;
-
-	UPROPERTY()
-	float SurfaceGridSurfaceOffset = 0.0f;
-
-	UPROPERTY()
-	float OrbitSpeed = 1.0f;
-
-	UPROPERTY()
-	float StarPointLightIntensity = -1.0f;
-
-	UPROPERTY()
-	float StarMaterialEmissiveStrength = -1.0f;
-
-	UPROPERTY()
-	FLinearColor StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
-
-};
-
 UCLASS(Blueprintable)
 class STARROVERS_API ASRCelestialBody : public AActor
 {
@@ -241,35 +165,25 @@ public:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void Tick(float DeltaSeconds) override;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Celestial")
-	virtual void ApplySpec(const FSRCelestialBodySpec& NewSpec);
+	virtual void SetData(const FSRCelestialBodyData& NewData);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Celestial")
-	void ApplyBiomeSpec(const FSRCelestialBodyBiomeSpec& NewBiomeSpec);
-
-	UFUNCTION(BlueprintCallable, Category = "StarRovers|Celestial")
-	virtual void ApplyConfiguredBodyState();
+	virtual void ApplyData();
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
-	virtual FSRCelestialBodySpec GetSpec() const;
-
-	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
-	float ConvertPeriodsToSeconds(float PeriodValue) const;
+	virtual FSRCelestialBodyData GetData() const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
 	UDynamicMeshComponent* GetCelestialBodyDynamicMesh() const;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Lighting")
-	virtual void SetDynamicMeshEnabled(bool bUseDynamicMesh);
-
-	UFUNCTION(BlueprintPure, Category = "StarRovers|Lighting")
-	float GetDynamicMeshThreshold() const;
+	virtual void SetCelestialBodyMesh(bool bUseDynamicMesh);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
 	ESRCelestialBodyCategory GetBodyCategory() const;
@@ -278,17 +192,12 @@ public:
 	USRGravityParent* GetGravityParent() const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Orbit")
-	virtual USROrbit* GetOrbitComponent() const;
+	virtual USROrbit* GetOrbit() const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
 	virtual USRPlanetSurfaceGrid* GetSurfaceGrid() const;
 
-	UFUNCTION(BlueprintCallable, Category = "StarRovers|Visual")
-	void SetCelestialBodyAssets(UStaticMesh* NewCelestialBodyStaticMesh, UMaterialInterface* NewCelestialBodyMaterial);
-
 protected:
-	static constexpr const TCHAR* HideForStarEditCondition = TEXT("BodyCategory != ESRCelestialBodyCategory::Star");
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SceneRoot"))
 	TObjectPtr<USceneComponent> SceneRoot;
 
@@ -296,7 +205,7 @@ protected:
 	TObjectPtr<UDynamicMeshComponent> CelestialBodyDynamicMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "CelestialBodyStaticMesh"))
-	TObjectPtr<UStaticMeshComponent> CelestialBodyStaticMesh_;
+	TObjectPtr<UStaticMeshComponent> CelestialBodyStaticMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "ClickSphereCollision"))
 	TObjectPtr<USphereComponent> ClickSphereCollision;
@@ -307,27 +216,16 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "GravityLineBatch"))
 	TObjectPtr<ULineBatchComponent> GravityLineBatch;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "CircleWidget"))
-	TObjectPtr<UWidgetComponent> CircleWidget;
+	FText VariableName;
 
-	UPROPERTY()
-	FText DisplayName;
-
-	UPROPERTY()
 	ESRCelestialBodyCategory BodyCategory;
 
-	UPROPERTY()
 	float BodyScale;
 
-	float ApproximateRadius;
-
-	UPROPERTY()
 	float Mass;
 
-	UPROPERTY()
 	float GravityRatio;
 
-	UPROPERTY()
 	float GravityRadiusRatio;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "ShowGravityLine"))
@@ -345,44 +243,32 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "GravityLineSegments", ClampMin = "3"))
 	int32 GravityLineSegments;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Lighting", meta = (DisplayName = "DynamicMeshThreshold", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
-	float DynamicMeshThreshold;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "FocusZoomMultiplier", ClampMin = "0.0"))
 	float FocusZoomMultiplier;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "GenerationSeed"))
 	int32 GenerationSeed;
 
-	UPROPERTY()
-	FSRPlanetTerrainSettings TerrainSettings;
+	FSRDynamicMeshGeneration DynamicMeshGeneration;
 
 	UPROPERTY()
-	TObjectPtr<UStaticMesh> CelestialBodyStaticMesh;
+	TObjectPtr<UStaticMesh> StaticMesh;
 
 	UPROPERTY()
-	TObjectPtr<UMaterialInterface> CelestialBodyMaterial;
-
-	float ComputeCelestialBodyDynamicMeshRadius() const;
+	TObjectPtr<UMaterialInterface> Material;
 
 	UMaterialInstanceDynamic* GetActiveBodyDynamicMaterial() const;
 
 private:
 	void ApplyGravityLineSettings();
 	void EnsureCelestialBodyDynamicMeshVisuals();
-	bool CopySourceStaticMeshToCelestialBodyDynamicMesh();
-	void SyncApproximateRadiusFromCelestialBodyDynamicMesh();
-	void UpdateCircleWidgetDrawSize();
+	bool CopyStaticMeshToCelestialBodyDynamicMesh();
 	USRCelestialBodyRegistrySubsystem* FindCelestialRegistry() const;
-	USRTimeControlSubsystem* FindTimeControlSubsystem() const;
 	bool IsStellarBody() const;
-	float ResolveSecondsPerPeriod() const;
-	void LogMissingSpecErrorOnce(const TCHAR* Context) const;
+	void LogMissingDataErrorOnce(const TCHAR* Context) const;
 
-	UPROPERTY(Transient)
-	bool bHasAppliedSpec = false;
+	bool bHasAppliedData = false;
 
-	UPROPERTY(Transient)
-	mutable bool bHasLoggedMissingSpecError = false;
+	mutable bool bHasLoggedMissingDataError = false;
 
 };

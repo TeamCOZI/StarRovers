@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "SRCelestialBodyFocusInfo.generated.h"
@@ -13,8 +13,8 @@ struct STARROVERS_API FSRCelestialBodyFocusInfo
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "Actor"))
 	TObjectPtr<AActor> Actor = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "DisplayName"))
-	FText DisplayName;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "VariableName"))
+	FText VariableName;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bCanConstruct"))
 	bool bCanConstruct = false;

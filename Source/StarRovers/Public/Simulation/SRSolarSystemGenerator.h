@@ -1,16 +1,14 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Celestial/SRCelestialBody.h"
 #include "SRSolarSystemGenerator.generated.h"
 
-class UMaterialInterface;
 class USRMoonDataAsset;
 class USRPlanetDataAsset;
 class USRStarDataAsset;
 class USceneComponent;
-class UStaticMesh;
 
 USTRUCT()
 struct FSRCelestialBodyGenerateRequest
@@ -18,13 +16,7 @@ struct FSRCelestialBodyGenerateRequest
 	GENERATED_BODY()
 
 	UPROPERTY()
-	FSRCelestialBodySpec BodySpec;
-
-	UPROPERTY()
-	TObjectPtr<UStaticMesh> BodyMesh = nullptr;
-
-	UPROPERTY()
-	TObjectPtr<UMaterialInterface> BodyMaterial = nullptr;
+	FSRCelestialBodyData BodyData;
 
 	UPROPERTY()
 	TSubclassOf<ASRCelestialBody> BodyClass;
@@ -104,7 +96,7 @@ private:
 		TArray<FSRCelestialBodyGenerateRequest>& OutResolvedCelestialBodyRequests) const;
 	bool TrySolvePackedOrbitRadii(ASRCelestialBody* ParentBody, const TArray<FSRCelestialBodyGenerateRequest>& CelestialBodyRequests, TArray<float>& OutOrbitRadii) const;
 	void EnsureParentGravityContainsOrbitingBody(ASRCelestialBody* ParentBody, const ASRCelestialBody* OrbitingBody) const;
-	FVector ComputeOrbitWorldLocation(const AActor* ParentBody, float OrbitRadius, float StartingPhaseDegrees) const;
+	FVector ComputeOrbitWorldLocation(const AActor* ParentBody, float OrbitRadius, float InitialAngleDegrees) const;
 	void SpawnPlanets(ASRCelestialBody* ParentStar, const USRStarDataAsset* SourceStarDataAsset, FRandomStream& RandomStream, TArray<TObjectPtr<ASRCelestialBody>>& OutGeneratedPlanets);
 	void SpawnMoons(ASRCelestialBody* ParentPlanet, FRandomStream& RandomStream, TArray<TObjectPtr<ASRCelestialBody>>& OutGeneratedMoons);
 	void DestroyTrackedActor(TObjectPtr<ASRCelestialBody>& ActorToDestroy);

@@ -1,4 +1,4 @@
-﻿#include "UI/SRCelestialBodyOverviewWidget.h"
+#include "UI/SRCelestialBodyOverviewWidget.h"
 
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
@@ -16,6 +16,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Engine/StaticMesh.h"
 #include "Fonts/SlateFontInfo.h"
 #include "Camera/PlayerCameraManager.h"
 #include "GameFramework/PlayerController.h"
@@ -69,10 +70,13 @@ namespace
 			return false;
 		}
 
-		if (Cast<ASRCelestialBody>(CelestialBodyActor))
+		if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(CelestialBodyActor))
 		{
+			const FSRCelestialBodyData BodyData = ProceduralBody->GetData();
 			OutCenter = CelestialBodyActor->GetActorLocation();
-			OutRadius = USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(CelestialBodyActor);
+			OutRadius = IsValid(BodyData.StaticMesh.Get())
+				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.BodyScale)
+				: 0.0f;
 			return OutRadius > KINDA_SMALL_NUMBER;
 		}
 
@@ -498,7 +502,7 @@ bool USRCelestialBodyOverviewWidget::BuildNameplateButtonLayoutForActor(
 	}
 
 	FVector CelestialBodyLocation = CelestialBodyActor->GetActorLocation();
-	float CelestialBodyRadius = USRCelestialBodyRuntimeLibrary::GetCelestialApproximateRadius(CelestialBodyActor);
+	float CelestialBodyRadius = 0.0f;
 	ResolveNameplateVisualBounds(CelestialBodyActor, CelestialBodyLocation, CelestialBodyRadius);
 
 	FVector2D CenterScreenPosition;
@@ -618,10 +622,10 @@ FText USRCelestialBodyOverviewWidget::GetStarSystemNameplateText(AActor* Celesti
 {
 	if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(CelestialBodyActor))
 	{
-		const FSRCelestialBodySpec BodySpec = ProceduralBody->GetSpec();
-		if (!BodySpec.DisplayName.IsEmpty())
+		const FSRCelestialBodyData BodyData = ProceduralBody->GetData();
+		if (!BodyData.VariableName.IsEmpty())
 		{
-			return BodySpec.DisplayName;
+			return BodyData.VariableName;
 		}
 	}
 

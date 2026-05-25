@@ -15,8 +15,8 @@ class STARROVERS_API ASRStar : public ASRCelestialBody
 public:
 	ASRStar();
 
-	virtual void ApplySpec(const FSRCelestialBodySpec& NewSpec) override;
-	virtual void ApplyConfiguredBodyState() override;
+	virtual void SetData(const FSRCelestialBodyData& NewData) override;
+	virtual void ApplyData() override;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "StarPointLight"))
