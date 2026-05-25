@@ -35,7 +35,7 @@ ASRPlanet::ASRPlanet()
 	HoveredCellColor = FLinearColor(1.0f, 0.85f, 0.2f, 1.0f);
 	SelectedCellColor = FLinearColor(0.25f, 1.0f, 0.35f, 1.0f);
 	OccupiedCellColor = FLinearColor(1.0f, 0.35f, 0.35f, 1.0f);
-	bShowOrbitLine = true;
+	ShowOrbitLine = true;
 	OrbitLineColor = FLinearColor(0.2f, 0.75f, 1.0f, 1.0f);
 	OrbitLineOpacity = 0.85f;
 	OrbitLineThickness = 20.0f;
@@ -76,7 +76,7 @@ void ASRPlanet::SetData(const FSRCelestialBodyData& NewData)
 	OceanMesh = NewData.OceanMesh;
 	OceanMaterial = NewData.OceanMaterial;
 	OceanScaleMultiplier = NewData.OceanScaleMultiplier;
-	bShowOrbitLine = NewData.bShowOrbitLine;
+	ShowOrbitLine = NewData.ShowOrbitLine;
 	OrbitLineColor = NewData.OrbitLineColor;
 	OrbitLineOpacity = NewData.OrbitLineOpacity;
 	OrbitLineThickness = NewData.OrbitLineThickness;
@@ -124,7 +124,7 @@ void ASRPlanet::ApplyData()
 	if (IsValid(ClickSphereCollision))
 	{
 		const float BodyRadius = IsValid(StaticMesh.Get())
-			? StaticMesh->GetBounds().SphereRadius * BodyScale
+			? StaticMesh->GetBounds().SphereRadius * Scale
 			: 0.0f;
 		const float OceanRadius = bHasOcean && IsValid(OceanMesh.Get())
 			? OceanMesh->GetBounds().SphereRadius * ResolveOceanScale()
@@ -138,7 +138,7 @@ void ASRPlanet::ApplyData()
 		if (IsValid(SurfaceGrid))
 		{
 			const float BodyRadius = IsValid(StaticMesh.Get())
-				? StaticMesh->GetBounds().SphereRadius * BodyScale
+				? StaticMesh->GetBounds().SphereRadius * Scale
 				: 0.0f;
 			const float SurfaceGridPlanetRadius = FMath::Max(BodyRadius, 1.0f);
 			const int32 ResolvedSurfaceGridResolution = FMath::Clamp(
@@ -168,7 +168,7 @@ void ASRPlanet::ApplyData()
 	if (IsValid(Orbit))
 	{
 		Orbit->ConfigureOrbitLineVisual(
-			bShowOrbitLine,
+			ShowOrbitLine,
 			OrbitLineColor,
 			OrbitLineOpacity,
 			OrbitLineSegments,
@@ -200,7 +200,7 @@ FSRCelestialBodyData ASRPlanet::GetData() const
 	CurrentData.OceanMesh = OceanMesh;
 	CurrentData.OceanMaterial = OceanMaterial;
 	CurrentData.OceanScaleMultiplier = OceanScaleMultiplier;
-	CurrentData.bShowOrbitLine = bShowOrbitLine;
+	CurrentData.ShowOrbitLine = ShowOrbitLine;
 	CurrentData.OrbitLineColor = OrbitLineColor;
 	CurrentData.OrbitLineOpacity = OrbitLineOpacity;
 	CurrentData.OrbitLineSegments = OrbitLineSegments;
@@ -281,12 +281,12 @@ float ASRPlanet::ResolveOceanScale() const
 	const float ResolvedOceanScaleMultiplier = AutoOceanScaleMultiplier > KINDA_SMALL_NUMBER
 		? AutoOceanScaleMultiplier
 		: OceanScaleMultiplier;
-	return FMath::Max(0.01f, BodyScale * ResolvedOceanScaleMultiplier);
+	return FMath::Max(0.01f, Scale * ResolvedOceanScaleMultiplier);
 }
 
 float ASRPlanet::EstimateProceduralOceanScaleMultiplier() const
 {
-	if (!DynamicMeshGeneration.bUseProceduralTerrain || DynamicMeshGeneration.TerrainHeight <= KINDA_SMALL_NUMBER)
+	if (!DynamicMeshGeneration.bDynamicMeshGeneration || DynamicMeshGeneration.DynamicMeshHeight <= KINDA_SMALL_NUMBER)
 	{
 		return 0.0f;
 	}
@@ -325,7 +325,7 @@ float ASRPlanet::EstimateProceduralOceanScaleMultiplier() const
 		return 0.0f;
 	}
 
-	const float SurfacePadding = FMath::Max(0.0f, DynamicMeshGeneration.TerrainHeight) * OceanSurfacePaddingRatio;
+	const float SurfacePadding = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight) * OceanSurfacePaddingRatio;
 	const float DesiredOceanRadius = FMath::Max(1.0f, BodyMeshRadius + HighestWaterHeightOffset + SurfacePadding);
 	return DesiredOceanRadius / OceanMeshRadius;
 }

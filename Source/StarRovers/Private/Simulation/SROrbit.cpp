@@ -138,7 +138,7 @@ void USROrbit::ConfigureOrbit(AActor* NewParentBody, float NewOrbitRadius, float
 
 void USROrbit::ConfigureOrbitLineVisual(bool bNewShowOrbitLine, FLinearColor NewOrbitLineColor, float NewOrbitLineOpacity, int32 NewOrbitLineSegments, float NewOrbitLineThickness)
 {
-	bShowOrbitLine = bNewShowOrbitLine;
+	ShowOrbitLine = bNewShowOrbitLine;
 	OrbitLineColor = NewOrbitLineColor;
 	OrbitLineOpacity = FMath::Clamp(NewOrbitLineOpacity, 0.0f, 1.0f);
 	OrbitLineSegments = FMath::Max(3, NewOrbitLineSegments);
@@ -164,7 +164,7 @@ void USROrbit::ResetOrbitSimulation()
 
 bool USROrbit::ShouldShowOrbitLine() const
 {
-	return bShowOrbitLine && HasOrbit() && OrbitRadius > KINDA_SMALL_NUMBER;
+	return ShowOrbitLine && HasOrbit() && OrbitRadius > KINDA_SMALL_NUMBER;
 }
 
 FLinearColor USROrbit::GetOrbitLineColor() const
@@ -198,7 +198,7 @@ void USROrbit::RefreshOrbitLineVisual()
 			UE_LOG(
 				LogTemp,
 				Error,
-				TEXT("USROrbit cannot draw orbit line for owner '%s': OrbitLineBatcher is null after lookup, bShowOrbitLine=true, OrbitRadius=%.2f, OrbitPeriodSeconds=%.2f, and no registered ULineBatchComponent named 'OrbitLineBatch' was available."),
+				TEXT("USROrbit cannot draw orbit line for owner '%s': OrbitLineBatcher is null after lookup, ShowOrbitLine=true, OrbitRadius=%.2f, OrbitPeriodSeconds=%.2f, and no registered ULineBatchComponent named 'OrbitLineBatch' was available."),
 				*Owner->GetName(),
 				OrbitRadius,
 				OrbitPeriodSeconds);

@@ -63,7 +63,7 @@ namespace
 		{
 			const FSRCelestialBodyData BodyData = CelestialBody->GetData();
 			return IsValid(BodyData.StaticMesh.Get())
-				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.BodyScale)
+				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale)
 				: 0.0f;
 		}
 
@@ -132,7 +132,7 @@ ASRCameraPawn::ASRCameraPawn()
 	{
 		Camera->SetFieldOfView(DefaultCameraFieldOfView);
 	}
-	bUseObliqueView = true;
+	UseObliqueView = true;
 	NearViewRotation = FRotator::ZeroRotator;
 	FarViewRotation = FRotator(60.0f, 0.0f, 0.0f);
 	ObliqueViewStart = 0.3f;
@@ -957,7 +957,7 @@ float ASRCameraPawn::ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance,
 
 float ASRCameraPawn::GetObliqueViewBlendAlpha(float ZoomDistance) const
 {
-	if (!bUseObliqueView)
+	if (!UseObliqueView)
 	{
 		return 0.0f;
 	}

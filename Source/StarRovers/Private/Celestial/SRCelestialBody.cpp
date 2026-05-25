@@ -357,16 +357,18 @@ namespace
 		return SourceQuads;
 	}
 
-	FSRPlanetTerrainSample SampleSteppedTerrain(const FVector& LocalUnitDirection, const FSRDynamicMeshGeneration& DynamicMeshGeneration)
+	FSRPlanetTerrainSample SampleTerrainForDynamicMesh(
+		const FVector& LocalUnitDirection,
+		const FSRDynamicMeshGeneration& DynamicMeshGeneration)
 	{
 		FSRPlanetTerrainSample Sample = FSRPlanetTerrainGenerator::SampleTerrain(LocalUnitDirection, DynamicMeshGeneration);
-		const float SafeTerrainHeight = FMath::Max(0.0f, DynamicMeshGeneration.TerrainHeight);
-		if (!DynamicMeshGeneration.bUseProceduralTerrain || SafeTerrainHeight <= KINDA_SMALL_NUMBER)
+		const float SafeDynamicMeshHeight = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight);
+		if (!DynamicMeshGeneration.bMinecraft || !DynamicMeshGeneration.bDynamicMeshGeneration || SafeDynamicMeshHeight <= KINDA_SMALL_NUMBER)
 		{
 			return Sample;
 		}
 
-		const float HeightStep = FMath::Max(1.0f, SafeTerrainHeight / 24.0f);
+		const float HeightStep = FMath::Max(1.0f, SafeDynamicMeshHeight / 24.0f);
 		Sample.HeightOffset = FMath::RoundToFloat(Sample.HeightOffset / HeightStep) * HeightStep;
 		return Sample;
 	}
@@ -382,8 +384,8 @@ FSRCelestialBodyData::FSRCelestialBodyData()
 	OrbitPeriod = 0.0f;
 	ConstructionHeightOffset = 15.0f;
 	DynamicMeshGeneration = FSRDynamicMeshGeneration();
-	DynamicMeshGeneration.bUseProceduralTerrain = false;
-	DynamicMeshGeneration.TerrainHeight = 0.0f;
+	DynamicMeshGeneration.bDynamicMeshGeneration = false;
+	DynamicMeshGeneration.DynamicMeshHeight = 0.0f;
 	bHasOcean = false;
 	OceanMesh = nullptr;
 	OceanMaterial = nullptr;
@@ -420,15 +422,15 @@ ASRCelestialBody::ASRCelestialBody()
 	VariableName = FText::FromString(TEXT("Celestial Body"));
 	BodyCategory = ESRCelestialBodyCategory::Unknown;
 	FocusZoomMultiplier = 3.0f;
-	BodyScale = 1000.0f;
+	Scale = 1000.0f;
 	Mass = 2000.0f;
 	GenerationSeed = 1000;
 	DynamicMeshGeneration = FSRDynamicMeshGeneration();
-	DynamicMeshGeneration.bUseProceduralTerrain = false;
-	DynamicMeshGeneration.TerrainHeight = 0.0f;
+	DynamicMeshGeneration.bDynamicMeshGeneration = false;
+	DynamicMeshGeneration.DynamicMeshHeight = 0.0f;
 	GravityRatio = 1.0f;
 	GravityRadiusRatio = 10.0f;
-	bShowGravityLine = true;
+	ShowGravityLine = true;
 	GravityLineColor = FLinearColor(0.45f, 1.0f, 0.45f, 1.0f);
 	GravityLineOpacity = 0.85f;
 	GravityLineSegments = 96;
@@ -487,13 +489,13 @@ void ASRCelestialBody::SetData(const FSRCelestialBodyData& NewData)
 	FocusZoomMultiplier = NewData.FocusZoomMultiplier;
 	GenerationSeed = NewData.GenerationSeed;
 	DynamicMeshGeneration = NewData.DynamicMeshGeneration;
-	BodyScale = NewData.BodyScale;
+	Scale = NewData.Scale;
 	StaticMesh = NewData.StaticMesh;
 	Material = NewData.Material;
 	Mass = NewData.Mass;
 	GravityRatio = NewData.GravityRatio;
 	GravityRadiusRatio = NewData.GravityRadiusRatio;
-	bShowGravityLine = NewData.bShowGravityLine;
+	ShowGravityLine = NewData.ShowGravityLine;
 	GravityLineColor = NewData.GravityLineColor;
 	GravityLineOpacity = NewData.GravityLineOpacity;
 	GravityLineSegments = NewData.GravityLineSegments;
@@ -513,7 +515,7 @@ void ASRCelestialBody::ApplyData()
 		return;
 	}
 
-	BodyScale = FMath::Max(0.0f, BodyScale);
+	Scale = FMath::Max(0.0f, Scale);
 	Mass = FMath::Max(0.0f, Mass);
 	GravityRatio = FMath::Max(0.0f, GravityRatio);
 	GravityRadiusRatio = FMath::Max(0.0f, GravityRadiusRatio);
@@ -527,13 +529,13 @@ void ASRCelestialBody::ApplyData()
 	{
 		CelestialBodyDynamicMesh->SetRelativeLocation(FVector::ZeroVector);
 		CelestialBodyDynamicMesh->SetRelativeRotation(FRotator::ZeroRotator);
-		CelestialBodyDynamicMesh->SetRelativeScale3D(FVector(BodyScale));
+		CelestialBodyDynamicMesh->SetRelativeScale3D(FVector(Scale));
 	}
 	if (IsValid(CelestialBodyStaticMesh.Get()))
 	{
 		CelestialBodyStaticMesh->SetRelativeLocation(FVector::ZeroVector);
 		CelestialBodyStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
-		CelestialBodyStaticMesh->SetRelativeScale3D(FVector(BodyScale));
+		CelestialBodyStaticMesh->SetRelativeScale3D(FVector(Scale));
 	}
 
 	EnsureCelestialBodyDynamicMeshVisuals();
@@ -544,7 +546,7 @@ void ASRCelestialBody::ApplyData()
 		ClickSphereCollision->SetRelativeRotation(FRotator::ZeroRotator);
 		ClickSphereCollision->SetRelativeScale3D(FVector::OneVector);
 		const float BodyRadius = IsValid(StaticMesh.Get())
-			? StaticMesh->GetBounds().SphereRadius * BodyScale
+			? StaticMesh->GetBounds().SphereRadius * Scale
 			: 0.0f;
 		ClickSphereCollision->SetSphereRadius(FMath::Max(BodyRadius, 1.0f));
 	}
@@ -558,13 +560,13 @@ FSRCelestialBodyData ASRCelestialBody::GetData() const
 	CurrentData.BodyCategory = BodyCategory;
 	CurrentData.FocusZoomMultiplier = FocusZoomMultiplier;
 	CurrentData.GenerationSeed = GenerationSeed;
-	CurrentData.BodyScale = BodyScale;
+	CurrentData.Scale = Scale;
 	CurrentData.StaticMesh = StaticMesh;
 	CurrentData.Material = Material;
 	CurrentData.Mass = Mass;
 	CurrentData.GravityRatio = GravityRatio;
 	CurrentData.GravityRadiusRatio = GravityRadiusRatio;
-	CurrentData.bShowGravityLine = bShowGravityLine;
+	CurrentData.ShowGravityLine = ShowGravityLine;
 	CurrentData.GravityLineColor = GravityLineColor;
 	CurrentData.GravityLineOpacity = GravityLineOpacity;
 	CurrentData.GravityLineSegments = GravityLineSegments;
@@ -623,7 +625,7 @@ void ASRCelestialBody::ApplyGravityLineSettings()
 		Mass,
 		GravityRatio,
 		GravityRadiusRatio,
-		bShowGravityLine,
+		ShowGravityLine,
 		GravityLineColor,
 		GravityLineOpacity,
 		GravityLineSegments,
@@ -739,8 +741,8 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 	const bool bShouldGenerateSteppedQuadTerrain =
 		(BodyCategory == ESRCelestialBodyCategory::Planet || BodyCategory == ESRCelestialBodyCategory::Moon)
-		&& DynamicMeshGeneration.bUseProceduralTerrain
-		&& DynamicMeshGeneration.TerrainHeight > KINDA_SMALL_NUMBER;
+		&& DynamicMeshGeneration.bDynamicMeshGeneration
+		&& DynamicMeshGeneration.DynamicMeshHeight > KINDA_SMALL_NUMBER;
 	if (bShouldGenerateSteppedQuadTerrain)
 	{
 		const TArray<FSRSourceQuad> SourceQuads = RecoverSourceQuads(PositionVertexBuffer, IndexBuffer, IndexCount);
@@ -942,7 +944,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					continue;
 				}
 
-				const FSRPlanetTerrainSample TerrainSample = SampleSteppedTerrain(CellDirection, DynamicMeshGeneration);
+				const FSRPlanetTerrainSample TerrainSample = SampleTerrainForDynamicMesh(CellDirection, DynamicMeshGeneration);
 				FVector TargetPositions[4];
 				const float SourceCellRadius = FMath::Max(CellCenter.Length(), 1.0f);
 				const float CellScale = FMath::Max(0.01f, (SourceCellRadius + TerrainSample.HeightOffset) / SourceCellRadius);

@@ -75,7 +75,7 @@ namespace
 			const FSRCelestialBodyData BodyData = ProceduralBody->GetData();
 			OutCenter = CelestialBodyActor->GetActorLocation();
 			OutRadius = IsValid(BodyData.StaticMesh.Get())
-				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.BodyScale)
+				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale)
 				: 0.0f;
 			return OutRadius > KINDA_SMALL_NUMBER;
 		}

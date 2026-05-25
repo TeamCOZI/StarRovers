@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/DynamicMeshComponent.h"
@@ -118,7 +118,7 @@ public:
     float GetSurfaceHeightOffsetAtDirection(FVector LocalUnitDirection) const;
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Terrain")
-    void ConfigureProceduralTerrain(bool bNewUseProceduralTerrain, int32 NewTerrainSeed, float NewTerrainHeight, float NewTerrainFrequency, int32 NewTerrainOctaves, float NewTerrainPersistence);
+    void ConfigureProceduralTerrain(bool bNewDynamicMeshGeneration, int32 NewGenerationSeed, float NewDynamicMeshHeight, float NewDetailFrequency, int32 NewNoiseOctaves, float NewNoisePersistence);
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Terrain")
     void ConfigureTerrain(const FSRDynamicMeshGeneration& NewDynamicMeshGeneration);
@@ -138,9 +138,6 @@ protected:
 
     UPROPERTY()
     float ConstructionHeightOffset;
-
-    UPROPERTY()
-    bool bDrawDebugGrid;
 
     UPROPERTY()
     bool bGridVisible;
@@ -197,7 +194,7 @@ private:
     void DrawDebugSurfaceLine(const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FColor& LineColor, float Duration, float LineThickness, const FSRCameraInfo& CameraInfo, float ReferenceViewDepth, float ReferenceFieldOfViewDegrees) const;
     FVector ResolveLocalSurfacePoint(const FVector& LocalUnitDirection, float HeightOffset = 0.0f) const;
     FVector ResolveWorldSurfacePoint(const FVector& LocalUnitDirection, float HeightOffset = 0.0f) const;
-    float ComputeProceduralTerrainHeight(FVector LocalUnitDirection) const;
+    float ComputeProceduralDynamicMeshHeight(FVector LocalUnitDirection) const;
     FVector ComputeProceduralSurfaceNormal(FVector LocalUnitDirection) const;
     bool IntersectRayWithSurfaceSphere(const FVector& RayOrigin, const FVector& RayDirection, FVector& OutHitLocation) const;
 

@@ -88,7 +88,7 @@ protected:
 	float GravityRadius;
 
 	UPROPERTY()
-	bool bShowGravityLine;
+	bool ShowGravityLine;
 
 	UPROPERTY()
 	FLinearColor GravityLineColor;

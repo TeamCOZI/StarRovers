@@ -42,7 +42,6 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 	PlanetRadius = 1000.0f;
 	bRebuildGridOnRegister = false;
 	ConstructionHeightOffset = 15.0f;
-	bDrawDebugGrid = true;
 	bGridVisible = false;
 	DebugLineColor = FLinearColor(0.15f, 0.85f, 1.0f, 1.0f);
 	DebugLineOpacity = 1.0f;
@@ -52,8 +51,8 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 	DebugLineThickness = 1.0f;
 	GridSurfaceOffset = 0.0f;
 	DynamicMeshGeneration = FSRDynamicMeshGeneration();
-	DynamicMeshGeneration.bUseProceduralTerrain = false;
-	DynamicMeshGeneration.TerrainHeight = 0.0f;
+	DynamicMeshGeneration.bDynamicMeshGeneration = false;
+	DynamicMeshGeneration.DynamicMeshHeight = 0.0f;
 	bHasHoveredCell = false;
 	bHasSelectedCell = false;
 
@@ -446,52 +445,59 @@ void USRPlanetSurfaceGrid::ConfigureConstructionHeightOffset(float NewConstructi
 
 float USRPlanetSurfaceGrid::GetSurfaceHeightOffsetAtDirection_Implementation(FVector LocalUnitDirection) const
 {
-	return ComputeProceduralTerrainHeight(LocalUnitDirection);
+	return ComputeProceduralDynamicMeshHeight(LocalUnitDirection);
 }
 
 void USRPlanetSurfaceGrid::ConfigureProceduralTerrain(
-	bool bNewUseProceduralTerrain,
-	int32 NewTerrainSeed,
-	float NewTerrainHeight,
-	float NewTerrainFrequency,
-	int32 NewTerrainOctaves,
-	float NewTerrainPersistence)
+	bool bNewDynamicMeshGeneration,
+	int32 NewGenerationSeed,
+	float NewDynamicMeshHeight,
+	float NewDetailFrequency,
+	int32 NewNoiseOctaves,
+	float NewNoisePersistence)
 {
 	FSRDynamicMeshGeneration NewDynamicMeshGeneration = DynamicMeshGeneration;
-	NewDynamicMeshGeneration.TerrainProfile = ESRPlanetTerrainProfile::EarthLike;
-	NewDynamicMeshGeneration.bUseProceduralTerrain = bNewUseProceduralTerrain;
-	NewDynamicMeshGeneration.TerrainSeed = NewTerrainSeed;
-	NewDynamicMeshGeneration.TerrainHeight = FMath::Max(0.0f, NewTerrainHeight);
-	NewDynamicMeshGeneration.DetailFrequency = FMath::Max(0.01f, NewTerrainFrequency);
-	NewDynamicMeshGeneration.TerrainOctaves = FMath::Max(1, NewTerrainOctaves);
-	NewDynamicMeshGeneration.TerrainPersistence = FMath::Clamp(NewTerrainPersistence, 0.0f, 1.0f);
+	NewDynamicMeshGeneration.BiomeProfile = ESRPlanetBiomeProfile::EarthLike;
+	NewDynamicMeshGeneration.bDynamicMeshGeneration = bNewDynamicMeshGeneration;
+	NewDynamicMeshGeneration.GenerationSeed = NewGenerationSeed;
+	NewDynamicMeshGeneration.DynamicMeshHeight = FMath::Max(0.0f, NewDynamicMeshHeight);
+	NewDynamicMeshGeneration.DetailFrequency = FMath::Max(0.01f, NewDetailFrequency);
+	NewDynamicMeshGeneration.NoiseOctaves = FMath::Max(1, NewNoiseOctaves);
+	NewDynamicMeshGeneration.NoisePersistence = FMath::Clamp(NewNoisePersistence, 0.0f, 1.0f);
 	ConfigureTerrain(NewDynamicMeshGeneration);
 }
 
 void USRPlanetSurfaceGrid::ConfigureTerrain(const FSRDynamicMeshGeneration& NewDynamicMeshGeneration)
 {
 	DynamicMeshGeneration = NewDynamicMeshGeneration;
-	DynamicMeshGeneration.TerrainHeight = FMath::Max(0.0f, DynamicMeshGeneration.TerrainHeight);
+	DynamicMeshGeneration.DynamicMeshHeight = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight);
 	DynamicMeshGeneration.ContinentFrequency = FMath::Max(0.01f, DynamicMeshGeneration.ContinentFrequency);
 	DynamicMeshGeneration.MountainFrequency = FMath::Max(0.01f, DynamicMeshGeneration.MountainFrequency);
 	DynamicMeshGeneration.DetailFrequency = FMath::Max(0.01f, DynamicMeshGeneration.DetailFrequency);
 	DynamicMeshGeneration.ValleyStrength = FMath::Clamp(DynamicMeshGeneration.ValleyStrength, 0.0f, 1.0f);
-	DynamicMeshGeneration.MountainSharpness = FMath::Clamp(DynamicMeshGeneration.MountainSharpness, 0.5f, 4.0f);
-	DynamicMeshGeneration.DomainWarpStrength = FMath::Clamp(DynamicMeshGeneration.DomainWarpStrength, 0.0f, 1.0f);
+	DynamicMeshGeneration.MountainStrength = FMath::Clamp(DynamicMeshGeneration.MountainStrength, 0.5f, 4.0f);
+	DynamicMeshGeneration.NoiseStrength = FMath::Clamp(DynamicMeshGeneration.NoiseStrength, 0.0f, 1.0f);
 	DynamicMeshGeneration.RiverStrength = FMath::Clamp(DynamicMeshGeneration.RiverStrength, 0.0f, 1.0f);
 	DynamicMeshGeneration.LakeStrength = FMath::Clamp(DynamicMeshGeneration.LakeStrength, 0.0f, 1.0f);
-	DynamicMeshGeneration.MicroDetailStrength = FMath::Clamp(DynamicMeshGeneration.MicroDetailStrength, 0.0f, 1.0f);
+	DynamicMeshGeneration.DetailStrength = FMath::Clamp(DynamicMeshGeneration.DetailStrength, 0.0f, 1.0f);
 	DynamicMeshGeneration.MoistureFrequency = FMath::Max(0.01f, DynamicMeshGeneration.MoistureFrequency);
-	DynamicMeshGeneration.TemperatureNoiseFrequency = FMath::Max(0.01f, DynamicMeshGeneration.TemperatureNoiseFrequency);
-	DynamicMeshGeneration.TerrainOctaves = FMath::Max(1, DynamicMeshGeneration.TerrainOctaves);
-	DynamicMeshGeneration.TerrainPersistence = FMath::Clamp(DynamicMeshGeneration.TerrainPersistence, 0.0f, 1.0f);
-	DynamicMeshGeneration.SeaLevel = FMath::Clamp(DynamicMeshGeneration.SeaLevel, -1.0f, 1.0f);
+	DynamicMeshGeneration.TemperatureFrequency = FMath::Max(0.01f, DynamicMeshGeneration.TemperatureFrequency);
+	DynamicMeshGeneration.NoiseOctaves = FMath::Max(1, DynamicMeshGeneration.NoiseOctaves);
+	DynamicMeshGeneration.NoisePersistence = FMath::Clamp(DynamicMeshGeneration.NoisePersistence, 0.0f, 1.0f);
+	DynamicMeshGeneration.OceanThreshold = FMath::Clamp(DynamicMeshGeneration.OceanThreshold, -1.0f, 1.0f);
 	RebuildGridMesh();
 }
 
 FSRPlanetTerrainSample USRPlanetSurfaceGrid::GetTerrainSampleAtDirection(FVector LocalUnitDirection) const
 {
-	return FSRPlanetTerrainGenerator::SampleTerrain(LocalUnitDirection, DynamicMeshGeneration);
+	FSRPlanetTerrainSample Sample = FSRPlanetTerrainGenerator::SampleTerrain(LocalUnitDirection, DynamicMeshGeneration);
+	const float SafeDynamicMeshHeight = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight);
+	if (DynamicMeshGeneration.bMinecraft && DynamicMeshGeneration.bDynamicMeshGeneration && SafeDynamicMeshHeight > KINDA_SMALL_NUMBER)
+	{
+		const float HeightStep = FMath::Max(1.0f, SafeDynamicMeshHeight / 24.0f);
+		Sample.HeightOffset = FMath::RoundToFloat(Sample.HeightOffset / HeightStep) * HeightStep;
+	}
+	return Sample;
 }
 
 bool USRPlanetSurfaceGrid::GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const
@@ -804,7 +810,7 @@ FVector USRPlanetSurfaceGrid::ResolveLocalSurfacePoint(const FVector& LocalUnitD
 
 	const float SurfaceHeightOffset = GetSurfaceHeightOffsetAtDirection(LocalDirection);
 	const FVector LocalBasePoint = LocalDirection * FMath::Max(1.0f, PlanetRadius + SurfaceHeightOffset);
-	const FVector LocalSurfaceNormal = DynamicMeshGeneration.bUseProceduralTerrain
+	const FVector LocalSurfaceNormal = DynamicMeshGeneration.bDynamicMeshGeneration
 		? ComputeProceduralSurfaceNormal(LocalDirection)
 		: LocalDirection;
 	return LocalBasePoint + (LocalSurfaceNormal.GetSafeNormal() * HeightOffset);
@@ -815,7 +821,7 @@ FVector USRPlanetSurfaceGrid::ResolveWorldSurfacePoint(const FVector& LocalUnitD
 	return GetComponentTransform().TransformPosition(ResolveLocalSurfacePoint(LocalUnitDirection, HeightOffset));
 }
 
-float USRPlanetSurfaceGrid::ComputeProceduralTerrainHeight(FVector LocalUnitDirection) const
+float USRPlanetSurfaceGrid::ComputeProceduralDynamicMeshHeight(FVector LocalUnitDirection) const
 {
 	return GetTerrainSampleAtDirection(LocalUnitDirection).HeightOffset;
 }
@@ -877,7 +883,7 @@ bool USRPlanetSurfaceGrid::IntersectRayWithSurfaceSphere(const FVector& RayOrigi
 
 	const FVector SphereCenter = GetComponentLocation();
 	const float SphereRadius = GetEffectiveWorldRadius()
-		+ (DynamicMeshGeneration.bUseProceduralTerrain ? FMath::Max(0.0f, DynamicMeshGeneration.TerrainHeight) * GetComponentTransform().GetScale3D().GetAbsMax() : 0.0f);
+		+ (DynamicMeshGeneration.bDynamicMeshGeneration ? FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight) * GetComponentTransform().GetScale3D().GetAbsMax() : 0.0f);
 	if (SphereRadius <= KINDA_SMALL_NUMBER)
 	{
 		return false;

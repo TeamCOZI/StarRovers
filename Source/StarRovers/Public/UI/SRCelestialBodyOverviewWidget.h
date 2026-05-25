@@ -115,9 +115,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "NameplateLeaderLengthPixels", ClampMin = "0.0"))
 	float NameplateLeaderLengthPixels = 72.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "NameplateOutlineSegments", ClampMin = "3"))
-	int32 NameplateOutlineSegments = 40;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Celestial|Nameplates", meta = (DisplayName = "NameplateOutlineLineThickness", ClampMin = "0.0"))
 	float NameplateOutlineLineThickness = 2.0f;
 

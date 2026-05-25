@@ -2,17 +2,17 @@
 
 FSRPlanetTerrainSample FSRPlanetTerrainGenerator::SampleTerrain(const FVector& LocalUnitDirection, const FSRDynamicMeshGeneration& Settings)
 {
-	if (!Settings.bUseProceduralTerrain || Settings.TerrainHeight <= KINDA_SMALL_NUMBER)
+	if (!Settings.bDynamicMeshGeneration || Settings.DynamicMeshHeight <= KINDA_SMALL_NUMBER)
 	{
 		FSRPlanetTerrainSample Sample;
 		Sample.Biome = ESRPlanetBiome::Plains;
 		return Sample;
 	}
 
-	switch (Settings.TerrainProfile)
+	switch (Settings.BiomeProfile)
 	{
-	case ESRPlanetTerrainProfile::None:
-	case ESRPlanetTerrainProfile::GasGiant:
+	case ESRPlanetBiomeProfile::None:
+	case ESRPlanetBiomeProfile::GasGiant:
 		return FSRPlanetTerrainSample();
 	default:
 		return SampleMinecraftOverworldTerrain(LocalUnitDirection, Settings);
@@ -29,57 +29,57 @@ FSRPlanetTerrainSample FSRPlanetTerrainGenerator::SampleMinecraftOverworldTerrai
 		return Sample;
 	}
 
-	const int32 SafeOctaves = FMath::Clamp(Settings.TerrainOctaves, 1, 8);
-	const float SafePersistence = FMath::Clamp(Settings.TerrainPersistence, 0.0f, 1.0f);
-	const float SafeTerrainHeight = FMath::Max(0.0f, Settings.TerrainHeight);
-	const FVector ClimateDirection = ApplyDomainWarp(Direction, Settings, Settings.DomainWarpStrength * 0.55f);
-	const FVector TerrainDirection = ApplyDomainWarp(Direction, Settings, Settings.DomainWarpStrength);
+	const int32 SafeOctaves = FMath::Clamp(Settings.NoiseOctaves, 1, 8);
+	const float SafePersistence = FMath::Clamp(Settings.NoisePersistence, 0.0f, 1.0f);
+	const float SafeDynamicMeshHeight = FMath::Max(0.0f, Settings.DynamicMeshHeight);
+	const FVector ClimateDirection = ApplyDomainWarp(Direction, Settings, Settings.NoiseStrength * 0.55f);
+	const FVector TerrainDirection = ApplyDomainWarp(Direction, Settings, Settings.NoiseStrength);
 
 	const float Continentalness = SampleFractalNoise(
 		ClimateDirection,
-		Settings.TerrainSeed + 10001,
+		Settings.GenerationSeed + 10001,
 		FMath::Max(0.01f, Settings.ContinentFrequency * 0.58f),
 		FMath::Max(3, SafeOctaves),
 		0.56f);
 	const float ErosionNoise = SampleFractalNoise(
 		ClimateDirection,
-		Settings.TerrainSeed + 10037,
+		Settings.GenerationSeed + 10037,
 		FMath::Max(0.01f, Settings.ContinentFrequency * 1.18f),
 		FMath::Max(3, SafeOctaves - 1),
 		0.52f);
 	const float Weirdness = SampleFractalNoise(
 		TerrainDirection,
-		Settings.TerrainSeed + 10061,
+		Settings.GenerationSeed + 10061,
 		FMath::Max(0.01f, Settings.MountainFrequency * 0.42f),
 		FMath::Max(3, SafeOctaves),
 		0.50f);
 	const float Ridges = SampleRidgedNoise(
 		TerrainDirection,
-		Settings.TerrainSeed + 10091,
+		Settings.GenerationSeed + 10091,
 		FMath::Max(0.01f, Settings.MountainFrequency * 0.72f),
 		FMath::Max(3, SafeOctaves - 1));
 	const float Detail = SampleFractalNoise(
 		TerrainDirection,
-		Settings.TerrainSeed + 10111,
+		Settings.GenerationSeed + 10111,
 		FMath::Max(0.01f, Settings.DetailFrequency),
 		FMath::Max(2, SafeOctaves - 2),
 		SafePersistence);
 
 	const float TemperatureNoise = SampleFractalNoise(
 		ClimateDirection,
-		Settings.TerrainSeed + 10141,
-		FMath::Max(0.01f, Settings.TemperatureNoiseFrequency),
+		Settings.GenerationSeed + 10141,
+		FMath::Max(0.01f, Settings.TemperatureFrequency),
 		3,
 		0.5f);
 	const float HumidityNoise = SampleFractalNoise(
 		ClimateDirection,
-		Settings.TerrainSeed + 10163,
+		Settings.GenerationSeed + 10163,
 		FMath::Max(0.01f, Settings.MoistureFrequency),
 		3,
 		0.5f);
 
-	const float ContinentalnessBias = Settings.TerrainProfile == ESRPlanetTerrainProfile::OceanWorld ? -0.18f : 0.18f;
-	const float EffectiveContinentalness = FMath::Clamp(Continentalness + ContinentalnessBias - (Settings.SeaLevel * 0.62f), -1.0f, 1.0f);
+	const float ContinentalnessBias = Settings.BiomeProfile == ESRPlanetBiomeProfile::OceanWorld ? -0.18f : 0.18f;
+	const float EffectiveContinentalness = FMath::Clamp(Continentalness + ContinentalnessBias - (Settings.OceanThreshold * 0.62f), -1.0f, 1.0f);
 	const float Erosion = FMath::Clamp((ErosionNoise + 1.0f) * 0.5f, 0.0f, 1.0f);
 	const float PeaksAndValleys = ComputeMinecraftPeaksAndValleys(Weirdness);
 	const float LandMask = SmoothStep(-0.12f, 0.02f, EffectiveContinentalness);
@@ -96,24 +96,24 @@ FSRPlanetTerrainSample FSRPlanetTerrainGenerator::SampleMinecraftOverworldTerrai
 	const float ValleyMask = SmoothStep(-0.95f, -0.18f, -PeaksAndValleys) * LandMask;
 	const float PlateauMask = SmoothStep(0.18f, 0.72f, EffectiveContinentalness) * SmoothStep(0.28f, 0.68f, Erosion);
 
-	const float OceanFloorHeight = -OceanDepthMask * OceanDepthMask * SafeTerrainHeight * 0.42f;
-	const float LandLift = LandMask * SafeTerrainHeight * 0.10f;
-	const float CoastalShelfHeight = CoastMask * SafeTerrainHeight * 0.08f;
-	const float PlainsHeight = LandMask * SafeTerrainHeight * FMath::Lerp(0.14f, 0.28f, InlandMask) * SmoothStep(0.12f, 0.78f, Erosion);
-	const float PlateauHeight = PlateauMask * SafeTerrainHeight * 0.24f;
+	const float OceanFloorHeight = -OceanDepthMask * OceanDepthMask * SafeDynamicMeshHeight * 0.42f;
+	const float LandLift = LandMask * SafeDynamicMeshHeight * 0.10f;
+	const float CoastalShelfHeight = CoastMask * SafeDynamicMeshHeight * 0.08f;
+	const float PlainsHeight = LandMask * SafeDynamicMeshHeight * FMath::Lerp(0.14f, 0.28f, InlandMask) * SmoothStep(0.12f, 0.78f, Erosion);
+	const float PlateauHeight = PlateauMask * SafeDynamicMeshHeight * 0.24f;
 	const float MountainHeight = MountainPotential
-		* SafeTerrainHeight
+		* SafeDynamicMeshHeight
 		* FMath::Lerp(0.48f, 0.92f, FMath::Clamp(PeaksAndValleys, 0.0f, 1.0f))
-		* FMath::Pow(FMath::Clamp(Settings.MountainSharpness / 2.0f, 0.25f, 2.0f), 0.45f);
-	const float ValleyCarve = ValleyMask * SafeTerrainHeight * FMath::Lerp(0.10f, 0.31f, 1.0f - Erosion) * FMath::Clamp(Settings.ValleyStrength, 0.0f, 1.0f);
-	const float DetailHeight = Detail * SafeTerrainHeight * 0.035f * FMath::Clamp(Settings.MicroDetailStrength, 0.0f, 1.0f) * FMath::Lerp(0.35f, 1.0f, LandMask);
-	const float RidgeBonus = FMath::Square(Ridges) * MountainPotential * SafeTerrainHeight * 0.16f;
+		* FMath::Pow(FMath::Clamp(Settings.MountainStrength / 2.0f, 0.25f, 2.0f), 0.45f);
+	const float ValleyCarve = ValleyMask * SafeDynamicMeshHeight * FMath::Lerp(0.10f, 0.31f, 1.0f - Erosion) * FMath::Clamp(Settings.ValleyStrength, 0.0f, 1.0f);
+	const float DetailHeight = Detail * SafeDynamicMeshHeight * 0.035f * FMath::Clamp(Settings.DetailStrength, 0.0f, 1.0f) * FMath::Lerp(0.35f, 1.0f, LandMask);
+	const float RidgeBonus = FMath::Square(Ridges) * MountainPotential * SafeDynamicMeshHeight * 0.16f;
 
 	const float HeightBeforeSurfaceRules = OceanFloorHeight + LandLift + CoastalShelfHeight + PlainsHeight + PlateauHeight + MountainHeight + RidgeBonus + DetailHeight - ValleyCarve;
-	const float HeightAlphaBeforeRules = FMath::Clamp(HeightBeforeSurfaceRules / FMath::Max(SafeTerrainHeight, KINDA_SMALL_NUMBER), -1.0f, 1.0f);
+	const float HeightAlphaBeforeRules = FMath::Clamp(HeightBeforeSurfaceRules / FMath::Max(SafeDynamicMeshHeight, KINDA_SMALL_NUMBER), -1.0f, 1.0f);
 	const float RiverMask = SampleRiverMask(TerrainDirection, Settings, LandMask, MountainPotential);
 	const float LakeMask = SampleLakeMask(TerrainDirection, Settings, LandMask, HeightAlphaBeforeRules);
-	const float SurfaceRuleCarve = ((RiverMask * 0.13f) + (LakeMask * 0.08f)) * SafeTerrainHeight;
+	const float SurfaceRuleCarve = ((RiverMask * 0.13f) + (LakeMask * 0.08f)) * SafeDynamicMeshHeight;
 
 	Sample.HeightOffset = HeightBeforeSurfaceRules - SurfaceRuleCarve;
 	Sample.Continent = EffectiveContinentalness;
@@ -123,11 +123,11 @@ FSRPlanetTerrainSample FSRPlanetTerrainGenerator::SampleMinecraftOverworldTerrai
 	Sample.PlateBeltMask = Ridges * MountainPotential;
 
 	const float LatitudeTemperature = 1.0f - FMath::Abs(Direction.Z);
-	const float HeightTemperaturePenalty = FMath::Max(0.0f, Sample.HeightOffset / FMath::Max(SafeTerrainHeight, KINDA_SMALL_NUMBER)) * 0.28f;
+	const float HeightTemperaturePenalty = FMath::Max(0.0f, Sample.HeightOffset / FMath::Max(SafeDynamicMeshHeight, KINDA_SMALL_NUMBER)) * 0.28f;
 	Sample.Temperature = FMath::Clamp((LatitudeTemperature * 0.78f) + (TemperatureNoise * 0.18f) + 0.11f - HeightTemperaturePenalty, 0.0f, 1.0f);
 	Sample.Moisture = FMath::Clamp((HumidityNoise + 1.0f) * 0.5f, 0.0f, 1.0f);
 
-	const float HeightAlpha = FMath::Clamp(Sample.HeightOffset / FMath::Max(SafeTerrainHeight, KINDA_SMALL_NUMBER), -1.0f, 1.0f);
+	const float HeightAlpha = FMath::Clamp(Sample.HeightOffset / FMath::Max(SafeDynamicMeshHeight, KINDA_SMALL_NUMBER), -1.0f, 1.0f);
 	const bool bOcean = EffectiveContinentalness < -0.24f || LandMask < 0.18f;
 	const bool bCoast = !bOcean && EffectiveContinentalness < 0.07f;
 	const bool bPeak = MountainPotential > 0.58f && HeightAlpha > 0.24f;
@@ -251,9 +251,9 @@ FVector FSRPlanetTerrainGenerator::ApplyDomainWarp(const FVector& LocalUnitDirec
 
 	const float WarpFrequency = FMath::Max(0.01f, Settings.ContinentFrequency * 2.0f);
 	const FVector Warp(
-		SampleFractalNoise(Direction, Settings.TerrainSeed + 211, WarpFrequency, 3, 0.5f),
-		SampleFractalNoise(Direction, Settings.TerrainSeed + 223, WarpFrequency, 3, 0.5f),
-		SampleFractalNoise(Direction, Settings.TerrainSeed + 227, WarpFrequency, 3, 0.5f));
+		SampleFractalNoise(Direction, Settings.GenerationSeed + 211, WarpFrequency, 3, 0.5f),
+		SampleFractalNoise(Direction, Settings.GenerationSeed + 223, WarpFrequency, 3, 0.5f),
+		SampleFractalNoise(Direction, Settings.GenerationSeed + 227, WarpFrequency, 3, 0.5f));
 
 	return (Direction + (Warp * SafeStrength * 0.42f)).GetSafeNormal();
 }
@@ -272,8 +272,8 @@ float FSRPlanetTerrainGenerator::SampleRiverMask(const FVector& LocalUnitDirecti
 		return 0.0f;
 	}
 
-	const float ChannelA = FMath::Abs(SampleFractalNoise(Direction, Settings.TerrainSeed + 263, Settings.ContinentFrequency * 5.5f, 4, 0.55f));
-	const float ChannelB = FMath::Abs(SampleFractalNoise(Direction, Settings.TerrainSeed + 269, Settings.ContinentFrequency * 9.0f, 3, 0.48f));
+	const float ChannelA = FMath::Abs(SampleFractalNoise(Direction, Settings.GenerationSeed + 263, Settings.ContinentFrequency * 5.5f, 4, 0.55f));
+	const float ChannelB = FMath::Abs(SampleFractalNoise(Direction, Settings.GenerationSeed + 269, Settings.ContinentFrequency * 9.0f, 3, 0.48f));
 	const float LargeChannel = 1.0f - SmoothStep(0.018f, 0.082f, ChannelA);
 	const float Tributary = 1.0f - SmoothStep(0.012f, 0.052f, ChannelB);
 	const float SourceMask = SmoothStep(0.18f, 0.75f, MountainMask);
@@ -295,8 +295,8 @@ float FSRPlanetTerrainGenerator::SampleLakeMask(const FVector& LocalUnitDirectio
 		return 0.0f;
 	}
 
-	const float BasinNoiseA = (SampleFractalNoise(Direction, Settings.TerrainSeed + 277, Settings.ContinentFrequency * 5.2f, 3, 0.42f) + 1.0f) * 0.5f;
-	const float BasinNoiseB = FMath::Abs(SampleFractalNoise(Direction, Settings.TerrainSeed + 283, Settings.ContinentFrequency * 8.5f, 2, 0.36f));
+	const float BasinNoiseA = (SampleFractalNoise(Direction, Settings.GenerationSeed + 277, Settings.ContinentFrequency * 5.2f, 3, 0.42f) + 1.0f) * 0.5f;
+	const float BasinNoiseB = FMath::Abs(SampleFractalNoise(Direction, Settings.GenerationSeed + 283, Settings.ContinentFrequency * 8.5f, 2, 0.36f));
 	const float BasinMask = SmoothStep(0.84f, 0.98f, BasinNoiseA) * SmoothStep(0.08f, 0.28f, BasinNoiseB);
 	const float LowlandMask = 1.0f - SmoothStep(0.04f, 0.30f, HeightAlpha);
 	const float InlandMask = SmoothStep(0.72f, 0.94f, LandMask);

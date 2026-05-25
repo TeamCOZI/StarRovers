@@ -73,7 +73,7 @@ USRGravityParent::USRGravityParent()
 	GravityRadiusRatio = 10.0f;
 	Gravity = 0.0f;
 	GravityRadius = 0.0f;
-	bShowGravityLine = true;
+	ShowGravityLine = true;
 	GravityLineColor = FLinearColor(0.45f, 1.0f, 0.45f, 1.0f);
 	GravityLineOpacity = 0.85f;
 	GravityLineSegments = 96;
@@ -144,7 +144,7 @@ void USRGravityParent::ConfigureGravity(
 	Mass = NewMass;
 	GravityRatio = NewGravityRatio;
 	GravityRadiusRatio = NewGravityRadiusRatio;
-	bShowGravityLine = bNewShowGravityLine;
+	ShowGravityLine = bNewShowGravityLine;
 	GravityLineColor = NewGravityLineColor;
 	GravityLineOpacity = NewGravityLineOpacity;
 	GravityLineSegments = NewGravityLineSegments;
@@ -194,7 +194,7 @@ FVector USRGravityParent::GetGravityAccelerationAtWorldLocation(const FVector& W
 
 bool USRGravityParent::ShouldShowGravityLine() const
 {
-	return bShowGravityLine && GravityRadius > KINDA_SMALL_NUMBER;
+	return ShowGravityLine && GravityRadius > KINDA_SMALL_NUMBER;
 }
 
 FLinearColor USRGravityParent::GetGravityLineColor() const
@@ -228,7 +228,7 @@ void USRGravityParent::RefreshGravityLine()
 			UE_LOG(
 				LogTemp,
 				Error,
-				TEXT("USRGravityParent cannot draw gravity line for owner '%s': GravityLineBatch is null after lookup, bShowGravityLine=true, GravityRadius=%.2f, and no registered ULineBatchComponent named 'GravityLineBatch' was available."),
+				TEXT("USRGravityParent cannot draw gravity line for owner '%s': GravityLineBatch is null after lookup, ShowGravityLine=true, GravityRadius=%.2f, and no registered ULineBatchComponent named 'GravityLineBatch' was available."),
 				*Owner->GetName(),
 				GravityRadius);
 		}

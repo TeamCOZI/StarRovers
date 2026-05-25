@@ -79,7 +79,7 @@ struct STARROVERS_API FSRCelestialBodyData
 	float ConstructionHeightOffset = 15.0f;
 
 	UPROPERTY()
-	float BodyScale = 1000.0f;
+	float Scale = 1000.0f;
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> StaticMesh = nullptr;
@@ -94,13 +94,10 @@ struct STARROVERS_API FSRCelestialBodyData
 	float StarPointLightIntensity = -1.0f;
 
 	UPROPERTY()
-	float StarMaterialEmissiveStrength = -1.0f;
-
-	UPROPERTY()
 	FLinearColor StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 
 	UPROPERTY()
-	int32 GenerationSeed = 1337;
+	int32 GenerationSeed = 1000;
 
 	UPROPERTY()
 	FSRDynamicMeshGeneration DynamicMeshGeneration;
@@ -118,7 +115,7 @@ struct STARROVERS_API FSRCelestialBodyData
 	float OceanScaleMultiplier = 1.0f;
 
 	UPROPERTY()
-	bool bShowOrbitLine = true;
+	bool ShowOrbitLine = true;
 
 	UPROPERTY()
 	FLinearColor OrbitLineColor = FLinearColor(0.2f, 0.75f, 1.0f, 1.0f);
@@ -139,7 +136,7 @@ struct STARROVERS_API FSRCelestialBodyData
 	float GravityRadiusRatio = 10.0f;
 
 	UPROPERTY()
-	bool bShowGravityLine = true;
+	bool ShowGravityLine = true;
 
 	UPROPERTY()
 	FLinearColor GravityLineColor = FLinearColor(0.45f, 1.0f, 0.45f, 1.0f);
@@ -220,7 +217,7 @@ protected:
 
 	ESRCelestialBodyCategory BodyCategory;
 
-	float BodyScale;
+	float Scale;
 
 	float Mass;
 
@@ -229,7 +226,7 @@ protected:
 	float GravityRadiusRatio;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "ShowGravityLine"))
-	bool bShowGravityLine;
+	bool ShowGravityLine;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "GravityLineColor"))
 	FLinearColor GravityLineColor;

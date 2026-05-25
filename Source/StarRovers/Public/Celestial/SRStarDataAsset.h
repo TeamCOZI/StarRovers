@@ -25,7 +25,7 @@ public:
 	ESRCelestialBodyCategory BodyCategory = ESRCelestialBodyCategory::Star;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "Scale", ClampMin = "0.0"))
-	float BodyScale = 100.0f;
+	float Scale = 100.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "StaticMesh"))
 	TObjectPtr<UStaticMesh> StaticMesh = nullptr;
@@ -41,9 +41,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "GravityRadiusRatio", ClampMin = "0.0"))
 	float GravityRadiusRatio = 100.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star", meta = (DisplayName = "StarMaterialEmissiveStrength", ClampMin = "0.0"))
-	float StarMaterialEmissiveStrength = 30.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star", meta = (DisplayName = "StarPointLightIntensity", ClampMin = "0.0"))
 	float StarPointLightIntensity = 100.0f;

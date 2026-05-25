@@ -1,32 +1,11 @@
 #include "Celestial/SRStar.h"
 
 #include "Celestial/SRCelestialBodyCategory.h"
-#include "Components/MeshComponent.h"
 #include "Components/PointLightComponent.h"
-#include "Materials/MaterialInstanceDynamic.h"
-
-namespace
-{
-	void SetStarMaterialEmissiveStrength(UMaterialInstanceDynamic* MaterialInstance, const float Value)
-	{
-		if (!IsValid(MaterialInstance))
-		{
-			return;
-		}
-
-		MaterialInstance->SetScalarParameterValue(TEXT("Emissive Strength"), Value);
-		MaterialInstance->SetScalarParameterValue(TEXT("EmissiveStrength"), Value);
-		MaterialInstance->SetScalarParameterValue(TEXT("GlowIntensity"), Value);
-		MaterialInstance->SetScalarParameterValue(TEXT("Glow"), Value);
-		MaterialInstance->SetScalarParameterValue(TEXT("Intensity"), Value);
-		MaterialInstance->SetScalarParameterValue(TEXT("Brightness"), Value);
-	}
-}
 
 ASRStar::ASRStar()
 {
 	BodyCategory = ESRCelestialBodyCategory::Star;
-	StarMaterialEmissiveStrength = 30.0f;
 	StarPointLightIntensity = 100.0f;
 	StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 
@@ -39,7 +18,6 @@ ASRStar::ASRStar()
 
 void ASRStar::SetData(const FSRCelestialBodyData& NewData)
 {
-	StarMaterialEmissiveStrength = NewData.StarMaterialEmissiveStrength;
 	StarPointLightIntensity = NewData.StarPointLightIntensity;
 	StarPointLightColor = NewData.StarPointLightColor;
 
@@ -55,13 +33,7 @@ void ASRStar::ApplyData()
 
 void ASRStar::ApplyStarAppearance()
 {
-	StarMaterialEmissiveStrength = FMath::Max(0.0f, StarMaterialEmissiveStrength);
 	StarPointLightIntensity = FMath::Max(0.0f, StarPointLightIntensity);
-
-	if (UMaterialInstanceDynamic* StarMaterial = ResolveStarMaterialInstanceDynamic())
-	{
-		SetStarMaterialEmissiveStrength(StarMaterial, StarMaterialEmissiveStrength);
-	}
 
 	if (UPointLightComponent* ActiveStarPointLight = StarPointLight)
 	{
@@ -71,20 +43,4 @@ void ASRStar::ApplyStarAppearance()
 		ActiveStarPointLight->SetIntensity(StarPointLightIntensity);
 		ActiveStarPointLight->SetLightColor(StarPointLightColor);
 	}
-}
-
-UMaterialInstanceDynamic* ASRStar::ResolveStarMaterialInstanceDynamic()
-{
-	UMeshComponent* BodyMeshComponent = GetCelestialBodyDynamicMesh();
-	if (!IsValid(BodyMeshComponent))
-	{
-		return nullptr;
-	}
-
-	if (UMaterialInstanceDynamic* ExistingDynamicMaterial = Cast<UMaterialInstanceDynamic>(BodyMeshComponent->GetMaterial(0)))
-	{
-		return ExistingDynamicMaterial;
-	}
-
-	return BodyMeshComponent->CreateDynamicMaterialInstance(0);
 }

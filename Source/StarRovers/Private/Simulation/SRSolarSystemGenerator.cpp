@@ -39,7 +39,7 @@ namespace
 			return false;
 		}
 
-		OutRadius = FMath::Max(0.0f, MeshAsset->GetBounds().SphereRadius * FMath::Max(0.0f, CelestialBodyRequest.BodyData.BodyScale));
+		OutRadius = FMath::Max(0.0f, MeshAsset->GetBounds().SphereRadius * FMath::Max(0.0f, CelestialBodyRequest.BodyData.Scale));
 		return true;
 	}
 
@@ -52,7 +52,7 @@ namespace
 
 		const FSRCelestialBodyData BodyData = CelestialBody->GetData();
 		return IsValid(BodyData.StaticMesh.Get())
-			? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.BodyScale)
+			? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale)
 			: 0.0f;
 	}
 
@@ -105,7 +105,7 @@ namespace
 		OutData = DefaultBody->GetData();
 		OutData.VariableName = DataAssetData.VariableName;
 		OutData.BodyCategory = DataAssetData.BodyCategory;
-		OutData.BodyScale = FMath::Max(0.0f, DataAssetData.BodyScale);
+		OutData.Scale = FMath::Max(0.0f, DataAssetData.Scale);
 		OutData.StaticMesh = DataAssetData.StaticMesh;
 		OutData.Material = DataAssetData.Material;
 		OutData.Mass = FMath::Max(0.0f, DataAssetData.Mass);
@@ -120,7 +120,6 @@ namespace
 		OutData.SurfaceGridHeightOffset = DataAssetData.SurfaceGridHeightOffset;
 		OutData.OrbitPeriod = FMath::Max(0.0f, DataAssetData.OrbitPeriod);
 		OutData.StarPointLightIntensity = DataAssetData.StarPointLightIntensity;
-		OutData.StarMaterialEmissiveStrength = DataAssetData.StarMaterialEmissiveStrength;
 		OutData.StarPointLightColor = DataAssetData.StarPointLightColor;
 		return true;
 	}
@@ -374,7 +373,7 @@ void ASRSolarSystemGenerator::BuildOrbitingBodyRequests(
 		CandidateCelestialBodies[Index].BodyData.OrbitRadius = PackedOrbitRadii[Index];
 		CandidateCelestialBodies[Index].BodyData.InitialAngle = RandomStream.FRandRange(0.0f, 360.0f);
 		CandidateCelestialBodies[Index].BodyData.GenerationSeed = RandomStream.RandRange(1, TNumericLimits<int32>::Max() - 1);
-		CandidateCelestialBodies[Index].BodyData.DynamicMeshGeneration.TerrainSeed = CandidateCelestialBodies[Index].BodyData.GenerationSeed;
+		CandidateCelestialBodies[Index].BodyData.DynamicMeshGeneration.GenerationSeed = CandidateCelestialBodies[Index].BodyData.GenerationSeed;
 	}
 
 	OutResolvedCelestialBodyRequests = MoveTemp(CandidateCelestialBodies);

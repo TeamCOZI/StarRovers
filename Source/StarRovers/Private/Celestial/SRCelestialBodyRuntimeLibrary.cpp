@@ -309,7 +309,7 @@ namespace
 		{
 			const FSRCelestialBodyData BodyData = ProceduralBody->GetData();
 			return IsValid(BodyData.StaticMesh.Get())
-				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.BodyScale)
+				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale)
 				: 0.0f;
 		}
 
@@ -500,6 +500,15 @@ float USRCelestialBodyRuntimeLibrary::GetCelestialFocusZoomDistance(const AActor
 
 FText USRCelestialBodyRuntimeLibrary::GetCelestialVariableName(const AActor* Actor)
 {
+	if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(Actor))
+	{
+		const FText VariableName = ProceduralBody->GetData().VariableName;
+		if (!VariableName.IsEmpty())
+		{
+			return VariableName;
+		}
+	}
+
 	FText VariableName;
 	if (TryGetTextLikePropertyValue(Actor, CelestialBodyPropertyNames::VariableName, VariableName) && !VariableName.IsEmpty())
 	{

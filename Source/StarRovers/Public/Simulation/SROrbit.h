@@ -98,7 +98,7 @@ private:
 	float OrbitPeriodSeconds = 0.0f;
 
 	UPROPERTY()
-	bool bShowOrbitLine = true;
+	bool ShowOrbitLine = true;
 
 	UPROPERTY()
 	FLinearColor OrbitLineColor = FLinearColor(0.2f, 0.75f, 1.0f, 1.0f);

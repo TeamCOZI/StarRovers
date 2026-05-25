@@ -25,7 +25,7 @@ public:
 	ESRCelestialBodyCategory BodyCategory = ESRCelestialBodyCategory::Moon;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "Scale", ClampMin = "0.0"))
-	float BodyScale = 5.0f;
+	float Scale = 5.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "StaticMesh"))
 	TObjectPtr<UStaticMesh> StaticMesh = nullptr;
@@ -51,7 +51,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "ConstructionHeightOffset", ClampMin = "0.0"))
 	float ConstructionHeightOffset = 15.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Terrain", meta = (DisplayName = "DynamicMeshGeneration"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "Dynamic Mesh Generation", ShowOnlyInnerProperties))
 	FSRDynamicMeshGeneration DynamicMeshGeneration;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "bHasOcean"))

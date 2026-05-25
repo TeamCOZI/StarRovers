@@ -89,7 +89,7 @@ protected:
     float CameraSurfacePadding;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|ObliqueView", meta = (DisplayName = "UseObliqueView"))
-    bool bUseObliqueView;
+    bool UseObliqueView;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|ObliqueView", meta = (DisplayName = "NearViewRotation"))
     FRotator NearViewRotation;

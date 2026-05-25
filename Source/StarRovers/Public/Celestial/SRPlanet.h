@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Celestial/SRCelestialBody.h"
@@ -58,7 +58,7 @@ protected:
 	FLinearColor OccupiedCellColor;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Orbit", meta = (DisplayName = "ShowOrbitLine"))
-	bool bShowOrbitLine;
+	bool ShowOrbitLine;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Orbit", meta = (DisplayName = "OrbitLineColor"))
 	FLinearColor OrbitLineColor;
