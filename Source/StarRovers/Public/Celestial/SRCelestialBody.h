@@ -296,6 +296,7 @@ private:
 	void EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicMesh);
 	bool CopyStaticMeshToCelestialBodyDynamicMesh();
 	UDynamicMeshComponent* GetDynamicMeshFaceComponent(int32 FaceIndex) const;
+	void SyncDynamicMeshFaceComponentSettings();
 	uint32 ComputeDynamicMeshBuildHash() const;
 	void ResetDynamicMeshCellColorData();
 	USRCelestialBodyRegistrySubsystem* FindCelestialRegistry() const;

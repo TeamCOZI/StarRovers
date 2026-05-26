@@ -200,8 +200,9 @@ private:
     bool RebuildCellsFromOwnerStaticMeshQuads();
     void EnsureInteractionOverlay();
     void RefreshInteractionHighlight();
-    void RebuildInteractionOverlayMesh();
+    void RebuildInteractionOverlayMesh(bool bIncludeCellHighlightOverlay);
     void SetInteractionOverlayVisible(bool bNewVisible);
+    void AppendInteractionGridPatch(UE::Geometry::FDynamicMesh3& OverlayMesh, const FSRPlanetSurfaceGridCellId& CenterCellId, const FLinearColor& BaseLineColor, float LineThickness, TSet<uint64>& DrawnEdges) const;
     bool GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const;
     void RebuildCellIndex();
     void RebuildRaycastIndex();

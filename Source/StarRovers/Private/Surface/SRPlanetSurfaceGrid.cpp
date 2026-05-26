@@ -400,7 +400,7 @@ void USRPlanetSurfaceGrid::RebuildGrid()
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
-		RebuildGridMesh();
+		RefreshInteractionHighlight();
 	}
 }
 
@@ -436,7 +436,7 @@ void USRPlanetSurfaceGrid::ClearOccupancy()
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
-		RebuildGridMesh();
+		RefreshInteractionHighlight();
 	}
 }
 
@@ -709,7 +709,7 @@ bool USRPlanetSurfaceGrid::SetCellOccupied(const FSRPlanetSurfaceGridCellId& Cel
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
-		RebuildGridMesh();
+		RefreshInteractionHighlight();
 	}
 	return true;
 }
@@ -864,8 +864,8 @@ void USRPlanetSurfaceGrid::DrawDebugGrid(float Duration) const
 void USRPlanetSurfaceGrid::SetGridVisible(bool bNewGridVisible)
 {
 	bGridVisible = bNewGridVisible;
-	SetVisibility(bGridVisible);
-	SetHiddenInGame(!bGridVisible);
+	SetVisibility(false);
+	SetHiddenInGame(true);
 	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell));
 	if (!bGridVisible)
 	{
@@ -882,10 +882,6 @@ void USRPlanetSurfaceGrid::SetGridVisible(bool bNewGridVisible)
 		if (bCellsDirty)
 		{
 			RebuildGrid();
-		}
-		else if (bGridMeshDirty)
-		{
-			RebuildGridMesh();
 		}
 		RefreshInteractionHighlight();
 	}
@@ -911,7 +907,11 @@ void USRPlanetSurfaceGrid::PrepareGridForAssembly()
 
 	if (!bCellsDirty && bGridMeshDirty)
 	{
-		RebuildGridMesh();
+		UE::Geometry::FDynamicMesh3 EmptyGridMesh;
+		EmptyGridMesh.EnableAttributes();
+		EmptyGridMesh.Attributes()->EnablePrimaryColors();
+		SetMesh(MoveTemp(EmptyGridMesh));
+		bGridMeshDirty = false;
 	}
 }
 
@@ -934,9 +934,12 @@ void USRPlanetSurfaceGrid::ConfigureDebugGrid(
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
-		RebuildGridMesh();
+		RefreshInteractionHighlight();
 	}
-	RefreshInteractionHighlight();
+	else
+	{
+		RefreshInteractionHighlight();
+	}
 }
 
 void USRPlanetSurfaceGrid::ConfigureConstructionHeightOffset(float NewConstructionHeightOffset)
@@ -1048,9 +1051,12 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	SetInteractionOverlayVisible(false);
 	RebuildCellIndex();
 	RebuildRaycastIndex();
-	SetMesh(MoveTemp(NewGridMesh));
-	SetVisibility(bGridVisible);
-	SetHiddenInGame(!bGridVisible);
+	UE::Geometry::FDynamicMesh3 EmptyGridMesh;
+	EmptyGridMesh.EnableAttributes();
+	EmptyGridMesh.Attributes()->EnablePrimaryColors();
+	SetMesh(MoveTemp(EmptyGridMesh));
+	SetVisibility(false);
+	SetHiddenInGame(true);
 	bCellsDirty = false;
 	bGridMeshDirty = false;
 	UpdateDebugTickState();
@@ -1423,28 +1429,24 @@ void USRPlanetSurfaceGrid::EnsureInteractionOverlay()
 void USRPlanetSurfaceGrid::RefreshInteractionHighlight()
 {
 	ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner());
-	if (IsValid(OwnerBody)
+	const bool bAppliedDynamicMeshHighlight = IsValid(OwnerBody)
 		&& OwnerBody->ApplySurfaceCellHighlights(
 			HoveredCellId,
 			bHasHoveredCell,
 			SelectedCellId,
 			bHasSelectedCell,
 			HoveredCellColor,
-			SelectedCellColor))
-	{
-		SetInteractionOverlayVisible(false);
-		return;
-	}
+			SelectedCellColor);
 
 	if (IsValid(OwnerBody) && !bHasHoveredCell && !bHasSelectedCell)
 	{
 		OwnerBody->ClearSurfaceCellHighlights();
 	}
 
-	RebuildInteractionOverlayMesh();
+	RebuildInteractionOverlayMesh(!bAppliedDynamicMeshHighlight);
 }
 
-void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh()
+void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighlightOverlay)
 {
 	EnsureInteractionOverlay();
 	if (!InteractionOverlayMesh)
@@ -1456,10 +1458,16 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh()
 	OverlayMesh.EnableAttributes();
 	OverlayMesh.Attributes()->EnablePrimaryColors();
 
+	TSet<uint64> PatchDrawnEdges;
+	PatchDrawnEdges.Reserve(96);
 	FSRPlanetSurfaceGridCell SelectedCell;
 	if (bHasSelectedCell && GetCellById(SelectedCellId, SelectedCell))
 	{
-		AppendInteractionCell(OverlayMesh, SelectedCell, SelectedCellColor, DebugLineThickness * 2.5f);
+		AppendInteractionGridPatch(OverlayMesh, SelectedCellId, SelectedCellColor, DebugLineThickness * 1.75f, PatchDrawnEdges);
+		if (bIncludeCellHighlightOverlay)
+		{
+			AppendInteractionCell(OverlayMesh, SelectedCell, SelectedCellColor, DebugLineThickness * 2.5f);
+		}
 	}
 
 	if (bHasHoveredCell && (!bHasSelectedCell || !(HoveredCellId == SelectedCellId)))
@@ -1467,12 +1475,53 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh()
 		FSRPlanetSurfaceGridCell HoveredCell;
 		if (GetCellById(HoveredCellId, HoveredCell))
 		{
-			AppendInteractionCell(OverlayMesh, HoveredCell, HoveredCellColor, DebugLineThickness * 2.0f);
+			AppendInteractionGridPatch(OverlayMesh, HoveredCellId, HoveredCellColor, DebugLineThickness * 1.5f, PatchDrawnEdges);
+			if (bIncludeCellHighlightOverlay)
+			{
+				AppendInteractionCell(OverlayMesh, HoveredCell, HoveredCellColor, DebugLineThickness * 2.0f);
+			}
 		}
 	}
 
 	InteractionOverlayMesh->SetMesh(MoveTemp(OverlayMesh));
 	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell));
+}
+
+void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
+	UE::Geometry::FDynamicMesh3& OverlayMesh,
+	const FSRPlanetSurfaceGridCellId& CenterCellId,
+	const FLinearColor& BaseLineColor,
+	float LineThickness,
+	TSet<uint64>& DrawnEdges) const
+{
+	constexpr int32 PatchRadius = 2;
+	for (int32 OffsetY = -PatchRadius; OffsetY <= PatchRadius; ++OffsetY)
+	{
+		for (int32 OffsetX = -PatchRadius; OffsetX <= PatchRadius; ++OffsetX)
+		{
+			FSRPlanetSurfaceGridCellId PatchCellId = CenterCellId;
+			PatchCellId.CellX += OffsetX;
+			PatchCellId.CellY += OffsetY;
+
+			FSRPlanetSurfaceGridCell PatchCell;
+			if (!GetCellById(PatchCellId, PatchCell))
+			{
+				continue;
+			}
+
+			const int32 Distance = FMath::Max(FMath::Abs(OffsetX), FMath::Abs(OffsetY));
+			const float FadeAlpha = 1.0f - (static_cast<float>(Distance) / static_cast<float>(PatchRadius + 1));
+			FLinearColor PatchLineColor = BaseLineColor;
+			PatchLineColor.A = FMath::Clamp(BaseLineColor.A * DebugLineOpacity * FadeAlpha, 0.0f, 1.0f);
+			if (PatchLineColor.A <= KINDA_SMALL_NUMBER)
+			{
+				continue;
+			}
+
+			const float PatchLineThickness = FMath::Max(0.1f, LineThickness * FMath::Lerp(0.65f, 1.0f, FadeAlpha));
+			AppendGridWireCell(OverlayMesh, PatchCell, PatchLineColor, PatchLineThickness, true, &DrawnEdges);
+		}
+	}
 }
 
 void USRPlanetSurfaceGrid::SetInteractionOverlayVisible(bool bNewVisible)
