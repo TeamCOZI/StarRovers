@@ -39,30 +39,30 @@ namespace
 		return (static_cast<uint64>(MinEndpoint) << 32) | static_cast<uint64>(MaxEndpoint);
 	}
 
-	struct FSRSourceTriangle
+	struct FSRSurfaceGridSourceTriangle
 	{
 		UE::Geometry::FIndex3i Vertices = UE::Geometry::FIndex3i(INDEX_NONE, INDEX_NONE, INDEX_NONE);
 		bool bPaired = false;
 	};
 
-	struct FSRSourceQuad
+	struct FSRSurfaceGridSourceQuad
 	{
 		int32 Vertices[4] = { INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE };
 	};
 
-	uint64 BuildSourceEdgeKey(int32 VertexIndexA, int32 VertexIndexB)
+	uint64 BuildSurfaceGridSourceEdgeKey(int32 VertexIndexA, int32 VertexIndexB)
 	{
 		const uint32 MinVertex = static_cast<uint32>(FMath::Min(VertexIndexA, VertexIndexB));
 		const uint32 MaxVertex = static_cast<uint32>(FMath::Max(VertexIndexA, VertexIndexB));
 		return (static_cast<uint64>(MinVertex) << 32) | static_cast<uint64>(MaxVertex);
 	}
 
-	bool ContainsSourceVertex(const UE::Geometry::FIndex3i& Triangle, int32 VertexIndex)
+	bool ContainsSurfaceGridSourceVertex(const UE::Geometry::FIndex3i& Triangle, int32 VertexIndex)
 	{
 		return Triangle.A == VertexIndex || Triangle.B == VertexIndex || Triangle.C == VertexIndex;
 	}
 
-	bool TryGetTriangleOppositeVertex(const UE::Geometry::FIndex3i& Triangle, int32 SharedVertexA, int32 SharedVertexB, int32& OutOppositeVertex)
+	bool TryGetSurfaceGridTriangleOppositeVertex(const UE::Geometry::FIndex3i& Triangle, int32 SharedVertexA, int32 SharedVertexB, int32& OutOppositeVertex)
 	{
 		if (Triangle.A != SharedVertexA && Triangle.A != SharedVertexB)
 		{
@@ -84,13 +84,13 @@ namespace
 		return false;
 	}
 
-	bool TryOrderQuadVertices(
+	bool TryOrderSurfaceGridQuadVertices(
 		const FPositionVertexBuffer& PositionVertexBuffer,
 		int32 VertexIndex0,
 		int32 VertexIndex1,
 		int32 VertexIndex2,
 		int32 VertexIndex3,
-		FSRSourceQuad& OutQuad)
+		FSRSurfaceGridSourceQuad& OutQuad)
 	{
 		struct FSRQuadCorner
 		{
@@ -165,25 +165,25 @@ namespace
 		return true;
 	}
 
-	TArray<FSRSourceQuad> RecoverSourceQuads(const FPositionVertexBuffer& PositionVertexBuffer, const FRawStaticIndexBuffer& IndexBuffer, int32 IndexCount)
+	TArray<FSRSurfaceGridSourceQuad> RecoverSurfaceGridSourceQuads(const FPositionVertexBuffer& PositionVertexBuffer, const FRawStaticIndexBuffer& IndexBuffer, int32 IndexCount)
 	{
-		TArray<FSRSourceTriangle> SourceTriangles;
+		TArray<FSRSurfaceGridSourceTriangle> SourceTriangles;
 		SourceTriangles.Reserve(IndexCount / 3);
 
 		TMap<uint64, TArray<int32>> TriangleIndicesByEdge;
 		for (int32 Index = 0; Index + 2 < IndexCount; Index += 3)
 		{
 			const int32 TriangleIndex = SourceTriangles.Num();
-			FSRSourceTriangle SourceTriangle;
+			FSRSurfaceGridSourceTriangle SourceTriangle;
 			SourceTriangle.Vertices = UE::Geometry::FIndex3i(
 				static_cast<int32>(IndexBuffer.GetIndex(Index)),
 				static_cast<int32>(IndexBuffer.GetIndex(Index + 1)),
 				static_cast<int32>(IndexBuffer.GetIndex(Index + 2)));
 			SourceTriangles.Add(SourceTriangle);
 
-			TriangleIndicesByEdge.FindOrAdd(BuildSourceEdgeKey(SourceTriangle.Vertices.A, SourceTriangle.Vertices.B)).Add(TriangleIndex);
-			TriangleIndicesByEdge.FindOrAdd(BuildSourceEdgeKey(SourceTriangle.Vertices.B, SourceTriangle.Vertices.C)).Add(TriangleIndex);
-			TriangleIndicesByEdge.FindOrAdd(BuildSourceEdgeKey(SourceTriangle.Vertices.C, SourceTriangle.Vertices.A)).Add(TriangleIndex);
+			TriangleIndicesByEdge.FindOrAdd(BuildSurfaceGridSourceEdgeKey(SourceTriangle.Vertices.A, SourceTriangle.Vertices.B)).Add(TriangleIndex);
+			TriangleIndicesByEdge.FindOrAdd(BuildSurfaceGridSourceEdgeKey(SourceTriangle.Vertices.B, SourceTriangle.Vertices.C)).Add(TriangleIndex);
+			TriangleIndicesByEdge.FindOrAdd(BuildSurfaceGridSourceEdgeKey(SourceTriangle.Vertices.C, SourceTriangle.Vertices.A)).Add(TriangleIndex);
 		}
 
 		TArray<uint64> CandidateEdgeKeys;
@@ -208,7 +208,7 @@ namespace
 			return ResolveSharedLength(LeftKey) > ResolveSharedLength(RightKey);
 		});
 
-		TArray<FSRSourceQuad> SourceQuads;
+		TArray<FSRSurfaceGridSourceQuad> SourceQuads;
 		SourceQuads.Reserve(SourceTriangles.Num() / 2);
 		for (const uint64 EdgeKey : CandidateEdgeKeys)
 		{
@@ -232,18 +232,18 @@ namespace
 			const int32 SharedVertexB = static_cast<int32>(EdgeKey & 0xffffffff);
 			const UE::Geometry::FIndex3i TriangleA = SourceTriangles[TriangleIndexA].Vertices;
 			const UE::Geometry::FIndex3i TriangleB = SourceTriangles[TriangleIndexB].Vertices;
-			if (!ContainsSourceVertex(TriangleA, SharedVertexA)
-				|| !ContainsSourceVertex(TriangleA, SharedVertexB)
-				|| !ContainsSourceVertex(TriangleB, SharedVertexA)
-				|| !ContainsSourceVertex(TriangleB, SharedVertexB))
+			if (!ContainsSurfaceGridSourceVertex(TriangleA, SharedVertexA)
+				|| !ContainsSurfaceGridSourceVertex(TriangleA, SharedVertexB)
+				|| !ContainsSurfaceGridSourceVertex(TriangleB, SharedVertexA)
+				|| !ContainsSurfaceGridSourceVertex(TriangleB, SharedVertexB))
 			{
 				continue;
 			}
 
 			int32 OppositeVertexA = INDEX_NONE;
 			int32 OppositeVertexB = INDEX_NONE;
-			if (!TryGetTriangleOppositeVertex(TriangleA, SharedVertexA, SharedVertexB, OppositeVertexA)
-				|| !TryGetTriangleOppositeVertex(TriangleB, SharedVertexA, SharedVertexB, OppositeVertexB))
+			if (!TryGetSurfaceGridTriangleOppositeVertex(TriangleA, SharedVertexA, SharedVertexB, OppositeVertexA)
+				|| !TryGetSurfaceGridTriangleOppositeVertex(TriangleB, SharedVertexA, SharedVertexB, OppositeVertexB))
 			{
 				continue;
 			}
@@ -264,8 +264,8 @@ namespace
 				continue;
 			}
 
-			FSRSourceQuad SourceQuad;
-			if (!TryOrderQuadVertices(PositionVertexBuffer, OppositeVertexA, SharedVertexA, OppositeVertexB, SharedVertexB, SourceQuad))
+			FSRSurfaceGridSourceQuad SourceQuad;
+			if (!TryOrderSurfaceGridQuadVertices(PositionVertexBuffer, OppositeVertexA, SharedVertexA, OppositeVertexB, SharedVertexB, SourceQuad))
 			{
 				continue;
 			}
@@ -1169,7 +1169,7 @@ bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerStaticMeshQuads()
 		return false;
 	}
 
-	const TArray<FSRSourceQuad> SourceQuads = RecoverSourceQuads(PositionVertexBuffer, IndexBuffer, IndexCount);
+	const TArray<FSRSurfaceGridSourceQuad> SourceQuads = RecoverSurfaceGridSourceQuads(PositionVertexBuffer, IndexBuffer, IndexCount);
 	if (SourceQuads.IsEmpty())
 	{
 		return false;
@@ -1214,7 +1214,7 @@ bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerStaticMeshQuads()
 
 	for (int32 QuadIndex = 0; QuadIndex < SourceQuads.Num(); ++QuadIndex)
 	{
-		const FSRSourceQuad& SourceQuad = SourceQuads[QuadIndex];
+		const FSRSurfaceGridSourceQuad& SourceQuad = SourceQuads[QuadIndex];
 
 		FVector SourcePositions[4];
 		FVector SourceCenter = FVector::ZeroVector;
@@ -1296,10 +1296,10 @@ bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerStaticMeshQuads()
 
 		const uint64 EdgeKeys[4] =
 		{
-			BuildSourceEdgeKey(SourceQuad.Vertices[0], SourceQuad.Vertices[1]),
-			BuildSourceEdgeKey(SourceQuad.Vertices[1], SourceQuad.Vertices[2]),
-			BuildSourceEdgeKey(SourceQuad.Vertices[2], SourceQuad.Vertices[3]),
-			BuildSourceEdgeKey(SourceQuad.Vertices[3], SourceQuad.Vertices[0]),
+			BuildSurfaceGridSourceEdgeKey(SourceQuad.Vertices[0], SourceQuad.Vertices[1]),
+			BuildSurfaceGridSourceEdgeKey(SourceQuad.Vertices[1], SourceQuad.Vertices[2]),
+			BuildSurfaceGridSourceEdgeKey(SourceQuad.Vertices[2], SourceQuad.Vertices[3]),
+			BuildSurfaceGridSourceEdgeKey(SourceQuad.Vertices[3], SourceQuad.Vertices[0]),
 		};
 
 		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)

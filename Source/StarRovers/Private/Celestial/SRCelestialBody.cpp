@@ -1253,6 +1253,10 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					if (!bSameEdgePosition)
 					{
 						const FLinearColor WallColor = FLinearColor::LerpUsingHSV(ExistingEdge->SurfaceColor, SurfaceColor, 0.5f);
+						const float ExistingEdgeRadius = (ExistingEdge->PointA.Length() + ExistingEdge->PointB.Length()) * 0.5f;
+						const float CurrentEdgeRadius = (OrderedPointA.Length() + OrderedPointB.Length()) * 0.5f;
+						const bool bExistingCellIsHigher = ExistingEdgeRadius > CurrentEdgeRadius + KINDA_SMALL_NUMBER;
+						const bool bCurrentCellIsHigher = CurrentEdgeRadius > ExistingEdgeRadius + KINDA_SMALL_NUMBER;
 						const FSRCelestialBodyDynamicMeshQuadRenderData SideRenderData = AppendFlatColoredQuad(
 							ExistingEdge->PointA,
 							ExistingEdge->PointB,
@@ -1261,15 +1265,21 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 							WallColor,
 							ExistingEdge->MaterialId != 0 ? ExistingEdge->MaterialId : MaterialId,
 							true);
-						if (FSRCelestialBodyDynamicMeshCellColorData* ExistingCellColorData = DynamicMeshColorDataByCell.Find(ExistingEdge->CellId))
+						if (bExistingCellIsHigher)
 						{
-							ExistingCellColorData->SideColorElements.Append(SideRenderData.ColorElements);
-							ExistingCellColorData->SideMaterialTriangles.Append(SideRenderData.MaterialTriangles);
+							if (FSRCelestialBodyDynamicMeshCellColorData* ExistingCellColorData = DynamicMeshColorDataByCell.Find(ExistingEdge->CellId))
+							{
+								ExistingCellColorData->SideColorElements.Append(SideRenderData.ColorElements);
+								ExistingCellColorData->SideMaterialTriangles.Append(SideRenderData.MaterialTriangles);
+							}
 						}
-						if (FSRCelestialBodyDynamicMeshCellColorData* CurrentCellColorData = DynamicMeshColorDataByCell.Find(CellId))
+						else if (bCurrentCellIsHigher)
 						{
-							CurrentCellColorData->SideColorElements.Append(SideRenderData.ColorElements);
-							CurrentCellColorData->SideMaterialTriangles.Append(SideRenderData.MaterialTriangles);
+							if (FSRCelestialBodyDynamicMeshCellColorData* CurrentCellColorData = DynamicMeshColorDataByCell.Find(CellId))
+							{
+								CurrentCellColorData->SideColorElements.Append(SideRenderData.ColorElements);
+								CurrentCellColorData->SideMaterialTriangles.Append(SideRenderData.MaterialTriangles);
+							}
 						}
 					}
 					PendingTerrainEdges.Remove(EdgeKey);
