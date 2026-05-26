@@ -1128,7 +1128,10 @@ bool ASRCameraPawn::ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLigh
 		}
 	}
 
-	bool bHasStaticMeshBody = false;
+	TArray<ASRCelestialBody*> ValidCelestialBodies;
+	ValidCelestialBodies.Reserve(CelestialBodies.Num());
+	ASRCelestialBody* FocusedDynamicBody = nullptr;
+	ASRCelestialBody* BestNonFocusedDynamicBody = nullptr;
 	float BestDynamicMeshTargetScreenSizeRatio = 0.0f;
 	for (AActor* BodyActor : CelestialBodies)
 	{
@@ -1138,28 +1141,36 @@ bool ASRCameraPawn::ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLigh
 			continue;
 		}
 
+		ValidCelestialBodies.Add(CelestialBody);
 		float ScreenSizeRatio = 0.0f;
-		const bool bUseDynamicMesh = ShouldUseDynamicMesh(BodyActor, ScreenSizeRatio);
-		CelestialBody->SetCelestialBodyMesh(bUseDynamicMesh);
-		bHasStaticMeshBody |= !bUseDynamicMesh;
-
-		if (!bUseDynamicMesh || USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(BodyActor))
+		if (!ShouldUseDynamicMesh(BodyActor, ScreenSizeRatio) || USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(BodyActor))
 		{
 			continue;
 		}
 
 		if (BodyActor == FocusedActor.Get())
 		{
+			FocusedDynamicBody = CelestialBody;
 			OutDirectionalLightTarget = BodyActor;
 			BestDynamicMeshTargetScreenSizeRatio = TNumericLimits<float>::Max();
 			continue;
 		}
 
-		if (!IsValid(OutDirectionalLightTarget) && ScreenSizeRatio > BestDynamicMeshTargetScreenSizeRatio)
+		if (!FocusedDynamicBody && ScreenSizeRatio > BestDynamicMeshTargetScreenSizeRatio)
 		{
+			BestNonFocusedDynamicBody = CelestialBody;
 			OutDirectionalLightTarget = BodyActor;
 			BestDynamicMeshTargetScreenSizeRatio = ScreenSizeRatio;
 		}
+	}
+
+	ASRCelestialBody* DynamicBody = FocusedDynamicBody ? FocusedDynamicBody : BestNonFocusedDynamicBody;
+	bool bHasStaticMeshBody = false;
+	for (ASRCelestialBody* CelestialBody : ValidCelestialBodies)
+	{
+		const bool bUseDynamicMesh = CelestialBody == DynamicBody;
+		CelestialBody->SetCelestialBodyMesh(bUseDynamicMesh);
+		bHasStaticMeshBody |= !bUseDynamicMesh;
 	}
 
 	if (AActor* PrimaryStarActor = CelestialRegistry->GetPrimaryStarActor())
@@ -1175,6 +1186,8 @@ bool ASRCameraPawn::ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLigh
 
 bool ASRCameraPawn::ShouldUseDynamicMesh(const AActor* BodyActor, float& OutScreenSizeRatio) const
 {
+	constexpr float NonFocusedDynamicMeshScreenSizeThreshold = 0.15f;
+
 	OutScreenSizeRatio = 0.0f;
 	const ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(BodyActor);
 	if (!IsValid(CelestialBody) || !Camera)
@@ -1230,7 +1243,12 @@ bool ASRCameraPawn::ShouldUseDynamicMesh(const AActor* BodyActor, float& OutScre
 		CameraLocation,
 		CameraForward,
 		Camera->FieldOfView);
-	return true;
+	if (BodyActor == FocusedActor.Get())
+	{
+		return true;
+	}
+
+	return OutScreenSizeRatio >= NonFocusedDynamicMeshScreenSizeThreshold;
 }
 
 void ASRCameraPawn::ConfigureDirectionalLight(AActor* LightingTarget)

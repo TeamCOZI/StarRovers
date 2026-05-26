@@ -67,7 +67,7 @@ Planet/Moon Data Asset의 `Star Rovers` 항목은 `Identity`, `CelestialBody`, `
 
 `ASRCameraPawn`은 `SpringArm.TargetArmLength`로 zoom을 제어하고, `BP_Space`의 PrimitiveComponent bounds를 기준으로 최대 zoom과 drag/focus pivot 위치를 제한한다. `SpringArm` collision test는 사용하지 않는다.
 
-현재 Static/Dynamic Mesh 전환 로직은 `ASRCameraPawn::ShouldUseDynamicMesh()`에 있다. 코드 기준으로는 `DynamicMeshThreshold` 프로퍼티와 threshold 비교가 구현되어 있지 않다. 현재 조건은 천체가 카메라 앞에 있고, 반지름 계산이 가능하며, frustum 안에 걸쳐 있으면 Dynamic Mesh 사용 대상으로 판단하는 방식이다.
+현재 Static/Dynamic Mesh 전환 로직은 `ASRCameraPawn::ShouldUseDynamicMesh()`와 `ApplyCelestialBodyMeshVisibility()`에 있다. focused actor는 frustum 안에 있을 때 Dynamic Mesh 후보가 되고, non-focused actor는 카메라 앞/frustum 조건을 만족하면서 화면 점유율이 0.15 이상일 때만 후보가 된다. 한 프레임에서 실제 Dynamic Mesh로 전환되는 대상은 focused planet 또는 가장 크게 보이는 non-focused planet 하나다.
 
 ## 5. Dynamic Mesh Generation
 
@@ -105,9 +105,9 @@ Planet/Moon Data Asset의 `Dynamic Mesh Generation` 항목은 `FSRDynamicMeshGen
 1. Planet/Moon Data Asset의 `BuildData()`가 `FSRDynamicMeshGeneration`을 `FSRCelestialBodyData.DynamicMeshGeneration`으로 복사한다.
 2. `ASRSolarSystemGenerator`가 행성/위성 생성 요청을 만들 때 `GenerationSeed`를 랜덤으로 정하고, 같은 값을 `DynamicMeshGeneration.GenerationSeed`에 넣는다.
 3. `ASRCelestialBody::SetData()`가 `DynamicMeshGeneration`을 Actor 내부 상태로 복사한다.
-4. `ASRCelestialBody::ApplyData()`가 `EnsureCelestialBodyDynamicMeshVisuals()`를 호출한다.
-5. `EnsureCelestialBodyDynamicMeshVisuals()`가 Static Mesh와 Material을 검증하고, `CopyStaticMeshToCelestialBodyDynamicMesh()`로 Dynamic Mesh를 만든다.
-6. `ASRPlanet::ApplyData()`는 같은 `DynamicMeshGeneration`을 `SurfaceGrid->ConfigureTerrain()`에도 넘긴다.
+4. `ASRCelestialBody::ApplyData()`가 `EnsureCelestialBodyDynamicMeshVisuals(false)` 경로로 Static Mesh와 Material을 검증한다.
+5. `ASRPlanet::ApplyData()`는 같은 `DynamicMeshGeneration`을 `SurfaceGrid->ConfigureTerrain()`에도 넘긴다.
+6. Runtime system 생성이 끝나면 `ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()`가 생성된 planet/moon 전체에 `PrepareCelestialBodyDynamicMesh()`를 호출해 Dynamic Mesh와 Grid cache를 시작 시점에 준비한다.
 
 ### 5.3 Mesh 생성 방식
 
@@ -158,13 +158,17 @@ Surface Grid는 Planet에서만 켜진다. `ASRPlanet::ApplyData()`가 body radi
 
 ### 5.6 Dynamic Mesh / Assembly Mode 최적화
 
-Dynamic Mesh 생성은 복원된 quad cell별 render data를 함께 기록한다. `ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()`는 생성된 `FSRPlanetSurfaceGridCell` 목록을 캐시하고, 각 cell을 surface 및 side face의 vertex color element와 매핑한다. `USRPlanetSurfaceGrid`는 같은 StaticMesh에서 quad를 다시 복원하지 않고 이 캐시된 cell 목록을 재사용한다.
+Game world에서는 `ASRCelestialBody::ApplyData()`가 Static Mesh와 Material만 검증하고, `CopyStaticMeshToCelestialBodyDynamicMesh()`를 직접 실행하지 않는다. 대신 `ASRSolarSystemGenerator::GenerateRuntimeSystem()`이 planet/moon 생성을 끝낸 직후 `PrepareRuntimeGeneratedDynamicMeshes()`로 모든 runtime planet/moon의 Dynamic Mesh와 Grid cache를 시작 시점에 미리 만든다. `SetCelestialBodyMesh(true)`는 build를 시작하지 않고 이미 준비된 Dynamic Mesh만 켠다. 준비 여부 확인은 runtime 반복 경로에서 hash를 다시 계산하지 않고 cache flag만 확인한다. `ASRCameraPawn::ShouldUseDynamicMesh()`는 focused actor는 Dynamic Mesh를 허용하고, non-focused actor는 화면 점유율이 0.15 이상일 때만 후보가 된다. 실제 Dynamic Mesh 전환은 focused planet 또는 가장 크게 보이는 non-focused planet 하나로 제한해 화면에 표시되는 Dynamic Mesh 수를 제한한다.
 
-Hover와 Select 색상은 가능한 경우 별도 mesh를 덮는 방식이 아니라 기존 행성 Dynamic Mesh의 vertex color를 `UDynamicMesh::EditMesh()`로 직접 수정한다. 이 경로에서는 선택된 cell의 top surface와 side face 색상이 함께 바뀐다. Dynamic Mesh cell color data가 없는 fallback 상황에서만 interaction overlay mesh를 사용한다.
+`ASRPlanet::ApplyData()`는 Surface Grid 설정만 갱신하고 `RebuildGrid()`를 즉시 호출하지 않는다. Runtime prebuild가 성공하면 같은 pass에서 Surface Grid cell, grid mesh, raycast index도 준비되지만, `PrepareGridForAssembly()`는 호출하지 않고 grid는 숨겨둔다. generator 밖에서 추가로 생성된 body가 아직 prebuild되지 않은 경우에는 Focus 유지 또는 Assembly Mode visibility 전환 시점에 `PrepareCelestialBodyDynamicMesh()`가 fallback으로 cache를 준비한다.
 
-Assembly Mode의 grid drawing은 recovered quad cell을 사용할 때 owner Dynamic Mesh 전체 edge scan을 건너뛴다. Grid line은 캐시된 cell corner에서 직접 만들고, shared edge는 중복 생성하지 않는다. 숨겨진 grid는 `bCellsDirty`, `bGridMeshDirty`로 cell/mesh rebuild를 지연하고, 실제 preparation 또는 visibility 전환이 필요할 때만 갱신한다.
+Dynamic Mesh 생성은 복원된 quad cell별 render data를 함께 기록한다. `ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()`는 행성 Dynamic Mesh quad, `FSRPlanetSurfaceGridCell`, cell별 vertex color element, Grid line mesh를 같은 quad 생성 루프에서 함께 만든다. 행성 Dynamic Mesh는 cube sphere의 6개 face에 맞춰 6개 `UDynamicMeshComponent`로 분할하며, 각 cell의 vertex color element에는 component index가 함께 저장된다. `USRPlanetSurfaceGrid::ApplyGeneratedGridBuild()`는 이 cell 목록과 Grid line mesh를 그대로 받아 cell index/raycast index만 갱신하므로, Assembly Mode 진입 시 같은 StaticMesh에서 quad를 다시 복원하거나 Grid edge를 다시 scan하지 않는다.
 
-Focus 전환 후에는 focused planet grid를 `PrepareGridForAssembly()`로 짧게 지연 prewarm한다. 따라서 Assembly Mode 진입 시점에는 가능한 한 visibility 전환만 일어나게 한다. Hover raycast는 face별 32x32 spatial bin index로 후보 cell을 줄이고, 마우스가 움직이지 않은 경우에는 같은 raycast를 매 tick 반복하지 않는다.
+Hover와 Select 색상은 가능한 경우 별도 mesh를 덮는 방식이 아니라 기존 행성 Dynamic Mesh의 vertex color를 `UDynamicMesh::EditMesh()`로 직접 수정한다. 색상은 base vertex color를 교체하지 않고 highlight 색을 가산해 덧입히며, Material ID는 변경하지 않는다. 이 경로에서는 선택된 cell의 top surface와 side face 색상이 함께 바뀐다. 6 face 분할 이후에는 이전/현재 highlight가 포함된 face component만 edit해 vertex color update 범위를 줄인다. Dynamic Mesh cell color data가 없는 fallback 상황에서만 interaction overlay mesh를 사용한다.
+
+Assembly Mode의 grid drawing은 Dynamic Mesh build에서 이미 생성된 Grid line mesh를 우선 재사용한다. Grid line은 cell corner에서 직접 만들고, shared edge는 생성 시점에 중복 제거한다. 숨겨진 grid는 `bCellsDirty`, `bGridMeshDirty`로 cell/mesh rebuild를 지연하고, fallback 상황에서만 실제 preparation 또는 visibility 전환 시점에 별도 갱신한다.
+
+Focus 전환 후에는 cache가 없는 focused body에 대해서만 Dynamic Mesh build를 지연 실행하고, Surface Grid의 `PrepareGridForAssembly()`는 Assembly Mode 진입 시점까지 실행하지 않는다. 시작 시점 prebuild가 이미 끝난 경우 Assembly Mode 진입 시에는 같은 pass에서 생성된 grid cache를 재사용한다. Hover raycast는 face별 64x64 spatial bin index로 후보 cell을 줄이고, 마우스가 움직이지 않은 경우에는 같은 raycast를 매 tick 반복하지 않는다.
 
 ## 6. 현재 에셋 상태
 

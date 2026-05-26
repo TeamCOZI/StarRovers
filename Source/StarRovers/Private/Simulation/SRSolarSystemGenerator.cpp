@@ -251,6 +251,7 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 	}
 
 	SpawnPlanets(RuntimeStarBody, SelectedStarDataAsset, RandomStream, RuntimePlanetBodies);
+	PrepareRuntimeGeneratedDynamicMeshes();
 	if (USRCelestialBodyRegistrySubsystem* CelestialBodyRegistry = GetWorld()->GetSubsystem<USRCelestialBodyRegistrySubsystem>())
 	{
 		CelestialBodyRegistry->SetPrimaryStarActor(RuntimeStarBody);
@@ -617,6 +618,25 @@ void ASRSolarSystemGenerator::SpawnMoons(ASRCelestialBody* ParentPlanet, FRandom
 			{
 				OutGeneratedMoons.Add(GeneratedMoon);
 			}
+		}
+	}
+}
+
+void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
+{
+	for (TObjectPtr<ASRCelestialBody>& PlanetBody : RuntimePlanetBodies)
+	{
+		if (IsValid(PlanetBody))
+		{
+			PlanetBody->PrepareCelestialBodyDynamicMesh();
+		}
+	}
+
+	for (TObjectPtr<ASRCelestialBody>& MoonBody : RuntimeMoonBodies)
+	{
+		if (IsValid(MoonBody))
+		{
+			MoonBody->PrepareCelestialBodyDynamicMesh();
 		}
 	}
 }

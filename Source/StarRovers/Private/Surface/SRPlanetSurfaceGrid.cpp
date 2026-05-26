@@ -874,6 +874,11 @@ void USRPlanetSurfaceGrid::SetGridVisible(bool bNewGridVisible)
 	}
 	else
 	{
+		if (ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner()))
+		{
+			OwnerBody->PrepareCelestialBodyDynamicMesh();
+		}
+
 		if (bCellsDirty)
 		{
 			RebuildGrid();
@@ -894,6 +899,11 @@ bool USRPlanetSurfaceGrid::IsGridVisible() const
 
 void USRPlanetSurfaceGrid::PrepareGridForAssembly()
 {
+	if (ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner()))
+	{
+		OwnerBody->PrepareCelestialBodyDynamicMesh();
+	}
+
 	if (Cells.IsEmpty() || bCellsDirty)
 	{
 		RebuildGrid();
@@ -994,6 +1004,56 @@ FSRPlanetTerrainSample USRPlanetSurfaceGrid::GetTerrainSampleAtDirection(FVector
 		Sample.HeightOffset = FMath::RoundToFloat(Sample.HeightOffset / HeightStep) * HeightStep;
 	}
 	return Sample;
+}
+
+void USRPlanetSurfaceGrid::AppendGeneratedGridCell(
+	UE::Geometry::FDynamicMesh3& GridMesh,
+	const FSRPlanetSurfaceGridCell& Cell,
+	TSet<uint64>& DrawnEdges) const
+{
+	const FLinearColor DefaultLineColor(DebugLineColor.R, DebugLineColor.G, DebugLineColor.B, DebugLineOpacity);
+	auto AppendDedupedSegment = [this, &GridMesh, &DefaultLineColor, &DrawnEdges](const FVector& PointA, const FVector& PointB)
+	{
+		const uint64 EdgeKey = BuildGridEdgeKey(PointA, PointB);
+		if (DrawnEdges.Contains(EdgeKey))
+		{
+			return;
+		}
+
+		DrawnEdges.Add(EdgeKey);
+		AppendGridWireSegment(GridMesh, PointA, PointB, DefaultLineColor, DebugLineThickness);
+	};
+
+	AppendDedupedSegment(Cell.Corner00, Cell.Corner10);
+	AppendDedupedSegment(Cell.Corner10, Cell.Corner11);
+	AppendDedupedSegment(Cell.Corner11, Cell.Corner01);
+	AppendDedupedSegment(Cell.Corner01, Cell.Corner00);
+}
+
+void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
+	TArray<FSRPlanetSurfaceGridCell>&& NewCells,
+	UE::Geometry::FDynamicMesh3&& NewGridMesh)
+{
+	if (ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner()))
+	{
+		OwnerBody->ClearSurfaceCellHighlights();
+	}
+
+	Cells = MoveTemp(NewCells);
+	bUsingRecoveredQuadCells = true;
+	bHasHoveredCell = false;
+	HoveredCellId = FSRPlanetSurfaceGridCellId();
+	bHasSelectedCell = false;
+	SelectedCellId = FSRPlanetSurfaceGridCellId();
+	SetInteractionOverlayVisible(false);
+	RebuildCellIndex();
+	RebuildRaycastIndex();
+	SetMesh(MoveTemp(NewGridMesh));
+	SetVisibility(bGridVisible);
+	SetHiddenInGame(!bGridVisible);
+	bCellsDirty = false;
+	bGridMeshDirty = false;
+	UpdateDebugTickState();
 }
 
 bool USRPlanetSurfaceGrid::GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const

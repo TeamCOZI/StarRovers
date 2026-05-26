@@ -17,6 +17,7 @@
 #include "Engine/StaticMesh.h"
 #include "Rendering/PositionVertexBuffer.h"
 #include "Rendering/StaticMeshVertexBuffer.h"
+#include "Surface/SRPlanetSurfaceGrid.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
 #include "Surface/SRPlanetTerrainGenerator.h"
 #include "UDynamicMesh.h"
@@ -26,7 +27,19 @@
 
 namespace
 {
-	constexpr int32 CellHighlightMaterialSlotIndex = 9;
+	constexpr int32 CubeSphereFaceComponentCount = 6;
+
+	uint64 BuildDynamicMeshColorElementKey(int32 MeshComponentIndex, int32 ElementId)
+	{
+		return (static_cast<uint64>(static_cast<uint32>(MeshComponentIndex)) << 32)
+			| static_cast<uint64>(static_cast<uint32>(ElementId));
+	}
+
+	int32 GetCubeSphereFaceComponentIndex(ESRCubeSphereFace Face)
+	{
+		const int32 FaceIndex = static_cast<int32>(Face);
+		return FaceIndex >= 0 && FaceIndex < CubeSphereFaceComponentCount ? FaceIndex : 0;
+	}
 
 	int32 GetTerrainBiomeMaterialSlotIndex(const ESRPlanetBiome Biome)
 	{
@@ -404,6 +417,19 @@ ASRCelestialBody::ASRCelestialBody()
 	CelestialBodyDynamicMesh = CreateDefaultSubobject<UDynamicMeshComponent>(TEXT("CelestialBodyDynamicMesh"));
 	CelestialBodyDynamicMesh->SetupAttachment(SceneRoot);
 	CelestialBodyDynamicMesh->SetMobility(EComponentMobility::Movable);
+	CelestialBodyDynamicMesh->SetVisibility(false);
+	CelestialBodyDynamicMesh->SetHiddenInGame(true);
+	CelestialBodyDynamicMeshFaces.Add(CelestialBodyDynamicMesh);
+	for (int32 FaceIndex = 1; FaceIndex < CubeSphereFaceComponentCount; ++FaceIndex)
+	{
+		UDynamicMeshComponent* FaceDynamicMesh = CreateDefaultSubobject<UDynamicMeshComponent>(
+			*FString::Printf(TEXT("CelestialBodyDynamicMeshFace%d"), FaceIndex));
+		FaceDynamicMesh->SetupAttachment(SceneRoot);
+		FaceDynamicMesh->SetMobility(EComponentMobility::Movable);
+		FaceDynamicMesh->SetVisibility(false);
+		FaceDynamicMesh->SetHiddenInGame(true);
+		CelestialBodyDynamicMeshFaces.Add(FaceDynamicMesh);
+	}
 
 	CelestialBodyStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CelestialBodyStaticMesh"));
 	CelestialBodyStaticMesh->SetupAttachment(SceneRoot);
@@ -531,9 +557,17 @@ void ASRCelestialBody::ApplyData()
 	SetActorScale3D(FVector::OneVector);
 	if (IsValid(CelestialBodyDynamicMesh.Get()))
 	{
-		CelestialBodyDynamicMesh->SetRelativeLocation(FVector::ZeroVector);
-		CelestialBodyDynamicMesh->SetRelativeRotation(FRotator::ZeroRotator);
-		CelestialBodyDynamicMesh->SetRelativeScale3D(FVector(Scale));
+		for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
+		{
+			if (!IsValid(DynamicMeshComponent))
+			{
+				continue;
+			}
+
+			DynamicMeshComponent->SetRelativeLocation(FVector::ZeroVector);
+			DynamicMeshComponent->SetRelativeRotation(FRotator::ZeroRotator);
+			DynamicMeshComponent->SetRelativeScale3D(FVector(Scale));
+		}
 	}
 	if (IsValid(CelestialBodyStaticMesh.Get()))
 	{
@@ -542,7 +576,14 @@ void ASRCelestialBody::ApplyData()
 		CelestialBodyStaticMesh->SetRelativeScale3D(FVector(Scale));
 	}
 
-	EnsureCelestialBodyDynamicMeshVisuals();
+	if (bHasCachedDynamicMeshBuildHash && CachedDynamicMeshBuildHash != ComputeDynamicMeshBuildHash())
+	{
+		ResetDynamicMeshCellColorData();
+	}
+
+	const bool bIsGameWorld = GetWorld() && GetWorld()->IsGameWorld();
+	const bool bShouldBuildDynamicMesh = !bIsGameWorld || (IsValid(CelestialBodyDynamicMesh.Get()) && CelestialBodyDynamicMesh->IsVisible());
+	EnsureCelestialBodyDynamicMeshVisuals(bShouldBuildDynamicMesh);
 
 	if (IsValid(ClickSphereCollision))
 	{
@@ -585,13 +626,39 @@ UDynamicMeshComponent* ASRCelestialBody::GetCelestialBodyDynamicMesh() const
 
 void ASRCelestialBody::SetCelestialBodyMesh(bool bUseDynamicMesh)
 {
-	if (IsValid(CelestialBodyDynamicMesh.Get()))
+	if (bUseDynamicMesh && !HasCelestialBodyDynamicMeshBuild())
 	{
-		if (CelestialBodyDynamicMesh->IsVisible() != bUseDynamicMesh)
+		bUseDynamicMesh = false;
+	}
+
+	bool bDynamicMeshAlreadyVisible = true;
+	for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
+	{
+		if (IsValid(DynamicMeshComponent) && DynamicMeshComponent->IsVisible() != bUseDynamicMesh)
 		{
-			CelestialBodyDynamicMesh->SetVisibility(bUseDynamicMesh);
+			bDynamicMeshAlreadyVisible = false;
+			break;
 		}
-		CelestialBodyDynamicMesh->SetHiddenInGame(!bUseDynamicMesh);
+	}
+	const bool bStaticMeshAlreadyVisible = IsValid(CelestialBodyStaticMesh.Get())
+		&& CelestialBodyStaticMesh->IsVisible() != bUseDynamicMesh;
+	if (bDynamicMeshAlreadyVisible && bStaticMeshAlreadyVisible)
+	{
+		return;
+	}
+
+	for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
+	{
+		if (!IsValid(DynamicMeshComponent))
+		{
+			continue;
+		}
+
+		if (DynamicMeshComponent->IsVisible() != bUseDynamicMesh)
+		{
+			DynamicMeshComponent->SetVisibility(bUseDynamicMesh);
+		}
+		DynamicMeshComponent->SetHiddenInGame(!bUseDynamicMesh);
 	}
 
 	if (IsValid(CelestialBodyStaticMesh.Get()))
@@ -631,7 +698,7 @@ bool ASRCelestialBody::HasSurfaceCellRenderData(const FSRPlanetSurfaceGridCellId
 
 bool ASRCelestialBody::GetCachedSurfaceGridCells(TArray<FSRPlanetSurfaceGridCell>& OutCells) const
 {
-	if (CachedSurfaceGridCells.IsEmpty())
+	if (!bHasCachedDynamicMeshBuildHash || CachedSurfaceGridCells.IsEmpty())
 	{
 		OutCells.Reset();
 		return false;
@@ -639,6 +706,22 @@ bool ASRCelestialBody::GetCachedSurfaceGridCells(TArray<FSRPlanetSurfaceGridCell
 
 	OutCells = CachedSurfaceGridCells;
 	return true;
+}
+
+bool ASRCelestialBody::PrepareCelestialBodyDynamicMesh()
+{
+	if (HasCelestialBodyDynamicMeshBuild())
+	{
+		return true;
+	}
+
+	EnsureCelestialBodyDynamicMeshVisuals(true);
+	return HasCelestialBodyDynamicMeshBuild();
+}
+
+bool ASRCelestialBody::HasCelestialBodyDynamicMeshBuild() const
+{
+	return bHasCachedDynamicMeshBuildHash;
 }
 
 bool ASRCelestialBody::ApplySurfaceCellHighlights(
@@ -654,15 +737,17 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 		return false;
 	}
 
-	UDynamicMesh* DynamicMeshObject = CelestialBodyDynamicMesh->GetDynamicMesh();
-	if (!IsValid(DynamicMeshObject))
+	TMap<uint64, FLinearColor> TargetColorsByElement;
+	auto BlendHighlightColor = [](const FLinearColor& BaseColor, const FLinearColor& HighlightColor)
 	{
-		return false;
-	}
-
-	TMap<int32, FLinearColor> TargetColorsByElement;
-	TMap<int32, int32> TargetMaterialByTriangle;
-	auto AddCellHighlight = [this, &TargetColorsByElement, &TargetMaterialByTriangle](const FSRPlanetSurfaceGridCellId& CellId, const FLinearColor& HighlightColor)
+		constexpr float HighlightIntensity = 0.45f;
+		return FLinearColor(
+			FMath::Clamp(BaseColor.R + (HighlightColor.R * HighlightIntensity), 0.0f, 1.0f),
+			FMath::Clamp(BaseColor.G + (HighlightColor.G * HighlightIntensity), 0.0f, 1.0f),
+			FMath::Clamp(BaseColor.B + (HighlightColor.B * HighlightIntensity), 0.0f, 1.0f),
+			BaseColor.A);
+	};
+	auto AddCellHighlight = [this, &TargetColorsByElement, &BlendHighlightColor](const FSRPlanetSurfaceGridCellId& CellId, const FLinearColor& HighlightColor)
 	{
 		const FSRCelestialBodyDynamicMeshCellColorData* CellColorData = DynamicMeshColorDataByCell.Find(CellId);
 		if (!CellColorData)
@@ -670,26 +755,21 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 			return;
 		}
 
-		auto AddElements = [&TargetColorsByElement, &HighlightColor](const TArray<FSRCelestialBodyDynamicMeshColorElement>& Elements)
+		auto AddElements = [&TargetColorsByElement, &HighlightColor, &BlendHighlightColor](const TArray<FSRCelestialBodyDynamicMeshColorElement>& Elements)
 		{
 			for (const FSRCelestialBodyDynamicMeshColorElement& Element : Elements)
 			{
-				if (Element.ElementId != INDEX_NONE)
+				if (Element.MeshComponentIndex != INDEX_NONE && Element.ElementId != INDEX_NONE)
 				{
-					TargetColorsByElement.Add(Element.ElementId, HighlightColor);
+					TargetColorsByElement.Add(
+						BuildDynamicMeshColorElementKey(Element.MeshComponentIndex, Element.ElementId),
+						BlendHighlightColor(Element.BaseColor, HighlightColor));
 				}
 			}
 		};
 
 		AddElements(CellColorData->SurfaceColorElements);
 		AddElements(CellColorData->SideColorElements);
-		for (const FSRCelestialBodyDynamicMeshMaterialTriangle& MaterialTriangle : CellColorData->SideMaterialTriangles)
-		{
-			if (MaterialTriangle.TriangleId != INDEX_NONE)
-			{
-				TargetMaterialByTriangle.Add(MaterialTriangle.TriangleId, CellHighlightMaterialSlotIndex);
-			}
-		}
 	};
 
 	if (bHasHoveredCell)
@@ -701,21 +781,15 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 		AddCellHighlight(SelectedCellId, SelectedCellColor);
 	}
 
-	TSet<int32> NextHighlightedElements;
-	for (const TPair<int32, FLinearColor>& TargetColorPair : TargetColorsByElement)
+	TSet<uint64> NextHighlightedElements;
+	for (const TPair<uint64, FLinearColor>& TargetColorPair : TargetColorsByElement)
 	{
 		NextHighlightedElements.Add(TargetColorPair.Key);
 	}
-	TSet<int32> NextHighlightedMaterialTriangles;
-	for (const TPair<int32, int32>& TargetMaterialPair : TargetMaterialByTriangle)
-	{
-		NextHighlightedMaterialTriangles.Add(TargetMaterialPair.Key);
-	}
-
 	bool bHasAnyColorChange = false;
-	for (const int32 PreviousElementId : HighlightedDynamicMeshColorElements)
+	for (const uint64 PreviousElementKey : HighlightedDynamicMeshColorElements)
 	{
-		if (!NextHighlightedElements.Contains(PreviousElementId))
+		if (!NextHighlightedElements.Contains(PreviousElementKey))
 		{
 			bHasAnyColorChange = true;
 			break;
@@ -723,9 +797,9 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 	}
 	if (!bHasAnyColorChange)
 	{
-		for (const int32 NextElementId : NextHighlightedElements)
+		for (const uint64 NextElementKey : NextHighlightedElements)
 		{
-			if (!HighlightedDynamicMeshColorElements.Contains(NextElementId))
+			if (!HighlightedDynamicMeshColorElements.Contains(NextElementKey))
 			{
 				bHasAnyColorChange = true;
 				break;
@@ -734,155 +808,160 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 	}
 	if (!bHasAnyColorChange && NextHighlightedElements.IsEmpty())
 	{
-		bool bHasAnyMaterialChange = false;
-		for (const int32 PreviousTriangleId : HighlightedDynamicMeshMaterialTriangles)
-		{
-			if (!NextHighlightedMaterialTriangles.Contains(PreviousTriangleId))
-			{
-				bHasAnyMaterialChange = true;
-				break;
-			}
-		}
-		if (!bHasAnyMaterialChange)
-		{
-			for (const int32 NextTriangleId : NextHighlightedMaterialTriangles)
-			{
-				if (!HighlightedDynamicMeshMaterialTriangles.Contains(NextTriangleId))
-				{
-					bHasAnyMaterialChange = true;
-					break;
-				}
-			}
-		}
-		if (!bHasAnyMaterialChange)
-		{
-			return true;
-		}
+		return true;
 	}
 
-	DynamicMeshObject->EditMesh(
-		[this, &TargetColorsByElement, &NextHighlightedElements, &TargetMaterialByTriangle, &NextHighlightedMaterialTriangles](UE::Geometry::FDynamicMesh3& Mesh)
+	TMap<int32, TMap<int32, FLinearColor>> TargetColorsByMesh;
+	for (const TPair<uint64, FLinearColor>& TargetColorPair : TargetColorsByElement)
+	{
+		const int32 MeshComponentIndex = static_cast<int32>(TargetColorPair.Key >> 32);
+		const int32 ElementId = static_cast<int32>(TargetColorPair.Key & 0xffffffff);
+		TargetColorsByMesh.FindOrAdd(MeshComponentIndex).Add(ElementId, TargetColorPair.Value);
+	}
+
+	TMap<int32, TSet<int32>> NextHighlightedElementsByMesh;
+	for (const uint64 NextElementKey : NextHighlightedElements)
+	{
+		const int32 MeshComponentIndex = static_cast<int32>(NextElementKey >> 32);
+		const int32 ElementId = static_cast<int32>(NextElementKey & 0xffffffff);
+		NextHighlightedElementsByMesh.FindOrAdd(MeshComponentIndex).Add(ElementId);
+	}
+
+	TSet<int32> MeshIndicesToEdit;
+	for (const uint64 PreviousElementKey : HighlightedDynamicMeshColorElements)
+	{
+		MeshIndicesToEdit.Add(static_cast<int32>(PreviousElementKey >> 32));
+	}
+	for (const uint64 NextElementKey : NextHighlightedElements)
+	{
+		MeshIndicesToEdit.Add(static_cast<int32>(NextElementKey >> 32));
+	}
+
+	for (const int32 MeshComponentIndex : MeshIndicesToEdit)
+	{
+		UDynamicMeshComponent* DynamicMeshComponent = GetDynamicMeshFaceComponent(MeshComponentIndex);
+		if (!IsValid(DynamicMeshComponent))
 		{
-			if (!Mesh.HasAttributes())
-			{
-				return;
-			}
+			continue;
+		}
 
-			auto* ColorOverlay = Mesh.Attributes()->PrimaryColors();
-			auto* MaterialIdAttribute = Mesh.Attributes()->GetMaterialID();
+		UDynamicMesh* DynamicMeshObject = DynamicMeshComponent->GetDynamicMesh();
+		if (!IsValid(DynamicMeshObject))
+		{
+			continue;
+		}
 
-			auto ToVectorColor = [](const FLinearColor& Color)
+		const TMap<int32, FLinearColor>* MeshTargetColors = TargetColorsByMesh.Find(MeshComponentIndex);
+		const TSet<int32>* MeshNextHighlightedElements = NextHighlightedElementsByMesh.Find(MeshComponentIndex);
+		DynamicMeshObject->EditMesh(
+			[this, MeshComponentIndex, MeshTargetColors, MeshNextHighlightedElements](UE::Geometry::FDynamicMesh3& Mesh)
 			{
-				return FVector4f(Color.R, Color.G, Color.B, Color.A);
-			};
-
-			if (ColorOverlay)
-			{
-				for (const int32 PreviousElementId : HighlightedDynamicMeshColorElements)
+				if (!Mesh.HasAttributes())
 				{
-					if (NextHighlightedElements.Contains(PreviousElementId))
-					{
-						continue;
-					}
-
-					if (const FLinearColor* BaseColor = DynamicMeshBaseColorByElement.Find(PreviousElementId))
-					{
-						ColorOverlay->SetElement(PreviousElementId, ToVectorColor(*BaseColor));
-					}
+					return;
 				}
 
-				for (const TPair<int32, FLinearColor>& TargetColorPair : TargetColorsByElement)
+				auto* ColorOverlay = Mesh.Attributes()->PrimaryColors();
+				auto ToVectorColor = [](const FLinearColor& Color)
 				{
-					ColorOverlay->SetElement(TargetColorPair.Key, ToVectorColor(TargetColorPair.Value));
-				}
-			}
+					return FVector4f(Color.R, Color.G, Color.B, Color.A);
+				};
 
-			if (MaterialIdAttribute)
-			{
-				for (const int32 PreviousTriangleId : HighlightedDynamicMeshMaterialTriangles)
+				if (ColorOverlay)
 				{
-					if (NextHighlightedMaterialTriangles.Contains(PreviousTriangleId))
+					for (const uint64 PreviousElementKey : HighlightedDynamicMeshColorElements)
 					{
-						continue;
+						if (static_cast<int32>(PreviousElementKey >> 32) != MeshComponentIndex)
+						{
+							continue;
+						}
+
+						const int32 PreviousElementId = static_cast<int32>(PreviousElementKey & 0xffffffff);
+						if (MeshNextHighlightedElements && MeshNextHighlightedElements->Contains(PreviousElementId))
+						{
+							continue;
+						}
+
+						if (const FLinearColor* BaseColor = DynamicMeshBaseColorByElement.Find(PreviousElementKey))
+						{
+							ColorOverlay->SetElement(PreviousElementId, ToVectorColor(*BaseColor));
+						}
 					}
 
-					if (const int32* BaseMaterialId = DynamicMeshBaseMaterialByTriangle.Find(PreviousTriangleId))
+					if (MeshTargetColors)
 					{
-						MaterialIdAttribute->SetValue(PreviousTriangleId, *BaseMaterialId);
+						for (const TPair<int32, FLinearColor>& TargetColorPair : *MeshTargetColors)
+						{
+							ColorOverlay->SetElement(TargetColorPair.Key, ToVectorColor(TargetColorPair.Value));
+						}
 					}
 				}
-
-				for (const TPair<int32, int32>& TargetMaterialPair : TargetMaterialByTriangle)
-				{
-					MaterialIdAttribute->SetValue(TargetMaterialPair.Key, TargetMaterialPair.Value);
-				}
-			}
-		},
-		EDynamicMeshChangeType::AttributeEdit,
-		EDynamicMeshAttributeChangeFlags::VertexColors | EDynamicMeshAttributeChangeFlags::TriangleGroups,
-		false);
+			},
+			EDynamicMeshChangeType::DeformationEdit,
+			EDynamicMeshAttributeChangeFlags::VertexColors,
+			false);
+	}
 
 	HighlightedDynamicMeshColorElements = MoveTemp(NextHighlightedElements);
-	HighlightedDynamicMeshMaterialTriangles = MoveTemp(NextHighlightedMaterialTriangles);
-	return !TargetColorsByElement.IsEmpty() || !TargetMaterialByTriangle.IsEmpty() || bHasAnyColorChange;
+	return !TargetColorsByElement.IsEmpty() || bHasAnyColorChange;
 }
 
 void ASRCelestialBody::ClearSurfaceCellHighlights()
 {
-	if ((HighlightedDynamicMeshColorElements.IsEmpty() && HighlightedDynamicMeshMaterialTriangles.IsEmpty()) || !IsValid(CelestialBodyDynamicMesh.Get()))
+	if (HighlightedDynamicMeshColorElements.IsEmpty())
 	{
 		HighlightedDynamicMeshColorElements.Reset();
-		HighlightedDynamicMeshMaterialTriangles.Reset();
 		return;
 	}
 
-	UDynamicMesh* DynamicMeshObject = CelestialBodyDynamicMesh->GetDynamicMesh();
-	if (!IsValid(DynamicMeshObject))
+	TMap<int32, TArray<uint64>> HighlightedElementsByMesh;
+	for (const uint64 ElementKey : HighlightedDynamicMeshColorElements)
 	{
-		HighlightedDynamicMeshColorElements.Reset();
-		HighlightedDynamicMeshMaterialTriangles.Reset();
-		return;
+		HighlightedElementsByMesh.FindOrAdd(static_cast<int32>(ElementKey >> 32)).Add(ElementKey);
 	}
 
-	DynamicMeshObject->EditMesh(
-		[this](UE::Geometry::FDynamicMesh3& Mesh)
+	for (const TPair<int32, TArray<uint64>>& HighlightedMeshPair : HighlightedElementsByMesh)
+	{
+		UDynamicMeshComponent* DynamicMeshComponent = GetDynamicMeshFaceComponent(HighlightedMeshPair.Key);
+		if (!IsValid(DynamicMeshComponent))
 		{
-			if (!Mesh.HasAttributes())
-			{
-				return;
-			}
+			continue;
+		}
 
-			auto* ColorOverlay = Mesh.Attributes()->PrimaryColors();
-			auto* MaterialIdAttribute = Mesh.Attributes()->GetMaterialID();
+		UDynamicMesh* DynamicMeshObject = DynamicMeshComponent->GetDynamicMesh();
+		if (!IsValid(DynamicMeshObject))
+		{
+			continue;
+		}
 
-			if (ColorOverlay)
+		const TArray<uint64>& MeshHighlightedElements = HighlightedMeshPair.Value;
+		DynamicMeshObject->EditMesh(
+			[this, &MeshHighlightedElements](UE::Geometry::FDynamicMesh3& Mesh)
 			{
-				for (const int32 ElementId : HighlightedDynamicMeshColorElements)
+				if (!Mesh.HasAttributes())
 				{
-					if (const FLinearColor* BaseColor = DynamicMeshBaseColorByElement.Find(ElementId))
+					return;
+				}
+
+				auto* ColorOverlay = Mesh.Attributes()->PrimaryColors();
+				if (ColorOverlay)
+				{
+					for (const uint64 ElementKey : MeshHighlightedElements)
 					{
-						ColorOverlay->SetElement(ElementId, FVector4f(BaseColor->R, BaseColor->G, BaseColor->B, BaseColor->A));
+						const int32 ElementId = static_cast<int32>(ElementKey & 0xffffffff);
+						if (const FLinearColor* BaseColor = DynamicMeshBaseColorByElement.Find(ElementKey))
+						{
+							ColorOverlay->SetElement(ElementId, FVector4f(BaseColor->R, BaseColor->G, BaseColor->B, BaseColor->A));
+						}
 					}
 				}
-			}
-
-			if (MaterialIdAttribute)
-			{
-				for (const int32 TriangleId : HighlightedDynamicMeshMaterialTriangles)
-				{
-					if (const int32* BaseMaterialId = DynamicMeshBaseMaterialByTriangle.Find(TriangleId))
-					{
-						MaterialIdAttribute->SetValue(TriangleId, *BaseMaterialId);
-					}
-				}
-			}
-		},
-		EDynamicMeshChangeType::AttributeEdit,
-		EDynamicMeshAttributeChangeFlags::VertexColors | EDynamicMeshAttributeChangeFlags::TriangleGroups,
-		false);
+			},
+			EDynamicMeshChangeType::DeformationEdit,
+			EDynamicMeshAttributeChangeFlags::VertexColors,
+			false);
+	}
 
 	HighlightedDynamicMeshColorElements.Reset();
-	HighlightedDynamicMeshMaterialTriangles.Reset();
 }
 
 void ASRCelestialBody::ApplyGravityLineSettings()
@@ -903,7 +982,7 @@ void ASRCelestialBody::ApplyGravityLineSettings()
 		GravityLineThickness);
 }
 
-void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals()
+void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicMesh)
 {
 	if (!IsValid(CelestialBodyDynamicMesh.Get()))
 	{
@@ -926,7 +1005,10 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals()
 		CelestialBodyStaticMesh->SetStaticMesh(DesiredMesh);
 	}
 
-	CopyStaticMeshToCelestialBodyDynamicMesh();
+	if (bBuildDynamicMesh)
+	{
+		CopyStaticMeshToCelestialBodyDynamicMesh();
+	}
 
 	UMaterialInterface* DesiredBaseMaterial = Material;
 	UMaterialInterface* CurrentAssignedMaterial = CelestialBodyDynamicMesh->GetMaterial(0);
@@ -955,14 +1037,16 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals()
 	if (!IsValid(ActiveDynamicMaterial) || ActiveMaterialInstance->Parent != DesiredBaseMaterial)
 	{
 		ActiveDynamicMaterial = UMaterialInstanceDynamic::Create(DesiredBaseMaterial, this);
-		if (IsValid(ActiveDynamicMaterial))
+	}
+
+	for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
+	{
+		if (!IsValid(DynamicMeshComponent))
 		{
-			CelestialBodyDynamicMesh->SetMaterial(0, ActiveDynamicMaterial);
+			continue;
 		}
-		else
-		{
-			CelestialBodyDynamicMesh->SetMaterial(0, DesiredBaseMaterial);
-		}
+
+		DynamicMeshComponent->SetMaterial(0, IsValid(ActiveDynamicMaterial) ? ActiveDynamicMaterial : DesiredBaseMaterial);
 	}
 
 	for (const TPair<ESRPlanetBiome, TObjectPtr<UMaterialInterface>>& BiomeMaterialPair : DynamicMeshGeneration.BiomeMaterials)
@@ -971,16 +1055,16 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals()
 		const int32 MaterialSlotIndex = GetTerrainBiomeMaterialSlotIndex(BiomeMaterialPair.Key);
 		if (IsValid(BiomeMaterial) && MaterialSlotIndex > 0)
 		{
-			CelestialBodyDynamicMesh->SetMaterial(MaterialSlotIndex, BiomeMaterial);
+			for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
+			{
+				if (IsValid(DynamicMeshComponent))
+				{
+					DynamicMeshComponent->SetMaterial(MaterialSlotIndex, BiomeMaterial);
+				}
+			}
 		}
 	}
 
-	if (UMaterialInterface* VertexColorMaterial = LoadObject<UMaterialInterface>(
-		nullptr,
-		TEXT("/Engine/EngineDebugMaterials/VertexColorMaterial.VertexColorMaterial")))
-	{
-		CelestialBodyDynamicMesh->SetMaterial(CellHighlightMaterialSlotIndex, VertexColorMaterial);
-	}
 }
 
 bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
@@ -1034,6 +1118,15 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 		const TArray<FSRSourceQuad> SourceQuads = RecoverSourceQuads(PositionVertexBuffer, IndexBuffer, IndexCount);
 		if (!SourceQuads.IsEmpty())
 		{
+			TArray<UE::Geometry::FDynamicMesh3> FaceDynamicMeshes;
+			FaceDynamicMeshes.SetNum(CubeSphereFaceComponentCount);
+			for (UE::Geometry::FDynamicMesh3& FaceDynamicMesh : FaceDynamicMeshes)
+			{
+				FaceDynamicMesh.EnableAttributes();
+				FaceDynamicMesh.Attributes()->EnablePrimaryColors();
+				FaceDynamicMesh.Attributes()->EnableMaterialID();
+			}
+
 			struct FSRGeneratedTerrainEdge
 			{
 				FVector SourcePointA = FVector::ZeroVector;
@@ -1045,7 +1138,8 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				FSRPlanetSurfaceGridCellId CellId;
 			};
 
-			auto AppendFlatColoredQuad = [this, &DynamicMesh, NormalOverlay, ColorOverlay, MaterialIdAttribute](
+			auto AppendFlatColoredQuad = [this, &FaceDynamicMeshes](
+				int32 MeshComponentIndex,
 				const FVector& Point0,
 				const FVector& Point1,
 				const FVector& Point2,
@@ -1055,6 +1149,16 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				bool bDoubleSided = false)
 			{
 				FSRCelestialBodyDynamicMeshQuadRenderData RenderData;
+				MeshComponentIndex = FMath::Clamp(MeshComponentIndex, 0, FaceDynamicMeshes.Num() - 1);
+				UE::Geometry::FDynamicMesh3& TargetDynamicMesh = FaceDynamicMeshes[MeshComponentIndex];
+				UE::Geometry::FDynamicMeshNormalOverlay* NormalOverlay = TargetDynamicMesh.Attributes()->PrimaryNormals();
+				auto* ColorOverlay = TargetDynamicMesh.Attributes()->PrimaryColors();
+				auto* MaterialIdAttribute = TargetDynamicMesh.Attributes()->GetMaterialID();
+				if (!NormalOverlay || !ColorOverlay)
+				{
+					return RenderData;
+				}
+
 				FVector QuadPoints[4] = { Point0, Point1, Point2, Point3 };
 				const FVector QuadCenter = (Point0 + Point1 + Point2 + Point3) * 0.25f;
 				const FVector OutwardDirection = QuadCenter.GetSafeNormal();
@@ -1069,10 +1173,10 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					QuadNormal = OutwardDirection.IsNearlyZero() ? FVector::UpVector : OutwardDirection;
 				}
 
-				const int32 Vertex0 = DynamicMesh.AppendVertex(FVector3d(QuadPoints[0]));
-				const int32 Vertex1 = DynamicMesh.AppendVertex(FVector3d(QuadPoints[1]));
-				const int32 Vertex2 = DynamicMesh.AppendVertex(FVector3d(QuadPoints[2]));
-				const int32 Vertex3 = DynamicMesh.AppendVertex(FVector3d(QuadPoints[3]));
+				const int32 Vertex0 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[0]));
+				const int32 Vertex1 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[1]));
+				const int32 Vertex2 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[2]));
+				const int32 Vertex3 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[3]));
 
 				const int32 Normal0 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
 				const int32 Normal1 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
@@ -1082,7 +1186,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				const int32 Color1 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
 				const int32 Color2 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
 				const int32 Color3 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
-				auto TrackColorElement = [this, &RenderData, &SurfaceColor](int32 ColorElementId)
+				auto TrackColorElement = [this, &RenderData, &SurfaceColor, MeshComponentIndex](int32 ColorElementId)
 				{
 					if (ColorElementId == INDEX_NONE)
 					{
@@ -1090,36 +1194,23 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					}
 
 					FSRCelestialBodyDynamicMeshColorElement ColorElement;
+					ColorElement.MeshComponentIndex = MeshComponentIndex;
 					ColorElement.ElementId = ColorElementId;
 					ColorElement.BaseColor = SurfaceColor;
 					RenderData.ColorElements.Add(ColorElement);
-					DynamicMeshBaseColorByElement.Add(ColorElementId, SurfaceColor);
-				};
-				auto TrackMaterialTriangle = [this, &RenderData, MaterialId](int32 TriangleId)
-				{
-					if (TriangleId == INDEX_NONE)
-					{
-						return;
-					}
-
-					FSRCelestialBodyDynamicMeshMaterialTriangle MaterialTriangle;
-					MaterialTriangle.TriangleId = TriangleId;
-					MaterialTriangle.BaseMaterialId = MaterialId;
-					RenderData.MaterialTriangles.Add(MaterialTriangle);
-					DynamicMeshBaseMaterialByTriangle.Add(TriangleId, MaterialId);
+					DynamicMeshBaseColorByElement.Add(BuildDynamicMeshColorElementKey(MeshComponentIndex, ColorElementId), SurfaceColor);
 				};
 				TrackColorElement(Color0);
 				TrackColorElement(Color1);
 				TrackColorElement(Color2);
 				TrackColorElement(Color3);
 
-				const int32 Triangle0 = DynamicMesh.AppendTriangle(Vertex0, Vertex2, Vertex1);
-				const int32 Triangle1 = DynamicMesh.AppendTriangle(Vertex0, Vertex3, Vertex2);
+				const int32 Triangle0 = TargetDynamicMesh.AppendTriangle(Vertex0, Vertex2, Vertex1);
+				const int32 Triangle1 = TargetDynamicMesh.AppendTriangle(Vertex0, Vertex3, Vertex2);
 				if (Triangle0 >= 0)
 				{
 					NormalOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Normal0, Normal2, Normal1));
 					ColorOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Color0, Color2, Color1));
-					TrackMaterialTriangle(Triangle0);
 					if (MaterialIdAttribute)
 					{
 						MaterialIdAttribute->SetValue(Triangle0, MaterialId);
@@ -1129,7 +1220,6 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				{
 					NormalOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Normal0, Normal3, Normal2));
 					ColorOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Color0, Color3, Color2));
-					TrackMaterialTriangle(Triangle1);
 					if (MaterialIdAttribute)
 					{
 						MaterialIdAttribute->SetValue(Triangle1, MaterialId);
@@ -1138,10 +1228,10 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 				if (bDoubleSided)
 				{
-					const int32 BackVertex0 = DynamicMesh.AppendVertex(FVector3d(QuadPoints[0]));
-					const int32 BackVertex1 = DynamicMesh.AppendVertex(FVector3d(QuadPoints[1]));
-					const int32 BackVertex2 = DynamicMesh.AppendVertex(FVector3d(QuadPoints[2]));
-					const int32 BackVertex3 = DynamicMesh.AppendVertex(FVector3d(QuadPoints[3]));
+					const int32 BackVertex0 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[0]));
+					const int32 BackVertex1 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[1]));
+					const int32 BackVertex2 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[2]));
+					const int32 BackVertex3 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[3]));
 
 					const FVector BackNormal = -QuadNormal;
 					const int32 BackNormal0 = NormalOverlay->AppendElement(FVector3f(BackNormal));
@@ -1157,13 +1247,12 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					TrackColorElement(BackColor2);
 					TrackColorElement(BackColor3);
 
-					const int32 BackTriangle0 = DynamicMesh.AppendTriangle(BackVertex0, BackVertex1, BackVertex2);
-					const int32 BackTriangle1 = DynamicMesh.AppendTriangle(BackVertex0, BackVertex2, BackVertex3);
+					const int32 BackTriangle0 = TargetDynamicMesh.AppendTriangle(BackVertex0, BackVertex1, BackVertex2);
+					const int32 BackTriangle1 = TargetDynamicMesh.AppendTriangle(BackVertex0, BackVertex2, BackVertex3);
 					if (BackTriangle0 >= 0)
 					{
 						NormalOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(BackNormal0, BackNormal1, BackNormal2));
 						ColorOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(BackColor0, BackColor1, BackColor2));
-						TrackMaterialTriangle(BackTriangle0);
 						if (MaterialIdAttribute)
 						{
 							MaterialIdAttribute->SetValue(BackTriangle0, MaterialId);
@@ -1173,7 +1262,6 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					{
 						NormalOverlay->SetTriangle(BackTriangle1, UE::Geometry::FIndex3i(BackNormal0, BackNormal2, BackNormal3));
 						ColorOverlay->SetTriangle(BackTriangle1, UE::Geometry::FIndex3i(BackColor0, BackColor2, BackColor3));
-						TrackMaterialTriangle(BackTriangle1);
 						if (MaterialIdAttribute)
 						{
 							MaterialIdAttribute->SetValue(BackTriangle1, MaterialId);
@@ -1191,6 +1279,17 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 			CachedCellEdgeBySourceEdge.Reserve(SourceQuads.Num() * 4);
 			CachedSurfaceGridCells.Reset(SourceQuads.Num());
 			CachedSurfaceGridCells.Reserve(SourceQuads.Num());
+
+			USRPlanetSurfaceGrid* SurfaceGrid = GetSurfaceGrid();
+			UE::Geometry::FDynamicMesh3 GeneratedGridMesh;
+			TSet<uint64> GeneratedGridEdges;
+			const bool bBuildGeneratedGridMesh = IsValid(SurfaceGrid);
+			if (bBuildGeneratedGridMesh)
+			{
+				GeneratedGridMesh.EnableAttributes();
+				GeneratedGridMesh.Attributes()->EnablePrimaryColors();
+				GeneratedGridEdges.Reserve(SourceQuads.Num() * 3);
+			}
 
 			auto AssignCachedNeighbor = [this](int32 CellIndex, int32 EdgeIndex, const FSRPlanetSurfaceGridCellId& NeighborId)
 			{
@@ -1257,7 +1356,11 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 						const float CurrentEdgeRadius = (OrderedPointA.Length() + OrderedPointB.Length()) * 0.5f;
 						const bool bExistingCellIsHigher = ExistingEdgeRadius > CurrentEdgeRadius + KINDA_SMALL_NUMBER;
 						const bool bCurrentCellIsHigher = CurrentEdgeRadius > ExistingEdgeRadius + KINDA_SMALL_NUMBER;
+						const int32 SideMeshComponentIndex = bCurrentCellIsHigher
+							? GetCubeSphereFaceComponentIndex(CellId.Face)
+							: GetCubeSphereFaceComponentIndex(ExistingEdge->CellId.Face);
 						const FSRCelestialBodyDynamicMeshQuadRenderData SideRenderData = AppendFlatColoredQuad(
+							SideMeshComponentIndex,
 							ExistingEdge->PointA,
 							ExistingEdge->PointB,
 							OrderedPointB,
@@ -1270,7 +1373,6 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 							if (FSRCelestialBodyDynamicMeshCellColorData* ExistingCellColorData = DynamicMeshColorDataByCell.Find(ExistingEdge->CellId))
 							{
 								ExistingCellColorData->SideColorElements.Append(SideRenderData.ColorElements);
-								ExistingCellColorData->SideMaterialTriangles.Append(SideRenderData.MaterialTriangles);
 							}
 						}
 						else if (bCurrentCellIsHigher)
@@ -1278,7 +1380,6 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 							if (FSRCelestialBodyDynamicMeshCellColorData* CurrentCellColorData = DynamicMeshColorDataByCell.Find(CellId))
 							{
 								CurrentCellColorData->SideColorElements.Append(SideRenderData.ColorElements);
-								CurrentCellColorData->SideMaterialTriangles.Append(SideRenderData.MaterialTriangles);
 							}
 						}
 					}
@@ -1359,12 +1460,12 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(CellDirection, 1, CellId, UnusedFaceCoordinates);
 				CellId.CellX = QuadIndex;
 				CellId.CellY = 0;
+				const int32 CellMeshComponentIndex = GetCubeSphereFaceComponentIndex(CellId.Face);
 
 				FSRCelestialBodyDynamicMeshCellColorData& CellColorData = DynamicMeshColorDataByCell.FindOrAdd(CellId);
 				const FSRCelestialBodyDynamicMeshQuadRenderData SurfaceRenderData =
-					AppendFlatColoredQuad(TargetPositions[0], TargetPositions[1], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor, MaterialId);
+					AppendFlatColoredQuad(CellMeshComponentIndex, TargetPositions[0], TargetPositions[1], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor, MaterialId);
 				CellColorData.SurfaceColorElements.Append(SurfaceRenderData.ColorElements);
-				CellColorData.SurfaceMaterialTriangles.Append(SurfaceRenderData.MaterialTriangles);
 
 				FSRPlanetSurfaceGridCell CachedCell;
 				CachedCell.CellId = CellId;
@@ -1382,6 +1483,10 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 				const int32 CachedCellIndex = CachedSurfaceGridCells.Num();
 				CachedSurfaceGridCells.Add(CachedCell);
+				if (bBuildGeneratedGridMesh)
+				{
+					SurfaceGrid->AppendGeneratedGridCell(GeneratedGridMesh, CachedCell, GeneratedGridEdges);
+				}
 				const uint64 CachedEdgeKeys[4] =
 				{
 					BuildSourceEdgeKey(SourceVertexIds[0], SourceVertexIds[1]),
@@ -1423,6 +1528,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 				const FLinearColor WallColor = PendingEdge.SurfaceColor * 0.78f;
 				const FSRCelestialBodyDynamicMeshQuadRenderData SideRenderData = AppendFlatColoredQuad(
+					GetCubeSphereFaceComponentIndex(PendingEdge.CellId.Face),
 					PendingEdge.PointA,
 					PendingEdge.PointB,
 					PendingEdge.SourcePointB,
@@ -1430,14 +1536,29 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					WallColor,
 					PendingEdge.MaterialId,
 					true);
-				if (FSRCelestialBodyDynamicMeshCellColorData* CellColorData = DynamicMeshColorDataByCell.Find(PendingEdge.CellId))
+				const float CellEdgeRadius = (PendingEdge.PointA.Length() + PendingEdge.PointB.Length()) * 0.5f;
+				const float BoundaryEdgeRadius = (PendingEdge.SourcePointA.Length() + PendingEdge.SourcePointB.Length()) * 0.5f;
+				if (CellEdgeRadius > BoundaryEdgeRadius + KINDA_SMALL_NUMBER)
 				{
-					CellColorData->SideColorElements.Append(SideRenderData.ColorElements);
-					CellColorData->SideMaterialTriangles.Append(SideRenderData.MaterialTriangles);
+					if (FSRCelestialBodyDynamicMeshCellColorData* CellColorData = DynamicMeshColorDataByCell.Find(PendingEdge.CellId))
+					{
+						CellColorData->SideColorElements.Append(SideRenderData.ColorElements);
+					}
 				}
 			}
 
-			CelestialBodyDynamicMesh->SetMesh(MoveTemp(DynamicMesh));
+			for (int32 FaceIndex = 0; FaceIndex < FaceDynamicMeshes.Num(); ++FaceIndex)
+			{
+				if (UDynamicMeshComponent* FaceDynamicMeshComponent = GetDynamicMeshFaceComponent(FaceIndex))
+				{
+					FaceDynamicMeshComponent->SetMesh(MoveTemp(FaceDynamicMeshes[FaceIndex]));
+				}
+			}
+			if (bBuildGeneratedGridMesh)
+			{
+				TArray<FSRPlanetSurfaceGridCell> GeneratedGridCells = CachedSurfaceGridCells;
+				SurfaceGrid->ApplyGeneratedGridBuild(MoveTemp(GeneratedGridCells), MoveTemp(GeneratedGridMesh));
+			}
 			CachedDynamicMeshBuildHash = DynamicMeshBuildHash;
 			bHasCachedDynamicMeshBuildHash = true;
 			return true;
@@ -1517,9 +1638,29 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 	}
 
 	CelestialBodyDynamicMesh->SetMesh(MoveTemp(DynamicMesh));
+	for (int32 FaceIndex = 1; FaceIndex < CubeSphereFaceComponentCount; ++FaceIndex)
+	{
+		if (UDynamicMeshComponent* FaceDynamicMeshComponent = GetDynamicMeshFaceComponent(FaceIndex))
+		{
+			UE::Geometry::FDynamicMesh3 EmptyMesh;
+			EmptyMesh.EnableAttributes();
+			EmptyMesh.Attributes()->EnablePrimaryColors();
+			FaceDynamicMeshComponent->SetMesh(MoveTemp(EmptyMesh));
+		}
+	}
 	CachedDynamicMeshBuildHash = DynamicMeshBuildHash;
 	bHasCachedDynamicMeshBuildHash = true;
 	return true;
+}
+
+UDynamicMeshComponent* ASRCelestialBody::GetDynamicMeshFaceComponent(int32 FaceIndex) const
+{
+	if (CelestialBodyDynamicMeshFaces.IsValidIndex(FaceIndex) && IsValid(CelestialBodyDynamicMeshFaces[FaceIndex]))
+	{
+		return CelestialBodyDynamicMeshFaces[FaceIndex];
+	}
+
+	return FaceIndex == 0 ? CelestialBodyDynamicMesh.Get() : nullptr;
 }
 
 uint32 ASRCelestialBody::ComputeDynamicMeshBuildHash() const
@@ -1569,9 +1710,7 @@ void ASRCelestialBody::ResetDynamicMeshCellColorData()
 {
 	DynamicMeshColorDataByCell.Reset();
 	DynamicMeshBaseColorByElement.Reset();
-	DynamicMeshBaseMaterialByTriangle.Reset();
 	HighlightedDynamicMeshColorElements.Reset();
-	HighlightedDynamicMeshMaterialTriangles.Reset();
 	CachedSurfaceGridCells.Reset();
 	bHasCachedDynamicMeshBuildHash = false;
 }

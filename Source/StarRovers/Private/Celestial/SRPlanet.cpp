@@ -157,7 +157,6 @@ void ASRPlanet::ApplyData()
 				SurfaceGridHeightOffset);
 			SurfaceGrid->ConfigureConstructionHeightOffset(ConstructionHeightOffset);
 			SurfaceGrid->ConfigureTerrain(DynamicMeshGeneration);
-			SurfaceGrid->RebuildGrid();
 		}
 	}
 	else

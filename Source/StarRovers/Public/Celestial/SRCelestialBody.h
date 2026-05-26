@@ -26,28 +26,20 @@ class USRCelestialBodyRegistrySubsystem;
 
 struct FSRCelestialBodyDynamicMeshColorElement
 {
+	int32 MeshComponentIndex = INDEX_NONE;
 	int32 ElementId = INDEX_NONE;
 	FLinearColor BaseColor = FLinearColor::White;
-};
-
-struct FSRCelestialBodyDynamicMeshMaterialTriangle
-{
-	int32 TriangleId = INDEX_NONE;
-	int32 BaseMaterialId = 0;
 };
 
 struct FSRCelestialBodyDynamicMeshQuadRenderData
 {
 	TArray<FSRCelestialBodyDynamicMeshColorElement> ColorElements;
-	TArray<FSRCelestialBodyDynamicMeshMaterialTriangle> MaterialTriangles;
 };
 
 struct FSRCelestialBodyDynamicMeshCellColorData
 {
 	TArray<FSRCelestialBodyDynamicMeshColorElement> SurfaceColorElements;
 	TArray<FSRCelestialBodyDynamicMeshColorElement> SideColorElements;
-	TArray<FSRCelestialBodyDynamicMeshMaterialTriangle> SurfaceMaterialTriangles;
-	TArray<FSRCelestialBodyDynamicMeshMaterialTriangle> SideMaterialTriangles;
 };
 
 USTRUCT(BlueprintType)
@@ -231,6 +223,8 @@ public:
 	void ClearSurfaceCellHighlights();
 	bool HasSurfaceCellRenderData(const FSRPlanetSurfaceGridCellId& CellId) const;
 	bool GetCachedSurfaceGridCells(TArray<FSRPlanetSurfaceGridCell>& OutCells) const;
+	bool PrepareCelestialBodyDynamicMesh();
+	bool HasCelestialBodyDynamicMeshBuild() const;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SceneRoot"))
@@ -238,6 +232,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "CelestialBodyDynamicMesh"))
 	TObjectPtr<UDynamicMeshComponent> CelestialBodyDynamicMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "CelestialBodyDynamicMeshFaces"))
+	TArray<TObjectPtr<UDynamicMeshComponent>> CelestialBodyDynamicMeshFaces;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "CelestialBodyStaticMesh"))
 	TObjectPtr<UStaticMeshComponent> CelestialBodyStaticMesh;
@@ -296,8 +293,9 @@ protected:
 
 private:
 	void ApplyGravityLineSettings();
-	void EnsureCelestialBodyDynamicMeshVisuals();
+	void EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicMesh);
 	bool CopyStaticMeshToCelestialBodyDynamicMesh();
+	UDynamicMeshComponent* GetDynamicMeshFaceComponent(int32 FaceIndex) const;
 	uint32 ComputeDynamicMeshBuildHash() const;
 	void ResetDynamicMeshCellColorData();
 	USRCelestialBodyRegistrySubsystem* FindCelestialRegistry() const;
@@ -309,10 +307,8 @@ private:
 	mutable bool bHasLoggedMissingDataError = false;
 
 	TMap<FSRPlanetSurfaceGridCellId, FSRCelestialBodyDynamicMeshCellColorData> DynamicMeshColorDataByCell;
-	TMap<int32, FLinearColor> DynamicMeshBaseColorByElement;
-	TMap<int32, int32> DynamicMeshBaseMaterialByTriangle;
-	TSet<int32> HighlightedDynamicMeshColorElements;
-	TSet<int32> HighlightedDynamicMeshMaterialTriangles;
+	TMap<uint64, FLinearColor> DynamicMeshBaseColorByElement;
+	TSet<uint64> HighlightedDynamicMeshColorElements;
 	TArray<FSRPlanetSurfaceGridCell> CachedSurfaceGridCells;
 	uint32 CachedDynamicMeshBuildHash = 0;
 	bool bHasCachedDynamicMeshBuildHash = false;

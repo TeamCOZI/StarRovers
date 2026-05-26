@@ -2,6 +2,7 @@
 
 #include "Assembly/SRAssemblyComponent.h"
 #include "Camera/SRCameraPawn.h"
+#include "Celestial/SRCelestialBody.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -482,19 +483,30 @@ void ASRPlayerController::HandleFocusedActorChanged(AActor* NewFocusedActor)
 	}
 	else if (USRPlanetSurfaceGrid* FocusedSurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(NewFocusedActor))
 	{
-		TWeakObjectPtr<USRPlanetSurfaceGrid> WeakSurfaceGrid = FocusedSurfaceGrid;
-		FTimerHandle PrepareGridTimerHandle;
-		GetWorldTimerManager().SetTimer(
-			PrepareGridTimerHandle,
-			[WeakSurfaceGrid]()
-			{
-				if (USRPlanetSurfaceGrid* SurfaceGrid = WeakSurfaceGrid.Get())
+		FocusedSurfaceGrid->ClearHoveredCell();
+	}
+
+	if (ASRCelestialBody* FocusedBody = Cast<ASRCelestialBody>(NewFocusedActor))
+	{
+		if (!FocusedBody->HasCelestialBodyDynamicMeshBuild())
+		{
+			TWeakObjectPtr<ASRCelestialBody> WeakFocusedBody = FocusedBody;
+			TWeakObjectPtr<ASRCameraPawn> WeakCameraPawn = BoundCameraPawn;
+			FTimerHandle PrepareDynamicMeshTimerHandle;
+			GetWorldTimerManager().SetTimer(
+				PrepareDynamicMeshTimerHandle,
+				[WeakFocusedBody, WeakCameraPawn]()
 				{
-					SurfaceGrid->PrepareGridForAssembly();
-				}
-			},
-			0.15f,
-			false);
+					ASRCelestialBody* Body = WeakFocusedBody.Get();
+					ASRCameraPawn* CameraPawn = WeakCameraPawn.Get();
+					if (Body && CameraPawn && CameraPawn->GetFocusedActor() == Body)
+					{
+						Body->PrepareCelestialBodyDynamicMesh();
+					}
+				},
+				0.75f,
+				false);
+		}
 	}
 
 	if (!IsValid(NewFocusedActor) || SelectedActor != NewFocusedActor)

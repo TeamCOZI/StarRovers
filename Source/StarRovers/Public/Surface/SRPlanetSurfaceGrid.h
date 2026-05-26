@@ -129,6 +129,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Terrain")
     FSRPlanetTerrainSample GetTerrainSampleAtDirection(FVector LocalUnitDirection) const;
 
+    void AppendGeneratedGridCell(UE::Geometry::FDynamicMesh3& GridMesh, const FSRPlanetSurfaceGridCell& Cell, TSet<uint64>& DrawnEdges) const;
+    void ApplyGeneratedGridBuild(TArray<FSRPlanetSurfaceGridCell>&& NewCells, UE::Geometry::FDynamicMesh3&& NewGridMesh);
+
 protected:
     UPROPERTY()
     int32 FaceResolution;
@@ -223,7 +226,7 @@ private:
 
     TMap<FSRPlanetSurfaceGridCellId, int32> CellIndexById;
     TMap<uint64, TArray<int32>> RaycastCellIndicesByBin;
-    static constexpr int32 RaycastBinResolution = 32;
+    static constexpr int32 RaycastBinResolution = 64;
 
     UPROPERTY(Transient)
     TObjectPtr<UDynamicMeshComponent> InteractionOverlayMesh;

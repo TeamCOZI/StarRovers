@@ -99,6 +99,7 @@ private:
 	FVector ComputeOrbitWorldLocation(const AActor* ParentBody, float OrbitRadius, float InitialAngleDegrees) const;
 	void SpawnPlanets(ASRCelestialBody* ParentStar, const USRStarDataAsset* SourceStarDataAsset, FRandomStream& RandomStream, TArray<TObjectPtr<ASRCelestialBody>>& OutGeneratedPlanets);
 	void SpawnMoons(ASRCelestialBody* ParentPlanet, FRandomStream& RandomStream, TArray<TObjectPtr<ASRCelestialBody>>& OutGeneratedMoons);
+	void PrepareRuntimeGeneratedDynamicMeshes();
 	void DestroyTrackedActor(TObjectPtr<ASRCelestialBody>& ActorToDestroy);
 	void DestroyTrackedActors(TArray<TObjectPtr<ASRCelestialBody>>& ActorsToDestroy);
 
