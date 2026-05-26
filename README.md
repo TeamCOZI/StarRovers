@@ -166,7 +166,7 @@ Dynamic Mesh 생성은 복원된 quad cell별 render data를 함께 기록한다
 
 Hover와 Select 색상은 가능한 경우 별도 mesh를 덮는 방식이 아니라 기존 행성 Dynamic Mesh의 vertex color를 `UDynamicMesh::EditMesh()`로 직접 수정한다. 색상은 base vertex color를 교체하지 않고 highlight 색을 가산해 덧입히며, Material ID는 변경하지 않는다. 이 경로에서는 선택된 cell의 top surface와 side face 색상이 함께 바뀐다. 6 face 분할 이후에는 이전/현재 highlight가 포함된 face component만 edit해 vertex color update 범위를 줄인다. Dynamic Mesh cell color data가 없는 fallback 상황에서만 interaction overlay mesh를 사용한다.
 
-Assembly Mode의 grid drawing은 전체 행성 Grid line mesh를 상시 렌더링하지 않는다. Hover 또는 Select로 작용 중인 cell 주변 5x5 patch만 interaction overlay에 그리고, 중심에서 멀수록 alpha와 line thickness를 낮춰 바깥쪽이 자연스럽게 사라지게 한다. Grid line은 cell corner에서 직접 만들고 shared edge는 patch 단위로 중복 제거한다. 숨겨진 grid는 `bCellsDirty`, `bGridMeshDirty`로 cell rebuild를 지연하고, fallback 상황에서만 별도 갱신한다.
+Assembly Mode의 grid drawing은 전체 행성 Grid line mesh를 상시 렌더링하지 않는다. Hover 또는 Select로 작용 중인 cell 주변 5x5 patch만 interaction overlay에 그리고, 중심에서 멀수록 alpha를 낮춰 바깥쪽이 자연스럽게 사라지게 한다. Grid line은 cell corner에서 직접 만들고 shared edge는 patch 단위로 중복 제거한다. 숨겨진 grid는 `bCellsDirty`, `bGridMeshDirty`로 cell rebuild를 지연하고, fallback 상황에서만 별도 갱신한다.
 
 Focus 전환 후에는 cache가 없는 focused body에 대해서만 Dynamic Mesh build를 지연 실행하고, Surface Grid의 `PrepareGridForAssembly()`는 Assembly Mode 진입 시점까지 실행하지 않는다. 시작 시점 prebuild가 이미 끝난 경우 Assembly Mode 진입 시에는 같은 pass에서 생성된 grid cache를 재사용한다. Hover raycast는 face별 64x64 spatial bin index로 후보 cell을 줄이고, 마우스가 움직이지 않은 경우에는 같은 raycast를 매 tick 반복하지 않는다.
 

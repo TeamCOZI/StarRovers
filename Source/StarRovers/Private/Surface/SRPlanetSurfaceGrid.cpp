@@ -1463,7 +1463,7 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighli
 	FSRPlanetSurfaceGridCell SelectedCell;
 	if (bHasSelectedCell && GetCellById(SelectedCellId, SelectedCell))
 	{
-		AppendInteractionGridPatch(OverlayMesh, SelectedCellId, SelectedCellColor, DebugLineThickness * 1.75f, PatchDrawnEdges);
+		AppendInteractionGridPatch(OverlayMesh, SelectedCellId, SelectedCellColor, DebugLineThickness, PatchDrawnEdges);
 		if (bIncludeCellHighlightOverlay)
 		{
 			AppendInteractionCell(OverlayMesh, SelectedCell, SelectedCellColor, DebugLineThickness * 2.5f);
@@ -1475,7 +1475,7 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighli
 		FSRPlanetSurfaceGridCell HoveredCell;
 		if (GetCellById(HoveredCellId, HoveredCell))
 		{
-			AppendInteractionGridPatch(OverlayMesh, HoveredCellId, HoveredCellColor, DebugLineThickness * 1.5f, PatchDrawnEdges);
+			AppendInteractionGridPatch(OverlayMesh, HoveredCellId, HoveredCellColor, DebugLineThickness, PatchDrawnEdges);
 			if (bIncludeCellHighlightOverlay)
 			{
 				AppendInteractionCell(OverlayMesh, HoveredCell, HoveredCellColor, DebugLineThickness * 2.0f);
@@ -1495,13 +1495,92 @@ void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
 	TSet<uint64>& DrawnEdges) const
 {
 	constexpr int32 PatchRadius = 2;
+	auto HasNeighbor = [](const FSRPlanetSurfaceGridCell& Cell, const FSRPlanetSurfaceGridCellId& NeighborId)
+	{
+		return Cell.Neighbors.NegativeU == NeighborId
+			|| Cell.Neighbors.PositiveU == NeighborId
+			|| Cell.Neighbors.NegativeV == NeighborId
+			|| Cell.Neighbors.PositiveV == NeighborId;
+	};
+	auto TryStep = [this, &HasNeighbor](const FSRPlanetSurfaceGridCellId& FromCellId, int32 StepX, int32 StepY, FSRPlanetSurfaceGridCellId& OutCellId)
+	{
+		FSRPlanetSurfaceGridCell FromCell;
+		if (!GetCellById(FromCellId, FromCell))
+		{
+			return false;
+		}
+
+		FSRPlanetSurfaceGridCellId NeighborId = FromCellId;
+		if (StepX < 0)
+		{
+			NeighborId = FromCell.Neighbors.NegativeU;
+		}
+		else if (StepX > 0)
+		{
+			NeighborId = FromCell.Neighbors.PositiveU;
+		}
+		else if (StepY < 0)
+		{
+			NeighborId = FromCell.Neighbors.NegativeV;
+		}
+		else if (StepY > 0)
+		{
+			NeighborId = FromCell.Neighbors.PositiveV;
+		}
+		else
+		{
+			OutCellId = FromCellId;
+			return true;
+		}
+
+		if (NeighborId == FromCellId)
+		{
+			return false;
+		}
+
+		FSRPlanetSurfaceGridCell NeighborCell;
+		if (!GetCellById(NeighborId, NeighborCell) || !HasNeighbor(NeighborCell, FromCellId))
+		{
+			return false;
+		}
+
+		OutCellId = NeighborId;
+		return true;
+	};
+	auto TryResolvePatchCellId = [&TryStep](const FSRPlanetSurfaceGridCellId& StartCellId, int32 OffsetX, int32 OffsetY, FSRPlanetSurfaceGridCellId& OutCellId)
+	{
+		FSRPlanetSurfaceGridCellId CurrentCellId = StartCellId;
+		const int32 StepX = OffsetX < 0 ? -1 : 1;
+		for (int32 StepIndex = 0; StepIndex < FMath::Abs(OffsetX); ++StepIndex)
+		{
+			if (!TryStep(CurrentCellId, StepX, 0, CurrentCellId))
+			{
+				return false;
+			}
+		}
+
+		const int32 StepY = OffsetY < 0 ? -1 : 1;
+		for (int32 StepIndex = 0; StepIndex < FMath::Abs(OffsetY); ++StepIndex)
+		{
+			if (!TryStep(CurrentCellId, 0, StepY, CurrentCellId))
+			{
+				return false;
+			}
+		}
+
+		OutCellId = CurrentCellId;
+		return true;
+	};
+
 	for (int32 OffsetY = -PatchRadius; OffsetY <= PatchRadius; ++OffsetY)
 	{
 		for (int32 OffsetX = -PatchRadius; OffsetX <= PatchRadius; ++OffsetX)
 		{
-			FSRPlanetSurfaceGridCellId PatchCellId = CenterCellId;
-			PatchCellId.CellX += OffsetX;
-			PatchCellId.CellY += OffsetY;
+			FSRPlanetSurfaceGridCellId PatchCellId;
+			if (!TryResolvePatchCellId(CenterCellId, OffsetX, OffsetY, PatchCellId))
+			{
+				continue;
+			}
 
 			FSRPlanetSurfaceGridCell PatchCell;
 			if (!GetCellById(PatchCellId, PatchCell))
@@ -1518,8 +1597,7 @@ void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
 				continue;
 			}
 
-			const float PatchLineThickness = FMath::Max(0.1f, LineThickness * FMath::Lerp(0.65f, 1.0f, FadeAlpha));
-			AppendGridWireCell(OverlayMesh, PatchCell, PatchLineColor, PatchLineThickness, true, &DrawnEdges);
+			AppendGridWireCell(OverlayMesh, PatchCell, PatchLineColor, LineThickness, true, &DrawnEdges);
 		}
 	}
 }
