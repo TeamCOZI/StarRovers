@@ -156,6 +156,16 @@ Ocean scale은 `ASRPlanet::EstimateProceduralOceanScaleMultiplier()`가 terrain 
 
 Surface Grid는 Planet에서만 켜진다. `ASRPlanet::ApplyData()`가 body radius를 기준으로 `FaceResolution`을 자동 계산하고, `SurfaceGrid->ConfigureTerrain(DynamicMeshGeneration)`을 호출한다. Surface Grid는 collision trace로 표면을 다시 찾지 않고, Dynamic Mesh Generation과 같은 height/normal 계산을 사용한다.
 
+### 5.6 Dynamic Mesh / Assembly Mode 최적화
+
+Dynamic Mesh 생성은 복원된 quad cell별 render data를 함께 기록한다. `ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()`는 생성된 `FSRPlanetSurfaceGridCell` 목록을 캐시하고, 각 cell을 surface 및 side face의 vertex color element와 매핑한다. `USRPlanetSurfaceGrid`는 같은 StaticMesh에서 quad를 다시 복원하지 않고 이 캐시된 cell 목록을 재사용한다.
+
+Hover와 Select 색상은 가능한 경우 별도 mesh를 덮는 방식이 아니라 기존 행성 Dynamic Mesh의 vertex color를 `UDynamicMesh::EditMesh()`로 직접 수정한다. 이 경로에서는 선택된 cell의 top surface와 side face 색상이 함께 바뀐다. Dynamic Mesh cell color data가 없는 fallback 상황에서만 interaction overlay mesh를 사용한다.
+
+Assembly Mode의 grid drawing은 recovered quad cell을 사용할 때 owner Dynamic Mesh 전체 edge scan을 건너뛴다. Grid line은 캐시된 cell corner에서 직접 만들고, shared edge는 중복 생성하지 않는다. 숨겨진 grid는 `bCellsDirty`, `bGridMeshDirty`로 cell/mesh rebuild를 지연하고, 실제 preparation 또는 visibility 전환이 필요할 때만 갱신한다.
+
+Focus 전환 후에는 focused planet grid를 `PrepareGridForAssembly()`로 짧게 지연 prewarm한다. 따라서 Assembly Mode 진입 시점에는 가능한 한 visibility 전환만 일어나게 한다. Hover raycast는 face별 32x32 spatial bin index로 후보 cell을 줄이고, 마우스가 움직이지 않은 경우에는 같은 raycast를 매 tick 반복하지 않는다.
+
 ## 6. 현재 에셋 상태
 
 확인된 주요 Blueprint Class 에셋은 다음과 같다.

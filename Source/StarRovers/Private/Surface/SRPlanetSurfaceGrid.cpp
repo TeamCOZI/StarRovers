@@ -1,16 +1,22 @@
 #include "Surface/SRPlanetSurfaceGrid.h"
 
+#include "Algo/Reverse.h"
 #include "Celestial/SRCelestialBody.h"
 #include "DrawDebugHelpers.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
 #include "Engine/World.h"
+#include "Engine/StaticMesh.h"
 #include "Math/RotationMatrix.h"
+#include "Materials/MaterialInterface.h"
+#include "Rendering/PositionVertexBuffer.h"
+#include "Rendering/StaticMeshVertexBuffer.h"
 #include "SceneManagement.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
 #include "Surface/SRPlanetTerrainGenerator.h"
 #include "UDynamicMesh.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Visual/SRLineThicknessUtils.h"
 
 namespace
@@ -31,6 +37,289 @@ namespace
 		const uint32 MinEndpoint = FMath::Min(EndpointA, EndpointB);
 		const uint32 MaxEndpoint = FMath::Max(EndpointA, EndpointB);
 		return (static_cast<uint64>(MinEndpoint) << 32) | static_cast<uint64>(MaxEndpoint);
+	}
+
+	struct FSRSourceTriangle
+	{
+		UE::Geometry::FIndex3i Vertices = UE::Geometry::FIndex3i(INDEX_NONE, INDEX_NONE, INDEX_NONE);
+		bool bPaired = false;
+	};
+
+	struct FSRSourceQuad
+	{
+		int32 Vertices[4] = { INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE };
+	};
+
+	uint64 BuildSourceEdgeKey(int32 VertexIndexA, int32 VertexIndexB)
+	{
+		const uint32 MinVertex = static_cast<uint32>(FMath::Min(VertexIndexA, VertexIndexB));
+		const uint32 MaxVertex = static_cast<uint32>(FMath::Max(VertexIndexA, VertexIndexB));
+		return (static_cast<uint64>(MinVertex) << 32) | static_cast<uint64>(MaxVertex);
+	}
+
+	bool ContainsSourceVertex(const UE::Geometry::FIndex3i& Triangle, int32 VertexIndex)
+	{
+		return Triangle.A == VertexIndex || Triangle.B == VertexIndex || Triangle.C == VertexIndex;
+	}
+
+	bool TryGetTriangleOppositeVertex(const UE::Geometry::FIndex3i& Triangle, int32 SharedVertexA, int32 SharedVertexB, int32& OutOppositeVertex)
+	{
+		if (Triangle.A != SharedVertexA && Triangle.A != SharedVertexB)
+		{
+			OutOppositeVertex = Triangle.A;
+			return true;
+		}
+		if (Triangle.B != SharedVertexA && Triangle.B != SharedVertexB)
+		{
+			OutOppositeVertex = Triangle.B;
+			return true;
+		}
+		if (Triangle.C != SharedVertexA && Triangle.C != SharedVertexB)
+		{
+			OutOppositeVertex = Triangle.C;
+			return true;
+		}
+
+		OutOppositeVertex = INDEX_NONE;
+		return false;
+	}
+
+	bool TryOrderQuadVertices(
+		const FPositionVertexBuffer& PositionVertexBuffer,
+		int32 VertexIndex0,
+		int32 VertexIndex1,
+		int32 VertexIndex2,
+		int32 VertexIndex3,
+		FSRSourceQuad& OutQuad)
+	{
+		struct FSRQuadCorner
+		{
+			int32 VertexIndex = INDEX_NONE;
+			FVector Position = FVector::ZeroVector;
+			float Angle = 0.0f;
+		};
+
+		FSRQuadCorner Corners[4];
+		Corners[0].VertexIndex = VertexIndex0;
+		Corners[1].VertexIndex = VertexIndex1;
+		Corners[2].VertexIndex = VertexIndex2;
+		Corners[3].VertexIndex = VertexIndex3;
+
+		FVector Center = FVector::ZeroVector;
+		for (FSRQuadCorner& Corner : Corners)
+		{
+			if (Corner.VertexIndex == INDEX_NONE)
+			{
+				return false;
+			}
+
+			Corner.Position = FVector(PositionVertexBuffer.VertexPosition(Corner.VertexIndex));
+			Center += Corner.Position;
+		}
+		Center /= 4.0f;
+
+		const FVector SurfaceNormal = Center.GetSafeNormal();
+		if (SurfaceNormal.IsNearlyZero())
+		{
+			return false;
+		}
+
+		FVector TangentA = FVector::CrossProduct(SurfaceNormal, FVector::UpVector).GetSafeNormal();
+		if (TangentA.IsNearlyZero())
+		{
+			TangentA = FVector::CrossProduct(SurfaceNormal, FVector::RightVector).GetSafeNormal();
+		}
+		const FVector TangentB = FVector::CrossProduct(SurfaceNormal, TangentA).GetSafeNormal();
+		if (TangentA.IsNearlyZero() || TangentB.IsNearlyZero())
+		{
+			return false;
+		}
+
+		TArray<FSRQuadCorner> OrderedCorners;
+		OrderedCorners.Reserve(4);
+		for (FSRQuadCorner& Corner : Corners)
+		{
+			const FVector Offset = Corner.Position - Center;
+			Corner.Angle = FMath::Atan2(FVector::DotProduct(Offset, TangentB), FVector::DotProduct(Offset, TangentA));
+			OrderedCorners.Add(Corner);
+		}
+
+		OrderedCorners.Sort([](const FSRQuadCorner& Left, const FSRQuadCorner& Right)
+		{
+			return Left.Angle < Right.Angle;
+		});
+
+		const FVector WindingNormal = FVector::CrossProduct(
+			OrderedCorners[1].Position - OrderedCorners[0].Position,
+			OrderedCorners[2].Position - OrderedCorners[0].Position).GetSafeNormal();
+		if (FVector::DotProduct(WindingNormal, SurfaceNormal) < 0.0f)
+		{
+			Algo::Reverse(OrderedCorners);
+		}
+
+		for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
+		{
+			OutQuad.Vertices[CornerIndex] = OrderedCorners[CornerIndex].VertexIndex;
+		}
+
+		return true;
+	}
+
+	TArray<FSRSourceQuad> RecoverSourceQuads(const FPositionVertexBuffer& PositionVertexBuffer, const FRawStaticIndexBuffer& IndexBuffer, int32 IndexCount)
+	{
+		TArray<FSRSourceTriangle> SourceTriangles;
+		SourceTriangles.Reserve(IndexCount / 3);
+
+		TMap<uint64, TArray<int32>> TriangleIndicesByEdge;
+		for (int32 Index = 0; Index + 2 < IndexCount; Index += 3)
+		{
+			const int32 TriangleIndex = SourceTriangles.Num();
+			FSRSourceTriangle SourceTriangle;
+			SourceTriangle.Vertices = UE::Geometry::FIndex3i(
+				static_cast<int32>(IndexBuffer.GetIndex(Index)),
+				static_cast<int32>(IndexBuffer.GetIndex(Index + 1)),
+				static_cast<int32>(IndexBuffer.GetIndex(Index + 2)));
+			SourceTriangles.Add(SourceTriangle);
+
+			TriangleIndicesByEdge.FindOrAdd(BuildSourceEdgeKey(SourceTriangle.Vertices.A, SourceTriangle.Vertices.B)).Add(TriangleIndex);
+			TriangleIndicesByEdge.FindOrAdd(BuildSourceEdgeKey(SourceTriangle.Vertices.B, SourceTriangle.Vertices.C)).Add(TriangleIndex);
+			TriangleIndicesByEdge.FindOrAdd(BuildSourceEdgeKey(SourceTriangle.Vertices.C, SourceTriangle.Vertices.A)).Add(TriangleIndex);
+		}
+
+		TArray<uint64> CandidateEdgeKeys;
+		TriangleIndicesByEdge.GetKeys(CandidateEdgeKeys);
+		CandidateEdgeKeys.Sort([&TriangleIndicesByEdge, &SourceTriangles, &PositionVertexBuffer](uint64 LeftKey, uint64 RightKey)
+		{
+			auto ResolveSharedLength = [&TriangleIndicesByEdge, &SourceTriangles, &PositionVertexBuffer](uint64 EdgeKey)
+			{
+				const TArray<int32>* TriangleIndices = TriangleIndicesByEdge.Find(EdgeKey);
+				if (!TriangleIndices || TriangleIndices->Num() != 2)
+				{
+					return 0.0;
+				}
+
+				const int32 SharedVertexA = static_cast<int32>(EdgeKey >> 32);
+				const int32 SharedVertexB = static_cast<int32>(EdgeKey & 0xffffffff);
+				const FVector PositionA(PositionVertexBuffer.VertexPosition(SharedVertexA));
+				const FVector PositionB(PositionVertexBuffer.VertexPosition(SharedVertexB));
+				return FVector::DistSquared(PositionA, PositionB);
+			};
+
+			return ResolveSharedLength(LeftKey) > ResolveSharedLength(RightKey);
+		});
+
+		TArray<FSRSourceQuad> SourceQuads;
+		SourceQuads.Reserve(SourceTriangles.Num() / 2);
+		for (const uint64 EdgeKey : CandidateEdgeKeys)
+		{
+			const TArray<int32>* TriangleIndices = TriangleIndicesByEdge.Find(EdgeKey);
+			if (!TriangleIndices || TriangleIndices->Num() != 2)
+			{
+				continue;
+			}
+
+			const int32 TriangleIndexA = (*TriangleIndices)[0];
+			const int32 TriangleIndexB = (*TriangleIndices)[1];
+			if (!SourceTriangles.IsValidIndex(TriangleIndexA)
+				|| !SourceTriangles.IsValidIndex(TriangleIndexB)
+				|| SourceTriangles[TriangleIndexA].bPaired
+				|| SourceTriangles[TriangleIndexB].bPaired)
+			{
+				continue;
+			}
+
+			const int32 SharedVertexA = static_cast<int32>(EdgeKey >> 32);
+			const int32 SharedVertexB = static_cast<int32>(EdgeKey & 0xffffffff);
+			const UE::Geometry::FIndex3i TriangleA = SourceTriangles[TriangleIndexA].Vertices;
+			const UE::Geometry::FIndex3i TriangleB = SourceTriangles[TriangleIndexB].Vertices;
+			if (!ContainsSourceVertex(TriangleA, SharedVertexA)
+				|| !ContainsSourceVertex(TriangleA, SharedVertexB)
+				|| !ContainsSourceVertex(TriangleB, SharedVertexA)
+				|| !ContainsSourceVertex(TriangleB, SharedVertexB))
+			{
+				continue;
+			}
+
+			int32 OppositeVertexA = INDEX_NONE;
+			int32 OppositeVertexB = INDEX_NONE;
+			if (!TryGetTriangleOppositeVertex(TriangleA, SharedVertexA, SharedVertexB, OppositeVertexA)
+				|| !TryGetTriangleOppositeVertex(TriangleB, SharedVertexA, SharedVertexB, OppositeVertexB))
+			{
+				continue;
+			}
+
+			const FVector SharedPositionA(PositionVertexBuffer.VertexPosition(SharedVertexA));
+			const FVector SharedPositionB(PositionVertexBuffer.VertexPosition(SharedVertexB));
+			const FVector OppositePositionA(PositionVertexBuffer.VertexPosition(OppositeVertexA));
+			const FVector OppositePositionB(PositionVertexBuffer.VertexPosition(OppositeVertexB));
+			const float SharedLength = FVector::Distance(SharedPositionA, SharedPositionB);
+			const float PerimeterAverageLength = (
+				FVector::Distance(SharedPositionA, OppositePositionA)
+				+ FVector::Distance(OppositePositionA, SharedPositionB)
+				+ FVector::Distance(SharedPositionB, OppositePositionB)
+				+ FVector::Distance(OppositePositionB, SharedPositionA)) * 0.25f;
+
+			if (PerimeterAverageLength <= KINDA_SMALL_NUMBER || SharedLength < PerimeterAverageLength * 1.12f)
+			{
+				continue;
+			}
+
+			FSRSourceQuad SourceQuad;
+			if (!TryOrderQuadVertices(PositionVertexBuffer, OppositeVertexA, SharedVertexA, OppositeVertexB, SharedVertexB, SourceQuad))
+			{
+				continue;
+			}
+
+			SourceTriangles[TriangleIndexA].bPaired = true;
+			SourceTriangles[TriangleIndexB].bPaired = true;
+			SourceQuads.Add(SourceQuad);
+		}
+
+		return SourceQuads;
+	}
+
+	bool IntersectRayTriangle(
+		const FVector& RayOrigin,
+		const FVector& RayDirection,
+		const FVector& TriangleA,
+		const FVector& TriangleB,
+		const FVector& TriangleC,
+		float& OutHitDistance)
+	{
+		OutHitDistance = 0.0f;
+
+		const FVector Edge1 = TriangleB - TriangleA;
+		const FVector Edge2 = TriangleC - TriangleA;
+		const FVector P = FVector::CrossProduct(RayDirection, Edge2);
+		const float Determinant = FVector::DotProduct(Edge1, P);
+		if (FMath::Abs(Determinant) <= UE_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		const float InvDeterminant = 1.0f / Determinant;
+		const FVector T = RayOrigin - TriangleA;
+		const float U = FVector::DotProduct(T, P) * InvDeterminant;
+		if (U < 0.0f || U > 1.0f)
+		{
+			return false;
+		}
+
+		const FVector Q = FVector::CrossProduct(T, Edge1);
+		const float V = FVector::DotProduct(RayDirection, Q) * InvDeterminant;
+		if (V < 0.0f || U + V > 1.0f)
+		{
+			return false;
+		}
+
+		const float HitDistance = FVector::DotProduct(Edge2, Q) * InvDeterminant;
+		if (HitDistance < 0.0f)
+		{
+			return false;
+		}
+
+		OutHitDistance = HitDistance;
+		return true;
 	}
 }
 
@@ -55,12 +344,22 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 	DynamicMeshGeneration.DynamicMeshHeight = 0.0f;
 	bHasHoveredCell = false;
 	bHasSelectedCell = false;
+	bUsingRecoveredQuadCells = false;
+	bGridMeshDirty = true;
+	bCellsDirty = true;
 
 	SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SetGenerateOverlapEvents(false);
 	SetCastShadow(false);
 	SetVisibility(false);
 	SetHiddenInGame(true);
+
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> VertexColorMaterialFinder(
+		TEXT("/Engine/EngineDebugMaterials/VertexColorMaterial.VertexColorMaterial"));
+	if (VertexColorMaterialFinder.Succeeded())
+	{
+		SetMaterial(0, VertexColorMaterialFinder.Object);
+	}
 }
 
 void USRPlanetSurfaceGrid::OnRegister()
@@ -81,21 +380,50 @@ void USRPlanetSurfaceGrid::TickComponent(float DeltaTime, enum ELevelTick TickTy
 
 void USRPlanetSurfaceGrid::RebuildGrid()
 {
-	Cells = USRPlanetSurfaceGridLibrary::GenerateCubeSphereCells(FMath::Max(1, FaceResolution), FMath::Max(1.0f, PlanetRadius));
-	ClearHoveredCell();
-	ClearSelectedCell();
+	if (!RebuildCellsFromOwnerStaticMeshQuads())
+	{
+		bUsingRecoveredQuadCells = false;
+		Cells = USRPlanetSurfaceGridLibrary::GenerateCubeSphereCells(FMath::Max(1, FaceResolution), FMath::Max(1.0f, PlanetRadius));
+	}
+	if (ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner()))
+	{
+		OwnerBody->ClearSurfaceCellHighlights();
+	}
+	bHasHoveredCell = false;
+	HoveredCellId = FSRPlanetSurfaceGridCellId();
+	bHasSelectedCell = false;
+	SelectedCellId = FSRPlanetSurfaceGridCellId();
+	SetInteractionOverlayVisible(false);
 	RebuildCellIndex();
-	RebuildGridMesh();
+	RebuildRaycastIndex();
+	bCellsDirty = false;
+	bGridMeshDirty = true;
+	if (bGridVisible)
+	{
+		RebuildGridMesh();
+	}
 }
 
 void USRPlanetSurfaceGrid::SetPlanetRadius(float NewPlanetRadius)
 {
 	PlanetRadius = FMath::Max(1.0f, NewPlanetRadius);
+	bCellsDirty = true;
+	bGridMeshDirty = true;
+	if (bGridVisible)
+	{
+		RebuildGrid();
+	}
 }
 
 void USRPlanetSurfaceGrid::SetFaceResolution(int32 NewFaceResolution)
 {
 	FaceResolution = FMath::Max(1, NewFaceResolution);
+	bCellsDirty = true;
+	bGridMeshDirty = true;
+	if (bGridVisible)
+	{
+		RebuildGrid();
+	}
 }
 
 void USRPlanetSurfaceGrid::ClearOccupancy()
@@ -105,7 +433,11 @@ void USRPlanetSurfaceGrid::ClearOccupancy()
 		Cell.bOccupied = false;
 		Cell.OccupantId = NAME_None;
 	}
-	RebuildGridMesh();
+	bGridMeshDirty = true;
+	if (bGridVisible)
+	{
+		RebuildGridMesh();
+	}
 }
 
 int32 USRPlanetSurfaceGrid::GetFaceResolution() const
@@ -173,10 +505,19 @@ bool USRPlanetSurfaceGrid::GetCellWorldTransform(const FSRPlanetSurfaceGridCellI
 		}
 	}
 
-	const FVector WorldPosition = ResolveWorldSurfacePoint(Cell.LocalNormal, ConstructionHeightOffset + HeightOffset);
-	const FVector WorldCorner00 = ResolveWorldSurfacePoint(Cell.Corner00.GetSafeNormal(), GridSurfaceOffset);
-	const FVector WorldCorner10 = ResolveWorldSurfacePoint(Cell.Corner10.GetSafeNormal(), GridSurfaceOffset);
-	const FVector WorldCorner01 = ResolveWorldSurfacePoint(Cell.Corner01.GetSafeNormal(), GridSurfaceOffset);
+	const FVector LocalPosition = bUsingRecoveredQuadCells
+		? Cell.LocalCenter + (Cell.LocalNormal.GetSafeNormal() * (ConstructionHeightOffset + HeightOffset))
+		: ResolveLocalSurfacePoint(Cell.LocalNormal, ConstructionHeightOffset + HeightOffset);
+	const FVector WorldPosition = GetComponentTransform().TransformPosition(LocalPosition);
+	const FVector WorldCorner00 = bUsingRecoveredQuadCells
+		? GetComponentTransform().TransformPosition(Cell.Corner00 + (Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset))
+		: ResolveWorldSurfacePoint(Cell.Corner00.GetSafeNormal(), GridSurfaceOffset);
+	const FVector WorldCorner10 = bUsingRecoveredQuadCells
+		? GetComponentTransform().TransformPosition(Cell.Corner10 + (Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset))
+		: ResolveWorldSurfacePoint(Cell.Corner10.GetSafeNormal(), GridSurfaceOffset);
+	const FVector WorldCorner01 = bUsingRecoveredQuadCells
+		? GetComponentTransform().TransformPosition(Cell.Corner01 + (Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset))
+		: ResolveWorldSurfacePoint(Cell.Corner01.GetSafeNormal(), GridSurfaceOffset);
 	const FVector DerivedWorldNormal = FVector::CrossProduct(WorldCorner10 - WorldCorner00, WorldCorner01 - WorldCorner00).GetSafeNormal();
 	const FVector WorldNormal = DerivedWorldNormal.IsNearlyZero()
 		? GetComponentTransform().TransformVectorNoScale(Cell.LocalNormal).GetSafeNormal()
@@ -204,6 +545,16 @@ bool USRPlanetSurfaceGrid::GetCellWorldCorners(const FSRPlanetSurfaceGridCellId&
 		return false;
 	}
 
+	if (bUsingRecoveredQuadCells)
+	{
+		const FVector LocalOffset = Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset;
+		OutCorner00 = GetComponentTransform().TransformPosition(Cell.Corner00 + LocalOffset);
+		OutCorner10 = GetComponentTransform().TransformPosition(Cell.Corner10 + LocalOffset);
+		OutCorner11 = GetComponentTransform().TransformPosition(Cell.Corner11 + LocalOffset);
+		OutCorner01 = GetComponentTransform().TransformPosition(Cell.Corner01 + LocalOffset);
+		return true;
+	}
+
 	OutCorner00 = ResolveWorldSurfacePoint(Cell.Corner00.GetSafeNormal(), GridSurfaceOffset);
 	OutCorner10 = ResolveWorldSurfacePoint(Cell.Corner10.GetSafeNormal(), GridSurfaceOffset);
 	OutCorner11 = ResolveWorldSurfacePoint(Cell.Corner11.GetSafeNormal(), GridSurfaceOffset);
@@ -226,6 +577,30 @@ bool USRPlanetSurfaceGrid::ProjectWorldLocationToCell(const FVector& WorldLocati
 		return false;
 	}
 
+	if (bUsingRecoveredQuadCells)
+	{
+		float BestDot = -BIG_NUMBER;
+		int32 BestCellIndex = INDEX_NONE;
+		for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
+		{
+			const float CandidateDot = FVector::DotProduct(Cells[CellIndex].LocalNormal.GetSafeNormal(), LocalDirection);
+			if (CandidateDot > BestDot)
+			{
+				BestDot = CandidateDot;
+				BestCellIndex = CellIndex;
+			}
+		}
+
+		if (!Cells.IsValidIndex(BestCellIndex))
+		{
+			OutCell = FSRPlanetSurfaceGridCell();
+			return false;
+		}
+
+		OutCell = Cells[BestCellIndex];
+		return true;
+	}
+
 	FSRPlanetSurfaceGridCellId CellId;
 	FVector2D UnusedFaceCoordinates = FVector2D::ZeroVector;
 	if (!USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(LocalDirection, FaceResolution, CellId, UnusedFaceCoordinates))
@@ -240,6 +615,71 @@ bool USRPlanetSurfaceGrid::ProjectWorldLocationToCell(const FVector& WorldLocati
 bool USRPlanetSurfaceGrid::RaycastCell(const FVector& RayOrigin, const FVector& RayDirection, FSRPlanetSurfaceGridCell& OutCell, FVector& OutHitLocation) const
 {
 	OutHitLocation = FVector::ZeroVector;
+	if (bUsingRecoveredQuadCells && !Cells.IsEmpty())
+	{
+		const FTransform ComponentTransform = GetComponentTransform();
+		const FVector LocalRayOrigin = ComponentTransform.InverseTransformPosition(RayOrigin);
+		const FVector LocalRayDirection = ComponentTransform.InverseTransformVectorNoScale(RayDirection).GetSafeNormal();
+		if (!LocalRayDirection.IsNearlyZero())
+		{
+			TArray<int32> CandidateCellIndices;
+			FVector BroadHitLocation = FVector::ZeroVector;
+			if (IntersectRayWithSurfaceSphere(RayOrigin, RayDirection, BroadHitLocation))
+			{
+				const FVector LocalBroadHitDirection = ComponentTransform.InverseTransformPosition(BroadHitLocation).GetSafeNormal();
+				GatherRaycastCandidateCells(LocalBroadHitDirection, CandidateCellIndices);
+			}
+
+			auto TryRaycastCandidates = [this, &ComponentTransform, &LocalRayOrigin, &LocalRayDirection, &OutCell, &OutHitLocation](const TArray<int32>& CandidateIndices)
+			{
+				float BestHitDistance = BIG_NUMBER;
+				int32 BestCellIndex = INDEX_NONE;
+				for (const int32 CellIndex : CandidateIndices)
+				{
+					if (!Cells.IsValidIndex(CellIndex))
+					{
+						continue;
+					}
+
+					const FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
+					float HitDistance = 0.0f;
+					if ((IntersectRayTriangle(LocalRayOrigin, LocalRayDirection, Cell.Corner00, Cell.Corner10, Cell.Corner11, HitDistance)
+							|| IntersectRayTriangle(LocalRayOrigin, LocalRayDirection, Cell.Corner00, Cell.Corner11, Cell.Corner01, HitDistance))
+						&& HitDistance < BestHitDistance)
+					{
+						BestHitDistance = HitDistance;
+						BestCellIndex = CellIndex;
+					}
+				}
+
+				if (!Cells.IsValidIndex(BestCellIndex))
+				{
+					return false;
+				}
+
+				OutCell = Cells[BestCellIndex];
+				OutHitLocation = ComponentTransform.TransformPosition(LocalRayOrigin + (LocalRayDirection * BestHitDistance));
+				return true;
+			};
+
+			if (!CandidateCellIndices.IsEmpty() && TryRaycastCandidates(CandidateCellIndices))
+			{
+				return true;
+			}
+
+			TArray<int32> AllCellIndices;
+			AllCellIndices.Reserve(Cells.Num());
+			for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
+			{
+				AllCellIndices.Add(CellIndex);
+			}
+			if (TryRaycastCandidates(AllCellIndices))
+			{
+				return true;
+			}
+		}
+	}
+
 	if (!IntersectRayWithSurfaceSphere(RayOrigin, RayDirection, OutHitLocation))
 	{
 		OutCell = FSRPlanetSurfaceGridCell();
@@ -266,7 +706,11 @@ bool USRPlanetSurfaceGrid::SetCellOccupied(const FSRPlanetSurfaceGridCellId& Cel
 	FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
 	Cell.bOccupied = bOccupied;
 	Cell.OccupantId = bOccupied ? OccupantId : NAME_None;
-	RebuildGridMesh();
+	bGridMeshDirty = true;
+	if (bGridVisible)
+	{
+		RebuildGridMesh();
+	}
 	return true;
 }
 
@@ -278,17 +722,27 @@ bool USRPlanetSurfaceGrid::SetHoveredCell(const FSRPlanetSurfaceGridCellId& Cell
 		return false;
 	}
 
+	if (bHasHoveredCell && HoveredCellId == CellId)
+	{
+		return true;
+	}
+
 	bHasHoveredCell = true;
 	HoveredCellId = CellId;
-	RebuildGridMesh();
+	RefreshInteractionHighlight();
 	return true;
 }
 
 void USRPlanetSurfaceGrid::ClearHoveredCell()
 {
+	if (!bHasHoveredCell)
+	{
+		return;
+	}
+
 	bHasHoveredCell = false;
 	HoveredCellId = FSRPlanetSurfaceGridCellId();
-	RebuildGridMesh();
+	RefreshInteractionHighlight();
 }
 
 bool USRPlanetSurfaceGrid::HasHoveredCell() const
@@ -309,17 +763,27 @@ bool USRPlanetSurfaceGrid::SetSelectedCell(const FSRPlanetSurfaceGridCellId& Cel
 		return false;
 	}
 
+	if (bHasSelectedCell && SelectedCellId == CellId)
+	{
+		return true;
+	}
+
 	bHasSelectedCell = true;
 	SelectedCellId = CellId;
-	RebuildGridMesh();
+	RefreshInteractionHighlight();
 	return true;
 }
 
 void USRPlanetSurfaceGrid::ClearSelectedCell()
 {
+	if (!bHasSelectedCell)
+	{
+		return;
+	}
+
 	bHasSelectedCell = false;
 	SelectedCellId = FSRPlanetSurfaceGridCellId();
-	RebuildGridMesh();
+	RefreshInteractionHighlight();
 }
 
 bool USRPlanetSurfaceGrid::HasSelectedCell() const
@@ -402,6 +866,7 @@ void USRPlanetSurfaceGrid::SetGridVisible(bool bNewGridVisible)
 	bGridVisible = bNewGridVisible;
 	SetVisibility(bGridVisible);
 	SetHiddenInGame(!bGridVisible);
+	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell));
 	if (!bGridVisible)
 	{
 		ClearHoveredCell();
@@ -409,7 +874,15 @@ void USRPlanetSurfaceGrid::SetGridVisible(bool bNewGridVisible)
 	}
 	else
 	{
-		RebuildGridMesh();
+		if (bCellsDirty)
+		{
+			RebuildGrid();
+		}
+		else if (bGridMeshDirty)
+		{
+			RebuildGridMesh();
+		}
+		RefreshInteractionHighlight();
 	}
 	UpdateDebugTickState();
 }
@@ -417,6 +890,19 @@ void USRPlanetSurfaceGrid::SetGridVisible(bool bNewGridVisible)
 bool USRPlanetSurfaceGrid::IsGridVisible() const
 {
 	return bGridVisible;
+}
+
+void USRPlanetSurfaceGrid::PrepareGridForAssembly()
+{
+	if (Cells.IsEmpty() || bCellsDirty)
+	{
+		RebuildGrid();
+	}
+
+	if (!bCellsDirty && bGridMeshDirty)
+	{
+		RebuildGridMesh();
+	}
 }
 
 void USRPlanetSurfaceGrid::ConfigureDebugGrid(
@@ -435,7 +921,12 @@ void USRPlanetSurfaceGrid::ConfigureDebugGrid(
 	SelectedCellColor = NewSelectedCellColor;
 	OccupiedCellColor = NewOccupiedCellColor;
 	GridSurfaceOffset = FMath::Clamp(NewSurfaceOffset, 0.0f, 1.0f);
-	RebuildGridMesh();
+	bGridMeshDirty = true;
+	if (bGridVisible)
+	{
+		RebuildGridMesh();
+	}
+	RefreshInteractionHighlight();
 }
 
 void USRPlanetSurfaceGrid::ConfigureConstructionHeightOffset(float NewConstructionHeightOffset)
@@ -485,7 +976,12 @@ void USRPlanetSurfaceGrid::ConfigureTerrain(const FSRDynamicMeshGeneration& NewD
 	DynamicMeshGeneration.NoiseOctaves = FMath::Max(1, DynamicMeshGeneration.NoiseOctaves);
 	DynamicMeshGeneration.NoisePersistence = FMath::Clamp(DynamicMeshGeneration.NoisePersistence, 0.0f, 1.0f);
 	DynamicMeshGeneration.OceanThreshold = FMath::Clamp(DynamicMeshGeneration.OceanThreshold, -1.0f, 1.0f);
-	RebuildGridMesh();
+	bCellsDirty = true;
+	bGridMeshDirty = true;
+	if (bGridVisible)
+	{
+		RebuildGrid();
+	}
 }
 
 FSRPlanetTerrainSample USRPlanetSurfaceGrid::GetTerrainSampleAtDirection(FVector LocalUnitDirection) const
@@ -523,9 +1019,487 @@ void USRPlanetSurfaceGrid::RebuildCellIndex()
 	}
 }
 
+uint64 USRPlanetSurfaceGrid::BuildRaycastBinKey(const FSRPlanetSurfaceGridCellId& BinId) const
+{
+	return (static_cast<uint64>(static_cast<uint8>(BinId.Face)) << 32)
+		| (static_cast<uint64>(static_cast<uint16>(BinId.CellX)) << 16)
+		| static_cast<uint64>(static_cast<uint16>(BinId.CellY));
+}
+
+void USRPlanetSurfaceGrid::AddCellToRaycastBin(const FSRPlanetSurfaceGridCellId& BinId, int32 CellIndex)
+{
+	if (!Cells.IsValidIndex(CellIndex)
+		|| BinId.CellX < 0
+		|| BinId.CellY < 0
+		|| BinId.CellX >= RaycastBinResolution
+		|| BinId.CellY >= RaycastBinResolution)
+	{
+		return;
+	}
+
+	RaycastCellIndicesByBin.FindOrAdd(BuildRaycastBinKey(BinId)).AddUnique(CellIndex);
+}
+
+bool USRPlanetSurfaceGrid::GetRaycastBinForDirection(const FVector& LocalDirection, FSRPlanetSurfaceGridCellId& OutBinId) const
+{
+	FVector2D UnusedFaceCoordinates = FVector2D::ZeroVector;
+	return USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(
+		LocalDirection.GetSafeNormal(),
+		RaycastBinResolution,
+		OutBinId,
+		UnusedFaceCoordinates);
+}
+
+void USRPlanetSurfaceGrid::RebuildRaycastIndex()
+{
+	RaycastCellIndicesByBin.Reset();
+	if (!bUsingRecoveredQuadCells || Cells.IsEmpty())
+	{
+		return;
+	}
+
+	RaycastCellIndicesByBin.Reserve(Cells.Num());
+	for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
+	{
+		const FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
+		const FVector SampleDirections[5] =
+		{
+			Cell.LocalCenter,
+			Cell.Corner00,
+			Cell.Corner10,
+			Cell.Corner11,
+			Cell.Corner01,
+		};
+
+		for (const FVector& SampleDirection : SampleDirections)
+		{
+			FSRPlanetSurfaceGridCellId BinId;
+			if (!GetRaycastBinForDirection(SampleDirection, BinId))
+			{
+				continue;
+			}
+
+			for (int32 OffsetY = -1; OffsetY <= 1; ++OffsetY)
+			{
+				for (int32 OffsetX = -1; OffsetX <= 1; ++OffsetX)
+				{
+					FSRPlanetSurfaceGridCellId ExpandedBinId = BinId;
+					ExpandedBinId.CellX += OffsetX;
+					ExpandedBinId.CellY += OffsetY;
+					AddCellToRaycastBin(ExpandedBinId, CellIndex);
+				}
+			}
+		}
+	}
+}
+
+void USRPlanetSurfaceGrid::GatherRaycastCandidateCells(const FVector& LocalDirection, TArray<int32>& OutCandidateCellIndices) const
+{
+	OutCandidateCellIndices.Reset();
+
+	FSRPlanetSurfaceGridCellId BinId;
+	if (!GetRaycastBinForDirection(LocalDirection, BinId))
+	{
+		return;
+	}
+
+	for (int32 OffsetY = -1; OffsetY <= 1; ++OffsetY)
+	{
+		for (int32 OffsetX = -1; OffsetX <= 1; ++OffsetX)
+		{
+			FSRPlanetSurfaceGridCellId CandidateBinId = BinId;
+			CandidateBinId.CellX += OffsetX;
+			CandidateBinId.CellY += OffsetY;
+			if (CandidateBinId.CellX < 0
+				|| CandidateBinId.CellY < 0
+				|| CandidateBinId.CellX >= RaycastBinResolution
+				|| CandidateBinId.CellY >= RaycastBinResolution)
+			{
+				continue;
+			}
+
+			const TArray<int32>* BinCellIndices = RaycastCellIndicesByBin.Find(BuildRaycastBinKey(CandidateBinId));
+			if (!BinCellIndices)
+			{
+				continue;
+			}
+
+			for (const int32 CellIndex : *BinCellIndices)
+			{
+				OutCandidateCellIndices.AddUnique(CellIndex);
+			}
+		}
+	}
+}
+
+bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerStaticMeshQuads()
+{
+	const ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner());
+	if (!IsValid(OwnerBody))
+	{
+		return false;
+	}
+
+	if (OwnerBody->GetCachedSurfaceGridCells(Cells))
+	{
+		bUsingRecoveredQuadCells = true;
+		return true;
+	}
+
+	const FSRCelestialBodyData OwnerData = OwnerBody->GetData();
+	UStaticMesh* OwnerStaticMesh = OwnerData.StaticMesh.Get();
+	if (!IsValid(OwnerStaticMesh))
+	{
+		return false;
+	}
+
+	const FStaticMeshRenderData* RenderData = OwnerStaticMesh->GetRenderData();
+	if (!RenderData || RenderData->LODResources.IsEmpty())
+	{
+		return false;
+	}
+
+	const FStaticMeshLODResources& LODResource = RenderData->LODResources[0];
+	const FPositionVertexBuffer& PositionVertexBuffer = LODResource.VertexBuffers.PositionVertexBuffer;
+	const FRawStaticIndexBuffer& IndexBuffer = LODResource.IndexBuffer;
+	const int32 VertexCount = static_cast<int32>(PositionVertexBuffer.GetNumVertices());
+	const int32 IndexCount = static_cast<int32>(IndexBuffer.GetNumIndices());
+	if (VertexCount <= 0 || IndexCount < 3)
+	{
+		return false;
+	}
+
+	const TArray<FSRSourceQuad> SourceQuads = RecoverSourceQuads(PositionVertexBuffer, IndexBuffer, IndexCount);
+	if (SourceQuads.IsEmpty())
+	{
+		return false;
+	}
+
+	Cells.Reset(SourceQuads.Num());
+	Cells.Reserve(SourceQuads.Num());
+	const float OwnerScale = FMath::Max(0.0f, OwnerData.Scale);
+	if (OwnerScale <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	TMap<uint64, FIntPoint> CellEdgeBySourceEdge;
+	CellEdgeBySourceEdge.Reserve(SourceQuads.Num() * 4);
+
+	auto AssignNeighbor = [this](int32 CellIndex, int32 EdgeIndex, const FSRPlanetSurfaceGridCellId& NeighborId)
+	{
+		if (!Cells.IsValidIndex(CellIndex))
+		{
+			return;
+		}
+
+		switch (EdgeIndex)
+		{
+		case 0:
+			Cells[CellIndex].Neighbors.NegativeV = NeighborId;
+			break;
+		case 1:
+			Cells[CellIndex].Neighbors.PositiveU = NeighborId;
+			break;
+		case 2:
+			Cells[CellIndex].Neighbors.PositiveV = NeighborId;
+			break;
+		case 3:
+			Cells[CellIndex].Neighbors.NegativeU = NeighborId;
+			break;
+		default:
+			break;
+		}
+	};
+
+	for (int32 QuadIndex = 0; QuadIndex < SourceQuads.Num(); ++QuadIndex)
+	{
+		const FSRSourceQuad& SourceQuad = SourceQuads[QuadIndex];
+
+		FVector SourcePositions[4];
+		FVector SourceCenter = FVector::ZeroVector;
+		bool bHasValidVertices = true;
+		for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
+		{
+			const int32 SourceVertexIndex = SourceQuad.Vertices[CornerIndex];
+			if (SourceVertexIndex < 0 || SourceVertexIndex >= VertexCount)
+			{
+				bHasValidVertices = false;
+				break;
+			}
+
+			SourcePositions[CornerIndex] = FVector(PositionVertexBuffer.VertexPosition(SourceVertexIndex));
+			SourceCenter += SourcePositions[CornerIndex];
+		}
+
+		if (!bHasValidVertices)
+		{
+			continue;
+		}
+
+		SourceCenter /= 4.0f;
+		const FVector CellDirection = SourceCenter.GetSafeNormal();
+		if (CellDirection.IsNearlyZero())
+		{
+			continue;
+		}
+
+		float CellScale = 1.0f;
+		if (DynamicMeshGeneration.bDynamicMeshGeneration && DynamicMeshGeneration.DynamicMeshHeight > KINDA_SMALL_NUMBER)
+		{
+			const FSRPlanetTerrainSample TerrainSample = GetTerrainSampleAtDirection(CellDirection);
+			const float SourceCellRadius = FMath::Max(SourceCenter.Length(), 1.0f);
+			CellScale = FMath::Max(0.01f, (SourceCellRadius + TerrainSample.HeightOffset) / SourceCellRadius);
+		}
+
+		FVector TargetPositions[4];
+		for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
+		{
+			TargetPositions[CornerIndex] = SourcePositions[CornerIndex] * CellScale * OwnerScale;
+		}
+
+		FVector CellNormal = FVector::CrossProduct(
+			TargetPositions[1] - TargetPositions[0],
+			TargetPositions[2] - TargetPositions[0]).GetSafeNormal();
+		if (FVector::DotProduct(CellNormal, CellDirection) < 0.0f)
+		{
+			Swap(TargetPositions[1], TargetPositions[3]);
+			Swap(SourcePositions[1], SourcePositions[3]);
+			CellNormal *= -1.0f;
+		}
+		if (CellNormal.IsNearlyZero())
+		{
+			CellNormal = CellDirection;
+		}
+
+		FSRPlanetSurfaceGridCell Cell;
+		Cell.CellId.CellX = QuadIndex;
+		Cell.CellId.CellY = 0;
+		FVector2D UnusedFaceCoordinates = FVector2D::ZeroVector;
+		USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(CellDirection, 1, Cell.CellId, UnusedFaceCoordinates);
+		Cell.CellId.CellX = QuadIndex;
+		Cell.CellId.CellY = 0;
+		Cell.LocalCenter = (TargetPositions[0] + TargetPositions[1] + TargetPositions[2] + TargetPositions[3]) * 0.25f;
+		Cell.LocalNormal = CellNormal;
+		Cell.Corner00 = TargetPositions[0];
+		Cell.Corner10 = TargetPositions[1];
+		Cell.Corner11 = TargetPositions[2];
+		Cell.Corner01 = TargetPositions[3];
+		Cell.FaceUVMin = FVector2D::ZeroVector;
+		Cell.FaceUVMax = FVector2D::UnitVector;
+		Cell.ApproxSurfaceArea =
+			(FVector::CrossProduct(Cell.Corner10 - Cell.Corner00, Cell.Corner11 - Cell.Corner00).Size() * 0.5f)
+			+ (FVector::CrossProduct(Cell.Corner11 - Cell.Corner00, Cell.Corner01 - Cell.Corner00).Size() * 0.5f);
+
+		const int32 CellIndex = Cells.Num();
+		Cells.Add(Cell);
+
+		const uint64 EdgeKeys[4] =
+		{
+			BuildSourceEdgeKey(SourceQuad.Vertices[0], SourceQuad.Vertices[1]),
+			BuildSourceEdgeKey(SourceQuad.Vertices[1], SourceQuad.Vertices[2]),
+			BuildSourceEdgeKey(SourceQuad.Vertices[2], SourceQuad.Vertices[3]),
+			BuildSourceEdgeKey(SourceQuad.Vertices[3], SourceQuad.Vertices[0]),
+		};
+
+		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
+		{
+			if (const FIntPoint* ExistingCellEdge = CellEdgeBySourceEdge.Find(EdgeKeys[EdgeIndex]))
+			{
+				if (Cells.IsValidIndex(ExistingCellEdge->X))
+				{
+					AssignNeighbor(CellIndex, EdgeIndex, Cells[ExistingCellEdge->X].CellId);
+					AssignNeighbor(ExistingCellEdge->X, ExistingCellEdge->Y, Cells[CellIndex].CellId);
+				}
+				continue;
+			}
+
+			CellEdgeBySourceEdge.Add(EdgeKeys[EdgeIndex], FIntPoint(CellIndex, EdgeIndex));
+		}
+	}
+
+	bUsingRecoveredQuadCells = !Cells.IsEmpty();
+	return bUsingRecoveredQuadCells;
+}
+
 void USRPlanetSurfaceGrid::UpdateDebugTickState()
 {
 	SetComponentTickEnabled(false);
+}
+
+void USRPlanetSurfaceGrid::EnsureInteractionOverlay()
+{
+	if (InteractionOverlayMesh || IsTemplate())
+	{
+		return;
+	}
+
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor)
+	{
+		return;
+	}
+
+	InteractionOverlayMesh = NewObject<UDynamicMeshComponent>(OwnerActor, TEXT("SurfaceGridInteractionOverlay"));
+	if (!InteractionOverlayMesh)
+	{
+		return;
+	}
+
+	InteractionOverlayMesh->SetupAttachment(this);
+	InteractionOverlayMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InteractionOverlayMesh->SetGenerateOverlapEvents(false);
+	InteractionOverlayMesh->SetCastShadow(false);
+	InteractionOverlayMesh->SetVisibility(false);
+	InteractionOverlayMesh->SetHiddenInGame(true);
+	InteractionOverlayMesh->RegisterComponent();
+
+	if (UMaterialInterface* GridMaterial = GetMaterial(0))
+	{
+		InteractionOverlayMesh->SetMaterial(0, GridMaterial);
+	}
+}
+
+void USRPlanetSurfaceGrid::RefreshInteractionHighlight()
+{
+	ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner());
+	if (IsValid(OwnerBody)
+		&& OwnerBody->ApplySurfaceCellHighlights(
+			HoveredCellId,
+			bHasHoveredCell,
+			SelectedCellId,
+			bHasSelectedCell,
+			HoveredCellColor,
+			SelectedCellColor))
+	{
+		SetInteractionOverlayVisible(false);
+		return;
+	}
+
+	if (IsValid(OwnerBody) && !bHasHoveredCell && !bHasSelectedCell)
+	{
+		OwnerBody->ClearSurfaceCellHighlights();
+	}
+
+	RebuildInteractionOverlayMesh();
+}
+
+void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh()
+{
+	EnsureInteractionOverlay();
+	if (!InteractionOverlayMesh)
+	{
+		return;
+	}
+
+	UE::Geometry::FDynamicMesh3 OverlayMesh;
+	OverlayMesh.EnableAttributes();
+	OverlayMesh.Attributes()->EnablePrimaryColors();
+
+	FSRPlanetSurfaceGridCell SelectedCell;
+	if (bHasSelectedCell && GetCellById(SelectedCellId, SelectedCell))
+	{
+		AppendInteractionCell(OverlayMesh, SelectedCell, SelectedCellColor, DebugLineThickness * 2.5f);
+	}
+
+	if (bHasHoveredCell && (!bHasSelectedCell || !(HoveredCellId == SelectedCellId)))
+	{
+		FSRPlanetSurfaceGridCell HoveredCell;
+		if (GetCellById(HoveredCellId, HoveredCell))
+		{
+			AppendInteractionCell(OverlayMesh, HoveredCell, HoveredCellColor, DebugLineThickness * 2.0f);
+		}
+	}
+
+	InteractionOverlayMesh->SetMesh(MoveTemp(OverlayMesh));
+	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell));
+}
+
+void USRPlanetSurfaceGrid::SetInteractionOverlayVisible(bool bNewVisible)
+{
+	if (InteractionOverlayMesh)
+	{
+		InteractionOverlayMesh->SetVisibility(bNewVisible);
+		InteractionOverlayMesh->SetHiddenInGame(!bNewVisible);
+	}
+}
+
+void USRPlanetSurfaceGrid::AppendInteractionCell(
+	UE::Geometry::FDynamicMesh3& OverlayMesh,
+	const FSRPlanetSurfaceGridCell& Cell,
+	const FLinearColor& LineColor,
+	float LineThickness) const
+{
+	const float HighlightOffset = FMath::Max(0.5f, LineThickness * 0.25f);
+	auto AppendFilledQuad = [&OverlayMesh](const FVector& Point0, const FVector& Point1, const FVector& Point2, const FVector& Point3, FLinearColor FillColor)
+	{
+		FVector QuadPoints[4] = { Point0, Point1, Point2, Point3 };
+		FVector QuadNormal = FVector::CrossProduct(QuadPoints[1] - QuadPoints[0], QuadPoints[2] - QuadPoints[0]).GetSafeNormal();
+		const FVector OutwardDirection = ((Point0 + Point1 + Point2 + Point3) * 0.25f).GetSafeNormal();
+		if (!OutwardDirection.IsNearlyZero() && FVector::DotProduct(QuadNormal, OutwardDirection) < 0.0f)
+		{
+			Swap(QuadPoints[1], QuadPoints[3]);
+			QuadNormal *= -1.0f;
+		}
+		if (QuadNormal.IsNearlyZero())
+		{
+			QuadNormal = OutwardDirection.IsNearlyZero() ? FVector::UpVector : OutwardDirection;
+		}
+
+		FillColor.A = FMath::Clamp(FillColor.A * 0.55f, 0.0f, 1.0f);
+		const int32 Vertex0 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[0]));
+		const int32 Vertex1 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[1]));
+		const int32 Vertex2 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[2]));
+		const int32 Vertex3 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[3]));
+
+		const int32 Triangle0 = OverlayMesh.AppendTriangle(Vertex0, Vertex2, Vertex1);
+		const int32 Triangle1 = OverlayMesh.AppendTriangle(Vertex0, Vertex3, Vertex2);
+
+		UE::Geometry::FDynamicMeshNormalOverlay* NormalOverlay = OverlayMesh.Attributes()->PrimaryNormals();
+		auto* ColorOverlay = OverlayMesh.Attributes()->PrimaryColors();
+		if (!NormalOverlay || !ColorOverlay)
+		{
+			return;
+		}
+
+		const int32 Normal0 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 Normal1 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 Normal2 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 Normal3 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 Color0 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
+		const int32 Color1 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
+		const int32 Color2 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
+		const int32 Color3 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
+
+		if (Triangle0 >= 0)
+		{
+			NormalOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Normal0, Normal2, Normal1));
+			ColorOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Color0, Color2, Color1));
+		}
+		if (Triangle1 >= 0)
+		{
+			NormalOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Normal0, Normal3, Normal2));
+			ColorOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Color0, Color3, Color2));
+		}
+	};
+
+	if (bUsingRecoveredQuadCells)
+	{
+		const FVector Offset = Cell.LocalNormal.GetSafeNormal() * HighlightOffset;
+		AppendFilledQuad(Cell.Corner00 + Offset, Cell.Corner10 + Offset, Cell.Corner11 + Offset, Cell.Corner01 + Offset, LineColor);
+		AppendGridWireSegment(OverlayMesh, Cell.Corner00 + Offset, Cell.Corner10 + Offset, LineColor, LineThickness);
+		AppendGridWireSegment(OverlayMesh, Cell.Corner10 + Offset, Cell.Corner11 + Offset, LineColor, LineThickness);
+		AppendGridWireSegment(OverlayMesh, Cell.Corner11 + Offset, Cell.Corner01 + Offset, LineColor, LineThickness);
+		AppendGridWireSegment(OverlayMesh, Cell.Corner01 + Offset, Cell.Corner00 + Offset, LineColor, LineThickness);
+		return;
+	}
+
+	const FVector FillPoint00 = ResolveLocalSurfacePoint(Cell.Corner00.GetSafeNormal(), GridSurfaceOffset + HighlightOffset);
+	const FVector FillPoint10 = ResolveLocalSurfacePoint(Cell.Corner10.GetSafeNormal(), GridSurfaceOffset + HighlightOffset);
+	const FVector FillPoint11 = ResolveLocalSurfacePoint(Cell.Corner11.GetSafeNormal(), GridSurfaceOffset + HighlightOffset);
+	const FVector FillPoint01 = ResolveLocalSurfacePoint(Cell.Corner01.GetSafeNormal(), GridSurfaceOffset + HighlightOffset);
+	AppendFilledQuad(FillPoint00, FillPoint10, FillPoint11, FillPoint01, LineColor);
+	AppendGridWireCell(OverlayMesh, Cell, LineColor, LineThickness, false, nullptr);
 }
 
 void USRPlanetSurfaceGrid::RebuildGridMesh()
@@ -537,11 +1511,10 @@ void USRPlanetSurfaceGrid::RebuildGridMesh()
 	if (!Cells.IsEmpty())
 	{
 		const FLinearColor DefaultLineColor(DebugLineColor.R, DebugLineColor.G, DebugLineColor.B, DebugLineOpacity);
-		const FLinearColor HoverLineColor(HoveredCellColor.R, HoveredCellColor.G, HoveredCellColor.B, HoveredCellColor.A);
-		const FLinearColor SelectedLineColor(SelectedCellColor.R, SelectedCellColor.G, SelectedCellColor.B, SelectedCellColor.A);
 		const FLinearColor OccupiedLineColor(OccupiedCellColor.R, OccupiedCellColor.G, OccupiedCellColor.B, OccupiedCellColor.A);
 
-		const bool bAppendedOwnerWire = AppendOwnerDynamicMeshWire(GridMesh, DefaultLineColor, DebugLineThickness);
+		const bool bAppendedOwnerWire = !bUsingRecoveredQuadCells
+			&& AppendOwnerDynamicMeshWire(GridMesh, DefaultLineColor, DebugLineThickness);
 		if (!bAppendedOwnerWire)
 		{
 			TSet<uint64> DrawnEdges;
@@ -554,23 +1527,19 @@ void USRPlanetSurfaceGrid::RebuildGridMesh()
 
 		for (const FSRPlanetSurfaceGridCell& Cell : Cells)
 		{
-			const bool bIsHovered = bHasHoveredCell && (Cell.CellId == HoveredCellId);
-			const bool bIsSelected = bHasSelectedCell && (Cell.CellId == SelectedCellId);
-			const bool bShouldHighlightCell = bIsHovered || bIsSelected || Cell.bOccupied;
-			if (!bShouldHighlightCell)
+			if (!Cell.bOccupied)
 			{
 				continue;
 			}
 
-			const FLinearColor LineColor = bIsSelected ? SelectedLineColor : (bIsHovered ? HoverLineColor : OccupiedLineColor);
-			const float LineThickness = bIsSelected ? DebugLineThickness * 2.5f : (bIsHovered ? DebugLineThickness * 2.0f : DebugLineThickness);
-			AppendGridWireCell(GridMesh, Cell, LineColor, LineThickness, false, nullptr);
+			AppendGridWireCell(GridMesh, Cell, OccupiedLineColor, DebugLineThickness, false, nullptr);
 		}
 	}
 
 	SetMesh(MoveTemp(GridMesh));
 	SetVisibility(bGridVisible);
 	SetHiddenInGame(!bGridVisible);
+	bGridMeshDirty = false;
 }
 
 bool USRPlanetSurfaceGrid::AppendOwnerDynamicMeshWire(
@@ -624,6 +1593,32 @@ void USRPlanetSurfaceGrid::AppendGridWireCell(
 	bool bIncludeInEdgeSet,
 	TSet<uint64>* DrawnEdges) const
 {
+	auto AppendDedupedSegment = [&GridMesh, &LineColor, LineThickness, bIncludeInEdgeSet, DrawnEdges, this](
+		const FVector& PointA,
+		const FVector& PointB)
+	{
+		if (bIncludeInEdgeSet && DrawnEdges)
+		{
+			const uint64 EdgeKey = BuildGridEdgeKey(PointA, PointB);
+			if (DrawnEdges->Contains(EdgeKey))
+			{
+				return;
+			}
+			DrawnEdges->Add(EdgeKey);
+		}
+
+		AppendGridWireSegment(GridMesh, PointA, PointB, LineColor, LineThickness);
+	};
+
+	if (bUsingRecoveredQuadCells)
+	{
+		AppendDedupedSegment(Cell.Corner00, Cell.Corner10);
+		AppendDedupedSegment(Cell.Corner10, Cell.Corner11);
+		AppendDedupedSegment(Cell.Corner11, Cell.Corner01);
+		AppendDedupedSegment(Cell.Corner01, Cell.Corner00);
+		return;
+	}
+
 	auto AppendEdge = [this, &GridMesh, &LineColor, LineThickness, bIncludeInEdgeSet, DrawnEdges](
 		const FVector& CornerA,
 		const FVector& CornerB)

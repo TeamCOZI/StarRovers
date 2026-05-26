@@ -192,4 +192,10 @@ private:
     FVector DragStartTargetLocation;
     FVector2D FocusSurfaceInput;
     FRotator FocusSurfaceOffset;
+    FVector LastDynamicMeshVisibilityCameraLocation;
+    FRotator LastDynamicMeshVisibilityCameraRotation;
+    TWeakObjectPtr<AActor> LastDynamicMeshVisibilityFocusedActor;
+    float LastDynamicMeshVisibilityZoomDistance;
+    double LastDynamicMeshVisibilityUpdateTime;
+    bool bHasDynamicMeshVisibilityState;
 };

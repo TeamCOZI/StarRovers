@@ -3,13 +3,17 @@
 #include "Camera/SRCameraPawn.h"
 #include "Camera/SRPlayerController.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
-#include "EngineUtils.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 USRAssemblyComponent::USRAssemblyComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
 	bAssemblyModeActive = false;
+	ActiveAssemblySurfaceGrid = nullptr;
+	LastHoveredSampleSurfaceGrid = nullptr;
+	LastHoveredSampleMousePosition = FVector2D::ZeroVector;
+	bHasLastHoveredSampleMousePosition = false;
 }
 
 void USRAssemblyComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -43,6 +47,7 @@ void USRAssemblyComponent::SetAssemblyModeActive(bool bNewAssemblyModeActive)
 	}
 
 	bAssemblyModeActive = bNewAssemblyModeActive;
+	ResetHoverSampleCache();
 	ApplyAssemblyModeToFocusedSurfaceGrid();
 }
 
@@ -65,12 +70,8 @@ bool USRAssemblyComponent::TryHandleAssemblyClick(AActor*& OutSelectedActor)
 	USRPlanetSurfaceGrid* FocusedSurfaceGrid = nullptr;
 	FSRPlanetSurfaceGridCell HoveredCell;
 	FVector HoverHitLocation = FVector::ZeroVector;
-	FHitResult CursorHitResult;
-	const bool bHasCursorHit = PlayerController->GetHitResultUnderCursor(ECC_Visibility, false, CursorHitResult);
 
 	if (TryGetFocusedSurfaceGrid(FocusedActor, FocusedSurfaceGrid)
-		&& bHasCursorHit
-		&& CursorHitResult.GetActor() == FocusedActor
 		&& TryProjectCursorToSurfaceCell(FocusedSurfaceGrid, HoveredCell, HoverHitLocation))
 	{
 		FocusedSurfaceGrid->SetSelectedCell(HoveredCell.CellId);
@@ -90,11 +91,16 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 		CurrentSurfaceGrid->ClearSelectedCell();
 		CurrentSurfaceGrid->SetGridVisible(false);
 	}
+	if (CurrentSurfaceGrid == ActiveAssemblySurfaceGrid)
+	{
+		ActiveAssemblySurfaceGrid = nullptr;
+	}
 
 	if (!IsValid(SurfaceActor) || CurrentSurfaceGrid == HoveredSurfaceGrid)
 	{
 		HoveredSurfaceGrid = nullptr;
 	}
+	ResetHoverSampleCache();
 }
 
 void USRAssemblyComponent::ClearSurfaceHover()
@@ -105,6 +111,7 @@ void USRAssemblyComponent::ClearSurfaceHover()
 	}
 
 	HoveredSurfaceGrid = nullptr;
+	ResetHoverSampleCache();
 }
 
 ASRPlayerController* USRAssemblyComponent::GetOwnerController() const
@@ -162,6 +169,12 @@ bool USRAssemblyComponent::TryProjectCursorToSurfaceCell(USRPlanetSurfaceGrid* S
 		return false;
 	}
 
+	if (AActor* OwnerActor = SurfaceGrid->GetOwner())
+	{
+		OwnerActor->UpdateComponentTransforms();
+	}
+	SurfaceGrid->UpdateComponentToWorld();
+
 	FVector RayOrigin = FVector::ZeroVector;
 	FVector RayDirection = FVector::ZeroVector;
 	if (!GetCursorRay(RayOrigin, RayDirection))
@@ -195,11 +208,15 @@ void USRAssemblyComponent::UpdateSurfaceHover()
 		return;
 	}
 
-	FHitResult HitResult;
-	const bool bHasCursorHit = PlayerController->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-	if (!bHasCursorHit || HitResult.GetActor() != FocusedActor)
+	FVector2D CurrentMousePosition = FVector2D::ZeroVector;
+	const bool bHasMousePosition = PlayerController->GetMousePosition(CurrentMousePosition.X, CurrentMousePosition.Y);
+	if (bHasMousePosition
+		&& bHasLastHoveredSampleMousePosition
+		&& LastHoveredSampleSurfaceGrid == SurfaceGrid
+		&& HoveredSurfaceGrid == SurfaceGrid
+		&& SurfaceGrid->HasHoveredCell()
+		&& FVector2D::Distance(CurrentMousePosition, LastHoveredSampleMousePosition) <= 0.5f)
 	{
-		ClearSurfaceHover();
 		return;
 	}
 
@@ -218,6 +235,12 @@ void USRAssemblyComponent::UpdateSurfaceHover()
 
 	HoveredSurfaceGrid = SurfaceGrid;
 	HoveredSurfaceGrid->SetHoveredCell(HoveredCell.CellId);
+	if (bHasMousePosition)
+	{
+		LastHoveredSampleSurfaceGrid = SurfaceGrid;
+		LastHoveredSampleMousePosition = CurrentMousePosition;
+		bHasLastHoveredSampleMousePosition = true;
+	}
 }
 
 void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
@@ -225,12 +248,17 @@ void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
 	AActor* FocusedActor = nullptr;
 	USRPlanetSurfaceGrid* FocusedSurfaceGrid = nullptr;
 	const bool bHasFocusedSurfaceGrid = TryGetFocusedSurfaceGrid(FocusedActor, FocusedSurfaceGrid);
+	USRPlanetSurfaceGrid* DesiredSurfaceGrid = bAssemblyModeActive && bHasFocusedSurfaceGrid ? FocusedSurfaceGrid : nullptr;
 
-	HideAllSurfaceGridsExcept(bAssemblyModeActive && bHasFocusedSurfaceGrid ? FocusedSurfaceGrid : nullptr);
-
-	if (bHasFocusedSurfaceGrid)
+	if (ActiveAssemblySurfaceGrid && ActiveAssemblySurfaceGrid != DesiredSurfaceGrid)
 	{
-		FocusedSurfaceGrid->SetGridVisible(bAssemblyModeActive);
+		ActiveAssemblySurfaceGrid->SetGridVisible(false);
+	}
+
+	ActiveAssemblySurfaceGrid = DesiredSurfaceGrid;
+	if (ActiveAssemblySurfaceGrid)
+	{
+		ActiveAssemblySurfaceGrid->SetGridVisible(true);
 	}
 
 	if (!bAssemblyModeActive)
@@ -239,28 +267,9 @@ void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
 	}
 }
 
-void USRAssemblyComponent::HideAllSurfaceGridsExcept(USRPlanetSurfaceGrid* SurfaceGridToKeep)
+void USRAssemblyComponent::ResetHoverSampleCache()
 {
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
-	for (TActorIterator<AActor> It(World); It; ++It)
-	{
-		AActor* Actor = *It;
-		if (!IsValid(Actor))
-		{
-			continue;
-		}
-
-		if (USRPlanetSurfaceGrid* SurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(Actor))
-		{
-			if (SurfaceGrid != SurfaceGridToKeep)
-			{
-				SurfaceGrid->SetGridVisible(false);
-			}
-		}
-	}
+	LastHoveredSampleSurfaceGrid = nullptr;
+	LastHoveredSampleMousePosition = FVector2D::ZeroVector;
+	bHasLastHoveredSampleMousePosition = false;
 }

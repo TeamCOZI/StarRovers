@@ -4,6 +4,7 @@
 #include "Components/DynamicMeshComponent.h"
 #include "GameFramework/Actor.h"
 #include "Celestial/SRCelestialBodyCategory.h"
+#include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "Surface/SRPlanetTerrainTypes.h"
 #include "SRCelestialBody.generated.h"
 
@@ -22,6 +23,32 @@ class UStaticMesh;
 class UStaticMeshComponent;
 class USRGravityParent;
 class USRCelestialBodyRegistrySubsystem;
+
+struct FSRCelestialBodyDynamicMeshColorElement
+{
+	int32 ElementId = INDEX_NONE;
+	FLinearColor BaseColor = FLinearColor::White;
+};
+
+struct FSRCelestialBodyDynamicMeshMaterialTriangle
+{
+	int32 TriangleId = INDEX_NONE;
+	int32 BaseMaterialId = 0;
+};
+
+struct FSRCelestialBodyDynamicMeshQuadRenderData
+{
+	TArray<FSRCelestialBodyDynamicMeshColorElement> ColorElements;
+	TArray<FSRCelestialBodyDynamicMeshMaterialTriangle> MaterialTriangles;
+};
+
+struct FSRCelestialBodyDynamicMeshCellColorData
+{
+	TArray<FSRCelestialBodyDynamicMeshColorElement> SurfaceColorElements;
+	TArray<FSRCelestialBodyDynamicMeshColorElement> SideColorElements;
+	TArray<FSRCelestialBodyDynamicMeshMaterialTriangle> SurfaceMaterialTriangles;
+	TArray<FSRCelestialBodyDynamicMeshMaterialTriangle> SideMaterialTriangles;
+};
 
 USTRUCT(BlueprintType)
 struct STARROVERS_API FSRCelestialBodyData
@@ -194,6 +221,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
 	virtual USRPlanetSurfaceGrid* GetSurfaceGrid() const;
 
+	bool ApplySurfaceCellHighlights(
+		const FSRPlanetSurfaceGridCellId& HoveredCellId,
+		bool bHasHoveredCell,
+		const FSRPlanetSurfaceGridCellId& SelectedCellId,
+		bool bHasSelectedCell,
+		const FLinearColor& HoveredCellColor,
+		const FLinearColor& SelectedCellColor);
+	void ClearSurfaceCellHighlights();
+	bool HasSurfaceCellRenderData(const FSRPlanetSurfaceGridCellId& CellId) const;
+	bool GetCachedSurfaceGridCells(TArray<FSRPlanetSurfaceGridCell>& OutCells) const;
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SceneRoot"))
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -260,6 +298,8 @@ private:
 	void ApplyGravityLineSettings();
 	void EnsureCelestialBodyDynamicMeshVisuals();
 	bool CopyStaticMeshToCelestialBodyDynamicMesh();
+	uint32 ComputeDynamicMeshBuildHash() const;
+	void ResetDynamicMeshCellColorData();
 	USRCelestialBodyRegistrySubsystem* FindCelestialRegistry() const;
 	bool IsStellarBody() const;
 	void LogMissingDataErrorOnce(const TCHAR* Context) const;
@@ -267,5 +307,14 @@ private:
 	bool bHasAppliedData = false;
 
 	mutable bool bHasLoggedMissingDataError = false;
+
+	TMap<FSRPlanetSurfaceGridCellId, FSRCelestialBodyDynamicMeshCellColorData> DynamicMeshColorDataByCell;
+	TMap<int32, FLinearColor> DynamicMeshBaseColorByElement;
+	TMap<int32, int32> DynamicMeshBaseMaterialByTriangle;
+	TSet<int32> HighlightedDynamicMeshColorElements;
+	TSet<int32> HighlightedDynamicMeshMaterialTriangles;
+	TArray<FSRPlanetSurfaceGridCell> CachedSurfaceGridCells;
+	uint32 CachedDynamicMeshBuildHash = 0;
+	bool bHasCachedDynamicMeshBuildHash = false;
 
 };

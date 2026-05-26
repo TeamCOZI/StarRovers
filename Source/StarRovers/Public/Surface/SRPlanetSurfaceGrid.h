@@ -99,6 +99,9 @@ public:
     void SetGridVisible(bool bNewGridVisible);
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Debug")
+    void PrepareGridForAssembly();
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Debug")
     void ConfigureDebugGrid(
         FLinearColor NewGridLineColor,
         float NewGridLineOpacity,
@@ -181,10 +184,30 @@ protected:
     UPROPERTY()
     FSRPlanetSurfaceGridCellId SelectedCellId;
 
+    UPROPERTY()
+    bool bUsingRecoveredQuadCells;
+
+    UPROPERTY()
+    bool bGridMeshDirty;
+
+    UPROPERTY()
+    bool bCellsDirty;
+
 private:
+    bool RebuildCellsFromOwnerStaticMeshQuads();
+    void EnsureInteractionOverlay();
+    void RefreshInteractionHighlight();
+    void RebuildInteractionOverlayMesh();
+    void SetInteractionOverlayVisible(bool bNewVisible);
     bool GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const;
     void RebuildCellIndex();
+    void RebuildRaycastIndex();
+    uint64 BuildRaycastBinKey(const FSRPlanetSurfaceGridCellId& BinId) const;
+    void AddCellToRaycastBin(const FSRPlanetSurfaceGridCellId& BinId, int32 CellIndex);
+    bool GetRaycastBinForDirection(const FVector& LocalDirection, FSRPlanetSurfaceGridCellId& OutBinId) const;
+    void GatherRaycastCandidateCells(const FVector& LocalDirection, TArray<int32>& OutCandidateCellIndices) const;
     void UpdateDebugTickState();
+    void AppendInteractionCell(UE::Geometry::FDynamicMesh3& OverlayMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness) const;
     void RebuildGridMesh();
     bool AppendOwnerDynamicMeshWire(UE::Geometry::FDynamicMesh3& GridMesh, const FLinearColor& LineColor, float LineThickness) const;
     void AppendGridWireCell(UE::Geometry::FDynamicMesh3& GridMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness, bool bIncludeInEdgeSet, TSet<uint64>* DrawnEdges) const;
@@ -199,4 +222,9 @@ private:
     bool IntersectRayWithSurfaceSphere(const FVector& RayOrigin, const FVector& RayDirection, FVector& OutHitLocation) const;
 
     TMap<FSRPlanetSurfaceGridCellId, int32> CellIndexById;
+    TMap<uint64, TArray<int32>> RaycastCellIndicesByBin;
+    static constexpr int32 RaycastBinResolution = 32;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UDynamicMeshComponent> InteractionOverlayMesh;
 };

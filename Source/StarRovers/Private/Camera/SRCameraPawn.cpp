@@ -159,6 +159,12 @@ ASRCameraPawn::ASRCameraPawn()
 	DragStartTargetLocation = FVector::ZeroVector;
 	FocusSurfaceInput = FVector2D::ZeroVector;
 	FocusSurfaceOffset = FRotator::ZeroRotator;
+	LastDynamicMeshVisibilityCameraLocation = FVector::ZeroVector;
+	LastDynamicMeshVisibilityCameraRotation = FRotator::ZeroRotator;
+	LastDynamicMeshVisibilityFocusedActor = nullptr;
+	LastDynamicMeshVisibilityZoomDistance = 0.0f;
+	LastDynamicMeshVisibilityUpdateTime = -BIG_NUMBER;
+	bHasDynamicMeshVisibilityState = false;
 
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> DefaultMappingContextFinder(StarRoversInputPaths::DefaultMappingContext);
 	if (DefaultMappingContextFinder.Succeeded())
@@ -1055,6 +1061,33 @@ void ASRCameraPawn::RefreshScreenSpaceThicknessReferenceView()
 
 void ASRCameraPawn::UpdateDynamicMeshVisibility()
 {
+	if (!Camera)
+	{
+		return;
+	}
+
+	constexpr double MinRefreshIntervalSeconds = 0.10;
+	constexpr float MinCameraMoveDistance = 25.0f;
+	constexpr float MinZoomDelta = 25.0f;
+	constexpr float MinRotationDeltaDegrees = 0.25f;
+
+	const UWorld* World = GetWorld();
+	const double CurrentTime = World ? World->GetTimeSeconds() : 0.0;
+	const FVector CameraLocation = Camera->GetComponentLocation();
+	const FRotator CameraRotation = Camera->GetComponentRotation();
+	const float CurrentZoomDistance = SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget;
+	AActor* CurrentFocusedActor = FocusedActor.Get();
+
+	const bool bFocusChanged = LastDynamicMeshVisibilityFocusedActor.Get() != CurrentFocusedActor;
+	const bool bMovedEnough = FVector::DistSquared(CameraLocation, LastDynamicMeshVisibilityCameraLocation) >= FMath::Square(MinCameraMoveDistance);
+	const bool bZoomedEnough = FMath::Abs(CurrentZoomDistance - LastDynamicMeshVisibilityZoomDistance) >= MinZoomDelta;
+	const bool bRotatedEnough = !CameraRotation.Equals(LastDynamicMeshVisibilityCameraRotation, MinRotationDeltaDegrees);
+	const bool bIntervalElapsed = (CurrentTime - LastDynamicMeshVisibilityUpdateTime) >= MinRefreshIntervalSeconds;
+	if (bHasDynamicMeshVisibilityState && !bFocusChanged && !bMovedEnough && !bZoomedEnough && !bRotatedEnough && !bIntervalElapsed)
+	{
+		return;
+	}
+
 	AActor* DirectionalLightTarget = nullptr;
 	if (ApplyCelestialBodyMeshVisibility(DirectionalLightTarget))
 	{
@@ -1064,6 +1097,13 @@ void ASRCameraPawn::UpdateDynamicMeshVisibility()
 	{
 		ConfigureDirectionalLight(nullptr);
 	}
+
+	LastDynamicMeshVisibilityCameraLocation = CameraLocation;
+	LastDynamicMeshVisibilityCameraRotation = CameraRotation;
+	LastDynamicMeshVisibilityFocusedActor = CurrentFocusedActor;
+	LastDynamicMeshVisibilityZoomDistance = CurrentZoomDistance;
+	LastDynamicMeshVisibilityUpdateTime = CurrentTime;
+	bHasDynamicMeshVisibilityState = true;
 }
 
 bool ASRCameraPawn::ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLightTarget)

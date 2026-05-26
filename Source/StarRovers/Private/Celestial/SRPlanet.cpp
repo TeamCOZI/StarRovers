@@ -335,8 +335,8 @@ void ASRPlanet::EnsureSurfaceGrid()
 {
 	if (IsValid(SurfaceGrid))
 	{
-		SurfaceGrid->SetVisibility(true);
-		SurfaceGrid->SetHiddenInGame(false);
+		SurfaceGrid->SetVisibility(SurfaceGrid->IsGridVisible());
+		SurfaceGrid->SetHiddenInGame(!SurfaceGrid->IsGridVisible());
 	}
 }
 

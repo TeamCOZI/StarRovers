@@ -38,6 +38,15 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "bAssemblyModeActive"))
 	bool bAssemblyModeActive;
 
+	UPROPERTY(Transient)
+	TObjectPtr<USRPlanetSurfaceGrid> ActiveAssemblySurfaceGrid;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRPlanetSurfaceGrid> LastHoveredSampleSurfaceGrid;
+
+	FVector2D LastHoveredSampleMousePosition;
+	bool bHasLastHoveredSampleMousePosition;
+
 private:
 	ASRPlayerController* GetOwnerController() const;
 	bool GetCursorRay(FVector& OutRayOrigin, FVector& OutRayDirection) const;
@@ -45,5 +54,5 @@ private:
 	bool TryProjectCursorToSurfaceCell(USRPlanetSurfaceGrid* SurfaceGrid, FSRPlanetSurfaceGridCell& OutCell, FVector& OutHitLocation) const;
 	void UpdateSurfaceHover();
 	void ApplyAssemblyModeToFocusedSurfaceGrid();
-	void HideAllSurfaceGridsExcept(USRPlanetSurfaceGrid* SurfaceGridToKeep);
+	void ResetHoverSampleCache();
 };

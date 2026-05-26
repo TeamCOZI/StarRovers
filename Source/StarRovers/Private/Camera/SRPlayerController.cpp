@@ -8,6 +8,7 @@
 #include "InputAction.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
+#include "TimerManager.h"
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 #include "UI/SRCelestialBodyOverviewWidget.h"
 #include "UI/SRTimeControlWidget.h"
@@ -478,6 +479,22 @@ void ASRPlayerController::HandleFocusedActorChanged(AActor* NewFocusedActor)
 		{
 			AssemblyComponent->ClearSurfaceHover();
 		}
+	}
+	else if (USRPlanetSurfaceGrid* FocusedSurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(NewFocusedActor))
+	{
+		TWeakObjectPtr<USRPlanetSurfaceGrid> WeakSurfaceGrid = FocusedSurfaceGrid;
+		FTimerHandle PrepareGridTimerHandle;
+		GetWorldTimerManager().SetTimer(
+			PrepareGridTimerHandle,
+			[WeakSurfaceGrid]()
+			{
+				if (USRPlanetSurfaceGrid* SurfaceGrid = WeakSurfaceGrid.Get())
+				{
+					SurfaceGrid->PrepareGridForAssembly();
+				}
+			},
+			0.15f,
+			false);
 	}
 
 	if (!IsValid(NewFocusedActor) || SelectedActor != NewFocusedActor)
