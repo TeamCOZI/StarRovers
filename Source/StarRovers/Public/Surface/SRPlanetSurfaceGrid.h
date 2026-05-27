@@ -12,6 +12,8 @@ namespace UE::Geometry
     class FDynamicMesh3;
 }
 
+class UMaterialInterface;
+
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
 class STARROVERS_API USRPlanetSurfaceGrid : public UDynamicMeshComponent
 {
@@ -112,6 +114,9 @@ public:
         float NewSurfaceOffset);
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
+    void SetGridOverlayMaterial(UMaterialInterface* NewGridOverlayMaterial);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     void ConfigureConstructionHeightOffset(float NewConstructionHeightOffset);
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Debug")
@@ -168,6 +173,9 @@ protected:
 
     UPROPERTY()
     float GridSurfaceOffset;
+
+    UPROPERTY()
+    TObjectPtr<UMaterialInterface> GridOverlayMaterial;
 
     UPROPERTY()
     FSRDynamicMeshGeneration DynamicMeshGeneration;

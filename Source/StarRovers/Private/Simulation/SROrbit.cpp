@@ -1,5 +1,6 @@
 #include "Simulation/SROrbit.h"
 
+#include "Celestial/SRCelestialBody.h"
 #include "Components/LineBatchComponent.h"
 #include "Components/SceneComponent.h"
 #include "Simulation/SRTimeControlSubsystem.h"
@@ -120,6 +121,10 @@ void USROrbit::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorCo
 	if (!Owner->GetActorLocation().Equals(OrbitLocation, 0.1f))
 	{
 		Owner->SetActorLocation(OrbitLocation, false, nullptr, ETeleportType::TeleportPhysics);
+		if (ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(Owner))
+		{
+			CelestialBody->RefreshMaterialParameters();
+		}
 	}
 }
 
@@ -158,6 +163,10 @@ void USROrbit::ResetOrbitSimulation()
 		if (!Owner->GetActorLocation().Equals(OrbitLocation, 0.1f))
 		{
 			Owner->SetActorLocation(OrbitLocation, false, nullptr, ETeleportType::TeleportPhysics);
+			if (ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(Owner))
+			{
+				CelestialBody->RefreshMaterialParameters();
+			}
 		}
 	}
 }

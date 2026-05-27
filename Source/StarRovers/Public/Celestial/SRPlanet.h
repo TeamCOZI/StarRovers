@@ -57,6 +57,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "OccupiedCellColor"))
 	FLinearColor OccupiedCellColor;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "GridOverlayMaterial"))
+	TObjectPtr<UMaterialInterface> GridOverlayMaterial;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Orbit", meta = (DisplayName = "ShowOrbitLine"))
 	bool ShowOrbitLine;
 

@@ -35,6 +35,7 @@ ASRPlanet::ASRPlanet()
 	HoveredCellColor = FLinearColor(1.0f, 0.85f, 0.2f, 1.0f);
 	SelectedCellColor = FLinearColor(0.25f, 1.0f, 0.35f, 1.0f);
 	OccupiedCellColor = FLinearColor(1.0f, 0.35f, 0.35f, 1.0f);
+	GridOverlayMaterial = nullptr;
 	ShowOrbitLine = true;
 	OrbitLineColor = FLinearColor(0.2f, 0.75f, 1.0f, 1.0f);
 	OrbitLineOpacity = 0.85f;
@@ -155,6 +156,7 @@ void ASRPlanet::ApplyData()
 				SelectedCellColor,
 				OccupiedCellColor,
 				SurfaceGridHeightOffset);
+			SurfaceGrid->SetGridOverlayMaterial(GridOverlayMaterial);
 			SurfaceGrid->ConfigureConstructionHeightOffset(ConstructionHeightOffset);
 			SurfaceGrid->ConfigureTerrain(DynamicMeshGeneration);
 		}

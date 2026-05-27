@@ -21,22 +21,149 @@
 
 namespace
 {
-	uint32 HashGridDirection(const FVector& LocalDirection)
+	uint32 HashGridPoint(const FVector& LocalPoint)
 	{
-		const FVector Direction = LocalDirection.GetSafeNormal();
-		const int32 QuantizedX = FMath::RoundToInt((Direction.X + 1.0) * 100000.0);
-		const int32 QuantizedY = FMath::RoundToInt((Direction.Y + 1.0) * 100000.0);
-		const int32 QuantizedZ = FMath::RoundToInt((Direction.Z + 1.0) * 100000.0);
-		return HashCombine(HashCombine(::GetTypeHash(QuantizedX), ::GetTypeHash(QuantizedY)), ::GetTypeHash(QuantizedZ));
+		constexpr double QuantizeScale = 100.0;
+		const int64 QuantizedX = FMath::RoundToInt64(LocalPoint.X * QuantizeScale);
+		const int64 QuantizedY = FMath::RoundToInt64(LocalPoint.Y * QuantizeScale);
+		const int64 QuantizedZ = FMath::RoundToInt64(LocalPoint.Z * QuantizeScale);
+		auto HashInt64 = [](int64 Value)
+		{
+			const uint64 Bits = static_cast<uint64>(Value);
+			return HashCombine(
+				::GetTypeHash(static_cast<uint32>(Bits & 0xffffffff)),
+				::GetTypeHash(static_cast<uint32>(Bits >> 32)));
+		};
+		return HashCombine(HashCombine(HashInt64(QuantizedX), HashInt64(QuantizedY)), HashInt64(QuantizedZ));
 	}
 
-	uint64 BuildGridEdgeKey(const FVector& LocalDirectionA, const FVector& LocalDirectionB)
+	uint64 BuildGridEdgeKey(const FVector& LocalPointA, const FVector& LocalPointB)
 	{
-		const uint32 EndpointA = HashGridDirection(LocalDirectionA);
-		const uint32 EndpointB = HashGridDirection(LocalDirectionB);
+		const uint32 EndpointA = HashGridPoint(LocalPointA);
+		const uint32 EndpointB = HashGridPoint(LocalPointB);
 		const uint32 MinEndpoint = FMath::Min(EndpointA, EndpointB);
 		const uint32 MaxEndpoint = FMath::Max(EndpointA, EndpointB);
 		return (static_cast<uint64>(MinEndpoint) << 32) | static_cast<uint64>(MaxEndpoint);
+	}
+
+	bool GetGridCellEdgePoints(const FSRPlanetSurfaceGridCell& Cell, int32 EdgeIndex, FVector& OutPointA, FVector& OutPointB)
+	{
+		switch (EdgeIndex)
+		{
+		case 0:
+			OutPointA = Cell.Corner00;
+			OutPointB = Cell.Corner10;
+			return true;
+		case 1:
+			OutPointA = Cell.Corner10;
+			OutPointB = Cell.Corner11;
+			return true;
+		case 2:
+			OutPointA = Cell.Corner11;
+			OutPointB = Cell.Corner01;
+			return true;
+		case 3:
+			OutPointA = Cell.Corner01;
+			OutPointB = Cell.Corner00;
+			return true;
+		default:
+			OutPointA = FVector::ZeroVector;
+			OutPointB = FVector::ZeroVector;
+			return false;
+		}
+	}
+
+	FSRPlanetSurfaceGridCellId GetGridCellEdgeNeighborId(const FSRPlanetSurfaceGridCell& Cell, int32 EdgeIndex)
+	{
+		switch (EdgeIndex)
+		{
+		case 0:
+			return Cell.Neighbors.NegativeV;
+		case 1:
+			return Cell.Neighbors.PositiveU;
+		case 2:
+			return Cell.Neighbors.PositiveV;
+		case 3:
+			return Cell.Neighbors.NegativeU;
+		default:
+			return Cell.CellId;
+		}
+	}
+
+	float GetGridEdgeDirectionMatchScore(
+		const FVector& PointA,
+		const FVector& PointB,
+		const FVector& CandidatePointA,
+		const FVector& CandidatePointB)
+	{
+		const FVector DirectionA = PointA.GetSafeNormal();
+		const FVector DirectionB = PointB.GetSafeNormal();
+		const FVector CandidateDirectionA = CandidatePointA.GetSafeNormal();
+		const FVector CandidateDirectionB = CandidatePointB.GetSafeNormal();
+		if (DirectionA.IsNearlyZero() || DirectionB.IsNearlyZero() || CandidateDirectionA.IsNearlyZero() || CandidateDirectionB.IsNearlyZero())
+		{
+			return TNumericLimits<float>::Max();
+		}
+
+		return static_cast<float>(
+			FVector::DistSquared(DirectionA, CandidateDirectionA)
+			+ FVector::DistSquared(DirectionB, CandidateDirectionB));
+	}
+
+	bool TryGetMatchingGridCellEdgePoints(
+		const FSRPlanetSurfaceGridCell& Cell,
+		int32 EdgeIndex,
+		const FSRPlanetSurfaceGridCell& NeighborCell,
+		FVector& OutCellPointA,
+		FVector& OutCellPointB,
+		FVector& OutNeighborPointA,
+		FVector& OutNeighborPointB)
+	{
+		if (!GetGridCellEdgePoints(Cell, EdgeIndex, OutCellPointA, OutCellPointB))
+		{
+			return false;
+		}
+
+		float BestScore = TNumericLimits<float>::Max();
+		for (int32 NeighborEdgeIndex = 0; NeighborEdgeIndex < 4; ++NeighborEdgeIndex)
+		{
+			FVector CandidatePointA;
+			FVector CandidatePointB;
+			if (!GetGridCellEdgePoints(NeighborCell, NeighborEdgeIndex, CandidatePointA, CandidatePointB))
+			{
+				continue;
+			}
+
+			const float ForwardScore = GetGridEdgeDirectionMatchScore(OutCellPointA, OutCellPointB, CandidatePointA, CandidatePointB);
+			if (ForwardScore < BestScore)
+			{
+				BestScore = ForwardScore;
+				OutNeighborPointA = CandidatePointA;
+				OutNeighborPointB = CandidatePointB;
+			}
+
+			const float ReverseScore = GetGridEdgeDirectionMatchScore(OutCellPointA, OutCellPointB, CandidatePointB, CandidatePointA);
+			if (ReverseScore < BestScore)
+			{
+				BestScore = ReverseScore;
+				OutNeighborPointA = CandidatePointB;
+				OutNeighborPointB = CandidatePointA;
+			}
+		}
+
+		return BestScore <= 0.0001f;
+	}
+
+	FVector OffsetRecoveredGridWirePoint(const FVector& LocalPoint, float SurfaceOffset, float LineThickness)
+	{
+		FVector SurfaceNormal = LocalPoint.GetSafeNormal();
+		if (SurfaceNormal.IsNearlyZero())
+		{
+			SurfaceNormal = FVector::UpVector;
+		}
+
+		const float EffectiveSurfaceOffset = FMath::Max(SurfaceOffset, FMath::Max(4.0f, LineThickness * 6.0f));
+		return LocalPoint + (SurfaceNormal * EffectiveSurfaceOffset);
 	}
 
 	struct FSRSurfaceGridSourceTriangle
@@ -358,13 +485,18 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 		TEXT("/Engine/EngineDebugMaterials/VertexColorMaterial.VertexColorMaterial"));
 	if (VertexColorMaterialFinder.Succeeded())
 	{
-		SetMaterial(0, VertexColorMaterialFinder.Object);
+		GridOverlayMaterial = VertexColorMaterialFinder.Object;
+		SetMaterial(0, GridOverlayMaterial);
 	}
 }
 
 void USRPlanetSurfaceGrid::OnRegister()
 {
 	Super::OnRegister();
+	if (GridOverlayMaterial)
+	{
+		SetMaterial(0, GridOverlayMaterial);
+	}
 	UpdateDebugTickState();
 
 	if (bRebuildGridOnRegister && !IsTemplate())
@@ -730,6 +862,7 @@ bool USRPlanetSurfaceGrid::SetHoveredCell(const FSRPlanetSurfaceGridCellId& Cell
 	bHasHoveredCell = true;
 	HoveredCellId = CellId;
 	RefreshInteractionHighlight();
+	UpdateDebugTickState();
 	return true;
 }
 
@@ -743,6 +876,7 @@ void USRPlanetSurfaceGrid::ClearHoveredCell()
 	bHasHoveredCell = false;
 	HoveredCellId = FSRPlanetSurfaceGridCellId();
 	RefreshInteractionHighlight();
+	UpdateDebugTickState();
 }
 
 bool USRPlanetSurfaceGrid::HasHoveredCell() const
@@ -771,6 +905,7 @@ bool USRPlanetSurfaceGrid::SetSelectedCell(const FSRPlanetSurfaceGridCellId& Cel
 	bHasSelectedCell = true;
 	SelectedCellId = CellId;
 	RefreshInteractionHighlight();
+	UpdateDebugTickState();
 	return true;
 }
 
@@ -784,6 +919,7 @@ void USRPlanetSurfaceGrid::ClearSelectedCell()
 	bHasSelectedCell = false;
 	SelectedCellId = FSRPlanetSurfaceGridCellId();
 	RefreshInteractionHighlight();
+	UpdateDebugTickState();
 }
 
 bool USRPlanetSurfaceGrid::HasSelectedCell() const
@@ -834,11 +970,15 @@ void USRPlanetSurfaceGrid::DrawDebugGrid(float Duration) const
 
 	for (const FSRPlanetSurfaceGridCell& Cell : Cells)
 	{
-		DrawUniqueDefaultEdge(Cell.Corner00, Cell.Corner10);
-		DrawUniqueDefaultEdge(Cell.Corner10, Cell.Corner11);
-		DrawUniqueDefaultEdge(Cell.Corner11, Cell.Corner01);
-		DrawUniqueDefaultEdge(Cell.Corner01, Cell.Corner00);
-		DrawUniqueDefaultEdge(Cell.Corner00, Cell.Corner11);
+		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
+		{
+			FVector EdgePointA;
+			FVector EdgePointB;
+			if (GetGridCellEdgePoints(Cell, EdgeIndex, EdgePointA, EdgePointB))
+			{
+				DrawUniqueDefaultEdge(EdgePointA, EdgePointB);
+			}
+		}
 	}
 
 	for (const FSRPlanetSurfaceGridCell& Cell : Cells)
@@ -853,11 +993,15 @@ void USRPlanetSurfaceGrid::DrawDebugGrid(float Duration) const
 
 		const FColor LineColor = bIsSelected ? SelectedLineColor : (bIsHovered ? HoverLineColor : OccupiedLineColor);
 		const float LineThickness = bIsSelected ? DebugLineThickness * 2.5f : (bIsHovered ? DebugLineThickness * 2.0f : DebugLineThickness);
-		DrawDebugSurfaceLine(Cell.Corner00, Cell.Corner10, LineColor, Duration, LineThickness, CameraInfo, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
-		DrawDebugSurfaceLine(Cell.Corner10, Cell.Corner11, LineColor, Duration, LineThickness, CameraInfo, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
-		DrawDebugSurfaceLine(Cell.Corner11, Cell.Corner01, LineColor, Duration, LineThickness, CameraInfo, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
-		DrawDebugSurfaceLine(Cell.Corner01, Cell.Corner00, LineColor, Duration, LineThickness, CameraInfo, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
-		DrawDebugSurfaceLine(Cell.Corner00, Cell.Corner11, LineColor, Duration, LineThickness, CameraInfo, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
+		{
+			FVector EdgePointA;
+			FVector EdgePointB;
+			if (GetGridCellEdgePoints(Cell, EdgeIndex, EdgePointA, EdgePointB))
+			{
+				DrawDebugSurfaceLine(EdgePointA, EdgePointB, LineColor, Duration, LineThickness, CameraInfo, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+			}
+		}
 	}
 }
 
@@ -939,6 +1083,20 @@ void USRPlanetSurfaceGrid::ConfigureDebugGrid(
 	else
 	{
 		RefreshInteractionHighlight();
+	}
+}
+
+void USRPlanetSurfaceGrid::SetGridOverlayMaterial(UMaterialInterface* NewGridOverlayMaterial)
+{
+	GridOverlayMaterial = NewGridOverlayMaterial;
+	UMaterialInterface* EffectiveGridMaterial = GridOverlayMaterial ? GridOverlayMaterial.Get() : GetMaterial(0);
+	if (EffectiveGridMaterial)
+	{
+		SetMaterial(0, EffectiveGridMaterial);
+		if (InteractionOverlayMesh)
+		{
+			InteractionOverlayMesh->SetMaterial(0, EffectiveGridMaterial);
+		}
 	}
 }
 
@@ -1027,10 +1185,24 @@ void USRPlanetSurfaceGrid::AppendGeneratedGridCell(
 		AppendGridWireSegment(GridMesh, PointA, PointB, DefaultLineColor, DebugLineThickness);
 	};
 
-	AppendDedupedSegment(Cell.Corner00, Cell.Corner10);
-	AppendDedupedSegment(Cell.Corner10, Cell.Corner11);
-	AppendDedupedSegment(Cell.Corner11, Cell.Corner01);
-	AppendDedupedSegment(Cell.Corner01, Cell.Corner00);
+	for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
+	{
+		FVector EdgePointA;
+		FVector EdgePointB;
+		if (GetGridCellEdgePoints(Cell, EdgeIndex, EdgePointA, EdgePointB))
+		{
+			AppendDedupedSegment(
+				OffsetRecoveredGridWirePoint(EdgePointA, GridSurfaceOffset, DebugLineThickness),
+				OffsetRecoveredGridWirePoint(EdgePointB, GridSurfaceOffset, DebugLineThickness));
+		}
+	}
+
+	for (const FSRPlanetSurfaceGridLineSegment& SideLineSegment : Cell.SideLineSegments)
+	{
+		AppendDedupedSegment(
+			OffsetRecoveredGridWirePoint(SideLineSegment.LocalPointA, GridSurfaceOffset, DebugLineThickness),
+			OffsetRecoveredGridWirePoint(SideLineSegment.LocalPointB, GridSurfaceOffset, DebugLineThickness));
+	}
 }
 
 void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
@@ -1420,7 +1592,8 @@ void USRPlanetSurfaceGrid::EnsureInteractionOverlay()
 	InteractionOverlayMesh->SetHiddenInGame(true);
 	InteractionOverlayMesh->RegisterComponent();
 
-	if (UMaterialInterface* GridMaterial = GetMaterial(0))
+	UMaterialInterface* GridMaterial = GridOverlayMaterial ? GridOverlayMaterial.Get() : GetMaterial(0);
+	if (GridMaterial)
 	{
 		InteractionOverlayMesh->SetMaterial(0, GridMaterial);
 	}
@@ -1588,10 +1761,8 @@ void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
 				continue;
 			}
 
-			const int32 Distance = FMath::Max(FMath::Abs(OffsetX), FMath::Abs(OffsetY));
-			const float FadeAlpha = 1.0f - (static_cast<float>(Distance) / static_cast<float>(PatchRadius + 1));
 			FLinearColor PatchLineColor = BaseLineColor;
-			PatchLineColor.A = FMath::Clamp(BaseLineColor.A * DebugLineOpacity * FadeAlpha, 0.0f, 1.0f);
+			PatchLineColor.A = FMath::Clamp(BaseLineColor.A * DebugLineOpacity, 0.0f, 1.0f);
 			if (PatchLineColor.A <= KINDA_SMALL_NUMBER)
 			{
 				continue;
@@ -1799,10 +1970,61 @@ void USRPlanetSurfaceGrid::AppendGridWireCell(
 
 	if (bUsingRecoveredQuadCells)
 	{
-		AppendDedupedSegment(Cell.Corner00, Cell.Corner10);
-		AppendDedupedSegment(Cell.Corner10, Cell.Corner11);
-		AppendDedupedSegment(Cell.Corner11, Cell.Corner01);
-		AppendDedupedSegment(Cell.Corner01, Cell.Corner00);
+		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
+		{
+			FVector EdgePointA;
+			FVector EdgePointB;
+			if (GetGridCellEdgePoints(Cell, EdgeIndex, EdgePointA, EdgePointB))
+			{
+				AppendDedupedSegment(
+					OffsetRecoveredGridWirePoint(EdgePointA, GridSurfaceOffset, LineThickness),
+					OffsetRecoveredGridWirePoint(EdgePointB, GridSurfaceOffset, LineThickness));
+			}
+		}
+
+		for (const FSRPlanetSurfaceGridLineSegment& SideLineSegment : Cell.SideLineSegments)
+		{
+			AppendDedupedSegment(
+				OffsetRecoveredGridWirePoint(SideLineSegment.LocalPointA, GridSurfaceOffset, LineThickness),
+				OffsetRecoveredGridWirePoint(SideLineSegment.LocalPointB, GridSurfaceOffset, LineThickness));
+		}
+
+		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
+		{
+			const FSRPlanetSurfaceGridCellId NeighborId = GetGridCellEdgeNeighborId(Cell, EdgeIndex);
+			if (NeighborId == Cell.CellId)
+			{
+				continue;
+			}
+
+			FSRPlanetSurfaceGridCell NeighborCell;
+			if (!GetCellById(NeighborId, NeighborCell))
+			{
+				continue;
+			}
+
+			FVector CellPointA;
+			FVector CellPointB;
+			FVector NeighborPointA;
+			FVector NeighborPointB;
+			if (!TryGetMatchingGridCellEdgePoints(Cell, EdgeIndex, NeighborCell, CellPointA, CellPointB, NeighborPointA, NeighborPointB))
+			{
+				continue;
+			}
+
+			if (FVector::DistSquared(CellPointA, NeighborPointA) > KINDA_SMALL_NUMBER)
+			{
+				AppendDedupedSegment(
+					OffsetRecoveredGridWirePoint(CellPointA, GridSurfaceOffset, LineThickness),
+					OffsetRecoveredGridWirePoint(NeighborPointA, GridSurfaceOffset, LineThickness));
+			}
+			if (FVector::DistSquared(CellPointB, NeighborPointB) > KINDA_SMALL_NUMBER)
+			{
+				AppendDedupedSegment(
+					OffsetRecoveredGridWirePoint(CellPointB, GridSurfaceOffset, LineThickness),
+					OffsetRecoveredGridWirePoint(NeighborPointB, GridSurfaceOffset, LineThickness));
+			}
+		}
 		return;
 	}
 
@@ -1823,10 +2045,15 @@ void USRPlanetSurfaceGrid::AppendGridWireCell(
 		AppendGridWireEdge(GridMesh, CornerA, CornerB, LineColor, LineThickness);
 	};
 
-	AppendEdge(Cell.Corner00, Cell.Corner10);
-	AppendEdge(Cell.Corner10, Cell.Corner11);
-	AppendEdge(Cell.Corner11, Cell.Corner01);
-	AppendEdge(Cell.Corner01, Cell.Corner00);
+	for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
+	{
+		FVector EdgePointA;
+		FVector EdgePointB;
+		if (GetGridCellEdgePoints(Cell, EdgeIndex, EdgePointA, EdgePointB))
+		{
+			AppendEdge(EdgePointA, EdgePointB);
+		}
+	}
 }
 
 void USRPlanetSurfaceGrid::AppendGridWireEdge(
@@ -1844,7 +2071,8 @@ void USRPlanetSurfaceGrid::AppendGridWireEdge(
 	}
 
 	constexpr int32 SegmentCount = 8;
-	FVector PreviousPoint = ResolveLocalSurfacePoint(DirectionA, GridSurfaceOffset);
+	const float EffectiveSurfaceOffset = FMath::Max(GridSurfaceOffset, FMath::Max(4.0f, LineThickness * 6.0f));
+	FVector PreviousPoint = ResolveLocalSurfacePoint(DirectionA, EffectiveSurfaceOffset);
 	for (int32 SegmentIndex = 1; SegmentIndex <= SegmentCount; ++SegmentIndex)
 	{
 		const float Alpha = static_cast<float>(SegmentIndex) / static_cast<float>(SegmentCount);
@@ -1854,7 +2082,7 @@ void USRPlanetSurfaceGrid::AppendGridWireEdge(
 			continue;
 		}
 
-		const FVector CurrentPoint = ResolveLocalSurfacePoint(SampleDirection, GridSurfaceOffset);
+		const FVector CurrentPoint = ResolveLocalSurfacePoint(SampleDirection, EffectiveSurfaceOffset);
 		AppendGridWireSegment(GridMesh, PreviousPoint, CurrentPoint, LineColor, LineThickness);
 		PreviousPoint = CurrentPoint;
 	}
@@ -1958,7 +2186,8 @@ void USRPlanetSurfaceGrid::DrawDebugSurfaceLine(
 	}
 
 	constexpr int32 SegmentCount = 8;
-	FVector PreviousPoint = ResolveWorldSurfacePoint(DirectionA, GridSurfaceOffset);
+	const float EffectiveSurfaceOffset = FMath::Max(GridSurfaceOffset, FMath::Max(1.0f, LineThickness * 1.5f));
+	FVector PreviousPoint = ResolveWorldSurfacePoint(DirectionA, EffectiveSurfaceOffset);
 
 	for (int32 SegmentIndex = 1; SegmentIndex <= SegmentCount; ++SegmentIndex)
 	{
@@ -1969,7 +2198,7 @@ void USRPlanetSurfaceGrid::DrawDebugSurfaceLine(
 			continue;
 		}
 
-		const FVector CurrentPoint = ResolveWorldSurfacePoint(SampleDirection, GridSurfaceOffset);
+		const FVector CurrentPoint = ResolveWorldSurfacePoint(SampleDirection, EffectiveSurfaceOffset);
 		const FVector SegmentMidpoint = (PreviousPoint + CurrentPoint) * 0.5f;
 		const float ScreenSpaceThickness = FSRLineThicknessUtils::ComputeWorldThicknessAtLocation(
 			CameraInfo,

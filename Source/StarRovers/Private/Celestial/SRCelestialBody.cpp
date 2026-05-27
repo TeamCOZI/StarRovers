@@ -28,6 +28,7 @@
 namespace
 {
 	constexpr int32 CubeSphereFaceComponentCount = 6;
+	const FName PlanetCenterMaterialParameterName(TEXT("PlanetCenterWS"));
 
 	uint64 BuildDynamicMeshColorElementKey(int32 MeshComponentIndex, int32 ElementId)
 	{
@@ -624,6 +625,22 @@ UDynamicMeshComponent* ASRCelestialBody::GetCelestialBodyDynamicMesh() const
 	return CelestialBodyDynamicMesh;
 }
 
+void ASRCelestialBody::RefreshMaterialParameters()
+{
+	const FVector PlanetCenterWS = GetActorLocation();
+	if (UMaterialInstanceDynamic* ActiveDynamicMaterial = GetActiveBodyDynamicMaterial())
+	{
+		ActiveDynamicMaterial->SetVectorParameterValue(PlanetCenterMaterialParameterName, FLinearColor(PlanetCenterWS));
+	}
+	if (IsValid(CelestialBodyStaticMesh.Get()))
+	{
+		if (UMaterialInstanceDynamic* StaticDynamicMaterial = Cast<UMaterialInstanceDynamic>(CelestialBodyStaticMesh->GetMaterial(0)))
+		{
+			StaticDynamicMaterial->SetVectorParameterValue(PlanetCenterMaterialParameterName, FLinearColor(PlanetCenterWS));
+		}
+	}
+}
+
 void ASRCelestialBody::SetCelestialBodyMesh(bool bUseDynamicMesh)
 {
 	if (bUseDynamicMesh && !HasCelestialBodyDynamicMeshBuild())
@@ -1029,16 +1046,16 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicM
 		return;
 	}
 
-	if (IsValid(CelestialBodyStaticMesh.Get()))
-	{
-		CelestialBodyStaticMesh->SetMaterial(0, DesiredBaseMaterial);
-	}
-
 	UMaterialInstanceDynamic* ActiveDynamicMaterial = GetActiveBodyDynamicMaterial();
 	const UMaterialInstance* ActiveMaterialInstance = ActiveDynamicMaterial;
 	if (!IsValid(ActiveDynamicMaterial) || ActiveMaterialInstance->Parent != DesiredBaseMaterial)
 	{
 		ActiveDynamicMaterial = UMaterialInstanceDynamic::Create(DesiredBaseMaterial, this);
+	}
+
+	if (IsValid(CelestialBodyStaticMesh.Get()))
+	{
+		CelestialBodyStaticMesh->SetMaterial(0, IsValid(ActiveDynamicMaterial) ? ActiveDynamicMaterial : DesiredBaseMaterial);
 	}
 
 	for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
@@ -1067,6 +1084,7 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicM
 		}
 	}
 
+	RefreshMaterialParameters();
 }
 
 bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
@@ -1279,6 +1297,8 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 			TMap<uint64, FIntPoint> CachedCellEdgeBySourceEdge;
 			CachedCellEdgeBySourceEdge.Reserve(SourceQuads.Num() * 4);
+			TMap<FSRPlanetSurfaceGridCellId, int32> CachedCellIndexById;
+			CachedCellIndexById.Reserve(SourceQuads.Num());
 			CachedSurfaceGridCells.Reset(SourceQuads.Num());
 			CachedSurfaceGridCells.Reserve(SourceQuads.Num());
 
@@ -1319,7 +1339,42 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				}
 			};
 
-			auto RegisterTerrainEdge = [this, &PendingTerrainEdges, &AppendFlatColoredQuad](
+			auto AddCachedSideLineSegment = [this, &CachedCellIndexById](
+				const FSRPlanetSurfaceGridCellId& CellId,
+				const FVector& PointA,
+				const FVector& PointB)
+			{
+				const int32* CellIndex = CachedCellIndexById.Find(CellId);
+				if (!CellIndex || !CachedSurfaceGridCells.IsValidIndex(*CellIndex))
+				{
+					return;
+				}
+
+				if (FVector::DistSquared(PointA, PointB) <= KINDA_SMALL_NUMBER)
+				{
+					return;
+				}
+
+				FSRPlanetSurfaceGridLineSegment SideLineSegment;
+				SideLineSegment.LocalPointA = PointA * Scale;
+				SideLineSegment.LocalPointB = PointB * Scale;
+				CachedSurfaceGridCells[*CellIndex].SideLineSegments.Add(SideLineSegment);
+			};
+
+			auto AddCachedSideWallOutline = [&AddCachedSideLineSegment](
+				const FSRPlanetSurfaceGridCellId& CellId,
+				const FVector& Point0,
+				const FVector& Point1,
+				const FVector& Point2,
+				const FVector& Point3)
+			{
+				AddCachedSideLineSegment(CellId, Point0, Point1);
+				AddCachedSideLineSegment(CellId, Point1, Point2);
+				AddCachedSideLineSegment(CellId, Point2, Point3);
+				AddCachedSideLineSegment(CellId, Point3, Point0);
+			};
+
+			auto RegisterTerrainEdge = [this, &PendingTerrainEdges, &AppendFlatColoredQuad, &AddCachedSideWallOutline](
 				const FVector& SourcePointA,
 				const FVector& SourcePointB,
 				const FVector& PointA,
@@ -1370,6 +1425,18 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 							WallColor,
 							ExistingEdge->MaterialId != 0 ? ExistingEdge->MaterialId : MaterialId,
 							true);
+						AddCachedSideWallOutline(
+							ExistingEdge->CellId,
+							ExistingEdge->PointA,
+							ExistingEdge->PointB,
+							OrderedPointB,
+							OrderedPointA);
+						AddCachedSideWallOutline(
+							CellId,
+							ExistingEdge->PointA,
+							ExistingEdge->PointB,
+							OrderedPointB,
+							OrderedPointA);
 						if (bExistingCellIsHigher)
 						{
 							if (FSRCelestialBodyDynamicMeshCellColorData* ExistingCellColorData = DynamicMeshColorDataByCell.Find(ExistingEdge->CellId))
@@ -1485,6 +1552,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 				const int32 CachedCellIndex = CachedSurfaceGridCells.Num();
 				CachedSurfaceGridCells.Add(CachedCell);
+				CachedCellIndexById.Add(CellId, CachedCellIndex);
 				if (bBuildGeneratedGridMesh)
 				{
 					SurfaceGrid->AppendGeneratedGridCell(GeneratedGridMesh, CachedCell, GeneratedGridEdges);
@@ -1538,6 +1606,12 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					WallColor,
 					PendingEdge.MaterialId,
 					true);
+				AddCachedSideWallOutline(
+					PendingEdge.CellId,
+					PendingEdge.PointA,
+					PendingEdge.PointB,
+					PendingEdge.SourcePointB,
+					PendingEdge.SourcePointA);
 				const float CellEdgeRadius = (PendingEdge.PointA.Length() + PendingEdge.PointB.Length()) * 0.5f;
 				const float BoundaryEdgeRadius = (PendingEdge.SourcePointA.Length() + PendingEdge.SourcePointB.Length()) * 0.5f;
 				if (CellEdgeRadius > BoundaryEdgeRadius + KINDA_SMALL_NUMBER)

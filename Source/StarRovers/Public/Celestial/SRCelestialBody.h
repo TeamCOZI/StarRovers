@@ -198,6 +198,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Celestial")
 	UDynamicMeshComponent* GetCelestialBodyDynamicMesh() const;
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Celestial")
+	void RefreshMaterialParameters();
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Lighting")
 	virtual void SetCelestialBodyMesh(bool bUseDynamicMesh);
 

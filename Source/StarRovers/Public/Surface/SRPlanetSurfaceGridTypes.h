@@ -69,6 +69,18 @@ struct STARROVERS_API FSRPlanetSurfaceGridCellNeighbors
 };
 
 USTRUCT(BlueprintType)
+struct STARROVERS_API FSRPlanetSurfaceGridLineSegment
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LocalPointA"))
+    FVector LocalPointA = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LocalPointB"))
+    FVector LocalPointB = FVector::ZeroVector;
+};
+
+USTRUCT(BlueprintType)
 struct STARROVERS_API FSRPlanetSurfaceGridCell
 {
     GENERATED_BODY()
@@ -105,6 +117,9 @@ struct STARROVERS_API FSRPlanetSurfaceGridCell
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "Neighbors"))
     FSRPlanetSurfaceGridCellNeighbors Neighbors;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "SideLineSegments"))
+    TArray<FSRPlanetSurfaceGridLineSegment> SideLineSegments;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "bOccupied"))
     bool bOccupied = false;
