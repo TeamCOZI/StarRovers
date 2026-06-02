@@ -30,6 +30,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "OceanStaticMesh"))
 	TObjectPtr<UStaticMeshComponent> OceanStaticMesh;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "AtmosphereStaticMesh"))
+	TObjectPtr<UStaticMeshComponent> AtmosphereStaticMesh;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "Orbit"))
 	TObjectPtr<USROrbit> Orbit;
 
@@ -79,6 +82,8 @@ private:
 	void ApplyOceanStaticMeshSettings();
 	float ResolveOceanScale() const;
 	float EstimateProceduralOceanScaleMultiplier() const;
+	void ApplyAtmosphereStaticMeshSettings();
+	float ResolveAtmosphereScale() const;
 	void EnsureSurfaceGrid();
 	void HideSurfaceGrid();
 	bool SupportsSurfaceGrid() const;
@@ -103,5 +108,17 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "OceanScaleMultiplier", AllowPrivateAccess = "true"))
 	float OceanScaleMultiplier;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "bHasAtmosphere", AllowPrivateAccess = "true"))
+	bool bHasAtmosphere;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "AtmosphereMesh", AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMesh> AtmosphereMesh;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "AtmosphereMaterial", AllowPrivateAccess = "true"))
+	TObjectPtr<UMaterialInterface> AtmosphereMaterial;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "AtmosphereScaleMultiplier", AllowPrivateAccess = "true"))
+	float AtmosphereScaleMultiplier;
 
 };

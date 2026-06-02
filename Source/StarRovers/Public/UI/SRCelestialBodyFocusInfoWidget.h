@@ -66,6 +66,9 @@ protected:
 	TObjectPtr<UTextBlock> VariableNameTextBlock;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> HoveredCellTextBlock;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UButton> AssemblyModeButton;
 
 	UPROPERTY(Transient)
@@ -76,6 +79,7 @@ private:
 	void HandleAssemblyModeButtonClicked();
 
 	void BuildFocusInfoWidgetTree();
+	void EnsureHoveredCellTextBlock(UWidget* HoveredCellTextBlockParent);
 	void EnsureAssemblyModeButton(UWidget* AssemblyModeButtonParent);
 	void BindAssemblyModeButtonHandler();
 	void RefreshFocusInfoText();

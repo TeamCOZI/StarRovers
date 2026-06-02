@@ -128,6 +128,70 @@ namespace
 		int32 Vertices[4] = { INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE };
 	};
 
+	struct FSRRecoveredQuadGridAddress
+	{
+		FSRPlanetSurfaceGridCellId CellId;
+		FVector2D FaceCoordinates = FVector2D::ZeroVector;
+		int32 FaceResolution = 1;
+	};
+
+	struct FSRRecoveredQuadGridEdge
+	{
+		int32 QuadIndex = INDEX_NONE;
+		int32 DeltaX = 0;
+		int32 DeltaY = 0;
+		uint64 EdgeKey = 0;
+	};
+
+	struct FSRCubeFaceBasis
+	{
+		FVector Normal = FVector::ForwardVector;
+		FVector AxisU = FVector::RightVector;
+		FVector AxisV = FVector::UpVector;
+	};
+
+	FSRCubeFaceBasis GetRecoveredCubeFaceBasis(ESRCubeSphereFace Face)
+	{
+		switch (Face)
+		{
+		case ESRCubeSphereFace::PositiveX:
+			return { FVector(1.0f, 0.0f, 0.0f), FVector(0.0f, 1.0f, 0.0f), FVector(0.0f, 0.0f, 1.0f) };
+		case ESRCubeSphereFace::NegativeX:
+			return { FVector(-1.0f, 0.0f, 0.0f), FVector(0.0f, -1.0f, 0.0f), FVector(0.0f, 0.0f, 1.0f) };
+		case ESRCubeSphereFace::PositiveY:
+			return { FVector(0.0f, 1.0f, 0.0f), FVector(-1.0f, 0.0f, 0.0f), FVector(0.0f, 0.0f, 1.0f) };
+		case ESRCubeSphereFace::NegativeY:
+			return { FVector(0.0f, -1.0f, 0.0f), FVector(1.0f, 0.0f, 0.0f), FVector(0.0f, 0.0f, 1.0f) };
+		case ESRCubeSphereFace::PositiveZ:
+			return { FVector(0.0f, 0.0f, 1.0f), FVector(0.0f, 1.0f, 0.0f), FVector(-1.0f, 0.0f, 0.0f) };
+		case ESRCubeSphereFace::NegativeZ:
+		default:
+			return { FVector(0.0f, 0.0f, -1.0f), FVector(0.0f, 1.0f, 0.0f), FVector(1.0f, 0.0f, 0.0f) };
+		}
+	}
+
+	bool ProjectRecoveredPointToFaceCoordinates(const FVector& Point, ESRCubeSphereFace Face, FVector2D& OutFaceCoordinates)
+	{
+		const FVector Direction = Point.GetSafeNormal();
+		if (Direction.IsNearlyZero())
+		{
+			return false;
+		}
+
+		const FSRCubeFaceBasis Basis = GetRecoveredCubeFaceBasis(Face);
+		const float MajorAxis = FVector::DotProduct(Direction, Basis.Normal);
+		if (MajorAxis <= KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		const FVector CubePoint = Direction / MajorAxis;
+		OutFaceCoordinates = FVector2D(
+			FMath::Clamp(FVector::DotProduct(CubePoint, Basis.AxisU), -1.0f, 1.0f),
+			FMath::Clamp(FVector::DotProduct(CubePoint, Basis.AxisV), -1.0f, 1.0f));
+		return true;
+	}
+
 	uint64 BuildSourceEdgeKey(int32 VertexIndexA, int32 VertexIndexB)
 	{
 		const uint32 MinVertex = static_cast<uint32>(FMath::Min(VertexIndexA, VertexIndexB));
@@ -375,6 +439,247 @@ namespace
 		return SourceQuads;
 	}
 
+	TArray<FSRRecoveredQuadGridAddress> BuildRecoveredQuadGridAddresses(
+		const TArray<FSRSourceQuad>& SourceQuads,
+		const FPositionVertexBuffer& PositionVertexBuffer)
+	{
+		TArray<FSRRecoveredQuadGridAddress> Addresses;
+		Addresses.SetNum(SourceQuads.Num());
+
+		TMap<ESRCubeSphereFace, TArray<int32>> QuadIndicesByFace;
+		for (int32 QuadIndex = 0; QuadIndex < SourceQuads.Num(); ++QuadIndex)
+		{
+			const FSRSourceQuad& SourceQuad = SourceQuads[QuadIndex];
+			FVector CellCenter = FVector::ZeroVector;
+			bool bHasValidVertices = true;
+			for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
+			{
+				const int32 SourceVertexIndex = SourceQuad.Vertices[CornerIndex];
+				if (SourceVertexIndex < 0 || SourceVertexIndex >= static_cast<int32>(PositionVertexBuffer.GetNumVertices()))
+				{
+					bHasValidVertices = false;
+					break;
+				}
+				CellCenter += FVector(PositionVertexBuffer.VertexPosition(SourceVertexIndex));
+			}
+
+			FSRRecoveredQuadGridAddress& Address = Addresses[QuadIndex];
+			if (!bHasValidVertices)
+			{
+				continue;
+			}
+
+			CellCenter /= 4.0f;
+			if (!USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(
+				CellCenter.GetSafeNormal(),
+				1,
+				Address.CellId,
+				Address.FaceCoordinates))
+			{
+				continue;
+			}
+			QuadIndicesByFace.FindOrAdd(Address.CellId.Face).Add(QuadIndex);
+		}
+
+		for (TPair<ESRCubeSphereFace, TArray<int32>>& FaceQuadIndexPair : QuadIndicesByFace)
+		{
+			TArray<int32>& FaceQuadIndices = FaceQuadIndexPair.Value;
+			const int32 FaceQuadCount = FaceQuadIndices.Num();
+			int32 FaceResolution = FMath::Max(1, FMath::RoundToInt(FMath::Sqrt(static_cast<float>(FaceQuadCount))));
+			while (FaceResolution * FaceResolution < FaceQuadCount)
+			{
+				++FaceResolution;
+			}
+
+			TMap<uint64, TArray<FSRRecoveredQuadGridEdge>> EdgesByKey;
+			TMap<int32, TArray<FSRRecoveredQuadGridEdge>> EdgesByQuadIndex;
+			EdgesByKey.Reserve(FaceQuadIndices.Num() * 4);
+			EdgesByQuadIndex.Reserve(FaceQuadIndices.Num());
+			for (const int32 QuadIndex : FaceQuadIndices)
+			{
+				const FSRSourceQuad& SourceQuad = SourceQuads[QuadIndex];
+				const FVector2D QuadFaceCoordinates = Addresses[QuadIndex].FaceCoordinates;
+				for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
+				{
+					const int32 SourceVertexIndexA = SourceQuad.Vertices[EdgeIndex];
+					const int32 SourceVertexIndexB = SourceQuad.Vertices[(EdgeIndex + 1) % 4];
+					if (SourceVertexIndexA < 0
+						|| SourceVertexIndexA >= static_cast<int32>(PositionVertexBuffer.GetNumVertices())
+						|| SourceVertexIndexB < 0
+						|| SourceVertexIndexB >= static_cast<int32>(PositionVertexBuffer.GetNumVertices()))
+					{
+						continue;
+					}
+
+					const FVector SourcePositionA(PositionVertexBuffer.VertexPosition(SourceVertexIndexA));
+					const FVector SourcePositionB(PositionVertexBuffer.VertexPosition(SourceVertexIndexB));
+					FVector2D EdgeFaceCoordinatesA = FVector2D::ZeroVector;
+					FVector2D EdgeFaceCoordinatesB = FVector2D::ZeroVector;
+					if (!ProjectRecoveredPointToFaceCoordinates(SourcePositionA, FaceQuadIndexPair.Key, EdgeFaceCoordinatesA)
+						|| !ProjectRecoveredPointToFaceCoordinates(SourcePositionB, FaceQuadIndexPair.Key, EdgeFaceCoordinatesB))
+					{
+						continue;
+					}
+
+					const FVector2D EdgeFaceCoordinates = (EdgeFaceCoordinatesA + EdgeFaceCoordinatesB) * 0.5f;
+					const FVector2D EdgeDelta = EdgeFaceCoordinates - QuadFaceCoordinates;
+					FSRRecoveredQuadGridEdge Edge;
+					Edge.QuadIndex = QuadIndex;
+					Edge.EdgeKey = BuildSourcePositionEdgeKey(SourcePositionA, SourcePositionB);
+					if (FMath::Abs(EdgeDelta.X) > FMath::Abs(EdgeDelta.Y))
+					{
+						Edge.DeltaX = EdgeDelta.X < 0.0f ? -1 : 1;
+					}
+					else
+					{
+						Edge.DeltaY = EdgeDelta.Y < 0.0f ? -1 : 1;
+					}
+					EdgesByKey.FindOrAdd(Edge.EdgeKey).Add(Edge);
+					EdgesByQuadIndex.FindOrAdd(QuadIndex).Add(Edge);
+				}
+			}
+
+			TMap<int32, FIntPoint> GridCoordinatesByQuadIndex;
+			GridCoordinatesByQuadIndex.Reserve(FaceQuadIndices.Num());
+			bool bHasGridCoordinateConflict = false;
+			for (const int32 SeedQuadIndex : FaceQuadIndices)
+			{
+				if (GridCoordinatesByQuadIndex.Contains(SeedQuadIndex))
+				{
+					continue;
+				}
+
+				GridCoordinatesByQuadIndex.Add(SeedQuadIndex, FIntPoint(0, 0));
+				TArray<int32> Queue;
+				Queue.Add(SeedQuadIndex);
+				for (int32 QueueIndex = 0; QueueIndex < Queue.Num(); ++QueueIndex)
+				{
+					const int32 CurrentQuadIndex = Queue[QueueIndex];
+					const FIntPoint CurrentCoordinates = GridCoordinatesByQuadIndex.FindChecked(CurrentQuadIndex);
+					const TArray<FSRRecoveredQuadGridEdge>* CurrentEdges = EdgesByQuadIndex.Find(CurrentQuadIndex);
+					if (!CurrentEdges)
+					{
+						continue;
+					}
+
+					for (const FSRRecoveredQuadGridEdge& CurrentEdge : *CurrentEdges)
+					{
+						const TArray<FSRRecoveredQuadGridEdge>* SharedEdges = EdgesByKey.Find(CurrentEdge.EdgeKey);
+						if (!SharedEdges)
+						{
+							continue;
+						}
+
+						for (const FSRRecoveredQuadGridEdge& SharedEdge : *SharedEdges)
+						{
+							if (SharedEdge.QuadIndex == CurrentQuadIndex || !FaceQuadIndices.Contains(SharedEdge.QuadIndex))
+							{
+								continue;
+							}
+
+							const FIntPoint NeighborCoordinates(
+								CurrentCoordinates.X + CurrentEdge.DeltaX,
+								CurrentCoordinates.Y + CurrentEdge.DeltaY);
+							if (const FIntPoint* ExistingCoordinates = GridCoordinatesByQuadIndex.Find(SharedEdge.QuadIndex))
+							{
+								if (*ExistingCoordinates != NeighborCoordinates)
+								{
+									bHasGridCoordinateConflict = true;
+								}
+								continue;
+							}
+
+							GridCoordinatesByQuadIndex.Add(SharedEdge.QuadIndex, NeighborCoordinates);
+							Queue.Add(SharedEdge.QuadIndex);
+						}
+					}
+				}
+			}
+
+			bool bAssignedBySharedEdges = !bHasGridCoordinateConflict && GridCoordinatesByQuadIndex.Num() == FaceQuadIndices.Num();
+			if (bAssignedBySharedEdges)
+			{
+				FIntPoint MinCoordinates(TNumericLimits<int32>::Max(), TNumericLimits<int32>::Max());
+				FIntPoint MaxCoordinates(TNumericLimits<int32>::Min(), TNumericLimits<int32>::Min());
+				TSet<FIntPoint> UniqueCoordinates;
+				UniqueCoordinates.Reserve(GridCoordinatesByQuadIndex.Num());
+				for (const TPair<int32, FIntPoint>& CoordinatePair : GridCoordinatesByQuadIndex)
+				{
+					MinCoordinates.X = FMath::Min(MinCoordinates.X, CoordinatePair.Value.X);
+					MinCoordinates.Y = FMath::Min(MinCoordinates.Y, CoordinatePair.Value.Y);
+					MaxCoordinates.X = FMath::Max(MaxCoordinates.X, CoordinatePair.Value.X);
+					MaxCoordinates.Y = FMath::Max(MaxCoordinates.Y, CoordinatePair.Value.Y);
+					UniqueCoordinates.Add(CoordinatePair.Value);
+				}
+
+				const int32 GridWidth = MaxCoordinates.X - MinCoordinates.X + 1;
+				const int32 GridHeight = MaxCoordinates.Y - MinCoordinates.Y + 1;
+				bAssignedBySharedEdges =
+					GridWidth == FaceResolution
+					&& GridHeight == FaceResolution
+					&& UniqueCoordinates.Num() == FaceQuadIndices.Num();
+
+				if (bAssignedBySharedEdges)
+				{
+					for (const int32 QuadIndex : FaceQuadIndices)
+					{
+						const FIntPoint Coordinates(
+							GridCoordinatesByQuadIndex.FindChecked(QuadIndex).X - MinCoordinates.X,
+							GridCoordinatesByQuadIndex.FindChecked(QuadIndex).Y - MinCoordinates.Y);
+						FSRRecoveredQuadGridAddress& Address = Addresses[QuadIndex];
+						Address.FaceResolution = FaceResolution;
+						Address.CellId.Face = FaceQuadIndexPair.Key;
+						Address.CellId.CellX = Coordinates.X;
+						Address.CellId.CellY = Coordinates.Y;
+					}
+				}
+			}
+
+			if (bAssignedBySharedEdges)
+			{
+				continue;
+			}
+
+			FaceQuadIndices.Sort([&Addresses](const int32 QuadIndexA, const int32 QuadIndexB)
+			{
+				const FVector2D& FaceCoordinatesA = Addresses[QuadIndexA].FaceCoordinates;
+				const FVector2D& FaceCoordinatesB = Addresses[QuadIndexB].FaceCoordinates;
+				if (!FMath::IsNearlyEqual(FaceCoordinatesA.Y, FaceCoordinatesB.Y))
+				{
+					return FaceCoordinatesA.Y < FaceCoordinatesB.Y;
+				}
+				return FaceCoordinatesA.X < FaceCoordinatesB.X;
+			});
+
+			for (int32 RowStart = 0; RowStart < FaceQuadIndices.Num(); RowStart += FaceResolution)
+			{
+				const int32 RowEnd = FMath::Min(RowStart + FaceResolution, FaceQuadIndices.Num());
+				TArray<int32> RowQuadIndices;
+				RowQuadIndices.Reserve(RowEnd - RowStart);
+				for (int32 RowIndex = RowStart; RowIndex < RowEnd; ++RowIndex)
+				{
+					RowQuadIndices.Add(FaceQuadIndices[RowIndex]);
+				}
+				RowQuadIndices.Sort([&Addresses](const int32 QuadIndexA, const int32 QuadIndexB)
+				{
+					return Addresses[QuadIndexA].FaceCoordinates.X < Addresses[QuadIndexB].FaceCoordinates.X;
+				});
+
+				const int32 CellY = RowStart / FaceResolution;
+				for (int32 ColumnIndex = 0; ColumnIndex < RowQuadIndices.Num(); ++ColumnIndex)
+				{
+					FSRRecoveredQuadGridAddress& Address = Addresses[RowQuadIndices[ColumnIndex]];
+					Address.FaceResolution = FaceResolution;
+					Address.CellId.Face = FaceQuadIndexPair.Key;
+					Address.CellId.CellX = ColumnIndex;
+					Address.CellId.CellY = CellY;
+				}
+			}
+		}
+
+		return Addresses;
+	}
+
 	FSRPlanetTerrainSample SampleTerrainForDynamicMesh(
 		const FVector& LocalUnitDirection,
 		const FSRDynamicMeshGeneration& DynamicMeshGeneration)
@@ -408,6 +713,10 @@ FSRCelestialBodyData::FSRCelestialBodyData()
 	OceanMesh = nullptr;
 	OceanMaterial = nullptr;
 	OceanScaleMultiplier = 1.0f;
+	bHasAtmosphere = false;
+	AtmosphereMesh = nullptr;
+	AtmosphereMaterial = nullptr;
+	AtmosphereScaleMultiplier = 1.0f;
 }
 
 ASRCelestialBody::ASRCelestialBody()
@@ -484,6 +793,8 @@ void ASRCelestialBody::BeginPlay()
 		LogMissingDataErrorOnce(TEXT("BeginPlay"));
 		return;
 	}
+
+	ApplyData();
 
 	if (USRCelestialBodyRegistrySubsystem* CelestialRegistry = FindCelestialRegistry())
 	{
@@ -1138,6 +1449,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 		const TArray<FSRSourceQuad> SourceQuads = RecoverSourceQuads(PositionVertexBuffer, IndexBuffer, IndexCount);
 		if (!SourceQuads.IsEmpty())
 		{
+			const TArray<FSRRecoveredQuadGridAddress> QuadGridAddresses = BuildRecoveredQuadGridAddresses(SourceQuads, PositionVertexBuffer);
 			TArray<UE::Geometry::FDynamicMesh3> FaceDynamicMeshes;
 			FaceDynamicMeshes.SetNum(CubeSphereFaceComponentCount);
 			for (UE::Geometry::FDynamicMesh3& FaceDynamicMesh : FaceDynamicMeshes)
@@ -1297,6 +1609,8 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 			TMap<uint64, FIntPoint> CachedCellEdgeBySourceEdge;
 			CachedCellEdgeBySourceEdge.Reserve(SourceQuads.Num() * 4);
+			TMap<uint64, FIntPoint> CachedCellEdgeBySourcePositionEdge;
+			CachedCellEdgeBySourcePositionEdge.Reserve(SourceQuads.Num() * 4);
 			TMap<FSRPlanetSurfaceGridCellId, int32> CachedCellIndexById;
 			CachedCellIndexById.Reserve(SourceQuads.Num());
 			CachedSurfaceGridCells.Reset(SourceQuads.Num());
@@ -1339,8 +1653,24 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				}
 			};
 
+			auto AssignCachedNeighborPair = [this, &AssignCachedNeighbor](
+				int32 CellIndex,
+				int32 EdgeIndex,
+				const FIntPoint& ExistingCellEdge)
+			{
+				if (!CachedSurfaceGridCells.IsValidIndex(ExistingCellEdge.X))
+				{
+					return;
+				}
+
+				AssignCachedNeighbor(CellIndex, EdgeIndex, CachedSurfaceGridCells[ExistingCellEdge.X].CellId);
+				AssignCachedNeighbor(ExistingCellEdge.X, ExistingCellEdge.Y, CachedSurfaceGridCells[CellIndex].CellId);
+			};
+
 			auto AddCachedSideLineSegment = [this, &CachedCellIndexById](
 				const FSRPlanetSurfaceGridCellId& CellId,
+				const FSRPlanetSurfaceGridCellId& AdjacentCellId,
+				bool bHasAdjacentCell,
 				const FVector& PointA,
 				const FVector& PointB)
 			{
@@ -1358,23 +1688,52 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				FSRPlanetSurfaceGridLineSegment SideLineSegment;
 				SideLineSegment.LocalPointA = PointA * Scale;
 				SideLineSegment.LocalPointB = PointB * Scale;
+				SideLineSegment.bHasAdjacentCell = bHasAdjacentCell;
+				SideLineSegment.AdjacentCellId = AdjacentCellId;
 				CachedSurfaceGridCells[*CellIndex].SideLineSegments.Add(SideLineSegment);
 			};
 
-			auto AddCachedSideWallOutline = [&AddCachedSideLineSegment](
+			auto AddCachedSideFace = [this, &CachedCellIndexById](
 				const FSRPlanetSurfaceGridCellId& CellId,
+				const FSRPlanetSurfaceGridCellId& AdjacentCellId,
+				bool bHasAdjacentCell,
 				const FVector& Point0,
 				const FVector& Point1,
 				const FVector& Point2,
 				const FVector& Point3)
 			{
-				AddCachedSideLineSegment(CellId, Point0, Point1);
-				AddCachedSideLineSegment(CellId, Point1, Point2);
-				AddCachedSideLineSegment(CellId, Point2, Point3);
-				AddCachedSideLineSegment(CellId, Point3, Point0);
+				const int32* CellIndex = CachedCellIndexById.Find(CellId);
+				if (!CellIndex || !CachedSurfaceGridCells.IsValidIndex(*CellIndex))
+				{
+					return;
+				}
+
+				FSRPlanetSurfaceGridSideFace SideFace;
+				SideFace.LocalPoint0 = Point0 * Scale;
+				SideFace.LocalPoint1 = Point1 * Scale;
+				SideFace.LocalPoint2 = Point2 * Scale;
+				SideFace.LocalPoint3 = Point3 * Scale;
+				SideFace.bHasAdjacentCell = bHasAdjacentCell;
+				SideFace.AdjacentCellId = AdjacentCellId;
+				CachedSurfaceGridCells[*CellIndex].SideFaces.Add(SideFace);
 			};
 
-			auto RegisterTerrainEdge = [this, &PendingTerrainEdges, &AppendFlatColoredQuad, &AddCachedSideWallOutline](
+			auto AddCachedSideWallOutline = [&AddCachedSideLineSegment](
+				const FSRPlanetSurfaceGridCellId& CellId,
+				const FSRPlanetSurfaceGridCellId& AdjacentCellId,
+				bool bHasAdjacentCell,
+				const FVector& Point0,
+				const FVector& Point1,
+				const FVector& Point2,
+				const FVector& Point3)
+			{
+				AddCachedSideLineSegment(CellId, AdjacentCellId, bHasAdjacentCell, Point0, Point1);
+				AddCachedSideLineSegment(CellId, AdjacentCellId, bHasAdjacentCell, Point1, Point2);
+				AddCachedSideLineSegment(CellId, AdjacentCellId, bHasAdjacentCell, Point2, Point3);
+				AddCachedSideLineSegment(CellId, AdjacentCellId, bHasAdjacentCell, Point3, Point0);
+			};
+
+			auto RegisterTerrainEdge = [this, &PendingTerrainEdges, &AppendFlatColoredQuad, &AddCachedSideWallOutline, &AddCachedSideFace](
 				const FVector& SourcePointA,
 				const FVector& SourcePointB,
 				const FVector& PointA,
@@ -1427,16 +1786,42 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 							true);
 						AddCachedSideWallOutline(
 							ExistingEdge->CellId,
+							CellId,
+							true,
 							ExistingEdge->PointA,
 							ExistingEdge->PointB,
 							OrderedPointB,
 							OrderedPointA);
+						if (bExistingCellIsHigher)
+						{
+							AddCachedSideFace(
+								ExistingEdge->CellId,
+								CellId,
+								true,
+								ExistingEdge->PointA,
+								ExistingEdge->PointB,
+								OrderedPointB,
+								OrderedPointA);
+						}
 						AddCachedSideWallOutline(
 							CellId,
+							ExistingEdge->CellId,
+							true,
 							ExistingEdge->PointA,
 							ExistingEdge->PointB,
 							OrderedPointB,
 							OrderedPointA);
+						if (bCurrentCellIsHigher)
+						{
+							AddCachedSideFace(
+								CellId,
+								ExistingEdge->CellId,
+								true,
+								ExistingEdge->PointA,
+								ExistingEdge->PointB,
+								OrderedPointB,
+								OrderedPointA);
+						}
 						if (bExistingCellIsHigher)
 						{
 							if (FSRCelestialBodyDynamicMeshCellColorData* ExistingCellColorData = DynamicMeshColorDataByCell.Find(ExistingEdge->CellId))
@@ -1524,11 +1909,10 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				}
 
 				const int32 MaterialId = GetTerrainBiomeMaterialId(DynamicMeshGeneration, TerrainSample.Biome);
-				FSRPlanetSurfaceGridCellId CellId;
-				FVector2D UnusedFaceCoordinates = FVector2D::ZeroVector;
-				USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(CellDirection, 1, CellId, UnusedFaceCoordinates);
-				CellId.CellX = QuadIndex;
-				CellId.CellY = 0;
+				const FSRRecoveredQuadGridAddress QuadGridAddress = QuadGridAddresses.IsValidIndex(QuadIndex)
+					? QuadGridAddresses[QuadIndex]
+					: FSRRecoveredQuadGridAddress();
+				const FSRPlanetSurfaceGridCellId CellId = QuadGridAddress.CellId;
 				const int32 CellMeshComponentIndex = GetCubeSphereFaceComponentIndex(CellId.Face);
 
 				FSRCelestialBodyDynamicMeshCellColorData& CellColorData = DynamicMeshColorDataByCell.FindOrAdd(CellId);
@@ -1538,17 +1922,21 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 				FSRPlanetSurfaceGridCell CachedCell;
 				CachedCell.CellId = CellId;
-				CachedCell.LocalCenter = (TargetPositions[0] + TargetPositions[1] + TargetPositions[2] + TargetPositions[3]) * (Scale * 0.25f);
+				CachedCell.LocalCenter = CellDirection * ((SourceCellRadius + TerrainSample.HeightOffset) * Scale);
 				CachedCell.LocalNormal = CellNormal;
 				CachedCell.Corner00 = TargetPositions[0] * Scale;
 				CachedCell.Corner10 = TargetPositions[1] * Scale;
 				CachedCell.Corner11 = TargetPositions[2] * Scale;
 				CachedCell.Corner01 = TargetPositions[3] * Scale;
-				CachedCell.FaceUVMin = FVector2D::ZeroVector;
-				CachedCell.FaceUVMax = FVector2D::UnitVector;
+				const float FaceCellStep = 2.0f / static_cast<float>(FMath::Max(1, QuadGridAddress.FaceResolution));
+				CachedCell.FaceUVMin = FVector2D(
+					-1.0f + FaceCellStep * static_cast<float>(CellId.CellX),
+					-1.0f + FaceCellStep * static_cast<float>(CellId.CellY));
+				CachedCell.FaceUVMax = CachedCell.FaceUVMin + FVector2D(FaceCellStep, FaceCellStep);
 				CachedCell.ApproxSurfaceArea =
 					(FVector::CrossProduct(CachedCell.Corner10 - CachedCell.Corner00, CachedCell.Corner11 - CachedCell.Corner00).Size() * 0.5f)
 					+ (FVector::CrossProduct(CachedCell.Corner11 - CachedCell.Corner00, CachedCell.Corner01 - CachedCell.Corner00).Size() * 0.5f);
+				CachedCell.Neighbors = USRPlanetSurfaceGridLibrary::GetCubeSphereNeighborIds(CellId, FMath::Max(1, QuadGridAddress.FaceResolution));
 
 				const int32 CachedCellIndex = CachedSurfaceGridCells.Num();
 				CachedSurfaceGridCells.Add(CachedCell);
@@ -1564,19 +1952,30 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					BuildSourceEdgeKey(SourceVertexIds[2], SourceVertexIds[3]),
 					BuildSourceEdgeKey(SourceVertexIds[3], SourceVertexIds[0]),
 				};
+				const uint64 CachedPositionEdgeKeys[4] =
+				{
+					BuildSourcePositionEdgeKey(SourcePositions[0], SourcePositions[1]),
+					BuildSourcePositionEdgeKey(SourcePositions[1], SourcePositions[2]),
+					BuildSourcePositionEdgeKey(SourcePositions[2], SourcePositions[3]),
+					BuildSourcePositionEdgeKey(SourcePositions[3], SourcePositions[0]),
+				};
 				for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
 				{
 					if (const FIntPoint* ExistingCellEdge = CachedCellEdgeBySourceEdge.Find(CachedEdgeKeys[EdgeIndex]))
 					{
-						if (CachedSurfaceGridCells.IsValidIndex(ExistingCellEdge->X))
-						{
-							AssignCachedNeighbor(CachedCellIndex, EdgeIndex, CachedSurfaceGridCells[ExistingCellEdge->X].CellId);
-							AssignCachedNeighbor(ExistingCellEdge->X, ExistingCellEdge->Y, CachedSurfaceGridCells[CachedCellIndex].CellId);
-						}
+						AssignCachedNeighborPair(CachedCellIndex, EdgeIndex, *ExistingCellEdge);
+						CachedCellEdgeBySourcePositionEdge.Remove(CachedPositionEdgeKeys[EdgeIndex]);
+						continue;
+					}
+
+					if (const FIntPoint* ExistingCellEdge = CachedCellEdgeBySourcePositionEdge.Find(CachedPositionEdgeKeys[EdgeIndex]))
+					{
+						AssignCachedNeighborPair(CachedCellIndex, EdgeIndex, *ExistingCellEdge);
 						continue;
 					}
 
 					CachedCellEdgeBySourceEdge.Add(CachedEdgeKeys[EdgeIndex], FIntPoint(CachedCellIndex, EdgeIndex));
+					CachedCellEdgeBySourcePositionEdge.Add(CachedPositionEdgeKeys[EdgeIndex], FIntPoint(CachedCellIndex, EdgeIndex));
 				}
 
 				RegisterTerrainEdge(SourcePositions[0], SourcePositions[1], TargetPositions[0], TargetPositions[1], TerrainSample.SurfaceColor, MaterialId, CellId);
@@ -1608,6 +2007,8 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					true);
 				AddCachedSideWallOutline(
 					PendingEdge.CellId,
+					FSRPlanetSurfaceGridCellId(),
+					false,
 					PendingEdge.PointA,
 					PendingEdge.PointB,
 					PendingEdge.SourcePointB,
@@ -1616,6 +2017,15 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				const float BoundaryEdgeRadius = (PendingEdge.SourcePointA.Length() + PendingEdge.SourcePointB.Length()) * 0.5f;
 				if (CellEdgeRadius > BoundaryEdgeRadius + KINDA_SMALL_NUMBER)
 				{
+					AddCachedSideFace(
+						PendingEdge.CellId,
+						FSRPlanetSurfaceGridCellId(),
+						false,
+						PendingEdge.PointA,
+						PendingEdge.PointB,
+						PendingEdge.SourcePointB,
+						PendingEdge.SourcePointA);
+
 					if (FSRCelestialBodyDynamicMeshCellColorData* CellColorData = DynamicMeshColorDataByCell.Find(PendingEdge.CellId))
 					{
 						CellColorData->SideColorElements.Append(SideRenderData.ColorElements);
@@ -1815,6 +2225,7 @@ uint32 ASRCelestialBody::ComputeDynamicMeshBuildHash() const
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.NoiseOctaves));
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.NoisePersistence));
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.OceanThreshold));
+	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.AtmosphereThreshold));
 
 	TArray<ESRPlanetBiome> BiomeKeys;
 	DynamicMeshGeneration.BiomeMaterials.GetKeys(BiomeKeys);

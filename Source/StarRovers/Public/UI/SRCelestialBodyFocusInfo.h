@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "SRCelestialBodyFocusInfo.generated.h"
 
 class AActor;
@@ -21,6 +22,15 @@ struct STARROVERS_API FSRCelestialBodyFocusInfo
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bHasSurfaceGrid"))
 	bool bHasSurfaceGrid = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bHasHoveredSurfaceCell"))
+	bool bHasHoveredSurfaceCell = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "HoveredSurfaceCellInfo"))
+	FSRPlanetSurfaceGridCellInfo HoveredSurfaceCellInfo;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "HoveredSurfaceGridPatchCellIds"))
+	TArray<FSRPlanetSurfaceGridCellId> HoveredSurfaceGridPatchCellIds;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bIsValid"))
 	bool bIsValid = false;

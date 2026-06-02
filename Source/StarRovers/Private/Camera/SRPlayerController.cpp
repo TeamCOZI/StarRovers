@@ -8,10 +8,12 @@
 #include "GameFramework/PlayerController.h"
 #include "InputAction.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
+#include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "TimerManager.h"
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 #include "UI/SRCelestialBodyOverviewWidget.h"
+#include "UI/SRStructureSelectionWidget.h"
 #include "UI/SRTimeControlWidget.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -58,6 +60,10 @@ ASRPlayerController::ASRPlayerController()
 	FocusInfoWidgetZOrder = 0;
 	OverviewWidgetZOrder = 1;
 	TimeControlWidgetZOrder = 2;
+	StructureSelectionWidgetZOrder = 3;
+	SelectedStructureBuildId = NAME_None;
+	bHasSelectedStructureBuildId = false;
+	SelectedStructureDataAsset = nullptr;
 	bPendingInitialPrimaryStarFocus = true;
 
 	AssemblyComponent = CreateDefaultSubobject<USRAssemblyComponent>(TEXT("AssemblyComponent"));
@@ -80,6 +86,8 @@ void ASRPlayerController::BeginPlay()
 	CreateOverviewWidget();
 	RefreshOverviewWidget();
 	CreateTimeControlWidget();
+	CreateStructureSelectionWidget();
+	RefreshStructureSelectionWidget();
 	TryAutoFocusPrimaryStar();
 }
 
@@ -148,9 +156,48 @@ FSRCelestialBodyFocusInfo ASRPlayerController::GetSelectedActorFocusInfo() const
 	return SelectedActorFocusInfo;
 }
 
+void ASRPlayerController::SetHoveredSurfaceCellInfo(bool bHasHoveredSurfaceCell, const FSRPlanetSurfaceGridCellInfo& HoveredSurfaceCellInfo)
+{
+	if (!SelectedActorFocusInfo.bIsValid)
+	{
+		SelectedActorFocusInfo = USRCelestialBodyRuntimeLibrary::BuildCelestialBodyFocusInfo(SelectedActor);
+	}
+
+	if (!SelectedActorFocusInfo.bIsValid)
+	{
+		return;
+	}
+
+	SelectedActorFocusInfo.bHasHoveredSurfaceCell = bHasHoveredSurfaceCell;
+	SelectedActorFocusInfo.HoveredSurfaceCellInfo = bHasHoveredSurfaceCell
+		? HoveredSurfaceCellInfo
+		: FSRPlanetSurfaceGridCellInfo();
+	SelectedActorFocusInfo.HoveredSurfaceGridPatchCellIds.Reset();
+	if (bHasHoveredSurfaceCell)
+	{
+		if (USRPlanetSurfaceGrid* SurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
+		{
+			SurfaceGrid->GetInteractionGridPatchCellIds(
+				HoveredSurfaceCellInfo.CellId,
+				SelectedActorFocusInfo.HoveredSurfaceGridPatchCellIds);
+		}
+	}
+
+	if (FocusInfoWidget)
+	{
+		FocusInfoWidget->SetFocusInfo(SelectedActorFocusInfo);
+		FocusInfoWidget->SetAssemblyModeActive(IsAssemblyModeActive());
+	}
+}
+
 USRTimeControlWidget* ASRPlayerController::GetTimeControlWidget() const
 {
 	return TimeControlWidget;
+}
+
+USRStructureSelectionWidget* ASRPlayerController::GetStructureSelectionWidget() const
+{
+	return StructureSelectionWidget;
 }
 
 bool ASRPlayerController::IsAssemblyModeActive() const
@@ -165,11 +212,27 @@ void ASRPlayerController::SetAssemblyModeActive(bool bNewAssemblyModeActive)
 		AssemblyComponent->SetAssemblyModeActive(bNewAssemblyModeActive);
 	}
 	RefreshFocusInfoWidget();
+	RefreshStructureSelectionWidget();
 }
 
 void ASRPlayerController::ToggleAssemblyMode()
 {
 	SetAssemblyModeActive(!IsAssemblyModeActive());
+}
+
+bool ASRPlayerController::HasSelectedStructureBuildId() const
+{
+	return bHasSelectedStructureBuildId;
+}
+
+FName ASRPlayerController::GetSelectedStructureBuildId() const
+{
+	return SelectedStructureBuildId;
+}
+
+USRStructureDataAsset* ASRPlayerController::GetSelectedStructureDataAsset() const
+{
+	return SelectedStructureDataAsset;
 }
 
 USRCelestialBodyRegistrySubsystem* ASRPlayerController::GetCelestialBodyRegistry() const
@@ -344,6 +407,98 @@ void ASRPlayerController::CreateTimeControlWidget()
 	}
 
 	TimeControlWidget->AddToViewport(TimeControlWidgetZOrder);
+}
+
+void ASRPlayerController::CreateStructureSelectionWidget()
+{
+	if (!IsLocalController() || StructureSelectionWidget)
+	{
+		return;
+	}
+
+	if (!StructureSelectionWidgetClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires StructureSelectionWidgetClass to create the structure selection widget."));
+		return;
+	}
+
+	StructureSelectionWidget = CreateWidget<USRStructureSelectionWidget>(this, StructureSelectionWidgetClass);
+	if (!StructureSelectionWidget)
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController failed to create StructureSelectionWidget from '%s'."), *GetNameSafe(StructureSelectionWidgetClass));
+		return;
+	}
+
+	StructureSelectionWidget->AddToViewport(StructureSelectionWidgetZOrder);
+	StructureSelectionWidget->OnBuildOptionSelected().AddUObject(this, &ASRPlayerController::HandleStructureBuildOptionSelected);
+	TArray<USRStructureDataAsset*> StructureDataAssets;
+	GetAvailableStructureDataAssets(StructureDataAssets);
+	StructureSelectionWidget->SetBuildOptionsFromDataAssets(StructureDataAssets);
+	StructureSelectionWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void ASRPlayerController::RefreshStructureSelectionWidget()
+{
+	if (!StructureSelectionWidget)
+	{
+		return;
+	}
+
+	const bool bShowStructureSelection = IsAssemblyModeActive();
+	TArray<USRStructureDataAsset*> StructureDataAssets;
+	GetAvailableStructureDataAssets(StructureDataAssets);
+	StructureSelectionWidget->SetBuildOptionsFromDataAssets(StructureDataAssets);
+	if (bHasSelectedStructureBuildId && !StructureSelectionWidget->HasSelectedStructureId())
+	{
+		SelectedStructureBuildId = NAME_None;
+		bHasSelectedStructureBuildId = false;
+		SelectedStructureDataAsset = nullptr;
+	}
+	StructureSelectionWidget->SetVisibility(bShowStructureSelection ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	if (!bShowStructureSelection)
+	{
+		SelectedStructureBuildId = NAME_None;
+		bHasSelectedStructureBuildId = false;
+		SelectedStructureDataAsset = nullptr;
+		StructureSelectionWidget->ClearSelectedStructureId();
+	}
+	else if (bHasSelectedStructureBuildId)
+	{
+		StructureSelectionWidget->SetSelectedStructureId(SelectedStructureBuildId);
+		SelectedStructureDataAsset = StructureSelectionWidget->GetSelectedStructureDataAsset();
+	}
+}
+
+void ASRPlayerController::HandleStructureBuildOptionSelected(FName StructureId, USRStructureDataAsset* StructureDataAsset)
+{
+	if (StructureId.IsNone() || !IsValid(StructureDataAsset))
+	{
+		if (!StructureId.IsNone())
+		{
+			UE_LOG(LogTemp, Error, TEXT("ASRPlayerController received structure build option '%s' without a valid StructureDataAsset."), *StructureId.ToString());
+		}
+		SelectedStructureBuildId = NAME_None;
+		bHasSelectedStructureBuildId = false;
+		SelectedStructureDataAsset = nullptr;
+		return;
+	}
+
+	SelectedStructureBuildId = StructureId;
+	bHasSelectedStructureBuildId = true;
+	SelectedStructureDataAsset = StructureDataAsset;
+}
+
+void ASRPlayerController::GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const
+{
+	OutStructureDataAssets.Reset();
+	OutStructureDataAssets.Reserve(AvailableStructureDataAssets.Num());
+	for (USRStructureDataAsset* StructureDataAsset : AvailableStructureDataAssets)
+	{
+		if (IsValid(StructureDataAsset))
+		{
+			OutStructureDataAssets.Add(StructureDataAsset);
+		}
+	}
 }
 
 void ASRPlayerController::UpdateHitResultTraceDistance()

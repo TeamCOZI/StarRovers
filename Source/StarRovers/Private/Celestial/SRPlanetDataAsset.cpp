@@ -9,6 +9,8 @@ USRPlanetDataAsset::USRPlanetDataAsset()
 	Scale = 20.0f;
 	bHasOcean = true;
 	OceanScaleMultiplier = 1.0f;
+	bHasAtmosphere = true;
+	AtmosphereScaleMultiplier = 1.0f;
 	SurfaceGridHeightOffset = 0.0f;
 	ConstructionHeightOffset = 15.0f;
 	DynamicMeshGeneration = FSRDynamicMeshGeneration();
@@ -38,6 +40,10 @@ FSRCelestialBodyData USRPlanetDataAsset::BuildData() const
 	Result.OceanMesh = OceanMesh;
 	Result.OceanMaterial = OceanMaterial;
 	Result.OceanScaleMultiplier = FMath::Max(0.01f, OceanScaleMultiplier);
+	Result.bHasAtmosphere = bHasAtmosphere;
+	Result.AtmosphereMesh = AtmosphereMesh;
+	Result.AtmosphereMaterial = AtmosphereMaterial;
+	Result.AtmosphereScaleMultiplier = FMath::Max(0.01f, AtmosphereScaleMultiplier);
 	Result.SurfaceGridHeightOffset = FMath::Clamp(SurfaceGridHeightOffset, 0.0f, 1.0f);
 	Result.ConstructionHeightOffset = FMath::Max(0.0f, ConstructionHeightOffset);
 	Result.OrbitPeriod = FMath::Max(0.0f, OrbitPeriod);

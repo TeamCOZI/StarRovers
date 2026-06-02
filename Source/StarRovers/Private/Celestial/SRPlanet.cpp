@@ -47,6 +47,10 @@ ASRPlanet::ASRPlanet()
 	OceanMesh = nullptr;
 	OceanMaterial = nullptr;
 	OceanScaleMultiplier = 1.0f;
+	bHasAtmosphere = false;
+	AtmosphereMesh = nullptr;
+	AtmosphereMaterial = nullptr;
+	AtmosphereScaleMultiplier = 1.0f;
 
 	Orbit = CreateDefaultSubobject<USROrbit>(TEXT("Orbit"));
 
@@ -65,6 +69,12 @@ ASRPlanet::ASRPlanet()
 	OceanStaticMesh->SetVisibility(false);
 	OceanStaticMesh->SetHiddenInGame(true);
 
+	AtmosphereStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AtmosphereStaticMesh"));
+	AtmosphereStaticMesh->SetupAttachment(SceneRoot);
+	AtmosphereStaticMesh->SetMobility(EComponentMobility::Movable);
+	AtmosphereStaticMesh->SetVisibility(false);
+	AtmosphereStaticMesh->SetHiddenInGame(true);
+
 	SurfaceGrid = CreateDefaultSubobject<USRPlanetSurfaceGrid>(TEXT("SurfaceGrid"));
 	SurfaceGrid->SetupAttachment(SceneRoot);
 }
@@ -77,6 +87,10 @@ void ASRPlanet::SetData(const FSRCelestialBodyData& NewData)
 	OceanMesh = NewData.OceanMesh;
 	OceanMaterial = NewData.OceanMaterial;
 	OceanScaleMultiplier = NewData.OceanScaleMultiplier;
+	bHasAtmosphere = NewData.bHasAtmosphere;
+	AtmosphereMesh = NewData.AtmosphereMesh;
+	AtmosphereMaterial = NewData.AtmosphereMaterial;
+	AtmosphereScaleMultiplier = NewData.AtmosphereScaleMultiplier;
 	ShowOrbitLine = NewData.ShowOrbitLine;
 	OrbitLineColor = NewData.OrbitLineColor;
 	OrbitLineOpacity = NewData.OrbitLineOpacity;
@@ -110,6 +124,7 @@ void ASRPlanet::ApplyData()
 	GridLineOpacity = FMath::Clamp(GridLineOpacity, 0.0f, 1.0f);
 	SurfaceGridHeightOffset = FMath::Clamp(SurfaceGridHeightOffset, 0.0f, 1.0f);
 	OceanScaleMultiplier = FMath::Max(0.01f, OceanScaleMultiplier);
+	AtmosphereScaleMultiplier = FMath::Max(0.01f, AtmosphereScaleMultiplier);
 	OrbitLineOpacity = FMath::Clamp(OrbitLineOpacity, 0.0f, 1.0f);
 	OrbitLineSegments = FMath::Max(3, OrbitLineSegments);
 	OrbitLineThickness = FMath::Max(0.0f, OrbitLineThickness);
@@ -121,7 +136,15 @@ void ASRPlanet::ApplyData()
 		OceanStaticMesh->SetRelativeScale3D(FVector(ResolveOceanScale()));
 	}
 
+	if (IsValid(AtmosphereStaticMesh))
+	{
+		AtmosphereStaticMesh->SetRelativeLocation(FVector::ZeroVector);
+		AtmosphereStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
+		AtmosphereStaticMesh->SetRelativeScale3D(FVector(ResolveAtmosphereScale()));
+	}
+
 	ApplyOceanStaticMeshSettings();
+	ApplyAtmosphereStaticMeshSettings();
 	if (IsValid(ClickSphereCollision))
 	{
 		const float BodyRadius = IsValid(StaticMesh.Get())
@@ -130,7 +153,11 @@ void ASRPlanet::ApplyData()
 		const float OceanRadius = bHasOcean && IsValid(OceanMesh.Get())
 			? OceanMesh->GetBounds().SphereRadius * ResolveOceanScale()
 			: 0.0f;
-		ClickSphereCollision->SetSphereRadius(FMath::Max(FMath::Max(BodyRadius, OceanRadius), 1.0f));
+		const float AtmosphereRadius = bHasAtmosphere && IsValid(AtmosphereMesh.Get())
+			? AtmosphereMesh->GetBounds().SphereRadius * ResolveAtmosphereScale()
+			: 0.0f;
+		const float VisualRadius = FMath::Max(FMath::Max(BodyRadius, OceanRadius), AtmosphereRadius);
+		ClickSphereCollision->SetSphereRadius(FMath::Max(VisualRadius, 1.0f));
 	}
 
 	if (SupportsSurfaceGrid())
@@ -201,6 +228,10 @@ FSRCelestialBodyData ASRPlanet::GetData() const
 	CurrentData.OceanMesh = OceanMesh;
 	CurrentData.OceanMaterial = OceanMaterial;
 	CurrentData.OceanScaleMultiplier = OceanScaleMultiplier;
+	CurrentData.bHasAtmosphere = bHasAtmosphere;
+	CurrentData.AtmosphereMesh = AtmosphereMesh;
+	CurrentData.AtmosphereMaterial = AtmosphereMaterial;
+	CurrentData.AtmosphereScaleMultiplier = AtmosphereScaleMultiplier;
 	CurrentData.ShowOrbitLine = ShowOrbitLine;
 	CurrentData.OrbitLineColor = OrbitLineColor;
 	CurrentData.OrbitLineOpacity = OrbitLineOpacity;
@@ -228,6 +259,13 @@ void ASRPlanet::SetCelestialBodyMesh(bool bUseDynamicMesh)
 		const bool bEnableOcean = bUseDynamicMesh && bHasOcean && IsValid(OceanMesh.Get()) && IsValid(OceanMaterial.Get());
 		OceanStaticMesh->SetVisibility(bEnableOcean);
 		OceanStaticMesh->SetHiddenInGame(!bEnableOcean);
+	}
+
+	if (IsValid(AtmosphereStaticMesh))
+	{
+		const bool bEnableAtmosphere = bUseDynamicMesh && bHasAtmosphere && IsValid(AtmosphereMesh.Get()) && IsValid(AtmosphereMaterial.Get());
+		AtmosphereStaticMesh->SetVisibility(bEnableAtmosphere);
+		AtmosphereStaticMesh->SetHiddenInGame(!bEnableAtmosphere);
 	}
 }
 
@@ -329,6 +367,68 @@ float ASRPlanet::EstimateProceduralOceanScaleMultiplier() const
 	const float SurfacePadding = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight) * OceanSurfacePaddingRatio;
 	const float DesiredOceanRadius = FMath::Max(1.0f, BodyMeshRadius + HighestWaterHeightOffset + SurfacePadding);
 	return DesiredOceanRadius / OceanMeshRadius;
+}
+
+void ASRPlanet::ApplyAtmosphereStaticMeshSettings()
+{
+	if (!IsValid(AtmosphereStaticMesh))
+	{
+		return;
+	}
+
+	UStaticMesh* DesiredAtmosphereMesh = AtmosphereMesh.Get();
+	if (!IsValid(DesiredAtmosphereMesh) && bHasAtmosphere)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires AtmosphereMesh while atmosphere is enabled."), *GetName());
+	}
+
+	const bool bEnableAtmosphere = bHasAtmosphere && IsValid(DesiredAtmosphereMesh);
+	if (!bEnableAtmosphere)
+	{
+		AtmosphereStaticMesh->SetVisibility(false);
+		AtmosphereStaticMesh->SetHiddenInGame(true);
+		return;
+	}
+
+	if (AtmosphereStaticMesh->GetStaticMesh() != DesiredAtmosphereMesh)
+	{
+		AtmosphereStaticMesh->SetStaticMesh(DesiredAtmosphereMesh);
+	}
+
+	UMaterialInterface* DesiredAtmosphereMaterial = AtmosphereMaterial.Get();
+	if (!IsValid(DesiredAtmosphereMaterial))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires AtmosphereMaterial while atmosphere is enabled."), *GetName());
+		AtmosphereStaticMesh->SetVisibility(false);
+		AtmosphereStaticMesh->SetHiddenInGame(true);
+		return;
+	}
+
+	AtmosphereStaticMesh->SetMaterial(0, DesiredAtmosphereMaterial);
+
+	const float ResolvedAtmosphereScale = ResolveAtmosphereScale();
+	AtmosphereStaticMesh->SetRelativeLocation(FVector::ZeroVector);
+	AtmosphereStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
+	AtmosphereStaticMesh->SetRelativeScale3D(FVector(ResolvedAtmosphereScale));
+	AtmosphereStaticMesh->SetVisibility(true);
+	AtmosphereStaticMesh->SetHiddenInGame(false);
+}
+
+float ASRPlanet::ResolveAtmosphereScale() const
+{
+	const float AtmosphereThreshold = FMath::Max(0.01f, DynamicMeshGeneration.AtmosphereThreshold);
+	if (IsValid(StaticMesh.Get()) && IsValid(AtmosphereMesh.Get()))
+	{
+		const float BodyMeshRadius = StaticMesh->GetBounds().SphereRadius;
+		const float AtmosphereMeshRadius = AtmosphereMesh->GetBounds().SphereRadius;
+		if (BodyMeshRadius > KINDA_SMALL_NUMBER && AtmosphereMeshRadius > KINDA_SMALL_NUMBER)
+		{
+			const float DesiredAtmosphereRadius = BodyMeshRadius * AtmosphereThreshold;
+			return FMath::Max(0.01f, Scale * AtmosphereScaleMultiplier * (DesiredAtmosphereRadius / AtmosphereMeshRadius));
+		}
+	}
+
+	return FMath::Max(0.01f, Scale * AtmosphereScaleMultiplier * AtmosphereThreshold);
 }
 
 

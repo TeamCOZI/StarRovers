@@ -9,6 +9,8 @@ class UInputAction;
 class USRAssemblyComponent;
 class USRCelestialBodyFocusInfoWidget;
 class USRCelestialBodyOverviewWidget;
+class USRStructureSelectionWidget;
+class USRStructureDataAsset;
 class USRTimeControlWidget;
 class ASRCameraPawn;
 class USRCelestialBodyRegistrySubsystem;
@@ -43,8 +45,13 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     FSRCelestialBodyFocusInfo GetSelectedActorFocusInfo() const;
 
+    void SetHoveredSurfaceCellInfo(bool bHasHoveredSurfaceCell, const FSRPlanetSurfaceGridCellInfo& HoveredSurfaceCellInfo);
+
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     USRTimeControlWidget* GetTimeControlWidget() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
+    USRStructureSelectionWidget* GetStructureSelectionWidget() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
     bool IsAssemblyModeActive() const;
@@ -54,6 +61,15 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Assembly")
     void ToggleAssemblyMode();
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
+    bool HasSelectedStructureBuildId() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
+    FName GetSelectedStructureBuildId() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
+    USRStructureDataAsset* GetSelectedStructureDataAsset() const;
 
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "LeftClickAction"))
@@ -95,6 +111,27 @@ protected:
     UPROPERTY()
     TObjectPtr<USRTimeControlWidget> TimeControlWidget;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "StructureSelectionWidgetClass"))
+    TSubclassOf<USRStructureSelectionWidget> StructureSelectionWidgetClass;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "StructureSelectionWidgetZOrder"))
+    int32 StructureSelectionWidgetZOrder;
+
+    UPROPERTY()
+    TObjectPtr<USRStructureSelectionWidget> StructureSelectionWidget;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "AvailableStructureDataAssets"))
+    TArray<TObjectPtr<USRStructureDataAsset>> AvailableStructureDataAssets;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "SelectedStructureBuildId"))
+    FName SelectedStructureBuildId;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "bHasSelectedStructureBuildId"))
+    bool bHasSelectedStructureBuildId;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "SelectedStructureDataAsset"))
+    TObjectPtr<USRStructureDataAsset> SelectedStructureDataAsset;
+
     UPROPERTY(Transient)
     TObjectPtr<ASRCameraPawn> BoundCameraPawn;
 
@@ -120,6 +157,10 @@ private:
     void RefreshOverviewWidget();
     void HandleOverviewCelestialBodyRequested(AActor* RequestedActor);
     void CreateTimeControlWidget();
+    void CreateStructureSelectionWidget();
+    void RefreshStructureSelectionWidget();
+    void HandleStructureBuildOptionSelected(FName StructureId, USRStructureDataAsset* StructureDataAsset);
+    void GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const;
     void UpdateHitResultTraceDistance();
     void RequestFocusActor(AActor* NewFocusedActor, bool bSnapImmediately = false);
     void TryAutoFocusPrimaryStar();

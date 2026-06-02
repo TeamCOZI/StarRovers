@@ -57,6 +57,9 @@ struct STARROVERS_API FSRDynamicMeshGeneration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "OceanThreshold", ClampMin = "-1.0", ClampMax = "1.0"))
 	float OceanThreshold = -0.05f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "AtmosphereThreshold", ClampMin = "0.01"))
+	float AtmosphereThreshold = 1.03f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "ContinentFrequency", ClampMin = "0.01"))
 	float ContinentFrequency = 1.15f;
 

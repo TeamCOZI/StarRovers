@@ -117,7 +117,12 @@ namespace
 		OutData.OceanMesh = DataAssetData.OceanMesh;
 		OutData.OceanMaterial = DataAssetData.OceanMaterial;
 		OutData.OceanScaleMultiplier = DataAssetData.OceanScaleMultiplier;
+		OutData.bHasAtmosphere = DataAssetData.bHasAtmosphere;
+		OutData.AtmosphereMesh = DataAssetData.AtmosphereMesh;
+		OutData.AtmosphereMaterial = DataAssetData.AtmosphereMaterial;
+		OutData.AtmosphereScaleMultiplier = DataAssetData.AtmosphereScaleMultiplier;
 		OutData.SurfaceGridHeightOffset = DataAssetData.SurfaceGridHeightOffset;
+		OutData.ConstructionHeightOffset = DataAssetData.ConstructionHeightOffset;
 		OutData.OrbitPeriod = FMath::Max(0.0f, DataAssetData.OrbitPeriod);
 		OutData.StarPointLightIntensity = DataAssetData.StarPointLightIntensity;
 		OutData.StarPointLightColor = DataAssetData.StarPointLightColor;

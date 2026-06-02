@@ -53,10 +53,16 @@ public:
     bool GetCellById(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCell& OutCell) const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
+    bool GetCellInfoById(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCellInfo& OutCellInfo) const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     bool GetCellNeighbors(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCellNeighbors& OutNeighbors) const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     bool GetCellWorldTransform(const FSRPlanetSurfaceGridCellId& CellId, float HeightOffset, FTransform& OutTransform) const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
+    float GetConstructionHeightOffset() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     bool GetCellWorldCorners(const FSRPlanetSurfaceGridCellId& CellId, FVector& OutCorner00, FVector& OutCorner10, FVector& OutCorner11, FVector& OutCorner01) const;
@@ -82,6 +88,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     bool GetHoveredCell(FSRPlanetSurfaceGridCell& OutCell) const;
 
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
+    bool GetHoveredCellInfo(FSRPlanetSurfaceGridCellInfo& OutCellInfo) const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Debug")
+    bool GetInteractionGridPatchCellIds(const FSRPlanetSurfaceGridCellId& CenterCellId, TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const;
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     bool SetSelectedCell(const FSRPlanetSurfaceGridCellId& CellId);
 
@@ -93,6 +105,9 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     bool GetSelectedCell(FSRPlanetSurfaceGridCell& OutCell) const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
+    bool GetSelectedCellInfo(FSRPlanetSurfaceGridCellInfo& OutCellInfo) const;
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Debug")
     void DrawDebugGrid(float Duration = 0.0f) const;
@@ -221,6 +236,9 @@ private:
     void UpdateDebugTickState();
     void AppendInteractionCell(UE::Geometry::FDynamicMesh3& OverlayMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness) const;
     void RebuildGridMesh();
+    FSRPlanetSurfaceGridCellInfo BuildCellInfo(const FSRPlanetSurfaceGridCell& Cell) const;
+    FSRPlanetSurfaceGridCellInfo ResolveRuntimeCellInfo(const FSRPlanetSurfaceGridCellInfo& CellInfo) const;
+    void RebuildCellInfoIndex();
     bool AppendOwnerDynamicMeshWire(UE::Geometry::FDynamicMesh3& GridMesh, const FLinearColor& LineColor, float LineThickness) const;
     void AppendGridWireCell(UE::Geometry::FDynamicMesh3& GridMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness, bool bIncludeInEdgeSet, TSet<uint64>* DrawnEdges) const;
     void AppendGridWireEdge(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FLinearColor& LineColor, float LineThickness) const;
@@ -234,6 +252,7 @@ private:
     bool IntersectRayWithSurfaceSphere(const FVector& RayOrigin, const FVector& RayDirection, FVector& OutHitLocation) const;
 
     TMap<FSRPlanetSurfaceGridCellId, int32> CellIndexById;
+    TMap<FSRPlanetSurfaceGridCellId, FSRPlanetSurfaceGridCellInfo> CellInfoById;
     TMap<uint64, TArray<int32>> RaycastCellIndicesByBin;
     static constexpr int32 RaycastBinResolution = 64;
 

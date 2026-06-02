@@ -1,6 +1,6 @@
 # StarRovers
 
-업데이트: 2026-05-25
+업데이트: 2026-06-01
 
 ## 1. 문서 개요
 
@@ -44,7 +44,7 @@ flowchart TD
 
 `BP_CelestialBody`의 공통 Native 컴포넌트는 `CelestialBodyStaticMesh`, `CelestialBodyDynamicMesh`, `ClickSphereCollision`, `GravityParent`, `GravityLineBatch`다. `Ocean`, `ProceduralTerrain`, `Orbit`은 공통 BP가 아니라 필요한 타입 쪽에서 다룬다.
 
-`ASRPlanet`은 `Orbit`, `OceanStaticMesh`, `SurfaceGrid`를 Native 컴포넌트로 가진다. `SurfaceGrid` 타입은 `USRPlanetSurfaceGrid`다. 현재 `SurfaceGrid` 활성화는 `BodyCategory == Planet`일 때만 허용하므로, Moon은 Dynamic Mesh terrain은 생성될 수 있지만 표면 grid는 숨겨진다.
+`ASRPlanet`은 `Orbit`, `OceanStaticMesh`, `AtmosphereStaticMesh`, `SurfaceGrid`를 Native 컴포넌트로 가진다. `SurfaceGrid` 타입은 `USRPlanetSurfaceGrid`다. 현재 `SurfaceGrid` 활성화는 `BodyCategory == Planet`일 때만 허용하므로, Moon은 Dynamic Mesh terrain은 생성될 수 있지만 표면 grid는 숨겨진다.
 
 ### 4.3 Data Asset 항목
 
@@ -57,7 +57,7 @@ Star Data Asset의 `Star Rovers` 항목은 `Identity`, `CelestialBody`, `Gravity
 
 Star Material의 emissive scalar 값은 Material 또는 Material Instance에 저장된 값을 그대로 사용한다. C++는 `Emissive Strength`, `EmissiveStrength`, `GlowIntensity`, `Glow`, `Intensity`, `Brightness` 같은 scalar parameter를 덮어쓰지 않는다.
 
-Planet/Moon Data Asset의 `Star Rovers` 항목은 `Identity`, `CelestialBody`, `Gravity`, `Orbit`, `Surface`, `Dynamic Mesh Generation`, `Ocean`이다. `Surface`에는 `SurfaceGridHeightOffset`, `ConstructionHeightOffset`을 둔다. `Dynamic Mesh Generation`에는 `bMinecraft`를 포함한 `FSRDynamicMeshGeneration` 값을 직접 노출한다. `bMinecraft`가 true이면 Dynamic Mesh와 Surface Grid 높이를 `DynamicMeshHeight / 24` 단위로 계단화하고, false이면 terrain sample의 높이 값을 그대로 사용한다.
+Planet/Moon Data Asset의 `Star Rovers` 항목은 `Identity`, `CelestialBody`, `Gravity`, `Orbit`, `Surface`, `Dynamic Mesh Generation`, `Ocean`, `Atmosphere`다. `Surface`에는 `SurfaceGridHeightOffset`, `ConstructionHeightOffset`을 둔다. `Dynamic Mesh Generation`에는 `bMinecraft`를 포함한 `FSRDynamicMeshGeneration` 값을 직접 노출한다. `AtmosphereThreshold`는 `OceanThreshold` 바로 아래에 두며 `AtmosphereStaticMesh`의 body radius 대비 크기를 정한다. `bMinecraft`가 true이면 Dynamic Mesh와 Surface Grid 높이를 `DynamicMeshHeight / 24` 단위로 계단화하고, false이면 terrain sample의 높이 값을 그대로 사용한다.
 
 ### 4.4 Generator와 Camera
 
@@ -84,6 +84,7 @@ Planet/Moon Data Asset의 `Dynamic Mesh Generation` 항목은 `FSRDynamicMeshGen
 - `GenerationSeed`
 - `DynamicMeshHeight`
 - `OceanThreshold`
+- `AtmosphereThreshold`
 - `ContinentFrequency`
 - `MountainFrequency`
 - `MountainStrength`
@@ -150,11 +151,13 @@ sampler는 다음 개념을 섞어 `FSRPlanetTerrainSample`을 만든다.
 
 `FSRPlanetTerrainSample`은 `HeightOffset`, `Continent`, `MountainMask`, `Temperature`, `Moisture`, `RiverMask`, `LakeMask`, `PlateBeltMask`, `Biome`, `SurfaceColor`를 반환한다. Dynamic Mesh는 `SurfaceColor`를 vertex color로 기록하므로, Data Asset의 Material이 Vertex Color를 Base Color 또는 색상 블렌딩에 사용해야 지형 색이 화면에 반영된다.
 
-### 5.5 Ocean과 Surface Grid
+### 5.5 Ocean, Atmosphere와 Surface Grid
 
 Ocean scale은 `ASRPlanet::EstimateProceduralOceanScaleMultiplier()`가 terrain sample을 512개 방향에서 샘플링해 물 biome의 가장 높은 높이를 찾고, 약간의 padding을 더해 자동 추정한다. 물 sample이 없거나 procedural terrain이 꺼져 있으면 내부 `OceanScaleMultiplier` 값을 사용한다.
 
-Surface Grid는 Planet에서만 켜진다. `ASRPlanet::ApplyData()`가 body radius를 기준으로 `FaceResolution`을 자동 계산하고, `SurfaceGrid->ConfigureTerrain(DynamicMeshGeneration)`을 호출한다. Surface Grid는 collision trace로 표면을 다시 찾지 않고, Dynamic Mesh Generation과 같은 height/normal 계산을 사용한다.
+Atmosphere는 `ASRPlanet`의 Native `AtmosphereStaticMesh`로 표현한다. Planet/Moon Data Asset의 `Atmosphere` 항목은 `bHasAtmosphere`, `AtmosphereMesh`, `AtmosphereMaterial`을 노출하고, 내부 `AtmosphereScaleMultiplier`는 Ocean 쪽과 같은 전달 구조를 유지한다. 실제 크기는 `Dynamic Mesh Generation`의 `AtmosphereThreshold`를 body radius 대비 배율로 사용해 계산한다. 저장된 `.uasset` Data Asset의 Atmosphere mesh/material 값은 에디터에서 직접 설정해야 한다.
+
+Surface Grid는 Planet에서만 켜진다. `ASRPlanet::ApplyData()`가 body radius를 기준으로 `FaceResolution`을 자동 계산하고, `SurfaceGrid->ConfigureTerrain(DynamicMeshGeneration)`을 호출한다. Surface Grid는 collision trace로 표면을 다시 찾지 않고, Dynamic Mesh Generation과 같은 height/normal 계산을 사용한다. Dynamic Mesh Generation 중 recovered quad cell은 cube face별 2D 좌표로 정리한다. Face는 1-6에 대응하는 enum으로 저장하고, 각 face의 왼쪽 아래를 `(0, 0)`으로 보며 오른쪽/위쪽으로 `CellX`, `CellY`가 1씩 증가한다. `USRPlanetSurfaceGrid`는 `FSRPlanetSurfaceGridCell` 목록과 `FSRPlanetSurfaceGridCellInfo` 맵을 함께 유지해 Face, CellX/CellY, Face UV, local/world 위치, 이웃 cell, 점유 상태를 CellId 기준으로 조회할 수 있게 한다.
 
 ### 5.6 Dynamic Mesh / Assembly Mode 최적화
 
@@ -168,7 +171,11 @@ Hover와 Select 색상은 가능한 경우 별도 mesh를 덮는 방식이 아�
 
 Assembly Mode의 grid drawing은 전체 행성 Grid line mesh를 상시 렌더링하지 않는다. Hover 또는 Select로 작용 중인 cell 주변 5x5 patch만 그리고, patch 내부 line opacity는 일관되게 유지한다. Grid line은 cell corner에서 직접 만든 quad mesh로 그리며 shared edge는 patch 단위로 중복 제거한다. recovered quad cell에서는 line endpoint를 원래 cell/side face 위치에 유지하고, 실제 side wall quad가 생성될 때 side face outline segment도 cell cache에 함께 기록해 같은 overlay mesh 경로로 그린다. `Grid Overlay Material`에는 depth test를 끈 one-sided vertex-color material을 지정해 지형 mesh에 가려지는 현상을 줄일 수 있다. 숨겨진 grid는 `bCellsDirty`, `bGridMeshDirty`로 cell rebuild를 지연하고, fallback 상황에서만 별도 갱신한다.
 
-Focus 전환 후에는 cache가 없는 focused body에 대해서만 Dynamic Mesh build를 지연 실행하고, Surface Grid의 `PrepareGridForAssembly()`는 Assembly Mode 진입 시점까지 실행하지 않는다. 시작 시점 prebuild가 이미 끝난 경우 Assembly Mode 진입 시에는 같은 pass에서 생성된 grid cache를 재사용한다. Hover raycast는 face별 64x64 spatial bin index로 후보 cell을 줄이고, 마우스가 움직이지 않은 경우에는 같은 raycast를 매 tick 반복하지 않는다.
+Focus 전환 후에는 cache가 없는 focused body에 대해서만 Dynamic Mesh build를 지연 실행하고, Surface Grid의 `PrepareGridForAssembly()`는 Assembly Mode 진입 시점까지 실행하지 않는다. 시작 시점 prebuild가 이미 끝난 경우 Assembly Mode 진입 시에는 같은 pass에서 생성된 grid cache를 재사용한다. Hover raycast는 face별 64x64 spatial bin index로 후보 cell을 줄이고, 마우스가 움직이지 않은 경우에는 같은 raycast를 매 tick 반복하지 않는다. Assembly Mode에서 cell hover가 바뀌면 `USRAssemblyComponent`가 hovered `FSRPlanetSurfaceGridCellInfo`를 Focus Info UI에 전달하고, UI는 `Face`, `X`, `Y`만 표시한다.
+
+Assembly Mode 진입 시 `ASRPlayerController`는 `USRStructureSelectionWidget`을 표시한다. 이 위젯은 `FSRStructureBuildOption` 목록을 버튼으로 보여주고, 선택된 `StructureId`를 `ASRPlayerController::SelectedStructureBuildId`에 저장한다. 선택된 구조물 DA가 있고 grid 위 Hover Cell이 있으면 `USRAssemblyComponent`가 DA의 `StructureActorClass`를 Ghost actor로 spawn하고, `ISRBuildableStructureInterface`를 통해 DA 적용과 Ghost mode 전환을 호출한다. Ghost actor는 `USRPlanetSurfaceGrid::GetCellWorldTransform()` 결과에 구조물 DA의 `ConstructionHeightOffset`과 `PlacementYawDegrees`를 반영해 Hover Cell 위에 배치된다. Left Click으로 배치가 확정되면 같은 transform에 실제 구조물 Actor를 spawn하고 Ghost mode를 끈 뒤, `USRPlanetSurfaceGrid::SetCellOccupied()`로 해당 Cell의 `bOccupied`와 `OccupantId`를 갱신한다. Occupied Cell은 grid의 occupied 색상으로 표시되고 이후 구조물 배치 후보에서 제외된다.
+
+구조물 데이터는 `USRStructureDataAsset`이 담당한다. 주요 항목은 `StructureId`, `DisplayName`, `Description`, `StructureActorClass`, `StaticMesh`, `Material`, `GhostMaterial`, mesh relative transform, footprint cell 수, `ConstructionHeightOffset`, placement yaw, surface normal 정렬 여부다. `ASRStructure`는 `ISRBuildableStructureInterface`를 구현한 기본 구조물 Actor이며, 구조물 BP는 이 클래스를 부모로 두거나 같은 interface를 구현한다. `ASRPlayerController`의 `AvailableStructureDataAssets`에 등록된 DA 목록이 `WBP_StructureSelection`의 선택 버튼으로 노출된다.
 
 ## 6. 현재 에셋 상태
 
@@ -184,7 +191,12 @@ Focus 전환 후에는 cache가 없는 focused body에 대해서만 Dynamic Mesh
 - `Content/BlueprintClasses/Generator/BP_SolarSystemGenerator.uasset`
 - `Content/BlueprintClasses/UI/WBP_FocusInfo.uasset`
 - `Content/BlueprintClasses/UI/WBP_Overview.uasset`
+- `Content/BlueprintClasses/UI/WBP_StructureSelection.uasset`
 - `Content/BlueprintClasses/UI/WBP_TimeControl.uasset`
+
+구조물 선택 UI는 `USRStructureSelectionWidget` C++ 위젯을 부모로 둔 `WBP_StructureSelection` 에셋을 사용한다. `ASRPlayerController`의 `StructureSelectionWidgetClass`가 비어 있으면 fallback을 만들지 않고 Error를 기록한 뒤 생성하지 않는다.
+
+구조물 Actor BP와 구조물 DA 에셋은 아직 에디터에서 생성해야 한다. 구조물 BP는 `ASRStructure`를 부모로 만들거나 `ISRBuildableStructureInterface`를 구현한 Actor BP로 만들고, 구조물 DA는 `USRStructureDataAsset` 타입으로 생성한 뒤 `ASRPlayerController.AvailableStructureDataAssets`에 등록한다.
 
 확인된 Data Asset 에셋은 다음과 같다.
 

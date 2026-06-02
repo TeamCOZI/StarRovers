@@ -595,7 +595,17 @@ FSRCelestialBodyFocusInfo USRCelestialBodyRuntimeLibrary::BuildCelestialBodyFocu
 	FocusInfo.Actor = const_cast<AActor*>(Actor);
 	FocusInfo.VariableName = GetCelestialVariableName(Actor);
 	FocusInfo.bCanConstruct = GetCelestialCanConstruct(Actor);
-	FocusInfo.bHasSurfaceGrid = IsValid(FindPlanetSurfaceGrid(Actor));
+	if (USRPlanetSurfaceGrid* SurfaceGrid = FindPlanetSurfaceGrid(Actor))
+	{
+		FocusInfo.bHasSurfaceGrid = true;
+		FocusInfo.bHasHoveredSurfaceCell = SurfaceGrid->GetHoveredCellInfo(FocusInfo.HoveredSurfaceCellInfo);
+		if (FocusInfo.bHasHoveredSurfaceCell)
+		{
+			SurfaceGrid->GetInteractionGridPatchCellIds(
+				FocusInfo.HoveredSurfaceCellInfo.CellId,
+				FocusInfo.HoveredSurfaceGridPatchCellIds);
+		}
+	}
 	FocusInfo.bIsValid = true;
 	return FocusInfo;
 }

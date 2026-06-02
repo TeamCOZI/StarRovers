@@ -7,6 +7,7 @@
 
 class ASRPlayerController;
 class USRPlanetSurfaceGrid;
+class USRStructureDataAsset;
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
 class STARROVERS_API USRAssemblyComponent : public UActorComponent
@@ -17,6 +18,7 @@ public:
 	USRAssemblyComponent();
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
 	bool IsAssemblyModeActive() const;
@@ -44,8 +46,24 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<USRPlanetSurfaceGrid> LastHoveredSampleSurfaceGrid;
 
+	UPROPERTY(Transient)
+	TObjectPtr<USRPlanetSurfaceGrid> LastPublishedHoveredSurfaceGrid;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> StructureGhostActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStructureDataAsset> StructureGhostDataAsset;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStructureDataAsset> LastLoggedInvalidGhostDataAsset;
+
 	FVector2D LastHoveredSampleMousePosition;
 	bool bHasLastHoveredSampleMousePosition;
+	bool bHasLastPublishedHoveredCellInfo;
+	FSRPlanetSurfaceGridCellId LastPublishedHoveredCellId;
+	FSRPlanetSurfaceGridCellId StructureGhostCellId;
+	bool bHasStructureGhostCellId;
 
 private:
 	ASRPlayerController* GetOwnerController() const;
@@ -55,4 +73,12 @@ private:
 	void UpdateSurfaceHover();
 	void ApplyAssemblyModeToFocusedSurfaceGrid();
 	void ResetHoverSampleCache();
+	void PublishHoveredCellInfo(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& HoveredCell);
+	void ClearPublishedHoveredCellInfo();
+	void UpdateStructureGhostPreview();
+	void DestroyStructureGhostPreview();
+	bool BuildStructureGhostTransform(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& CellId, USRStructureDataAsset* StructureDataAsset, FTransform& OutTransform) const;
+	void PublishStructureGhostPlacementDebug(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& HoveredCell, const FTransform& GhostTransform, float StructureHeightOffset, bool bLogDebug) const;
+	bool TryPlaceSelectedStructure(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell);
+	void LogInvalidGhostDataAssetOnce(USRStructureDataAsset* StructureDataAsset, const TCHAR* Reason);
 };

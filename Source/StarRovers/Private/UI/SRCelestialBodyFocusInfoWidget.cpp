@@ -12,6 +12,26 @@
 #include "Fonts/SlateFontInfo.h"
 #include "Styling/SlateColor.h"
 
+namespace
+{
+	int32 GetCubeSphereFaceNumber(const ESRCubeSphereFace Face)
+	{
+		return static_cast<int32>(Face) + 1;
+	}
+
+	FIntPoint GetSurfaceGridDisplayCellCoord(const FSRPlanetSurfaceGridCellId& CellId, int32 FaceResolution)
+	{
+		FIntPoint DisplayCoord(CellId.CellX, CellId.CellY);
+		if (CellId.Face == ESRCubeSphereFace::PositiveZ || CellId.Face == ESRCubeSphereFace::NegativeZ)
+		{
+			const int32 SafeFaceResolution = FMath::Max(1, FaceResolution);
+			DisplayCoord.X = SafeFaceResolution - 1 - CellId.CellX;
+			DisplayCoord.Y = SafeFaceResolution - 1 - CellId.CellY;
+		}
+		return DisplayCoord;
+	}
+}
+
 TSharedRef<SWidget> USRCelestialBodyFocusInfoWidget::RebuildWidget()
 {
 	if (!WidgetTree)
@@ -70,6 +90,7 @@ FSRCelestialBodyFocusInfo USRCelestialBodyFocusInfoWidget::GetFocusInfo() const
 void USRCelestialBodyFocusInfoWidget::SetAssemblyModeActive(bool bNewAssemblyModeActive)
 {
 	bAssemblyModeActive = bNewAssemblyModeActive;
+	RefreshFocusInfoText();
 	RefreshAssemblyModeButton();
 }
 
@@ -92,8 +113,10 @@ void USRCelestialBodyFocusInfoWidget::BuildFocusInfoWidgetTree()
 
 	if (WidgetTree->RootWidget)
 	{
+		EnsureHoveredCellTextBlock(WidgetTree->RootWidget);
 		EnsureAssemblyModeButton(WidgetTree->RootWidget);
 		BindAssemblyModeButtonHandler();
+		RefreshFocusInfoText();
 		RefreshAssemblyModeButton();
 		return;
 	}
@@ -131,9 +154,72 @@ void USRCelestialBodyFocusInfoWidget::BuildFocusInfoWidgetTree()
 		}
 	}
 
+	EnsureHoveredCellTextBlock(FocusInfoVerticalBox);
+
 	EnsureAssemblyModeButton(FocusInfoVerticalBox);
 	BindAssemblyModeButtonHandler();
+	RefreshFocusInfoText();
 	RefreshAssemblyModeButton();
+}
+
+void USRCelestialBodyFocusInfoWidget::EnsureHoveredCellTextBlock(UWidget* HoveredCellTextBlockParent)
+{
+	if (!WidgetTree)
+	{
+		return;
+	}
+
+	if (!HoveredCellTextBlock)
+	{
+		HoveredCellTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("HoveredCellTextBlock"))));
+	}
+
+	if (!HoveredCellTextBlock)
+	{
+		HoveredCellTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HoveredCellTextBlock"));
+	}
+
+	if (!HoveredCellTextBlock)
+	{
+		return;
+	}
+
+	FSlateFontInfo HoveredCellFont = HoveredCellTextBlock->GetFont();
+	HoveredCellFont.Size = 13;
+	HoveredCellTextBlock->SetFont(HoveredCellFont);
+	HoveredCellTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor(0.78f, 0.9f, 1.0f, 1.0f)));
+	HoveredCellTextBlock->SetAutoWrapText(false);
+
+	if (HoveredCellTextBlock->GetParent())
+	{
+		return;
+	}
+
+	if (UVerticalBox* ParentVerticalBox = Cast<UVerticalBox>(HoveredCellTextBlockParent))
+	{
+		if (UVerticalBoxSlot* HoveredCellTextBlockSlot = ParentVerticalBox->AddChildToVerticalBox(HoveredCellTextBlock))
+		{
+			HoveredCellTextBlockSlot->SetPadding(FMargin(0.0f, 2.0f, 0.0f, 8.0f));
+		}
+		return;
+	}
+
+	if (UCanvasPanel* ParentCanvasPanel = Cast<UCanvasPanel>(HoveredCellTextBlockParent))
+	{
+		if (UCanvasPanelSlot* HoveredCellTextBlockSlot = ParentCanvasPanel->AddChildToCanvas(HoveredCellTextBlock))
+		{
+			HoveredCellTextBlockSlot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 0.0f));
+			HoveredCellTextBlockSlot->SetAlignment(FVector2D(1.0f, 0.0f));
+			HoveredCellTextBlockSlot->SetPosition(FVector2D(-32.0f, 128.0f));
+			HoveredCellTextBlockSlot->SetAutoSize(true);
+		}
+		return;
+	}
+
+	if (UPanelWidget* ParentPanelWidget = Cast<UPanelWidget>(HoveredCellTextBlockParent))
+	{
+		ParentPanelWidget->AddChild(HoveredCellTextBlock);
+	}
 }
 
 void USRCelestialBodyFocusInfoWidget::EnsureAssemblyModeButton(UWidget* AssemblyModeButtonParent)
@@ -234,6 +320,40 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 				? FocusInfo.VariableName
 				: NSLOCTEXT("StarRoversFocusInfo", "NoSelectionTitle", "No body selected")
 		);
+	}
+
+	if (HoveredCellTextBlock)
+	{
+		if (bHasFocusInfo && bAssemblyModeActive && FocusInfo.bHasHoveredSurfaceCell)
+		{
+			const FSRPlanetSurfaceGridCellInfo& CellInfo = FocusInfo.HoveredSurfaceCellInfo;
+			FString CellText = FString::Printf(
+				TEXT("Face: %d\nCell: %d,%d\nDisplay: %d,%d"),
+				GetCubeSphereFaceNumber(CellInfo.CellId.Face),
+				CellInfo.CellId.CellX,
+				CellInfo.CellId.CellY,
+				CellInfo.DisplayCellX,
+				CellInfo.DisplayCellY);
+			CellText += FString::Printf(TEXT("\nPatchDisplayCells: %d"), FocusInfo.HoveredSurfaceGridPatchCellIds.Num());
+			for (int32 CellIndex = 0; CellIndex < FocusInfo.HoveredSurfaceGridPatchCellIds.Num(); ++CellIndex)
+			{
+				const FSRPlanetSurfaceGridCellId& PatchCellId = FocusInfo.HoveredSurfaceGridPatchCellIds[CellIndex];
+				const FIntPoint PatchDisplayCoord = GetSurfaceGridDisplayCellCoord(PatchCellId, CellInfo.FaceResolution);
+				CellText += (CellIndex % 5 == 0) ? TEXT("\n") : TEXT(" ");
+				CellText += FString::Printf(
+					TEXT("F%d(%d,%d)"),
+					GetCubeSphereFaceNumber(PatchCellId.Face),
+					PatchDisplayCoord.X,
+					PatchDisplayCoord.Y);
+			}
+			HoveredCellTextBlock->SetText(FText::FromString(CellText));
+			HoveredCellTextBlock->SetVisibility(ESlateVisibility::Visible);
+		}
+		else
+		{
+			HoveredCellTextBlock->SetText(FText::GetEmpty());
+			HoveredCellTextBlock->SetVisibility(ESlateVisibility::Collapsed);
+		}
 	}
 
 	RefreshAssemblyModeButton();

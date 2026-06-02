@@ -134,6 +134,18 @@ struct STARROVERS_API FSRCelestialBodyData
 	float OceanScaleMultiplier = 1.0f;
 
 	UPROPERTY()
+	bool bHasAtmosphere = false;
+
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> AtmosphereMesh = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> AtmosphereMaterial = nullptr;
+
+	UPROPERTY()
+	float AtmosphereScaleMultiplier = 1.0f;
+
+	UPROPERTY()
 	bool ShowOrbitLine = true;
 
 	UPROPERTY()

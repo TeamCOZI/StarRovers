@@ -78,6 +78,36 @@ struct STARROVERS_API FSRPlanetSurfaceGridLineSegment
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LocalPointB"))
     FVector LocalPointB = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "bHasAdjacentCell"))
+    bool bHasAdjacentCell = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "AdjacentCellId"))
+    FSRPlanetSurfaceGridCellId AdjacentCellId;
+};
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRPlanetSurfaceGridSideFace
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LocalPoint0"))
+    FVector LocalPoint0 = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LocalPoint1"))
+    FVector LocalPoint1 = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LocalPoint2"))
+    FVector LocalPoint2 = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LocalPoint3"))
+    FVector LocalPoint3 = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "bHasAdjacentCell"))
+    bool bHasAdjacentCell = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "AdjacentCellId"))
+    FSRPlanetSurfaceGridCellId AdjacentCellId;
 };
 
 USTRUCT(BlueprintType)
@@ -120,6 +150,69 @@ struct STARROVERS_API FSRPlanetSurfaceGridCell
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "SideLineSegments"))
     TArray<FSRPlanetSurfaceGridLineSegment> SideLineSegments;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "SideFaces"))
+    TArray<FSRPlanetSurfaceGridSideFace> SideFaces;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "bOccupied"))
+    bool bOccupied = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "OccupantId"))
+    FName OccupantId = NAME_None;
+};
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRPlanetSurfaceGridCellInfo
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "CellId"))
+    FSRPlanetSurfaceGridCellId CellId;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FaceResolution"))
+    int32 FaceResolution = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FaceCellIndex"))
+    int32 FaceCellIndex = INDEX_NONE;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "DisplayCellX"))
+    int32 DisplayCellX = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "DisplayCellY"))
+    int32 DisplayCellY = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "DisplayCellIndex"))
+    int32 DisplayCellIndex = INDEX_NONE;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FaceUVMin"))
+    FVector2D FaceUVMin = FVector2D::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FaceUVMax"))
+    FVector2D FaceUVMax = FVector2D::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FaceUVCenter"))
+    FVector2D FaceUVCenter = FVector2D::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LocalCenter"))
+    FVector LocalCenter = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "WorldCenter"))
+    FVector WorldCenter = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LocalNormal"))
+    FVector LocalNormal = FVector::UpVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "WorldNormal"))
+    FVector WorldNormal = FVector::UpVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "ApproxSurfaceArea"))
+    float ApproxSurfaceArea = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "Neighbors"))
+    FSRPlanetSurfaceGridCellNeighbors Neighbors;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "bCanConstruct"))
+    bool bCanConstruct = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "bOccupied"))
     bool bOccupied = false;

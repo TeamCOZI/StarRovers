@@ -66,4 +66,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "OceanMaterial", EditCondition = "bHasOcean"))
 	TObjectPtr<UMaterialInterface> OceanMaterial = nullptr;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Atmosphere", meta = (DisplayName = "bHasAtmosphere"))
+	bool bHasAtmosphere = false;
+
+	UPROPERTY()
+	float AtmosphereScaleMultiplier = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Atmosphere", meta = (DisplayName = "AtmosphereMesh", EditCondition = "bHasAtmosphere"))
+	TObjectPtr<UStaticMesh> AtmosphereMesh = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Atmosphere", meta = (DisplayName = "AtmosphereMaterial", EditCondition = "bHasAtmosphere"))
+	TObjectPtr<UMaterialInterface> AtmosphereMaterial = nullptr;
+
 };
