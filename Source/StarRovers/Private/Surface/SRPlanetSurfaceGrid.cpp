@@ -21,14 +21,14 @@
 
 namespace
 {
-	struct FSRCubeFaceBasis
+	struct FSRSurfaceGridCubeFaceBasis
 	{
 		FVector Normal = FVector::ForwardVector;
 		FVector AxisU = FVector::RightVector;
 		FVector AxisV = FVector::UpVector;
 	};
 
-	FSRCubeFaceBasis GetCubeFaceBasis(ESRCubeSphereFace Face)
+	FSRSurfaceGridCubeFaceBasis GetCubeFaceBasis(ESRCubeSphereFace Face)
 	{
 		switch (Face)
 		{
@@ -50,7 +50,7 @@ namespace
 
 	FVector BuildCubeFacePoint(ESRCubeSphereFace Face, float FaceU, float FaceV)
 	{
-		const FSRCubeFaceBasis Basis = GetCubeFaceBasis(Face);
+		const FSRSurfaceGridCubeFaceBasis Basis = GetCubeFaceBasis(Face);
 		return Basis.Normal + (Basis.AxisU * FaceU) + (Basis.AxisV * FaceV);
 	}
 
@@ -72,7 +72,7 @@ namespace
 			return false;
 		}
 
-		const FSRCubeFaceBasis Basis = GetCubeFaceBasis(Face);
+		const FSRSurfaceGridCubeFaceBasis Basis = GetCubeFaceBasis(Face);
 		const float MajorAxis = FVector::DotProduct(Direction, Basis.Normal);
 		if (MajorAxis <= KINDA_SMALL_NUMBER)
 		{
@@ -1550,7 +1550,7 @@ bool USRPlanetSurfaceGrid::GetInteractionGridPatchCellIds(
 
 	auto GetDisplayFaceBasis = [](ESRCubeSphereFace Face)
 	{
-		const FSRCubeFaceBasis CubeBasis = GetCubeFaceBasis(Face);
+		const FSRSurfaceGridCubeFaceBasis CubeBasis = GetCubeFaceBasis(Face);
 		FSRDisplayFaceBasis Basis;
 		Basis.Normal = CubeBasis.Normal;
 		Basis.AxisX = CubeBasis.AxisU;
