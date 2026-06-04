@@ -59,10 +59,10 @@ public:
     bool GetCellNeighbors(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCellNeighbors& OutNeighbors) const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
-    bool GetCellWorldTransform(const FSRPlanetSurfaceGridCellId& CellId, float HeightOffset, FTransform& OutTransform) const;
+    bool GetFootprintCellIds(const FSRPlanetSurfaceGridCellId& OriginCellId, int32 FootprintCellsX, int32 FootprintCellsY, TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
-    float GetConstructionHeightOffset() const;
+    bool GetCellWorldTransform(const FSRPlanetSurfaceGridCellId& CellId, float HeightOffset, FTransform& OutTransform) const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     bool GetCellWorldCorners(const FSRPlanetSurfaceGridCellId& CellId, FVector& OutCorner00, FVector& OutCorner10, FVector& OutCorner11, FVector& OutCorner01) const;
@@ -75,6 +75,12 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     bool SetCellOccupied(const FSRPlanetSurfaceGridCellId& CellId, bool bOccupied, FName OccupantId);
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
+    bool CanOccupyCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds) const;
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
+    bool SetCellsOccupied(const TArray<FSRPlanetSurfaceGridCellId>& CellIds, bool bOccupied, FName OccupantId);
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     bool SetHoveredCell(const FSRPlanetSurfaceGridCellId& CellId);
@@ -131,9 +137,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     void SetGridOverlayMaterial(UMaterialInterface* NewGridOverlayMaterial);
 
-    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
-    void ConfigureConstructionHeightOffset(float NewConstructionHeightOffset);
-
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Debug")
     bool IsGridVisible() const;
 
@@ -161,9 +164,6 @@ protected:
 
     UPROPERTY()
     bool bRebuildGridOnRegister;
-
-    UPROPERTY()
-    float ConstructionHeightOffset;
 
     UPROPERTY()
     bool bGridVisible;

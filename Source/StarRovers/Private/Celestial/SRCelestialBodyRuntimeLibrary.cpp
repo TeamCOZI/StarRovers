@@ -25,6 +25,8 @@ namespace CelestialBodyComponentTags
 	static const FName GravityLine(TEXT("StarRovers.GravityLine"));
 	static const FName GravityLineRoot(TEXT("StarRovers.GravityLineRoot"));
 	static const FName GravityLineSegment(TEXT("StarRovers.GravityLineSegment"));
+	static const FName RotationAxisLine(TEXT("StarRovers.RotationAxisLine"));
+	static const FName RotationAxisLineRoot(TEXT("StarRovers.RotationAxisLineRoot"));
 }
 
 namespace
@@ -256,7 +258,9 @@ namespace
 
 		return PrimitiveComponent->ComponentHasTag(CelestialBodyComponentTags::GravityLine)
 			|| PrimitiveComponent->ComponentHasTag(CelestialBodyComponentTags::GravityLineRoot)
-			|| PrimitiveComponent->ComponentHasTag(CelestialBodyComponentTags::GravityLineSegment);
+			|| PrimitiveComponent->ComponentHasTag(CelestialBodyComponentTags::GravityLineSegment)
+			|| PrimitiveComponent->ComponentHasTag(CelestialBodyComponentTags::RotationAxisLine)
+			|| PrimitiveComponent->ComponentHasTag(CelestialBodyComponentTags::RotationAxisLineRoot);
 	}
 
 	float GetLargestPrimitiveRadius(const AActor* Actor)

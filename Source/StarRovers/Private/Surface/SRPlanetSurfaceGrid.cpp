@@ -884,7 +884,6 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 	FaceResolution = 8;
 	PlanetRadius = 1000.0f;
 	bRebuildGridOnRegister = false;
-	ConstructionHeightOffset = 15.0f;
 	bGridVisible = false;
 	DebugLineColor = FLinearColor(0.15f, 0.85f, 1.0f, 1.0f);
 	DebugLineOpacity = 1.0f;
@@ -943,6 +942,13 @@ void USRPlanetSurfaceGrid::RebuildGrid()
 	{
 		bUsingRecoveredQuadCells = false;
 		Cells = USRPlanetSurfaceGridLibrary::GenerateCubeSphereCells(FMath::Max(1, FaceResolution), FMath::Max(1.0f, PlanetRadius));
+		for (FSRPlanetSurfaceGridCell& Cell : Cells)
+		{
+			const FSRPlanetTerrainSample TerrainSample = GetTerrainSampleAtDirection(Cell.LocalCenter.GetSafeNormal());
+			Cell.Biome = TerrainSample.Biome;
+			Cell.BiomeId = TerrainSample.BiomeId;
+			Cell.WaterRole = TerrainSample.WaterRole;
+		}
 	}
 	if (ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner()))
 	{
@@ -992,6 +998,12 @@ void USRPlanetSurfaceGrid::ClearOccupancy()
 	{
 		Cell.bOccupied = false;
 		Cell.OccupantId = NAME_None;
+		FSRPlanetSurfaceGridCellInfo UpdatedCellInfo = BuildCellInfo(Cell);
+		if (const FSRPlanetSurfaceGridCellInfo* ExistingCellInfo = CellInfoById.Find(Cell.CellId))
+		{
+			UpdatedCellInfo.FaceCellIndex = ExistingCellInfo->FaceCellIndex;
+		}
+		CellInfoById.Add(Cell.CellId, UpdatedCellInfo);
 	}
 	bGridMeshDirty = true;
 	if (bGridVisible)
@@ -1059,6 +1071,54 @@ bool USRPlanetSurfaceGrid::GetCellNeighbors(const FSRPlanetSurfaceGridCellId& Ce
 	return true;
 }
 
+bool USRPlanetSurfaceGrid::GetFootprintCellIds(
+	const FSRPlanetSurfaceGridCellId& OriginCellId,
+	int32 FootprintCellsX,
+	int32 FootprintCellsY,
+	TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const
+{
+	OutCellIds.Reset();
+
+	const int32 SafeFootprintCellsX = FMath::Max(1, FootprintCellsX);
+	const int32 SafeFootprintCellsY = FMath::Max(1, FootprintCellsY);
+	const int32 SafeFaceResolution = FMath::Max(1, FaceResolution);
+	if (!OriginCellId.IsValid(SafeFaceResolution))
+	{
+		return false;
+	}
+
+	const int32 StartCellX = OriginCellId.CellX - (SafeFootprintCellsX / 2);
+	const int32 StartCellY = OriginCellId.CellY - (SafeFootprintCellsY / 2);
+	const int32 EndCellX = StartCellX + SafeFootprintCellsX - 1;
+	const int32 EndCellY = StartCellY + SafeFootprintCellsY - 1;
+	if (StartCellX < 0 || StartCellY < 0 || EndCellX >= SafeFaceResolution || EndCellY >= SafeFaceResolution)
+	{
+		return false;
+	}
+
+	OutCellIds.Reserve(SafeFootprintCellsX * SafeFootprintCellsY);
+	for (int32 CellY = StartCellY; CellY <= EndCellY; ++CellY)
+	{
+		for (int32 CellX = StartCellX; CellX <= EndCellX; ++CellX)
+		{
+			FSRPlanetSurfaceGridCellId FootprintCellId;
+			FootprintCellId.Face = OriginCellId.Face;
+			FootprintCellId.CellX = CellX;
+			FootprintCellId.CellY = CellY;
+			int32 FootprintCellIndex = INDEX_NONE;
+			if (!GetCellIndex(FootprintCellId, FootprintCellIndex))
+			{
+				OutCellIds.Reset();
+				return false;
+			}
+
+			OutCellIds.Add(FootprintCellId);
+		}
+	}
+
+	return !OutCellIds.IsEmpty();
+}
+
 bool USRPlanetSurfaceGrid::GetCellWorldTransform(const FSRPlanetSurfaceGridCellId& CellId, float HeightOffset, FTransform& OutTransform) const
 {
 	FSRPlanetSurfaceGridCell Cell;
@@ -1079,8 +1139,8 @@ bool USRPlanetSurfaceGrid::GetCellWorldTransform(const FSRPlanetSurfaceGridCellI
 	}
 
 	const FVector LocalPosition = bUsingRecoveredQuadCells
-		? Cell.LocalCenter + (Cell.LocalNormal.GetSafeNormal() * (ConstructionHeightOffset + HeightOffset))
-		: ResolveLocalSurfacePoint(Cell.LocalNormal, ConstructionHeightOffset + HeightOffset);
+		? Cell.LocalCenter + (Cell.LocalNormal.GetSafeNormal() * HeightOffset)
+		: ResolveLocalSurfacePoint(Cell.LocalNormal, HeightOffset);
 	const FVector WorldPosition = GetComponentTransform().TransformPosition(LocalPosition);
 	const FVector WorldCorner00 = bUsingRecoveredQuadCells
 		? GetComponentTransform().TransformPosition(Cell.Corner00 + (Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset))
@@ -1104,11 +1164,6 @@ bool USRPlanetSurfaceGrid::GetCellWorldTransform(const FSRPlanetSurfaceGridCellI
 
 	OutTransform = FTransform(WorldRotation, WorldPosition, FVector::OneVector);
 	return true;
-}
-
-float USRPlanetSurfaceGrid::GetConstructionHeightOffset() const
-{
-	return ConstructionHeightOffset;
 }
 
 bool USRPlanetSurfaceGrid::GetCellWorldCorners(const FSRPlanetSurfaceGridCellId& CellId, FVector& OutCorner00, FVector& OutCorner10, FVector& OutCorner11, FVector& OutCorner01) const
@@ -1304,6 +1359,66 @@ bool USRPlanetSurfaceGrid::SetCellOccupied(const FSRPlanetSurfaceGridCellId& Cel
 		UpdatedCellInfo.FaceCellIndex = ExistingCellInfo->FaceCellIndex;
 	}
 	CellInfoById.Add(CellId, UpdatedCellInfo);
+	bGridMeshDirty = true;
+	if (bGridVisible)
+	{
+		RefreshInteractionHighlight();
+	}
+	return true;
+}
+
+bool USRPlanetSurfaceGrid::CanOccupyCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds) const
+{
+	if (CellIds.IsEmpty())
+	{
+		return false;
+	}
+
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		FSRPlanetSurfaceGridCellInfo CellInfo;
+		if (!GetCellInfoById(CellId, CellInfo) || !CellInfo.bCanConstruct || CellInfo.bOccupied)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool USRPlanetSurfaceGrid::SetCellsOccupied(const TArray<FSRPlanetSurfaceGridCellId>& CellIds, bool bOccupied, FName OccupantId)
+{
+	if (CellIds.IsEmpty())
+	{
+		return false;
+	}
+
+	TArray<int32> CellIndices;
+	CellIndices.Reserve(CellIds.Num());
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		int32 CellIndex = INDEX_NONE;
+		if (!GetCellIndex(CellId, CellIndex))
+		{
+			return false;
+		}
+
+		CellIndices.Add(CellIndex);
+	}
+
+	for (int32 CellIndex : CellIndices)
+	{
+		FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
+		Cell.bOccupied = bOccupied;
+		Cell.OccupantId = bOccupied ? OccupantId : NAME_None;
+		FSRPlanetSurfaceGridCellInfo UpdatedCellInfo = BuildCellInfo(Cell);
+		if (const FSRPlanetSurfaceGridCellInfo* ExistingCellInfo = CellInfoById.Find(Cell.CellId))
+		{
+			UpdatedCellInfo.FaceCellIndex = ExistingCellInfo->FaceCellIndex;
+		}
+		CellInfoById.Add(Cell.CellId, UpdatedCellInfo);
+	}
+
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
@@ -2087,11 +2202,6 @@ void USRPlanetSurfaceGrid::SetGridOverlayMaterial(UMaterialInterface* NewGridOve
 	}
 }
 
-void USRPlanetSurfaceGrid::ConfigureConstructionHeightOffset(float NewConstructionHeightOffset)
-{
-	ConstructionHeightOffset = NewConstructionHeightOffset;
-}
-
 float USRPlanetSurfaceGrid::GetSurfaceHeightOffsetAtDirection_Implementation(FVector LocalUnitDirection) const
 {
 	return ComputeProceduralDynamicMeshHeight(LocalUnitDirection);
@@ -2106,7 +2216,6 @@ void USRPlanetSurfaceGrid::ConfigureProceduralTerrain(
 	float NewNoisePersistence)
 {
 	FSRDynamicMeshGeneration NewDynamicMeshGeneration = DynamicMeshGeneration;
-	NewDynamicMeshGeneration.BiomeProfile = ESRPlanetBiomeProfile::EarthLike;
 	NewDynamicMeshGeneration.bDynamicMeshGeneration = bNewDynamicMeshGeneration;
 	NewDynamicMeshGeneration.GenerationSeed = NewGenerationSeed;
 	NewDynamicMeshGeneration.DynamicMeshHeight = FMath::Max(0.0f, NewDynamicMeshHeight);
@@ -2135,6 +2244,14 @@ void USRPlanetSurfaceGrid::ConfigureTerrain(const FSRDynamicMeshGeneration& NewD
 	DynamicMeshGeneration.NoisePersistence = FMath::Clamp(DynamicMeshGeneration.NoisePersistence, 0.0f, 1.0f);
 	DynamicMeshGeneration.OceanThreshold = FMath::Clamp(DynamicMeshGeneration.OceanThreshold, -1.0f, 1.0f);
 	DynamicMeshGeneration.AtmosphereThreshold = FMath::Max(0.01f, DynamicMeshGeneration.AtmosphereThreshold);
+	if (DynamicMeshGeneration.BiomeDataAssets.IsEmpty())
+	{
+		UE_LOG(LogTemp, Error, TEXT("Planet surface grid terrain requires Profile BiomeDataAssets."));
+	}
+	else
+	{
+		DynamicMeshGeneration.NormalizeBiomeMaterials(DynamicMeshGeneration.BiomeDataAssets);
+	}
 	bCellsDirty = true;
 	bGridMeshDirty = true;
 	if (bGridVisible)
@@ -2145,7 +2262,29 @@ void USRPlanetSurfaceGrid::ConfigureTerrain(const FSRDynamicMeshGeneration& NewD
 
 FSRPlanetTerrainSample USRPlanetSurfaceGrid::GetTerrainSampleAtDirection(FVector LocalUnitDirection) const
 {
-	FSRPlanetTerrainSample Sample = FSRPlanetTerrainGenerator::SampleTerrain(LocalUnitDirection, DynamicMeshGeneration);
+	FSRBiomeSampleContext SampleContext;
+	SampleContext.LocalUnitDirection = LocalUnitDirection.GetSafeNormal();
+	if (SampleContext.LocalUnitDirection.IsNearlyZero())
+	{
+		SampleContext.LocalUnitDirection = FVector::UpVector;
+	}
+
+	FSRPlanetSurfaceGridCellId CellId;
+	FVector2D FaceCoordinates = FVector2D::ZeroVector;
+	if (USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(
+		SampleContext.LocalUnitDirection,
+		FMath::Max(1, FaceResolution),
+		CellId,
+		FaceCoordinates))
+	{
+		SampleContext.Face = CellId.Face;
+		SampleContext.CellX = CellId.CellX;
+		SampleContext.CellY = CellId.CellY;
+		SampleContext.FaceResolution = FMath::Max(1, FaceResolution);
+		SampleContext.FaceUV = FaceCoordinates;
+	}
+
+	FSRPlanetTerrainSample Sample = FSRPlanetTerrainGenerator::SampleTerrain(SampleContext, DynamicMeshGeneration);
 	const float SafeDynamicMeshHeight = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight);
 	if (DynamicMeshGeneration.bMinecraft && DynamicMeshGeneration.bDynamicMeshGeneration && SafeDynamicMeshHeight > KINDA_SMALL_NUMBER)
 	{
@@ -2280,7 +2419,16 @@ FSRPlanetSurfaceGridCellInfo USRPlanetSurfaceGrid::BuildCellInfo(const FSRPlanet
 	CellInfo.FaceUVCenter = (Cell.FaceUVMin + Cell.FaceUVMax) * 0.5f;
 	CellInfo.LocalCenter = Cell.LocalCenter;
 	CellInfo.LocalNormal = Cell.LocalNormal;
+	const FVector LatitudeDirection = Cell.LocalCenter.GetSafeNormal();
+	const FVector FallbackLatitudeDirection = LatitudeDirection.IsNearlyZero()
+		? Cell.LocalNormal.GetSafeNormal()
+		: LatitudeDirection;
+	const float LatitudeSin = static_cast<float>(FMath::Clamp(FallbackLatitudeDirection.Z, -1.0, 1.0));
+	CellInfo.LatitudeDegrees = FMath::RadiansToDegrees(FMath::Asin(LatitudeSin));
 	CellInfo.ApproxSurfaceArea = Cell.ApproxSurfaceArea;
+	CellInfo.Biome = Cell.Biome;
+	CellInfo.BiomeId = Cell.BiomeId;
+	CellInfo.WaterRole = Cell.WaterRole;
 	CellInfo.Neighbors = Cell.Neighbors;
 	CellInfo.bOccupied = Cell.bOccupied;
 	CellInfo.OccupantId = Cell.OccupantId;
@@ -2556,10 +2704,11 @@ bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerStaticMeshQuads()
 			continue;
 		}
 
+		FSRPlanetTerrainSample TerrainSample;
 		float CellScale = 1.0f;
 		if (DynamicMeshGeneration.bDynamicMeshGeneration && DynamicMeshGeneration.DynamicMeshHeight > KINDA_SMALL_NUMBER)
 		{
-			const FSRPlanetTerrainSample TerrainSample = GetTerrainSampleAtDirection(CellDirection);
+			TerrainSample = GetTerrainSampleAtDirection(CellDirection);
 			const float SourceCellRadius = FMath::Max(SourceCenter.Length(), 1.0f);
 			CellScale = FMath::Max(0.01f, (SourceCellRadius + TerrainSample.HeightOffset) / SourceCellRadius);
 		}
@@ -2604,6 +2753,9 @@ bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerStaticMeshQuads()
 		Cell.ApproxSurfaceArea =
 			(FVector::CrossProduct(Cell.Corner10 - Cell.Corner00, Cell.Corner11 - Cell.Corner00).Size() * 0.5f)
 			+ (FVector::CrossProduct(Cell.Corner11 - Cell.Corner00, Cell.Corner01 - Cell.Corner00).Size() * 0.5f);
+		Cell.Biome = TerrainSample.Biome;
+		Cell.BiomeId = TerrainSample.BiomeId;
+		Cell.WaterRole = TerrainSample.WaterRole;
 		Cell.Neighbors = USRPlanetSurfaceGridLibrary::GetCubeSphereNeighborIds(Cell.CellId, FMath::Max(1, QuadGridAddress.FaceResolution));
 
 		const int32 CellIndex = Cells.Num();

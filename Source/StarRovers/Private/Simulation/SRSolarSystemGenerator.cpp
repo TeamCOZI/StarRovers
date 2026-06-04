@@ -10,6 +10,11 @@
 #include "Engine/StaticMesh.h"
 #include "Gravity/SRGravityParent.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
+#include "Structure/SRStructureDataAsset.h"
+#include "Structure/SRStructurePlacementLibrary.h"
+#include "Surface/SRPlanetBiomeDataAsset.h"
+#include "Surface/SRPlanetSurfaceGrid.h"
+#include "Surface/SRPlanetTerrainProfileDataAsset.h"
 
 namespace
 {
@@ -81,7 +86,7 @@ namespace
 		return true;
 	}
 
-	bool TryBuildDataFromClassDefaultsAndDataAsset(
+	bool TryBuildDataFromDataAsset(
 		const TSubclassOf<ASRCelestialBody>& BodyClass,
 		const FSRCelestialBodyData& DataAssetData,
 		FSRCelestialBodyData& OutData)
@@ -92,37 +97,14 @@ namespace
 			return false;
 		}
 
-		const UClass* BodyClassObject = BodyClass.Get();
-		const ASRCelestialBody* DefaultBody = IsValid(BodyClassObject)
-			? Cast<ASRCelestialBody>(BodyClassObject->GetDefaultObject())
-			: nullptr;
-		if (!IsValid(DefaultBody))
-		{
-			UE_LOG(LogTemp, Error, TEXT("Solar system generation requires '%s' to inherit ASRCelestialBody."), *GetNameSafe(BodyClassObject));
-			return false;
-		}
-
-		OutData = DefaultBody->GetData();
-		OutData.VariableName = DataAssetData.VariableName;
-		OutData.BodyCategory = DataAssetData.BodyCategory;
+		OutData = DataAssetData;
 		OutData.Scale = FMath::Max(0.0f, DataAssetData.Scale);
-		OutData.StaticMesh = DataAssetData.StaticMesh;
-		OutData.Material = DataAssetData.Material;
 		OutData.Mass = FMath::Max(0.0f, DataAssetData.Mass);
 		OutData.GravityRatio = FMath::Max(0.0f, DataAssetData.GravityRatio);
 		OutData.GravityRadiusRatio = FMath::Max(0.0f, DataAssetData.GravityRadiusRatio);
-		OutData.DynamicMeshGeneration = DataAssetData.DynamicMeshGeneration;
-		OutData.GenerationSeed = DataAssetData.GenerationSeed;
-		OutData.bHasOcean = DataAssetData.bHasOcean;
-		OutData.OceanMesh = DataAssetData.OceanMesh;
-		OutData.OceanMaterial = DataAssetData.OceanMaterial;
 		OutData.OceanScaleMultiplier = DataAssetData.OceanScaleMultiplier;
-		OutData.bHasAtmosphere = DataAssetData.bHasAtmosphere;
-		OutData.AtmosphereMesh = DataAssetData.AtmosphereMesh;
-		OutData.AtmosphereMaterial = DataAssetData.AtmosphereMaterial;
 		OutData.AtmosphereScaleMultiplier = DataAssetData.AtmosphereScaleMultiplier;
 		OutData.SurfaceGridHeightOffset = DataAssetData.SurfaceGridHeightOffset;
-		OutData.ConstructionHeightOffset = DataAssetData.ConstructionHeightOffset;
 		OutData.OrbitPeriod = FMath::Max(0.0f, DataAssetData.OrbitPeriod);
 		OutData.StarPointLightIntensity = DataAssetData.StarPointLightIntensity;
 		OutData.StarPointLightColor = DataAssetData.StarPointLightColor;
@@ -156,7 +138,7 @@ namespace
 		}
 
 		OutRequest.BodyClass = BodyClass;
-		if (!TryBuildDataFromClassDefaultsAndDataAsset(BodyClass, DataAsset->BuildData(), OutRequest.BodyData))
+		if (!TryBuildDataFromDataAsset(BodyClass, DataAsset->BuildData(), OutRequest.BodyData))
 		{
 			return false;
 		}
@@ -170,6 +152,45 @@ namespace
 		{
 			LogGeneratorMissingData(DataAsset, TEXT("Material"));
 			return false;
+		}
+		if ((OutRequest.BodyData.BodyCategory == ESRCelestialBodyCategory::Planet
+				|| OutRequest.BodyData.BodyCategory == ESRCelestialBodyCategory::Moon)
+			&& !IsValid(OutRequest.BodyData.TerrainProfileDataAsset.Get()))
+		{
+			LogGeneratorMissingData(DataAsset, TEXT("TerrainProfileDataAsset"));
+			return false;
+		}
+		if (IsValid(OutRequest.BodyData.TerrainProfileDataAsset.Get())
+			&& OutRequest.BodyData.TerrainProfileDataAsset->GetAllowedBiomeDataAssets().IsEmpty())
+		{
+			LogGeneratorMissingData(OutRequest.BodyData.TerrainProfileDataAsset.Get(), TEXT("Biomes"));
+			return false;
+		}
+		if (OutRequest.BodyData.bHasOcean)
+		{
+			if (!IsValid(OutRequest.BodyData.OceanMesh.Get()))
+			{
+				LogGeneratorMissingData(DataAsset, TEXT("OceanMesh"));
+				return false;
+			}
+			if (!IsValid(OutRequest.BodyData.OceanMaterial.Get()))
+			{
+				LogGeneratorMissingData(DataAsset, TEXT("OceanMaterial"));
+				return false;
+			}
+		}
+		if (OutRequest.BodyData.bHasAtmosphere)
+		{
+			if (!IsValid(OutRequest.BodyData.AtmosphereMesh.Get()))
+			{
+				LogGeneratorMissingData(DataAsset, TEXT("AtmosphereMesh"));
+				return false;
+			}
+			if (!IsValid(OutRequest.BodyData.AtmosphereMaterial.Get()))
+			{
+				LogGeneratorMissingData(DataAsset, TEXT("AtmosphereMaterial"));
+				return false;
+			}
 		}
 
 		FText VariableName;
@@ -219,6 +240,7 @@ ASRSolarSystemGenerator::ASRSolarSystemGenerator()
 	PlanetOrbitIncrease = 20000.0f;
 	MoonInitialOrbit = 6000.0f;
 	MoonOrbitIncrease = 4000.0f;
+	bGenerateNaturalStructures = true;
 }
 
 void ASRSolarSystemGenerator::BeginPlay()
@@ -257,6 +279,7 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 
 	SpawnPlanets(RuntimeStarBody, SelectedStarDataAsset, RandomStream, RuntimePlanetBodies);
 	PrepareRuntimeGeneratedDynamicMeshes();
+	GenerateRuntimeNaturalStructures();
 	if (USRCelestialBodyRegistrySubsystem* CelestialBodyRegistry = GetWorld()->GetSubsystem<USRCelestialBodyRegistrySubsystem>())
 	{
 		CelestialBodyRegistry->SetPrimaryStarActor(RuntimeStarBody);
@@ -267,6 +290,7 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 
 void ASRSolarSystemGenerator::ClearRuntimeGeneratedBodies()
 {
+	DestroyRuntimeNaturalStructures();
 	DestroyTrackedActors(RuntimeMoonBodies);
 	DestroyTrackedActors(RuntimePlanetBodies);
 	DestroyTrackedActor(RuntimeStarBody);
@@ -644,6 +668,234 @@ void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 			MoonBody->PrepareCelestialBodyDynamicMesh();
 		}
 	}
+}
+
+void ASRSolarSystemGenerator::GenerateRuntimeNaturalStructures()
+{
+	DestroyRuntimeNaturalStructures();
+	if (!bGenerateNaturalStructures)
+	{
+		return;
+	}
+
+	FRandomStream NaturalStructureRandomStream(GenerationSeed + 7919);
+	for (TObjectPtr<ASRCelestialBody>& PlanetBody : RuntimePlanetBodies)
+	{
+		if (IsValid(PlanetBody))
+		{
+			GenerateNaturalStructuresForBody(PlanetBody, NaturalStructureRandomStream);
+		}
+	}
+}
+
+void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody* Body, FRandomStream& RandomStream)
+{
+	if (!IsValid(Body) || Body->GetBodyCategory() != ESRCelestialBodyCategory::Planet)
+	{
+		return;
+	}
+
+	USRPlanetSurfaceGrid* SurfaceGrid = Body->GetSurfaceGrid();
+	if (!IsValid(SurfaceGrid) || SurfaceGrid->GetCellCount() <= 0)
+	{
+		return;
+	}
+
+	const TArray<FSRPlanetSurfaceGridCell> Cells = SurfaceGrid->GetCells();
+	auto ShuffleCandidateCells = [&RandomStream](TArray<FSRPlanetSurfaceGridCell>& CandidateCells)
+	{
+		for (int32 CellIndex = CandidateCells.Num() - 1; CellIndex > 0; --CellIndex)
+		{
+			const int32 SwapIndex = RandomStream.RandRange(0, CellIndex);
+			if (SwapIndex != CellIndex)
+			{
+				CandidateCells.Swap(CellIndex, SwapIndex);
+			}
+		}
+	};
+
+	auto GenerateRuleForCandidateCells = [this, Body, SurfaceGrid, &RandomStream, &ShuffleCandidateCells](
+		TArray<FSRPlanetSurfaceGridCell>&& CandidateCells,
+		USRStructureDataAsset* StructureDataAsset,
+		float SpawnChancePerCell,
+		int32 MaxCount,
+		int32 MinCellSpacing)
+	{
+		if (!IsValid(StructureDataAsset))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Natural structure generation for '%s' requires StructureDataAsset."), *GetNameSafe(Body));
+			return;
+		}
+
+		if (CandidateCells.IsEmpty())
+		{
+			return;
+		}
+
+		ShuffleCandidateCells(CandidateCells);
+
+		TArray<FSRPlanetSurfaceGridCellId> PlacedOriginCellIds;
+		const float SafeSpawnChancePerCell = FMath::Clamp(SpawnChancePerCell, 0.0f, 1.0f);
+		const int32 SafeMaxCount = FMath::Max(0, MaxCount);
+		const int32 SafeMinCellSpacing = FMath::Max(0, MinCellSpacing);
+		int32 PlacedCount = 0;
+		for (const FSRPlanetSurfaceGridCell& CandidateCell : CandidateCells)
+		{
+			if (SafeMaxCount > 0 && PlacedCount >= SafeMaxCount)
+			{
+				break;
+			}
+
+			if (SafeSpawnChancePerCell < 1.0f && RandomStream.FRand() > SafeSpawnChancePerCell)
+			{
+				continue;
+			}
+
+			bool bTooCloseToPlacedStructure = false;
+			for (const FSRPlanetSurfaceGridCellId& PlacedOriginCellId : PlacedOriginCellIds)
+			{
+				if (PlacedOriginCellId.Face == CandidateCell.CellId.Face
+					&& FMath::Abs(PlacedOriginCellId.CellX - CandidateCell.CellId.CellX) <= SafeMinCellSpacing
+					&& FMath::Abs(PlacedOriginCellId.CellY - CandidateCell.CellId.CellY) <= SafeMinCellSpacing)
+				{
+					bTooCloseToPlacedStructure = true;
+					break;
+				}
+			}
+			if (bTooCloseToPlacedStructure)
+			{
+				continue;
+			}
+
+			AActor* PlacedStructureActor = nullptr;
+			if (USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(SurfaceGrid, CandidateCell.CellId, StructureDataAsset, PlacedStructureActor))
+			{
+				RuntimeNaturalStructureActors.Add(PlacedStructureActor);
+				PlacedOriginCellIds.Add(CandidateCell.CellId);
+				++PlacedCount;
+			}
+		}
+	};
+
+	auto BuildProfileCandidateCells = [&Cells]()
+	{
+		TArray<FSRPlanetSurfaceGridCell> CandidateCells;
+		CandidateCells.Reserve(Cells.Num());
+		for (const FSRPlanetSurfaceGridCell& Cell : Cells)
+		{
+			if (!Cell.bOccupied)
+			{
+				CandidateCells.Add(Cell);
+			}
+		}
+		return CandidateCells;
+	};
+
+	auto BuildBiomeIdCandidateCells = [&Cells](FName BiomeId)
+	{
+		TArray<FSRPlanetSurfaceGridCell> CandidateCells;
+		CandidateCells.Reserve(Cells.Num());
+		for (const FSRPlanetSurfaceGridCell& Cell : Cells)
+		{
+			if (Cell.BiomeId == BiomeId && !Cell.bOccupied)
+			{
+				CandidateCells.Add(Cell);
+			}
+		}
+		return CandidateCells;
+	};
+
+	const FSRCelestialBodyData BodyData = Body->GetData();
+	auto FindRuleOverride = [](const TArray<FSRNaturalStructureSpawnRuleOverride>& Overrides, FName RuleId)
+	{
+		if (RuleId.IsNone())
+		{
+			return static_cast<const FSRNaturalStructureSpawnRuleOverride*>(nullptr);
+		}
+
+		return Overrides.FindByPredicate([RuleId](const FSRNaturalStructureSpawnRuleOverride& Override)
+		{
+			return Override.RuleId == RuleId;
+		});
+	};
+
+	auto GenerateProfileRule = [&GenerateRuleForCandidateCells, &BuildProfileCandidateCells, &FindRuleOverride](
+		const FSRProfileNaturalStructureSpawnRule& Rule,
+		const TArray<FSRNaturalStructureSpawnRuleOverride>& RuleOverrides)
+	{
+		const FSRNaturalStructureSpawnRuleOverride* RuleOverride = FindRuleOverride(RuleOverrides, Rule.RuleId);
+		const bool bRuleEnabled = RuleOverride ? RuleOverride->bEnabled : Rule.bEnabled;
+		if (!bRuleEnabled)
+		{
+			return;
+		}
+
+		GenerateRuleForCandidateCells(
+			BuildProfileCandidateCells(),
+			Rule.StructureDataAsset.Get(),
+			RuleOverride ? RuleOverride->SpawnChancePerCell : Rule.SpawnChancePerCell,
+			RuleOverride ? RuleOverride->MaxCount : Rule.MaxCount,
+			RuleOverride ? RuleOverride->MinCellSpacing : Rule.MinCellSpacing);
+	};
+
+	auto GenerateBiomeRule = [&GenerateRuleForCandidateCells, &BuildBiomeIdCandidateCells, &FindRuleOverride](
+		FName BiomeId,
+		const FSRProfileNaturalStructureSpawnRule& Rule,
+		const TArray<FSRNaturalStructureSpawnRuleOverride>& RuleOverrides)
+	{
+		const FSRNaturalStructureSpawnRuleOverride* RuleOverride = FindRuleOverride(RuleOverrides, Rule.RuleId);
+		const bool bRuleEnabled = RuleOverride ? RuleOverride->bEnabled : Rule.bEnabled;
+		if (!bRuleEnabled)
+		{
+			return;
+		}
+
+		GenerateRuleForCandidateCells(
+			BuildBiomeIdCandidateCells(BiomeId),
+			Rule.StructureDataAsset.Get(),
+			RuleOverride ? RuleOverride->SpawnChancePerCell : Rule.SpawnChancePerCell,
+			RuleOverride ? RuleOverride->MaxCount : Rule.MaxCount,
+			RuleOverride ? RuleOverride->MinCellSpacing : Rule.MinCellSpacing);
+	};
+
+	if (USRPlanetTerrainProfileDataAsset* TerrainProfileDataAsset = BodyData.TerrainProfileDataAsset.Get())
+	{
+		for (const FSRProfileNaturalStructureSpawnRule& Rule : TerrainProfileDataAsset->ProfileNaturalStructureSpawnRules)
+		{
+			GenerateProfileRule(Rule, BodyData.ProfileNaturalStructureSpawnRuleOverrides);
+		}
+
+		for (const FSRPlanetProfileBiomeEntry& BiomeEntry : TerrainProfileDataAsset->Biomes)
+		{
+			const USRPlanetBiomeDataAsset* BiomeDataAsset = BiomeEntry.BiomeDataAsset.Get();
+			if (!IsValid(BiomeDataAsset))
+			{
+				continue;
+			}
+
+			for (const FSRProfileNaturalStructureSpawnRule& Rule : BiomeDataAsset->NaturalStructureSpawnRules)
+			{
+				GenerateBiomeRule(BiomeDataAsset->BiomeId, Rule, BiomeEntry.NaturalStructureSpawnRuleOverrides);
+			}
+		}
+	}
+
+}
+
+void ASRSolarSystemGenerator::DestroyRuntimeNaturalStructures()
+{
+	if (UWorld* World = GetWorld())
+	{
+		for (TObjectPtr<AActor>& NaturalStructureActor : RuntimeNaturalStructureActors)
+		{
+			if (IsValid(NaturalStructureActor))
+			{
+				World->DestroyActor(NaturalStructureActor);
+			}
+		}
+	}
+
+	RuntimeNaturalStructureActors.Reset();
 }
 
 void ASRSolarSystemGenerator::DestroyTrackedActor(TObjectPtr<ASRCelestialBody>& ActorToDestroy)

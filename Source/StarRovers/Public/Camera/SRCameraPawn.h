@@ -70,6 +70,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "DragHoldAction"))
     TObjectPtr<UInputAction> DragHoldAction;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "FocusSurfaceDragHoldAction"))
+    TObjectPtr<UInputAction> FocusSurfaceDragHoldAction;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "DragDeltaAction"))
     TObjectPtr<UInputAction> DragDeltaAction;
 
@@ -84,6 +87,18 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera", meta = (DisplayName = "ZoomSpeed", ClampMin = "0.0"))
     float ZoomSpeed;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|AdaptiveInput", meta = (DisplayName = "ZoomInputScaleMultiplier"))
+    float ZoomInputScaleMultiplier;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|AdaptiveInput", meta = (DisplayName = "LeftDragInputScaleMultiplier"))
+    float LeftDragInputScaleMultiplier;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|AdaptiveInput", meta = (DisplayName = "RightDragInputScaleMultiplier"))
+    float RightDragInputScaleMultiplier;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|AdaptiveInput", meta = (DisplayName = "RightDragInputScaleMax", ClampMin = "0.0"))
+    float RightDragInputScaleMax;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera", meta = (DisplayName = "CameraSurfacePadding", ClampMin = "0.0"))
     float CameraSurfacePadding;
@@ -112,8 +127,11 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusSurfaceSpeed", ClampMin = "0.0"))
     float FocusSurfaceSpeed;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusSurfaceMaxPitch", ClampMin = "0.0", ClampMax = "89.0", UIMin = "0.0", UIMax = "89.0"))
-    float FocusSurfaceMaxPitch;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusSurfaceInertiaDamping", ClampMin = "0.0"))
+    float FocusSurfaceInertiaDamping;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusSurfaceMinInertiaSpeed", ClampMin = "0.0"))
+    float FocusSurfaceMinInertiaSpeed;
 
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Camera", meta = (DisplayName = "bIsDragging"))
     bool bIsDragging;
@@ -121,11 +139,11 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Camera", meta = (DisplayName = "bMappingContextApplied"))
     bool bMappingContextApplied;
 
-    UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "bIsRotatingFocusedBody"))
-    bool bIsRotatingFocusedBody;
-
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "bIsFocusSurfaceActive"))
     bool bIsFocusSurfaceActive;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "bIsDraggingFocusSurface"))
+    bool bIsDraggingFocusSurface;
 
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Camera", meta = (DisplayName = "bHasDragStartMousePosition"))
     bool bHasDragStartMousePosition;
@@ -136,9 +154,6 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "FocusDragOffset"))
     FVector FocusDragOffset;
 
-    UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Camera", meta = (DisplayName = "FixedPlaneX"))
-    float FixedPlaneX;
-
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "FocusTrackingDelta"))
     FVector FocusTrackingDelta;
 
@@ -147,9 +162,12 @@ protected:
 
 private:
     void ApplyMappingContext();
+    void ConfigureSpringArmCollision();
     void BroadcastFocusedActorChangedIfNeeded(AActor* PreviousFocusedActor);
     void HandleDragHoldStarted();
     void HandleDragHoldCompleted();
+    void HandleFocusSurfaceDragHoldStarted();
+    void HandleFocusSurfaceDragHoldCompleted();
     void HandleDragDelta(const FInputActionValue& Value);
     void HandleZoom(const FInputActionValue& Value);
     void HandleFocusSurface(const FInputActionValue& Value);
@@ -157,12 +175,15 @@ private:
     void HandleResetFocus();
     bool HasExitedFocusedActorGravityField() const;
     bool GetMouseScreenPosition(FVector2D& OutMouseScreenPosition) const;
-    FVector ConvertScreenDeltaToDragOffset(const FVector2D& ScreenDelta) const;
+    FVector ConvertScreenDragToDragOffset(const FVector2D& StartScreenPosition, const FVector2D& CurrentScreenPosition) const;
+    float GetScreenSpaceInputScale(float CurrentZoomDistance) const;
     float GetZoomSpeed() const;
     float GetMinimumZoomDistance() const;
     float ClampZoomDistance(float ZoomDistance) const;
     float GetSpaceSphereRadius() const;
     bool ResolveSpaceBoundary(FVector& OutCenter, float& OutRadius) const;
+    FVector ClampPivotLocationInsideSpace(const FVector& CandidateLocation) const;
+    float ClampZoomDistanceAgainstSpace(float ZoomDistance, const FVector& CandidatePawnLocation) const;
     bool ResolveCelestialCameraAvoidanceSphere(const AActor* Actor, FVector& OutCenter, float& OutRadius) const;
     FVector GetCameraDirectionFromPivot() const;
     float ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance, const FVector& CandidatePawnLocation) const;
@@ -171,6 +192,7 @@ private:
     void ApplyZoomDrivenViewRotation(float ZoomDistance);
     bool ShouldAllowFocusSurface() const;
     void UpdateFocusSurface(float DeltaSeconds);
+    void ApplyFocusSurfaceDelta(const FVector2D& DegreesDelta);
     void RefreshScreenSpaceThicknessReferenceView();
     void UpdateDynamicMeshVisibility();
     bool ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLightTarget);
@@ -178,8 +200,9 @@ private:
     void ConfigureDirectionalLight(AActor* LightingTarget);
     ADirectionalLight* FindDirectionalLightActor() const;
     USRCelestialBodyRegistrySubsystem* FindCelestialRegistry() const;
-    bool ShouldRotateFocusedBody() const;
-    void HandleFocusedBodyRotation(const FVector2D& DragDelta);
+    bool ShouldDragFocusedSurface() const;
+    void HandleFocusSurfaceDrag(const FVector2D& DragDelta);
+    void ClearFocusSurfaceMotion();
     FVector GetFocusLocation() const;
 
     FSRFocusedActorChangedSignature FocusedActorChangedEvent;
@@ -191,7 +214,8 @@ private:
     FVector DragStartFocusDragOffset;
     FVector DragStartTargetLocation;
     FVector2D FocusSurfaceInput;
-    FRotator FocusSurfaceOffset;
+    FVector2D FocusSurfaceAngularVelocity;
+    FQuat FocusSurfaceRotation;
     FVector LastDynamicMeshVisibilityCameraLocation;
     FRotator LastDynamicMeshVisibilityCameraRotation;
     TWeakObjectPtr<AActor> LastDynamicMeshVisibilityFocusedActor;

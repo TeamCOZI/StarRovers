@@ -166,7 +166,7 @@ private:
 	void RefreshNameplateButtonLayout();
 	bool BuildNameplateButtonLayoutForActor(AActor* CelestialBodyActor, int32 NameplateButtonIndex, FSRNameplateButtonLayout& OutLayout) const;
 	void AddStarSystemScrollBoxButton(AActor* CelestialBodyActor, int32 Depth, const TMap<AActor*, TArray<AActor*>>& ChildrenByParent);
-	FText GetStarSystemNameplateText(AActor* CelestialBodyActor) const;
+	FText GetStarSystemNameplateText(const AActor* CelestialBodyActor) const;
 	FText GetStarSystemNameplatePrefixText(AActor* CelestialBodyActor) const;
 	void SortStarSystemBodies(TArray<TObjectPtr<AActor>>& StarSystemBodiesToSort) const;
 

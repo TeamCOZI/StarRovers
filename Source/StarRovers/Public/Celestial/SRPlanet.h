@@ -5,9 +5,11 @@
 #include "SRPlanet.generated.h"
 
 class ULineBatchComponent;
+class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class USRPlanetSurfaceGrid;
 class USROrbit;
+class USplineMeshComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 
@@ -19,12 +21,14 @@ class STARROVERS_API ASRPlanet : public ASRCelestialBody
 public:
 	ASRPlanet();
 
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetData(const FSRCelestialBodyData& NewData) override;
 	virtual void ApplyData() override;
 	virtual FSRCelestialBodyData GetData() const override;
 	virtual USROrbit* GetOrbit() const override;
 	virtual USRPlanetSurfaceGrid* GetSurfaceGrid() const override;
 	virtual void SetCelestialBodyMesh(bool bUseDynamicMesh) override;
+	virtual void RefreshRotationAxisLineVisual() override;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "OceanStaticMesh"))
@@ -38,9 +42,6 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SurfaceGrid"))
 	TObjectPtr<USRPlanetSurfaceGrid> SurfaceGrid;
-
-	UPROPERTY()
-	float ConstructionHeightOffset;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "GridLineColor"))
 	FLinearColor GridLineColor;
@@ -78,18 +79,53 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Orbit", meta = (DisplayName = "OrbitLineSegments", ClampMin = "3"))
 	int32 OrbitLineSegments;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Axis", meta = (DisplayName = "ShowRotationAxisLine"))
+	bool ShowRotationAxisLine;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Axis", meta = (DisplayName = "RotationAxisLineColor"))
+	FLinearColor RotationAxisLineColor;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Axis", meta = (DisplayName = "RotationAxisLineOpacity", ClampMin = "0.0", ClampMax = "1.0"))
+	float RotationAxisLineOpacity;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Axis", meta = (DisplayName = "RotationAxisLineThickness", ClampMin = "0.0"))
+	float RotationAxisLineThickness;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Axis", meta = (DisplayName = "RotationAxisLineLengthMultiplier", ClampMin = "0.0"))
+	float RotationAxisLineLengthMultiplier;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Axis", meta = (DisplayName = "RotationAxisSplineMesh"))
+	TObjectPtr<UStaticMesh> RotationAxisSplineMesh;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Axis", meta = (DisplayName = "RotationAxisMaterial"))
+	TObjectPtr<UMaterialInterface> RotationAxisMaterial;
+
 private:
 	void ApplyOceanStaticMeshSettings();
 	float ResolveOceanScale() const;
 	float EstimateProceduralOceanScaleMultiplier() const;
 	void ApplyAtmosphereStaticMeshSettings();
 	float ResolveAtmosphereScale() const;
+	float ComputeRotationAxisSurfaceRadius() const;
+	float ComputeRotationAxisLineRadius() const;
 	void EnsureSurfaceGrid();
 	void HideSurfaceGrid();
 	bool SupportsSurfaceGrid() const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "OrbitLineBatch", AllowPrivateAccess = "true"))
 	TObjectPtr<ULineBatchComponent> OrbitLineBatch;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "RotationAxisNorthSpline", AllowPrivateAccess = "true"))
+	TObjectPtr<USplineMeshComponent> RotationAxisNorthSpline;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "RotationAxisSouthSpline", AllowPrivateAccess = "true"))
+	TObjectPtr<USplineMeshComponent> RotationAxisSouthSpline;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> RotationAxisNorthMaterialInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> RotationAxisSouthMaterialInstance;
 
 	UPROPERTY()
 	bool CanConstruct;

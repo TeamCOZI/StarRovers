@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Surface/SRPlanetBiomeTypes.h"
 #include "SRPlanetSurfaceGridTypes.generated.h"
 
 UENUM(BlueprintType)
@@ -145,6 +146,15 @@ struct STARROVERS_API FSRPlanetSurfaceGridCell
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "ApproxSurfaceArea"))
     float ApproxSurfaceArea = 0.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "Biome"))
+    ESRPlanetBiome Biome = ESRPlanetBiome::Plains;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "BiomeId"))
+    FName BiomeId = FName(TEXT("Plains"));
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "WaterRole"))
+    ESRBiomeWaterRole WaterRole = ESRBiomeWaterRole::None;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "Neighbors"))
     FSRPlanetSurfaceGridCellNeighbors Neighbors;
 
@@ -193,6 +203,9 @@ struct STARROVERS_API FSRPlanetSurfaceGridCellInfo
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FaceUVCenter"))
     FVector2D FaceUVCenter = FVector2D::ZeroVector;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LatitudeDegrees"))
+    float LatitudeDegrees = 0.0f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "LocalCenter"))
     FVector LocalCenter = FVector::ZeroVector;
 
@@ -207,6 +220,15 @@ struct STARROVERS_API FSRPlanetSurfaceGridCellInfo
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "ApproxSurfaceArea"))
     float ApproxSurfaceArea = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "Biome"))
+    ESRPlanetBiome Biome = ESRPlanetBiome::Plains;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "BiomeId"))
+    FName BiomeId = FName(TEXT("Plains"));
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "WaterRole"))
+    ESRBiomeWaterRole WaterRole = ESRBiomeWaterRole::None;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "Neighbors"))
     FSRPlanetSurfaceGridCellNeighbors Neighbors;

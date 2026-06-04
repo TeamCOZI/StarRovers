@@ -8,6 +8,7 @@
 #include "GameFramework/Actor.h"
 #include "Structure/SRBuildableStructureInterface.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "Structure/SRStructurePlacementLibrary.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 namespace
@@ -388,6 +389,14 @@ void USRAssemblyComponent::UpdateStructureGhostPreview()
 	}
 
 	const FSRStructureData StructureData = SelectedStructureDataAsset->BuildData();
+	TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
+	if (!HoveredSurfaceGrid->GetFootprintCellIds(HoveredCell.CellId, StructureData.FootprintCellsX, StructureData.FootprintCellsY, FootprintCellIds)
+		|| !HoveredSurfaceGrid->CanOccupyCells(FootprintCellIds))
+	{
+		DestroyStructureGhostPreview();
+		return;
+	}
+
 	UClass* StructureActorClass = StructureData.StructureActorClass.Get();
 	if (!IsValid(StructureActorClass))
 	{
@@ -486,27 +495,7 @@ bool USRAssemblyComponent::BuildStructureGhostTransform(
 		return false;
 	}
 
-	const FSRStructureData StructureData = StructureDataAsset->BuildData();
-	if (!SurfaceGrid->GetCellWorldTransform(CellId, StructureData.ConstructionHeightOffset, OutTransform))
-	{
-		return false;
-	}
-
-	if (StructureData.bAlignToSurfaceNormal)
-	{
-		const FQuat BaseRotation = OutTransform.GetRotation();
-		const FVector SurfaceNormal = BaseRotation.GetAxisZ().GetSafeNormal();
-		const FQuat YawRotation = SurfaceNormal.IsNearlyZero()
-			? FQuat::Identity
-			: FQuat(SurfaceNormal, FMath::DegreesToRadians(StructureData.PlacementYawDegrees));
-		OutTransform.SetRotation(YawRotation * BaseRotation);
-	}
-	else
-	{
-		OutTransform.SetRotation(FRotator(0.0f, StructureData.PlacementYawDegrees, 0.0f).Quaternion());
-	}
-
-	return true;
+	return USRStructurePlacementLibrary::BuildStructurePlacementTransform(SurfaceGrid, CellId, StructureDataAsset, OutTransform);
 }
 
 void USRAssemblyComponent::PublishStructureGhostPlacementDebug(
@@ -539,17 +528,15 @@ void USRAssemblyComponent::PublishStructureGhostPlacementDebug(
 	const float NormalDelta = CellPlanetLocalNormal.IsNearlyZero()
 		? 0.0f
 		: FVector::DotProduct(PlanetLocalDelta, CellPlanetLocalNormal);
-	const float GridHeightOffset = SurfaceGrid->GetConstructionHeightOffset();
 
 	const FString DebugText = FString::Printf(
-		TEXT("Structure Ghost Debug | Cell=(%d,%d,%d)\nCell Local=%s\nGhost Local=%s\nDelta=%s\nGridOffset=%.3f | StructureOffset=%.3f | NormalDelta=%.3f"),
+		TEXT("Structure Ghost Debug | Cell=(%d,%d,%d)\nCell Local=%s\nGhost Local=%s\nDelta=%s\nStructureOffset=%.3f | NormalDelta=%.3f"),
 		static_cast<int32>(HoveredCell.CellId.Face),
 		HoveredCell.CellId.CellX,
 		HoveredCell.CellId.CellY,
 		*CellPlanetLocalPosition.ToCompactString(),
 		*GhostPlanetLocalPosition.ToCompactString(),
 		*PlanetLocalDelta.ToCompactString(),
-		GridHeightOffset,
 		StructureHeightOffset,
 		NormalDelta);
 
@@ -577,122 +564,22 @@ bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* Surfa
 		return false;
 	}
 
-	FSRPlanetSurfaceGridCellInfo TargetCellInfo;
-	if (!SurfaceGrid->GetCellInfoById(TargetCell.CellId, TargetCellInfo))
-	{
-		return false;
-	}
-
-	if (!TargetCellInfo.bCanConstruct || TargetCellInfo.bOccupied)
-	{
-		DestroyStructureGhostPreview();
-		return false;
-	}
-
 	const FSRStructureData StructureData = SelectedStructureDataAsset->BuildData();
-	UClass* StructureActorClass = StructureData.StructureActorClass.Get();
-	if (!IsValid(StructureActorClass))
-	{
-		LogInvalidGhostDataAssetOnce(SelectedStructureDataAsset, TEXT("StructureActorClass is not set"));
-		return false;
-	}
-
-	if (!StructureActorClass->ImplementsInterface(USRBuildableStructureInterface::StaticClass()))
-	{
-		LogInvalidGhostDataAssetOnce(SelectedStructureDataAsset, TEXT("StructureActorClass does not implement ISRBuildableStructureInterface"));
-		return false;
-	}
-
-	FTransform StructureTransform;
-	if (!BuildStructureGhostTransform(SurfaceGrid, TargetCell.CellId, SelectedStructureDataAsset, StructureTransform))
-	{
-		return false;
-	}
-
-	AActor* SurfaceOwner = SurfaceGrid->GetOwner();
-	if (!IsValid(SurfaceOwner))
-	{
-		return false;
-	}
-
-	const bool bPlacedFromGhost = IsValid(StructureGhostActor)
-		&& StructureGhostDataAsset == SelectedStructureDataAsset
-		&& StructureGhostActor->GetClass() == StructureActorClass
-		&& bHasStructureGhostCellId
-		&& StructureGhostCellId == TargetCell.CellId;
-
-	AActor* PlacedStructureActor = bPlacedFromGhost ? StructureGhostActor.Get() : nullptr;
-	if (!bPlacedFromGhost)
-	{
-		UWorld* World = GetWorld();
-		if (!World)
-		{
-			return false;
-		}
-
-		FActorSpawnParameters SpawnParameters;
-		SpawnParameters.Owner = SurfaceOwner;
-		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		PlacedStructureActor = World->SpawnActor<AActor>(StructureActorClass, StructureTransform, SpawnParameters);
-		if (!IsValid(PlacedStructureActor))
-		{
-			return false;
-		}
-	}
-
-	auto RollbackPlacedStructureActor = [bPlacedFromGhost, PlayerController](AActor* Actor)
-	{
-		if (!IsValid(Actor))
-		{
-			return;
-		}
-
-		if (bPlacedFromGhost)
-		{
-			Actor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-			Actor->SetOwner(PlayerController);
-			ISRBuildableStructureInterface::Execute_SetStructureGhostMode(Actor, true);
-			return;
-		}
-
-		Actor->Destroy();
-	};
-
-	ISRBuildableStructureInterface::Execute_ApplyStructureDataAsset(PlacedStructureActor, SelectedStructureDataAsset);
-	ISRBuildableStructureInterface::Execute_SetStructureGhostMode(PlacedStructureActor, false);
-	if (!ISRBuildableStructureInterface::Execute_CanPlaceOnSurfaceCell(PlacedStructureActor, TargetCellInfo))
-	{
-		RollbackPlacedStructureActor(PlacedStructureActor);
-		return false;
-	}
-
-	PlacedStructureActor->SetOwner(SurfaceOwner);
-	PlacedStructureActor->SetActorTransform(StructureTransform);
-	PlacedStructureActor->SetActorHiddenInGame(false);
-	if (!PlacedStructureActor->AttachToActor(SurfaceOwner, FAttachmentTransformRules::KeepWorldTransform))
-	{
-		RollbackPlacedStructureActor(PlacedStructureActor);
-		return false;
-	}
-
-	const FName OccupantId = FName(*PlacedStructureActor->GetName());
-	if (!SurfaceGrid->SetCellOccupied(TargetCell.CellId, true, OccupantId))
-	{
-		RollbackPlacedStructureActor(PlacedStructureActor);
-		return false;
-	}
-
-	if (bPlacedFromGhost)
-	{
-		StructureGhostActor = nullptr;
-		StructureGhostDataAsset = nullptr;
-		StructureGhostCellId = FSRPlanetSurfaceGridCellId();
-		bHasStructureGhostCellId = false;
-	}
-	else
+	TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
+	if (!SurfaceGrid->GetFootprintCellIds(TargetCell.CellId, StructureData.FootprintCellsX, StructureData.FootprintCellsY, FootprintCellIds)
+		|| !SurfaceGrid->CanOccupyCells(FootprintCellIds))
 	{
 		DestroyStructureGhostPreview();
+		return false;
 	}
+
+	AActor* PlacedStructureActor = nullptr;
+	if (!USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(SurfaceGrid, TargetCell.CellId, SelectedStructureDataAsset, PlacedStructureActor))
+	{
+		return false;
+	}
+
+	DestroyStructureGhostPreview();
 
 	bHasLastPublishedHoveredCellInfo = false;
 	LastPublishedHoveredSurfaceGrid = nullptr;
