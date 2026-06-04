@@ -257,6 +257,20 @@ void ASRPlayerController::HandleLeftClick()
 
 	AActor* HitActor = bHasCursorHit ? CursorHitResult.GetActor() : nullptr;
 	AActor* SelectedBody = USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(HitActor) ? HitActor : nullptr;
+	if (!SelectedBody)
+	{
+		if (const ASRCameraPawn* CameraPawn = Cast<ASRCameraPawn>(GetPawn()))
+		{
+			AActor* CurrentFocusActor = CameraPawn->GetFocusedActor();
+			if (IsValid(CurrentFocusActor)
+				&& USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(CurrentFocusActor)
+				&& !USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(CurrentFocusActor))
+			{
+				return;
+			}
+		}
+	}
+
 	RequestFocusActor(SelectedBody);
 }
 

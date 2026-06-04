@@ -30,6 +30,8 @@ namespace
 	static const FName OverviewGravityLineSegmentTag(TEXT("StarRovers.GravityLineSegment"));
 	static const FName OverviewOrbitLineTag(TEXT("StarRovers.OrbitLine"));
 	static const FName OverviewOrbitLineRootTag(TEXT("StarRovers.OrbitLineRoot"));
+	static const FName OverviewRotationAxisLineTag(TEXT("StarRovers.RotationAxisLine"));
+	static const FName OverviewRotationAxisLineRootTag(TEXT("StarRovers.RotationAxisLineRoot"));
 
 	int32 GetCategorySortRank(const AActor* CelestialBodyActor)
 	{
@@ -60,7 +62,9 @@ namespace
 			&& !PrimitiveComponent->ComponentHasTag(OverviewGravityLineRootTag)
 			&& !PrimitiveComponent->ComponentHasTag(OverviewGravityLineSegmentTag)
 			&& !PrimitiveComponent->ComponentHasTag(OverviewOrbitLineTag)
-			&& !PrimitiveComponent->ComponentHasTag(OverviewOrbitLineRootTag);
+			&& !PrimitiveComponent->ComponentHasTag(OverviewOrbitLineRootTag)
+			&& !PrimitiveComponent->ComponentHasTag(OverviewRotationAxisLineTag)
+			&& !PrimitiveComponent->ComponentHasTag(OverviewRotationAxisLineRootTag);
 	}
 
 	bool ResolveNameplateVisualBounds(const AActor* CelestialBodyActor, FVector& OutCenter, float& OutRadius)
@@ -618,7 +622,7 @@ void USRCelestialBodyOverviewWidget::AddStarSystemScrollBoxButton(
 	}
 }
 
-FText USRCelestialBodyOverviewWidget::GetStarSystemNameplateText(AActor* CelestialBodyActor) const
+FText USRCelestialBodyOverviewWidget::GetStarSystemNameplateText(const AActor* CelestialBodyActor) const
 {
 	if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(CelestialBodyActor))
 	{
@@ -655,15 +659,15 @@ FText USRCelestialBodyOverviewWidget::GetStarSystemNameplatePrefixText(AActor* C
 
 void USRCelestialBodyOverviewWidget::SortStarSystemBodies(TArray<TObjectPtr<AActor>>& StarSystemBodiesToSort) const
 {
-	StarSystemBodiesToSort.Sort([this](const TObjectPtr<AActor>& Left, const TObjectPtr<AActor>& Right)
+	StarSystemBodiesToSort.Sort([this](const AActor& Left, const AActor& Right)
 	{
-		const int32 LeftRank = GetCategorySortRank(Left.Get());
-		const int32 RightRank = GetCategorySortRank(Right.Get());
+		const int32 LeftRank = GetCategorySortRank(&Left);
+		const int32 RightRank = GetCategorySortRank(&Right);
 		if (LeftRank != RightRank)
 		{
 			return LeftRank < RightRank;
 		}
 
-		return GetStarSystemNameplateText(Left.Get()).ToString() < GetStarSystemNameplateText(Right.Get()).ToString();
+		return GetStarSystemNameplateText(&Left).ToString() < GetStarSystemNameplateText(&Right).ToString();
 	});
 }

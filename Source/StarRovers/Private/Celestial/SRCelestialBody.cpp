@@ -9,6 +9,7 @@
 #include "Gravity/SRGravityParent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Misc/Crc.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Components/SphereComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -19,7 +20,9 @@
 #include "Rendering/StaticMeshVertexBuffer.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
+#include "Surface/SRPlanetBiomeDataAsset.h"
 #include "Surface/SRPlanetTerrainGenerator.h"
+#include "Surface/SRPlanetTerrainProfileDataAsset.h"
 #include "UDynamicMesh.h"
 #if WITH_EDITOR
 #include "UObject/UnrealType.h"
@@ -42,46 +45,43 @@ namespace
 		return FaceIndex >= 0 && FaceIndex < CubeSphereFaceComponentCount ? FaceIndex : 0;
 	}
 
-	int32 GetTerrainBiomeMaterialSlotIndex(const ESRPlanetBiome Biome)
+	UMaterialInterface* GetTerrainBiomeMaterial(const FSRDynamicMeshGeneration& DynamicMeshGeneration, FName BiomeId)
 	{
-		switch (Biome)
-		{
-		case ESRPlanetBiome::Ocean:
-			return 1;
-		case ESRPlanetBiome::Coast:
-			return 2;
-		case ESRPlanetBiome::Plains:
-			return 3;
-		case ESRPlanetBiome::Forest:
-			return 4;
-		case ESRPlanetBiome::Desert:
-			return 5;
-		case ESRPlanetBiome::Mountain:
-			return 6;
-		case ESRPlanetBiome::Snow:
-			return 7;
-		case ESRPlanetBiome::Ice:
-			return 8;
-		default:
-			return 0;
-		}
+		return DynamicMeshGeneration.GetBiomeMaterial(BiomeId);
 	}
 
-	UMaterialInterface* GetTerrainBiomeMaterial(const FSRDynamicMeshGeneration& DynamicMeshGeneration, const ESRPlanetBiome Biome)
+	int32 GetTerrainBiomeMaterialId(const FSRDynamicMeshGeneration& DynamicMeshGeneration, FName BiomeId)
 	{
-		if (const TObjectPtr<UMaterialInterface>* Material = DynamicMeshGeneration.BiomeMaterials.Find(Biome))
-		{
-			return Material->Get();
-		}
-
-		return nullptr;
-	}
-
-	int32 GetTerrainBiomeMaterialId(const FSRDynamicMeshGeneration& DynamicMeshGeneration, const ESRPlanetBiome Biome)
-	{
-		return IsValid(GetTerrainBiomeMaterial(DynamicMeshGeneration, Biome))
-			? GetTerrainBiomeMaterialSlotIndex(Biome)
+		return IsValid(GetTerrainBiomeMaterial(DynamicMeshGeneration, BiomeId))
+			? DynamicMeshGeneration.GetBiomeMaterialSlotIndex(BiomeId)
 			: 0;
+	}
+
+	uint32 HashBiomeDataAssetSettings(uint32 Hash, const USRPlanetBiomeDataAsset* BiomeDataAsset)
+	{
+		Hash = HashCombine(Hash, PointerHash(BiomeDataAsset));
+		if (!IsValid(BiomeDataAsset))
+		{
+			return Hash;
+		}
+
+		Hash = HashCombine(Hash, FCrc::StrCrc32(*BiomeDataAsset->BiomeId.ToString()));
+		Hash = HashCombine(Hash, ::GetTypeHash(static_cast<uint8>(BiomeDataAsset->WaterRole)));
+		Hash = HashCombine(Hash, ::GetTypeHash(BiomeDataAsset->SpawnWeight));
+		Hash = HashCombine(Hash, ::GetTypeHash(BiomeDataAsset->RegionSize));
+		Hash = HashCombine(Hash, ::GetTypeHash(BiomeDataAsset->Priority));
+		Hash = HashCombine(Hash, ::GetTypeHash(BiomeDataAsset->bCanOverrideLowerPriorityBiomes ? 1 : 0));
+		Hash = HashCombine(Hash, ::GetTypeHash(BiomeDataAsset->OverrideMinScore));
+
+		for (const FSRBiomePlacementRule& Rule : BiomeDataAsset->PlacementRules)
+		{
+			Hash = HashCombine(Hash, ::GetTypeHash(static_cast<uint8>(Rule.Metric)));
+			Hash = HashCombine(Hash, ::GetTypeHash(static_cast<uint8>(Rule.Comparison)));
+			Hash = HashCombine(Hash, ::GetTypeHash(Rule.Threshold));
+			Hash = HashCombine(Hash, ::GetTypeHash(Rule.MaxThreshold));
+		}
+
+		return Hash;
 	}
 
 	FVector EstimateProceduralTerrainNormal(const FVector& LocalUnitDirection, float BaseRadius, const FSRDynamicMeshGeneration& DynamicMeshGeneration)
@@ -681,10 +681,10 @@ namespace
 	}
 
 	FSRPlanetTerrainSample SampleTerrainForDynamicMesh(
-		const FVector& LocalUnitDirection,
+		const FSRBiomeSampleContext& Context,
 		const FSRDynamicMeshGeneration& DynamicMeshGeneration)
 	{
-		FSRPlanetTerrainSample Sample = FSRPlanetTerrainGenerator::SampleTerrain(LocalUnitDirection, DynamicMeshGeneration);
+		FSRPlanetTerrainSample Sample = FSRPlanetTerrainGenerator::SampleTerrain(Context, DynamicMeshGeneration);
 		const float SafeDynamicMeshHeight = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight);
 		if (!DynamicMeshGeneration.bMinecraft || !DynamicMeshGeneration.bDynamicMeshGeneration || SafeDynamicMeshHeight <= KINDA_SMALL_NUMBER)
 		{
@@ -705,7 +705,6 @@ FSRCelestialBodyData::FSRCelestialBodyData()
 	VariableName = FText::FromString(TEXT("Primary Star"));
 	BodyCategory = ESRCelestialBodyCategory::Star;
 	OrbitPeriod = 0.0f;
-	ConstructionHeightOffset = 15.0f;
 	DynamicMeshGeneration = FSRDynamicMeshGeneration();
 	DynamicMeshGeneration.bDynamicMeshGeneration = false;
 	DynamicMeshGeneration.DynamicMeshHeight = 0.0f;
@@ -747,6 +746,10 @@ ASRCelestialBody::ASRCelestialBody()
 	ClickSphereCollision = CreateDefaultSubobject<USphereComponent>(TEXT("ClickSphereCollision"));
 	ClickSphereCollision->SetupAttachment(SceneRoot);
 	ClickSphereCollision->SetMobility(EComponentMobility::Movable);
+	ClickSphereCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	ClickSphereCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
+	ClickSphereCollision->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	ClickSphereCollision->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 
 	GravityParent = CreateDefaultSubobject<USRGravityParent>(TEXT("GravityParent"));
 
@@ -765,6 +768,7 @@ ASRCelestialBody::ASRCelestialBody()
 	Scale = 1000.0f;
 	Mass = 2000.0f;
 	GenerationSeed = 1000;
+	TerrainProfileDataAsset = nullptr;
 	DynamicMeshGeneration = FSRDynamicMeshGeneration();
 	DynamicMeshGeneration.bDynamicMeshGeneration = false;
 	DynamicMeshGeneration.DynamicMeshHeight = 0.0f;
@@ -830,7 +834,17 @@ void ASRCelestialBody::SetData(const FSRCelestialBodyData& NewData)
 	BodyCategory = NewData.BodyCategory;
 	FocusZoomMultiplier = NewData.FocusZoomMultiplier;
 	GenerationSeed = NewData.GenerationSeed;
+	TerrainProfileDataAsset = NewData.TerrainProfileDataAsset;
+	ProfileNaturalStructureSpawnRuleOverrides = NewData.ProfileNaturalStructureSpawnRuleOverrides;
 	DynamicMeshGeneration = NewData.DynamicMeshGeneration;
+	if (IsValid(TerrainProfileDataAsset.Get()))
+	{
+		TerrainProfileDataAsset->ApplyToDynamicMeshGeneration(DynamicMeshGeneration);
+	}
+	else if (BodyCategory == ESRCelestialBodyCategory::Planet || BodyCategory == ESRCelestialBodyCategory::Moon)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Celestial body '%s' requires TerrainProfileDataAsset for procedural terrain."), *GetName());
+	}
 	Scale = NewData.Scale;
 	StaticMesh = NewData.StaticMesh;
 	Material = NewData.Material;
@@ -842,7 +856,6 @@ void ASRCelestialBody::SetData(const FSRCelestialBodyData& NewData)
 	GravityLineOpacity = NewData.GravityLineOpacity;
 	GravityLineSegments = NewData.GravityLineSegments;
 	GravityLineThickness = NewData.GravityLineThickness;
-
 	if (HasActorBegunPlay() && GetWorld() && GetWorld()->IsGameWorld() && IsValid(StaticMesh) && IsValid(Material))
 	{
 		ApplyData();
@@ -917,6 +930,9 @@ FSRCelestialBodyData ASRCelestialBody::GetData() const
 	CurrentData.BodyCategory = BodyCategory;
 	CurrentData.FocusZoomMultiplier = FocusZoomMultiplier;
 	CurrentData.GenerationSeed = GenerationSeed;
+	CurrentData.TerrainProfileDataAsset = TerrainProfileDataAsset;
+	CurrentData.ProfileNaturalStructureSpawnRuleOverrides = ProfileNaturalStructureSpawnRuleOverrides;
+	CurrentData.DynamicMeshGeneration = DynamicMeshGeneration;
 	CurrentData.Scale = Scale;
 	CurrentData.StaticMesh = StaticMesh;
 	CurrentData.Material = Material;
@@ -950,6 +966,10 @@ void ASRCelestialBody::RefreshMaterialParameters()
 			StaticDynamicMaterial->SetVectorParameterValue(PlanetCenterMaterialParameterName, FLinearColor(PlanetCenterWS));
 		}
 	}
+}
+
+void ASRCelestialBody::RefreshRotationAxisLineVisual()
+{
 }
 
 void ASRCelestialBody::SetCelestialBodyMesh(bool bUseDynamicMesh)
@@ -1379,10 +1399,10 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicM
 		DynamicMeshComponent->SetMaterial(0, IsValid(ActiveDynamicMaterial) ? ActiveDynamicMaterial : DesiredBaseMaterial);
 	}
 
-	for (const TPair<ESRPlanetBiome, TObjectPtr<UMaterialInterface>>& BiomeMaterialPair : DynamicMeshGeneration.BiomeMaterials)
+	for (const FSRBiomeMaterialEntry& BiomeMaterialEntry : DynamicMeshGeneration.BiomeMaterials)
 	{
-		UMaterialInterface* BiomeMaterial = BiomeMaterialPair.Value.Get();
-		const int32 MaterialSlotIndex = GetTerrainBiomeMaterialSlotIndex(BiomeMaterialPair.Key);
+		UMaterialInterface* BiomeMaterial = BiomeMaterialEntry.Material.Get();
+		const int32 MaterialSlotIndex = DynamicMeshGeneration.GetBiomeMaterialSlotIndex(BiomeMaterialEntry.BiomeId);
 		if (IsValid(BiomeMaterial) && MaterialSlotIndex > 0)
 		{
 			for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
@@ -1884,7 +1904,19 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					continue;
 				}
 
-				const FSRPlanetTerrainSample TerrainSample = SampleTerrainForDynamicMesh(CellDirection, DynamicMeshGeneration);
+				const FSRRecoveredQuadGridAddress QuadGridAddress = QuadGridAddresses.IsValidIndex(QuadIndex)
+					? QuadGridAddresses[QuadIndex]
+					: FSRRecoveredQuadGridAddress();
+				const FSRPlanetSurfaceGridCellId CellId = QuadGridAddress.CellId;
+				FSRBiomeSampleContext TerrainSampleContext;
+				TerrainSampleContext.LocalUnitDirection = CellDirection;
+				TerrainSampleContext.Face = CellId.Face;
+				TerrainSampleContext.CellX = CellId.CellX;
+				TerrainSampleContext.CellY = CellId.CellY;
+				TerrainSampleContext.FaceResolution = QuadGridAddress.FaceResolution;
+				TerrainSampleContext.FaceUV = QuadGridAddress.FaceCoordinates;
+
+				const FSRPlanetTerrainSample TerrainSample = SampleTerrainForDynamicMesh(TerrainSampleContext, DynamicMeshGeneration);
 				FVector TargetPositions[4];
 				const float SourceCellRadius = FMath::Max(CellCenter.Length(), 1.0f);
 				const float CellScale = FMath::Max(0.01f, (SourceCellRadius + TerrainSample.HeightOffset) / SourceCellRadius);
@@ -1908,11 +1940,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					CellNormal = CellDirection;
 				}
 
-				const int32 MaterialId = GetTerrainBiomeMaterialId(DynamicMeshGeneration, TerrainSample.Biome);
-				const FSRRecoveredQuadGridAddress QuadGridAddress = QuadGridAddresses.IsValidIndex(QuadIndex)
-					? QuadGridAddresses[QuadIndex]
-					: FSRRecoveredQuadGridAddress();
-				const FSRPlanetSurfaceGridCellId CellId = QuadGridAddress.CellId;
+				const int32 MaterialId = GetTerrainBiomeMaterialId(DynamicMeshGeneration, TerrainSample.BiomeId);
 				const int32 CellMeshComponentIndex = GetCubeSphereFaceComponentIndex(CellId.Face);
 
 				FSRCelestialBodyDynamicMeshCellColorData& CellColorData = DynamicMeshColorDataByCell.FindOrAdd(CellId);
@@ -1936,6 +1964,9 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				CachedCell.ApproxSurfaceArea =
 					(FVector::CrossProduct(CachedCell.Corner10 - CachedCell.Corner00, CachedCell.Corner11 - CachedCell.Corner00).Size() * 0.5f)
 					+ (FVector::CrossProduct(CachedCell.Corner11 - CachedCell.Corner00, CachedCell.Corner01 - CachedCell.Corner00).Size() * 0.5f);
+				CachedCell.Biome = TerrainSample.Biome;
+				CachedCell.BiomeId = TerrainSample.BiomeId;
+				CachedCell.WaterRole = TerrainSample.WaterRole;
 				CachedCell.Neighbors = USRPlanetSurfaceGridLibrary::GetCubeSphereNeighborIds(CellId, FMath::Max(1, QuadGridAddress.FaceResolution));
 
 				const int32 CachedCellIndex = CachedSurfaceGridCells.Num();
@@ -2209,7 +2240,6 @@ uint32 ASRCelestialBody::ComputeDynamicMeshBuildHash() const
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.GenerationSeed));
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.bDynamicMeshGeneration ? 1 : 0));
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.bMinecraft ? 1 : 0));
-	Hash = HashCombine(Hash, ::GetTypeHash(static_cast<uint8>(DynamicMeshGeneration.BiomeProfile)));
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.DynamicMeshHeight));
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.ContinentFrequency));
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.MountainFrequency));
@@ -2227,17 +2257,11 @@ uint32 ASRCelestialBody::ComputeDynamicMeshBuildHash() const
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.OceanThreshold));
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.AtmosphereThreshold));
 
-	TArray<ESRPlanetBiome> BiomeKeys;
-	DynamicMeshGeneration.BiomeMaterials.GetKeys(BiomeKeys);
-	BiomeKeys.Sort([](const ESRPlanetBiome Left, const ESRPlanetBiome Right)
+	for (const FSRBiomeMaterialEntry& BiomeMaterialEntry : DynamicMeshGeneration.BiomeMaterials)
 	{
-		return static_cast<uint8>(Left) < static_cast<uint8>(Right);
-	});
-	for (const ESRPlanetBiome Biome : BiomeKeys)
-	{
-		const TObjectPtr<UMaterialInterface>* BiomeMaterial = DynamicMeshGeneration.BiomeMaterials.Find(Biome);
-		UMaterialInterface* BiomeMaterialPtr = BiomeMaterial ? BiomeMaterial->Get() : nullptr;
-		Hash = HashCombine(Hash, ::GetTypeHash(static_cast<uint8>(Biome)));
+		UMaterialInterface* BiomeMaterialPtr = BiomeMaterialEntry.Material.Get();
+		Hash = HashCombine(Hash, FCrc::StrCrc32(*BiomeMaterialEntry.BiomeId.ToString()));
+		Hash = HashBiomeDataAssetSettings(Hash, BiomeMaterialEntry.BiomeDataAsset.Get());
 		Hash = HashCombine(Hash, ::GetTypeHash(BiomeMaterialPtr));
 	}
 

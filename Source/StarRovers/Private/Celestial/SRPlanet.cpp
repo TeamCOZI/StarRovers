@@ -2,17 +2,92 @@
 
 #include "Components/LineBatchComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/SplineMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Simulation/SROrbit.h"
 #include "Surface/SRPlanetTerrainGenerator.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Visual/SRLineThicknessUtils.h"
 
 namespace
 {
 	constexpr float SurfaceGridTargetCellSize = 12500.0f;
 	constexpr int32 OceanScaleSampleCount = 512;
 	constexpr float OceanSurfacePaddingRatio = 0.01f;
+	constexpr float RotationAxisSurfaceClearanceRatio = 0.06f;
+
+	void SetRotationAxisSplineVisible(USplineMeshComponent* SplineMesh, const bool bVisible)
+	{
+		if (IsValid(SplineMesh))
+		{
+			SplineMesh->SetVisibility(bVisible);
+			SplineMesh->SetHiddenInGame(!bVisible);
+		}
+	}
+
+	void ApplyRotationAxisMaterialParameters(UMaterialInstanceDynamic* MaterialInstance, const FLinearColor& Color)
+	{
+		if (!IsValid(MaterialInstance))
+		{
+			return;
+		}
+
+		MaterialInstance->SetVectorParameterValue(TEXT("Color"), Color);
+		MaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), Color);
+		MaterialInstance->SetVectorParameterValue(TEXT("TintColor"), Color);
+		MaterialInstance->SetScalarParameterValue(TEXT("Opacity"), Color.A);
+		MaterialInstance->SetScalarParameterValue(TEXT("Alpha"), Color.A);
+	}
+
+	float ComputeSplineMeshCrossScale(const UStaticMesh* Mesh, const float WorldThickness)
+	{
+		if (!IsValid(Mesh))
+		{
+			return 1.0f;
+		}
+
+		const FBoxSphereBounds MeshBounds = Mesh->GetBounds();
+		const float MeshDiameter = FMath::Max(MeshBounds.BoxExtent.X, MeshBounds.BoxExtent.Y) * 2.0f;
+		if (MeshDiameter <= KINDA_SMALL_NUMBER)
+		{
+			return 1.0f;
+		}
+
+		return FMath::Max(0.001f, WorldThickness / MeshDiameter);
+	}
+
+	void ConfigureRotationAxisSplineSegment(
+		USplineMeshComponent* SplineMesh,
+		UStaticMesh* Mesh,
+		UMaterialInstanceDynamic* MaterialInstance,
+		const FVector& StartPoint,
+		const FVector& EndPoint,
+		const float WorldThickness)
+	{
+		if (!IsValid(SplineMesh) || !IsValid(Mesh))
+		{
+			SetRotationAxisSplineVisible(SplineMesh, false);
+			return;
+		}
+
+		const FVector Tangent = EndPoint - StartPoint;
+		const float CrossScale = ComputeSplineMeshCrossScale(Mesh, WorldThickness);
+
+		SplineMesh->SetStaticMesh(Mesh);
+		SplineMesh->SetForwardAxis(ESplineMeshAxis::Z, false);
+		SplineMesh->SetStartAndEnd(StartPoint, Tangent, EndPoint, Tangent, false);
+		SplineMesh->SetStartScale(FVector2D(CrossScale, CrossScale), false);
+		SplineMesh->SetEndScale(FVector2D(CrossScale, CrossScale), true);
+		if (IsValid(MaterialInstance))
+		{
+			SplineMesh->SetMaterial(0, MaterialInstance);
+		}
+		SetRotationAxisSplineVisible(SplineMesh, true);
+	}
 
 	FVector BuildFibonacciSphereDirection(const int32 Index, const int32 Count)
 	{
@@ -27,8 +102,10 @@ namespace
 
 ASRPlanet::ASRPlanet()
 {
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = true;
+
 	BodyCategory = ESRCelestialBodyCategory::Planet;
-	ConstructionHeightOffset = 15.0f;
 	GridLineColor = FLinearColor(0.15f, 0.85f, 1.0f, 1.0f);
 	GridLineOpacity = 1.0f;
 	GridLineThickness = 1.0f;
@@ -41,6 +118,12 @@ ASRPlanet::ASRPlanet()
 	OrbitLineOpacity = 0.85f;
 	OrbitLineThickness = 20.0f;
 	OrbitLineSegments = 96;
+	ShowRotationAxisLine = true;
+	RotationAxisLineColor = FLinearColor(1.0f, 0.9f, 0.2f, 1.0f);
+	RotationAxisLineOpacity = 0.95f;
+	RotationAxisLineThickness = 18.0f;
+	RotationAxisLineLengthMultiplier = 1.25f;
+	RotationAxisMaterial = nullptr;
 	CanConstruct = false;
 	SurfaceGridHeightOffset = 0.0f;
 	bHasOcean = false;
@@ -52,6 +135,12 @@ ASRPlanet::ASRPlanet()
 	AtmosphereMaterial = nullptr;
 	AtmosphereScaleMultiplier = 1.0f;
 
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> RotationAxisCylinderMeshFinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (RotationAxisCylinderMeshFinder.Succeeded())
+	{
+		RotationAxisSplineMesh = RotationAxisCylinderMeshFinder.Object;
+	}
+
 	Orbit = CreateDefaultSubobject<USROrbit>(TEXT("Orbit"));
 
 	OrbitLineBatch = CreateDefaultSubobject<ULineBatchComponent>(TEXT("OrbitLineBatch"));
@@ -62,6 +151,20 @@ ASRPlanet::ASRPlanet()
 	OrbitLineBatch->SetUsingAbsoluteScale(true);
 	OrbitLineBatch->ComponentTags.AddUnique(TEXT("StarRovers.OrbitLine"));
 	OrbitLineBatch->ComponentTags.AddUnique(TEXT("StarRovers.OrbitLineRoot"));
+
+	RotationAxisNorthSpline = CreateDefaultSubobject<USplineMeshComponent>(TEXT("RotationAxisNorthSpline"));
+	RotationAxisNorthSpline->SetupAttachment(SceneRoot);
+	RotationAxisNorthSpline->SetMobility(EComponentMobility::Movable);
+	RotationAxisNorthSpline->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	RotationAxisNorthSpline->ComponentTags.AddUnique(TEXT("StarRovers.RotationAxisLine"));
+	RotationAxisNorthSpline->ComponentTags.AddUnique(TEXT("StarRovers.RotationAxisLineRoot"));
+
+	RotationAxisSouthSpline = CreateDefaultSubobject<USplineMeshComponent>(TEXT("RotationAxisSouthSpline"));
+	RotationAxisSouthSpline->SetupAttachment(SceneRoot);
+	RotationAxisSouthSpline->SetMobility(EComponentMobility::Movable);
+	RotationAxisSouthSpline->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	RotationAxisSouthSpline->ComponentTags.AddUnique(TEXT("StarRovers.RotationAxisLine"));
+	RotationAxisSouthSpline->ComponentTags.AddUnique(TEXT("StarRovers.RotationAxisLineRoot"));
 
 	OceanStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("OceanStaticMesh"));
 	OceanStaticMesh->SetupAttachment(SceneRoot);
@@ -77,6 +180,12 @@ ASRPlanet::ASRPlanet()
 
 	SurfaceGrid = CreateDefaultSubobject<USRPlanetSurfaceGrid>(TEXT("SurfaceGrid"));
 	SurfaceGrid->SetupAttachment(SceneRoot);
+}
+
+void ASRPlanet::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	RefreshRotationAxisLineVisual();
 }
 
 void ASRPlanet::SetData(const FSRCelestialBodyData& NewData)
@@ -96,7 +205,11 @@ void ASRPlanet::SetData(const FSRCelestialBodyData& NewData)
 	OrbitLineOpacity = NewData.OrbitLineOpacity;
 	OrbitLineThickness = NewData.OrbitLineThickness;
 	OrbitLineSegments = NewData.OrbitLineSegments;
-	ConstructionHeightOffset = NewData.ConstructionHeightOffset;
+	ShowRotationAxisLine = NewData.ShowRotationAxisLine;
+	RotationAxisLineColor = NewData.RotationAxisLineColor;
+	RotationAxisLineOpacity = NewData.RotationAxisLineOpacity;
+	RotationAxisLineThickness = NewData.RotationAxisLineThickness;
+	RotationAxisLineLengthMultiplier = NewData.RotationAxisLineLengthMultiplier;
 	GridLineColor = NewData.GridLineColor;
 	GridLineOpacity = NewData.GridLineOpacity;
 	GridLineThickness = NewData.GridLineThickness;
@@ -119,7 +232,6 @@ void ASRPlanet::SetData(const FSRCelestialBodyData& NewData)
 void ASRPlanet::ApplyData()
 {
 	Super::ApplyData();
-	ConstructionHeightOffset = FMath::Max(0.0f, ConstructionHeightOffset);
 	GridLineThickness = FMath::Clamp(GridLineThickness, 0.0f, 2.0f);
 	GridLineOpacity = FMath::Clamp(GridLineOpacity, 0.0f, 1.0f);
 	SurfaceGridHeightOffset = FMath::Clamp(SurfaceGridHeightOffset, 0.0f, 1.0f);
@@ -128,6 +240,9 @@ void ASRPlanet::ApplyData()
 	OrbitLineOpacity = FMath::Clamp(OrbitLineOpacity, 0.0f, 1.0f);
 	OrbitLineSegments = FMath::Max(3, OrbitLineSegments);
 	OrbitLineThickness = FMath::Max(0.0f, OrbitLineThickness);
+	RotationAxisLineOpacity = FMath::Clamp(RotationAxisLineOpacity, 0.0f, 1.0f);
+	RotationAxisLineThickness = FMath::Max(0.0f, RotationAxisLineThickness);
+	RotationAxisLineLengthMultiplier = FMath::Max(0.0f, RotationAxisLineLengthMultiplier);
 
 	if (IsValid(OceanStaticMesh))
 	{
@@ -184,7 +299,6 @@ void ASRPlanet::ApplyData()
 				OccupiedCellColor,
 				SurfaceGridHeightOffset);
 			SurfaceGrid->SetGridOverlayMaterial(GridOverlayMaterial);
-			SurfaceGrid->ConfigureConstructionHeightOffset(ConstructionHeightOffset);
 			SurfaceGrid->ConfigureTerrain(DynamicMeshGeneration);
 		}
 	}
@@ -204,6 +318,8 @@ void ASRPlanet::ApplyData()
 		Orbit->ResetOrbitSimulation();
 		Orbit->RefreshOrbitLineVisual();
 	}
+
+	RefreshRotationAxisLineVisual();
 }
 
 FSRCelestialBodyData ASRPlanet::GetData() const
@@ -221,7 +337,6 @@ FSRCelestialBodyData ASRPlanet::GetData() const
 	CurrentData.SelectedCellColor = SelectedCellColor;
 	CurrentData.OccupiedCellColor = OccupiedCellColor;
 	CurrentData.SurfaceGridHeightOffset = SurfaceGridHeightOffset;
-	CurrentData.ConstructionHeightOffset = ConstructionHeightOffset;
 	CurrentData.GenerationSeed = GenerationSeed;
 	CurrentData.DynamicMeshGeneration = DynamicMeshGeneration;
 	CurrentData.bHasOcean = bHasOcean;
@@ -237,6 +352,11 @@ FSRCelestialBodyData ASRPlanet::GetData() const
 	CurrentData.OrbitLineOpacity = OrbitLineOpacity;
 	CurrentData.OrbitLineSegments = OrbitLineSegments;
 	CurrentData.OrbitLineThickness = OrbitLineThickness;
+	CurrentData.ShowRotationAxisLine = ShowRotationAxisLine;
+	CurrentData.RotationAxisLineColor = RotationAxisLineColor;
+	CurrentData.RotationAxisLineOpacity = RotationAxisLineOpacity;
+	CurrentData.RotationAxisLineThickness = RotationAxisLineThickness;
+	CurrentData.RotationAxisLineLengthMultiplier = RotationAxisLineLengthMultiplier;
 	return CurrentData;
 }
 
@@ -267,6 +387,118 @@ void ASRPlanet::SetCelestialBodyMesh(bool bUseDynamicMesh)
 		AtmosphereStaticMesh->SetVisibility(bEnableAtmosphere);
 		AtmosphereStaticMesh->SetHiddenInGame(!bEnableAtmosphere);
 	}
+
+	RefreshRotationAxisLineVisual();
+}
+
+void ASRPlanet::RefreshRotationAxisLineVisual()
+{
+	if (!IsValid(RotationAxisNorthSpline) || !IsValid(RotationAxisSouthSpline))
+	{
+		return;
+	}
+
+	if (!ShowRotationAxisLine || RotationAxisLineOpacity <= KINDA_SMALL_NUMBER || RotationAxisLineThickness <= KINDA_SMALL_NUMBER)
+	{
+		SetRotationAxisSplineVisible(RotationAxisNorthSpline, false);
+		SetRotationAxisSplineVisible(RotationAxisSouthSpline, false);
+		return;
+	}
+
+	const float SurfaceRadius = ComputeRotationAxisSurfaceRadius();
+	const float AxisRadius = ComputeRotationAxisLineRadius();
+	if (SurfaceRadius <= KINDA_SMALL_NUMBER || AxisRadius <= SurfaceRadius)
+	{
+		SetRotationAxisSplineVisible(RotationAxisNorthSpline, false);
+		SetRotationAxisSplineVisible(RotationAxisSouthSpline, false);
+		return;
+	}
+
+	UStaticMesh* AxisMesh = RotationAxisSplineMesh.Get();
+	if (!IsValid(AxisMesh))
+	{
+		SetRotationAxisSplineVisible(RotationAxisNorthSpline, false);
+		SetRotationAxisSplineVisible(RotationAxisSouthSpline, false);
+		return;
+	}
+
+	FSRCameraInfo CameraInfo;
+	FSRLineThicknessUtils::TryBuildPrimaryCameraInfo(GetWorld(), CameraInfo);
+
+	float ReferenceViewDepth = FSRLineThicknessUtils::DefaultReferenceViewDepth;
+	float ReferenceFieldOfViewDegrees = FSRLineThicknessUtils::DefaultReferenceFieldOfViewDegrees;
+	FSRLineThicknessUtils::ResolveReferenceView(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+
+	const float CenterThickness = FSRLineThicknessUtils::ComputeWorldThicknessAtLocation(
+		CameraInfo,
+		GetActorLocation(),
+		RotationAxisLineThickness,
+		ReferenceViewDepth,
+		ReferenceFieldOfViewDegrees);
+	const float SurfaceClearance = FMath::Max(
+		SurfaceRadius * RotationAxisSurfaceClearanceRatio,
+		FMath::Max(0.0f, CenterThickness) * 4.0f);
+	const float SegmentStartRadius = SurfaceRadius + SurfaceClearance;
+	if (AxisRadius <= SegmentStartRadius)
+	{
+		SetRotationAxisSplineVisible(RotationAxisNorthSpline, false);
+		SetRotationAxisSplineVisible(RotationAxisSouthSpline, false);
+		return;
+	}
+
+	const FLinearColor AxisColor(
+		RotationAxisLineColor.R,
+		RotationAxisLineColor.G,
+		RotationAxisLineColor.B,
+		FMath::Clamp(RotationAxisLineOpacity, 0.0f, 1.0f));
+
+	UMaterialInterface* AxisBaseMaterial = RotationAxisMaterial.Get();
+	if (!IsValid(AxisBaseMaterial))
+	{
+		AxisBaseMaterial = AxisMesh->GetMaterial(0);
+	}
+
+	if (IsValid(AxisBaseMaterial) && !IsValid(RotationAxisNorthMaterialInstance))
+	{
+		RotationAxisNorthMaterialInstance = UMaterialInstanceDynamic::Create(AxisBaseMaterial, this);
+	}
+	if (IsValid(AxisBaseMaterial) && !IsValid(RotationAxisSouthMaterialInstance))
+	{
+		RotationAxisSouthMaterialInstance = UMaterialInstanceDynamic::Create(AxisBaseMaterial, this);
+	}
+	ApplyRotationAxisMaterialParameters(RotationAxisNorthMaterialInstance, AxisColor);
+	ApplyRotationAxisMaterialParameters(RotationAxisSouthMaterialInstance, AxisColor);
+
+	auto ComputeAdaptiveThickness = [&](const FVector& LocalStart, const FVector& LocalEnd)
+	{
+		const FVector WorldMidpoint = GetActorTransform().TransformPosition((LocalStart + LocalEnd) * 0.5f);
+		return FSRLineThicknessUtils::ComputeWorldThicknessAtLocation(
+			CameraInfo,
+			WorldMidpoint,
+			RotationAxisLineThickness,
+			ReferenceViewDepth,
+			ReferenceFieldOfViewDegrees);
+	};
+
+	const FVector NorthStart = FVector::UpVector * SegmentStartRadius;
+	const FVector NorthEnd = FVector::UpVector * AxisRadius;
+	const FVector SouthStart = -FVector::UpVector * SegmentStartRadius;
+	const FVector SouthEnd = -FVector::UpVector * AxisRadius;
+
+	ConfigureRotationAxisSplineSegment(
+		RotationAxisNorthSpline,
+		AxisMesh,
+		RotationAxisNorthMaterialInstance,
+		NorthStart,
+		NorthEnd,
+		ComputeAdaptiveThickness(NorthStart, NorthEnd));
+	ConfigureRotationAxisSplineSegment(
+		RotationAxisSouthSpline,
+		AxisMesh,
+		RotationAxisSouthMaterialInstance,
+		SouthStart,
+		SouthEnd,
+		ComputeAdaptiveThickness(SouthStart, SouthEnd));
 }
 
 void ASRPlanet::ApplyOceanStaticMeshSettings()
@@ -348,8 +580,10 @@ float ASRPlanet::EstimateProceduralOceanScaleMultiplier() const
 	{
 		const FVector Direction = BuildFibonacciSphereDirection(SampleIndex, OceanScaleSampleCount);
 		const FSRPlanetTerrainSample TerrainSample = FSRPlanetTerrainGenerator::SampleTerrain(Direction, DynamicMeshGeneration);
-		const bool bWaterBiome = TerrainSample.Biome == ESRPlanetBiome::Ocean
-			|| (TerrainSample.Biome == ESRPlanetBiome::Coast && (TerrainSample.RiverMask > 0.58f || TerrainSample.LakeMask > 0.38f));
+		const bool bWaterBiome = TerrainSample.WaterRole == ESRBiomeWaterRole::Ocean
+			|| TerrainSample.WaterRole == ESRBiomeWaterRole::River
+			|| TerrainSample.WaterRole == ESRBiomeWaterRole::Lake
+			|| (TerrainSample.WaterRole == ESRBiomeWaterRole::Coast && (TerrainSample.RiverMask > 0.58f || TerrainSample.LakeMask > 0.38f));
 		if (!bWaterBiome)
 		{
 			continue;
@@ -431,6 +665,21 @@ float ASRPlanet::ResolveAtmosphereScale() const
 	return FMath::Max(0.01f, Scale * AtmosphereScaleMultiplier * AtmosphereThreshold);
 }
 
+float ASRPlanet::ComputeRotationAxisSurfaceRadius() const
+{
+	const float BodyRadius = IsValid(StaticMesh.Get())
+		? StaticMesh->GetBounds().SphereRadius * Scale
+		: Scale;
+	const float TerrainPadding = DynamicMeshGeneration.bDynamicMeshGeneration
+		? FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight) * Scale
+		: 0.0f;
+	return FMath::Max(BodyRadius + TerrainPadding, 1.0f);
+}
+
+float ASRPlanet::ComputeRotationAxisLineRadius() const
+{
+	return ComputeRotationAxisSurfaceRadius() * FMath::Max(0.0f, RotationAxisLineLengthMultiplier);
+}
 
 void ASRPlanet::EnsureSurfaceGrid()
 {

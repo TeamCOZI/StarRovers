@@ -4,6 +4,7 @@
 #include "Components/DynamicMeshComponent.h"
 #include "GameFramework/Actor.h"
 #include "Celestial/SRCelestialBodyCategory.h"
+#include "Simulation/SRNaturalStructureSpawnTypes.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "Surface/SRPlanetTerrainTypes.h"
 #include "SRCelestialBody.generated.h"
@@ -23,6 +24,7 @@ class UStaticMesh;
 class UStaticMeshComponent;
 class USRGravityParent;
 class USRCelestialBodyRegistrySubsystem;
+class USRPlanetTerrainProfileDataAsset;
 
 struct FSRCelestialBodyDynamicMeshColorElement
 {
@@ -95,9 +97,6 @@ struct STARROVERS_API FSRCelestialBodyData
 	float SurfaceGridHeightOffset = 0.0f;
 
 	UPROPERTY()
-	float ConstructionHeightOffset = 15.0f;
-
-	UPROPERTY()
 	float Scale = 1000.0f;
 
 	UPROPERTY()
@@ -120,6 +119,12 @@ struct STARROVERS_API FSRCelestialBodyData
 
 	UPROPERTY()
 	FSRDynamicMeshGeneration DynamicMeshGeneration;
+
+	UPROPERTY()
+	TObjectPtr<USRPlanetTerrainProfileDataAsset> TerrainProfileDataAsset = nullptr;
+
+	UPROPERTY()
+	TArray<FSRNaturalStructureSpawnRuleOverride> ProfileNaturalStructureSpawnRuleOverrides;
 
 	UPROPERTY()
 	bool bHasOcean = false;
@@ -180,6 +185,21 @@ struct STARROVERS_API FSRCelestialBodyData
 
 	UPROPERTY()
 	float GravityLineThickness = 20.0f;
+
+	UPROPERTY()
+	bool ShowRotationAxisLine = true;
+
+	UPROPERTY()
+	FLinearColor RotationAxisLineColor = FLinearColor(1.0f, 0.9f, 0.2f, 1.0f);
+
+	UPROPERTY()
+	float RotationAxisLineOpacity = 0.95f;
+
+	UPROPERTY()
+	float RotationAxisLineThickness = 18.0f;
+
+	UPROPERTY()
+	float RotationAxisLineLengthMultiplier = 1.25f;
 };
 
 UCLASS(Blueprintable)
@@ -212,6 +232,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Celestial")
 	void RefreshMaterialParameters();
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Celestial|Visual")
+	virtual void RefreshRotationAxisLineVisual();
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Lighting")
 	virtual void SetCelestialBodyMesh(bool bUseDynamicMesh);
@@ -295,6 +318,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "GenerationSeed"))
 	int32 GenerationSeed;
+
+	UPROPERTY()
+	TObjectPtr<USRPlanetTerrainProfileDataAsset> TerrainProfileDataAsset = nullptr;
+
+	UPROPERTY()
+	TArray<FSRNaturalStructureSpawnRuleOverride> ProfileNaturalStructureSpawnRuleOverrides;
 
 	FSRDynamicMeshGeneration DynamicMeshGeneration;
 

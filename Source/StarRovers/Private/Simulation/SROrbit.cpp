@@ -124,6 +124,7 @@ void USROrbit::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorCo
 		if (ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(Owner))
 		{
 			CelestialBody->RefreshMaterialParameters();
+			CelestialBody->RefreshRotationAxisLineVisual();
 		}
 	}
 }
@@ -166,6 +167,7 @@ void USROrbit::ResetOrbitSimulation()
 			if (ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(Owner))
 			{
 				CelestialBody->RefreshMaterialParameters();
+				CelestialBody->RefreshRotationAxisLineVisual();
 			}
 		}
 	}

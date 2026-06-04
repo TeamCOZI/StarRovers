@@ -328,12 +328,13 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 		{
 			const FSRPlanetSurfaceGridCellInfo& CellInfo = FocusInfo.HoveredSurfaceCellInfo;
 			FString CellText = FString::Printf(
-				TEXT("Face: %d\nCell: %d,%d\nDisplay: %d,%d"),
+				TEXT("Face: %d\nCell: %d,%d\nDisplay: %d,%d\nLatitude: %.1f deg"),
 				GetCubeSphereFaceNumber(CellInfo.CellId.Face),
 				CellInfo.CellId.CellX,
 				CellInfo.CellId.CellY,
 				CellInfo.DisplayCellX,
-				CellInfo.DisplayCellY);
+				CellInfo.DisplayCellY,
+				CellInfo.LatitudeDegrees);
 			CellText += FString::Printf(TEXT("\nPatchDisplayCells: %d"), FocusInfo.HoveredSurfaceGridPatchCellIds.Num());
 			for (int32 CellIndex = 0; CellIndex < FocusInfo.HoveredSurfaceGridPatchCellIds.Num(); ++CellIndex)
 			{

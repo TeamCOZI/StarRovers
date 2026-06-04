@@ -24,7 +24,8 @@
 namespace StarRoversInputPaths
 {
 	static constexpr TCHAR DefaultMappingContext[] = TEXT("/Game/BlueprintClasses/Core/IMC_SR.IMC_SR");
-	static constexpr TCHAR DragHoldAction[] = TEXT("/Game/BlueprintClasses/Core/IA_DragHold.IA_DragHold");
+	static constexpr TCHAR DragHoldAction[] = TEXT("/Game/BlueprintClasses/Core/IA_LeftClick.IA_LeftClick");
+	static constexpr TCHAR FocusSurfaceDragHoldAction[] = TEXT("/Game/BlueprintClasses/Core/IA_DragHold.IA_DragHold");
 	static constexpr TCHAR DragDeltaAction[] = TEXT("/Game/BlueprintClasses/Core/IA_DragDelta.IA_DragDelta");
 	static constexpr TCHAR ZoomAction[] = TEXT("/Game/BlueprintClasses/Core/IA_Zoom.IA_Zoom");
 	static constexpr TCHAR FocusSurfaceAction[] = TEXT("/Game/BlueprintClasses/Core/IA_FocusSurface.IA_FocusSurface");
@@ -111,6 +112,7 @@ ASRCameraPawn::ASRCameraPawn()
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(SceneRoot);
+	ConfigureSpringArmCollision();
 
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
@@ -127,6 +129,10 @@ ASRCameraPawn::ASRCameraPawn()
 	bUseControllerRotationRoll = false;
 
 	ZoomSpeed = 5000.0f;
+	ZoomInputScaleMultiplier = 1.0f;
+	LeftDragInputScaleMultiplier = 1.0f;
+	RightDragInputScaleMultiplier = 1.0f;
+	RightDragInputScaleMax = 0.0f;
 	CameraSurfacePadding = 100.0f;
 	if (Camera)
 	{
@@ -140,16 +146,16 @@ ASRCameraPawn::ASRCameraPawn()
 	FocusFollowSmoothTime = 0.35f;
 	SurfaceRotateSensitivity = 0.2f;
 	FocusSurfaceSpeed = 60.0f;
-	FocusSurfaceMaxPitch = 75.0f;
+	FocusSurfaceInertiaDamping = 2.5f;
+	FocusSurfaceMinInertiaSpeed = 1.0f;
 	DragTargetLocation = FVector::ZeroVector;
 	ZoomDistanceTarget = SpringArm->TargetArmLength;
 	bIsDragging = false;
 	bMappingContextApplied = false;
-	bIsRotatingFocusedBody = false;
 	bIsFocusSurfaceActive = false;
+	bIsDraggingFocusSurface = false;
 	bHasDragStartMousePosition = false;
 	FocusDragOffset = FVector::ZeroVector;
-	FixedPlaneX = 0.0f;
 	FocusTrackingDelta = FVector::ZeroVector;
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
 	ScreenSpaceThicknessReferenceZoomDistance = 0.0f;
@@ -158,7 +164,8 @@ ASRCameraPawn::ASRCameraPawn()
 	DragStartFocusDragOffset = FVector::ZeroVector;
 	DragStartTargetLocation = FVector::ZeroVector;
 	FocusSurfaceInput = FVector2D::ZeroVector;
-	FocusSurfaceOffset = FRotator::ZeroRotator;
+	FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
+	FocusSurfaceRotation = FQuat::Identity;
 	LastDynamicMeshVisibilityCameraLocation = FVector::ZeroVector;
 	LastDynamicMeshVisibilityCameraRotation = FRotator::ZeroRotator;
 	LastDynamicMeshVisibilityFocusedActor = nullptr;
@@ -184,6 +191,16 @@ ASRCameraPawn::ASRCameraPawn()
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires DragHoldAction at '%s'."), StarRoversInputPaths::DragHoldAction);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UInputAction> FocusSurfaceDragHoldFinder(StarRoversInputPaths::FocusSurfaceDragHoldAction);
+	if (FocusSurfaceDragHoldFinder.Succeeded())
+	{
+		FocusSurfaceDragHoldAction = FocusSurfaceDragHoldFinder.Object;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusSurfaceDragHoldAction at '%s' for left-click focus surface drag."), StarRoversInputPaths::FocusSurfaceDragHoldAction);
 	}
 
 	static ConstructorHelpers::FObjectFinder<UInputAction> DragDeltaFinder(StarRoversInputPaths::DragDeltaAction);
@@ -234,6 +251,7 @@ void ASRCameraPawn::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 
+	ConfigureSpringArmCollision();
 	ApplyZoomDrivenViewRotation(SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
 	RefreshScreenSpaceThicknessReferenceView();
 }
@@ -242,9 +260,8 @@ void ASRCameraPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
-	FixedPlaneX = GetActorLocation().X;
-	DragTargetLocation = GetActorLocation();
-	DragTargetLocation.X = FixedPlaneX;
+	ConfigureSpringArmCollision();
+	DragTargetLocation = ClampPivotLocationInsideSpace(GetActorLocation());
 	ZoomDistanceTarget = ClampZoomDistance(SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
 	if (SpringArm)
 	{
@@ -279,7 +296,6 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 			if (FocusedActor)
 			{
 				DragTargetLocation = GetFocusLocation() + FocusDragOffset;
-				DragTargetLocation.X = FixedPlaneX;
 			}
 		}
 		else
@@ -288,7 +304,17 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 		}
 	}
 
-	const FVector DesiredLocation(FixedPlaneX, DragTargetLocation.Y, DragTargetLocation.Z);
+	const FVector ClampedDragTargetLocation = ClampPivotLocationInsideSpace(DragTargetLocation);
+	if (!ClampedDragTargetLocation.Equals(DragTargetLocation, KINDA_SMALL_NUMBER))
+	{
+		DragTargetLocation = ClampedDragTargetLocation;
+		if (FocusedActor)
+		{
+			FocusDragOffset = DragTargetLocation - GetFocusLocation();
+		}
+	}
+
+	const FVector DesiredLocation = DragTargetLocation;
 	FVector NewLocation = DesiredLocation;
 	if (bIsDragging)
 	{
@@ -304,8 +330,6 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 			FocusTrackingDeltaVelocity,
 			FocusFollowSmoothTime,
 			DeltaSeconds);
-		FocusTrackingDelta.X = 0.0f;
-		FocusTrackingDeltaVelocity.X = 0.0f;
 
 		if (FocusTrackingDelta.SizeSquared() <= KINDA_SMALL_NUMBER && FocusTrackingDeltaVelocity.SizeSquared() <= KINDA_SMALL_NUMBER)
 		{
@@ -322,19 +346,25 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 		NewLocation = FMath::VInterpTo(GetActorLocation(), DesiredLocation, DeltaSeconds, DefaultDragInterpSpeed);
 	}
 
+	NewLocation = ClampPivotLocationInsideSpace(NewLocation);
 	if (SpringArm)
 	{
 		ZoomDistanceTarget = ClampZoomDistance(ZoomDistanceTarget);
 		SpringArm->TargetArmLength = ClampZoomDistance(SpringArm->TargetArmLength);
 		ApplyZoomDrivenViewRotation(ZoomDistanceTarget);
+		ZoomDistanceTarget = ClampZoomDistanceAgainstSpace(ZoomDistanceTarget, NewLocation);
 		ZoomDistanceTarget = ClampZoomDistanceAgainstCelestialBodies(ZoomDistanceTarget, NewLocation);
+		ZoomDistanceTarget = ClampZoomDistanceAgainstSpace(ZoomDistanceTarget, NewLocation);
 
 		const float InterpolatedZoom = FMath::FInterpTo(SpringArm->TargetArmLength, ZoomDistanceTarget, DeltaSeconds, DefaultZoomInterpSpeed);
-		SpringArm->TargetArmLength = ClampZoomDistanceAgainstCelestialBodies(ClampZoomDistance(InterpolatedZoom), NewLocation);
+		float ClampedInterpolatedZoom = ClampZoomDistance(InterpolatedZoom);
+		ClampedInterpolatedZoom = ClampZoomDistanceAgainstSpace(ClampedInterpolatedZoom, NewLocation);
+		ClampedInterpolatedZoom = ClampZoomDistanceAgainstCelestialBodies(ClampedInterpolatedZoom, NewLocation);
+		ClampedInterpolatedZoom = ClampZoomDistanceAgainstSpace(ClampedInterpolatedZoom, NewLocation);
+		SpringArm->TargetArmLength = ClampedInterpolatedZoom;
 		ApplyZoomDrivenViewRotation(SpringArm->TargetArmLength);
 	}
 
-	NewLocation.X = FixedPlaneX;
 	SetActorLocation(NewLocation);
 	UpdateDynamicMeshVisibility();
 }
@@ -354,6 +384,17 @@ void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 		else
 		{
 			UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires DragHoldAction before input binding."));
+		}
+
+		if (FocusSurfaceDragHoldAction)
+		{
+			EnhancedInputComponent->BindAction(FocusSurfaceDragHoldAction, ETriggerEvent::Started, this, &ASRCameraPawn::HandleFocusSurfaceDragHoldStarted);
+			EnhancedInputComponent->BindAction(FocusSurfaceDragHoldAction, ETriggerEvent::Completed, this, &ASRCameraPawn::HandleFocusSurfaceDragHoldCompleted);
+			EnhancedInputComponent->BindAction(FocusSurfaceDragHoldAction, ETriggerEvent::Canceled, this, &ASRCameraPawn::HandleFocusSurfaceDragHoldCompleted);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusSurfaceDragHoldAction before left-click focus surface drag binding."));
 		}
 
 		if (DragDeltaAction)
@@ -401,18 +442,15 @@ void ASRCameraPawn::FocusActor(AActor* NewFocusActor)
 	AActor* PreviousFocusedActor = FocusedActor.Get();
 	FocusedActor = NewFocusActor;
 	FocusDragOffset = FVector::ZeroVector;
-	FocusSurfaceInput = FVector2D::ZeroVector;
-	FocusSurfaceOffset = FRotator::ZeroRotator;
-	bIsFocusSurfaceActive = false;
+	FocusSurfaceRotation = FQuat::Identity;
+	ClearFocusSurfaceMotion();
 
 	if (FocusedActor)
 	{
 		DragTargetLocation = GetFocusLocation();
-		DragTargetLocation.X = FixedPlaneX;
-		const FVector CurrentLocation(FixedPlaneX, GetActorLocation().Y, GetActorLocation().Z);
-		const FVector DesiredLocation(FixedPlaneX, DragTargetLocation.Y, DragTargetLocation.Z);
+		const FVector CurrentLocation = GetActorLocation();
+		const FVector DesiredLocation = DragTargetLocation;
 		FocusTrackingDelta = DesiredLocation - CurrentLocation;
-		FocusTrackingDelta.X = 0.0f;
 		FocusTrackingDeltaVelocity = FVector::ZeroVector;
 
 		if (!Camera)
@@ -438,16 +476,15 @@ void ASRCameraPawn::ClearFocusActor()
 	AActor* PreviousFocusedActor = FocusedActor.Get();
 	if (FocusedActor)
 	{
-		DragTargetLocation = FVector(FixedPlaneX, GetActorLocation().Y, GetActorLocation().Z);
+		DragTargetLocation = GetActorLocation();
 	}
 
 	FocusedActor = nullptr;
 	FocusDragOffset = FVector::ZeroVector;
 	FocusTrackingDelta = FVector::ZeroVector;
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
-	FocusSurfaceInput = FVector2D::ZeroVector;
-	FocusSurfaceOffset = FRotator::ZeroRotator;
-	bIsFocusSurfaceActive = false;
+	FocusSurfaceRotation = FQuat::Identity;
+	ClearFocusSurfaceMotion();
 	BroadcastFocusedActorChangedIfNeeded(PreviousFocusedActor);
 }
 
@@ -495,10 +532,10 @@ void ASRCameraPawn::SnapToFocusTarget()
 	if (FocusedActor)
 	{
 		DragTargetLocation = GetFocusLocation() + FocusDragOffset;
-		DragTargetLocation.X = FixedPlaneX;
 	}
 
-	const FVector DesiredLocation(FixedPlaneX, DragTargetLocation.Y, DragTargetLocation.Z);
+	const FVector DesiredLocation = ClampPivotLocationInsideSpace(DragTargetLocation);
+	DragTargetLocation = DesiredLocation;
 
 	if (SpringArm)
 	{
@@ -517,20 +554,16 @@ void ASRCameraPawn::ResetFocus()
 	}
 
 	FocusDragOffset = FVector::ZeroVector;
-	FocusSurfaceInput = FVector2D::ZeroVector;
-	FocusSurfaceOffset = FRotator::ZeroRotator;
-	bIsFocusSurfaceActive = false;
+	FocusSurfaceRotation = FQuat::Identity;
+	ClearFocusSurfaceMotion();
 	bIsDragging = false;
-	bIsRotatingFocusedBody = false;
 	bHasDragStartMousePosition = false;
 
 	DragTargetLocation = GetFocusLocation();
-	DragTargetLocation.X = FixedPlaneX;
 
-	const FVector CurrentLocation(FixedPlaneX, GetActorLocation().Y, GetActorLocation().Z);
-	const FVector DesiredLocation(FixedPlaneX, DragTargetLocation.Y, DragTargetLocation.Z);
+	const FVector CurrentLocation = GetActorLocation();
+	const FVector DesiredLocation = DragTargetLocation;
 	FocusTrackingDelta = DesiredLocation - CurrentLocation;
-	FocusTrackingDelta.X = 0.0f;
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
 
 	if (!Camera)
@@ -580,6 +613,18 @@ void ASRCameraPawn::ApplyMappingContext()
 	}
 }
 
+void ASRCameraPawn::ConfigureSpringArmCollision()
+{
+	if (!SpringArm)
+	{
+		return;
+	}
+
+	SpringArm->bDoCollisionTest = true;
+	SpringArm->ProbeChannel = ECC_Camera;
+	SpringArm->ProbeSize = 25.0f;
+}
+
 void ASRCameraPawn::BroadcastFocusedActorChangedIfNeeded(AActor* PreviousFocusedActor)
 {
 	if (PreviousFocusedActor != FocusedActor)
@@ -590,8 +635,7 @@ void ASRCameraPawn::BroadcastFocusedActorChangedIfNeeded(AActor* PreviousFocused
 
 void ASRCameraPawn::HandleDragHoldStarted()
 {
-	bIsRotatingFocusedBody = ShouldRotateFocusedBody();
-	bIsDragging = !bIsRotatingFocusedBody;
+	bIsDragging = true;
 	bHasDragStartMousePosition = false;
 
 	if (bIsDragging)
@@ -607,8 +651,26 @@ void ASRCameraPawn::HandleDragHoldStarted()
 void ASRCameraPawn::HandleDragHoldCompleted()
 {
 	bIsDragging = false;
-	bIsRotatingFocusedBody = false;
 	bHasDragStartMousePosition = false;
+}
+
+void ASRCameraPawn::HandleFocusSurfaceDragHoldStarted()
+{
+	bIsDraggingFocusSurface = ShouldDragFocusedSurface();
+	if (!bIsDraggingFocusSurface)
+	{
+		return;
+	}
+
+	bIsDragging = false;
+	bHasDragStartMousePosition = false;
+	FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
+	bIsFocusSurfaceActive = true;
+}
+
+void ASRCameraPawn::HandleFocusSurfaceDragHoldCompleted()
+{
+	bIsDraggingFocusSurface = false;
 }
 
 void ASRCameraPawn::HandleDragDelta(const FInputActionValue& Value)
@@ -619,9 +681,9 @@ void ASRCameraPawn::HandleDragDelta(const FInputActionValue& Value)
 		return;
 	}
 
-	if (bIsRotatingFocusedBody)
+	if (bIsDraggingFocusSurface)
 	{
-		HandleFocusedBodyRotation(DragDelta);
+		HandleFocusSurfaceDrag(DragDelta);
 		return;
 	}
 
@@ -642,22 +704,19 @@ void ASRCameraPawn::HandleDragDelta(const FInputActionValue& Value)
 			return;
 		}
 
-		const FVector2D ScreenDelta = CurrentMouseScreenPosition - DragStartMouseScreenPosition;
-		const FVector DragOffsetDelta = ConvertScreenDeltaToDragOffset(ScreenDelta);
+		const FVector DragOffsetDelta = ConvertScreenDragToDragOffset(DragStartMouseScreenPosition, CurrentMouseScreenPosition);
 
 		if (FocusedActor)
 		{
 			FocusDragOffset = DragStartFocusDragOffset + DragOffsetDelta;
-			FocusDragOffset.X = 0.0f;
 			DragTargetLocation = GetFocusLocation() + FocusDragOffset;
-			DragTargetLocation.X = FixedPlaneX;
+			DragTargetLocation = ClampPivotLocationInsideSpace(DragTargetLocation);
 			FocusDragOffset = DragTargetLocation - GetFocusLocation();
-			FocusDragOffset.X = 0.0f;
 			return;
 		}
 
 		DragTargetLocation = DragStartTargetLocation + DragOffsetDelta;
-		DragTargetLocation.X = FixedPlaneX;
+		DragTargetLocation = ClampPivotLocationInsideSpace(DragTargetLocation);
 		return;
 	}
 
@@ -698,6 +757,30 @@ void ASRCameraPawn::HandleResetFocus()
 	ResetFocus();
 }
 
+float ASRCameraPawn::GetScreenSpaceInputScale(float CurrentZoomDistance) const
+{
+	const float ReferenceZoomDistance = FMath::Max(1.0f, GetScreenSpaceThicknessReferenceZoomDistance());
+	const float SafeCurrentZoomDistance = FMath::Max(1.0f, CurrentZoomDistance);
+	const float ReferenceFieldOfView = FMath::Clamp(GetScreenSpaceThicknessReferenceFieldOfView(), 5.0f, 170.0f);
+	if (!Camera)
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires Camera to compute screen-space input scale."));
+		return 1.0f;
+	}
+
+	const float CurrentFieldOfView = FMath::Clamp(Camera->FieldOfView, 5.0f, 170.0f);
+	const float ReferenceTanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(ReferenceFieldOfView * 0.5f));
+	const float CurrentTanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(CurrentFieldOfView * 0.5f));
+	if (ReferenceTanHalfFieldOfView <= UE_SMALL_NUMBER)
+	{
+		return 1.0f;
+	}
+
+	const float ScreenSpaceInputScale = (SafeCurrentZoomDistance * CurrentTanHalfFieldOfView)
+		/ (ReferenceZoomDistance * ReferenceTanHalfFieldOfView);
+	return FMath::Max(ScreenSpaceInputScale, UE_SMALL_NUMBER);
+}
+
 float ASRCameraPawn::GetZoomSpeed() const
 {
 	const float SafeBaseZoomSpeed = FMath::Max(0.0f, ZoomSpeed);
@@ -706,25 +789,8 @@ float ASRCameraPawn::GetZoomSpeed() const
 		return 0.0f;
 	}
 
-	const float ReferenceZoomDistance = FMath::Max(1.0f, GetScreenSpaceThicknessReferenceZoomDistance());
-	const float CurrentZoomDistance = FMath::Max(1.0f, ZoomDistanceTarget);
-	const float ReferenceFieldOfView = FMath::Clamp(GetScreenSpaceThicknessReferenceFieldOfView(), 5.0f, 170.0f);
-	if (!Camera)
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires Camera to compute zoom speed."));
-		return 0.0f;
-	}
-	const float CurrentFieldOfView = FMath::Clamp(Camera->FieldOfView, 5.0f, 170.0f);
-	const float ReferenceTanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(ReferenceFieldOfView * 0.5f));
-	const float CurrentTanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(CurrentFieldOfView * 0.5f));
-	if (ReferenceTanHalfFieldOfView <= UE_SMALL_NUMBER)
-	{
-		return SafeBaseZoomSpeed;
-	}
-
-	const float ScreenSpaceZoomScale = (CurrentZoomDistance * CurrentTanHalfFieldOfView)
-		/ (ReferenceZoomDistance * ReferenceTanHalfFieldOfView);
-	return SafeBaseZoomSpeed * FMath::Max(ScreenSpaceZoomScale, UE_SMALL_NUMBER);
+	return SafeBaseZoomSpeed * GetScreenSpaceInputScale(
+		ZoomDistanceTarget) * FMath::Max(0.0f, ZoomInputScaleMultiplier);
 }
 
 float ASRCameraPawn::GetMinimumZoomDistance() const
@@ -822,12 +888,71 @@ bool ASRCameraPawn::ResolveSpaceBoundary(FVector& OutCenter, float& OutRadius) c
 	return OutRadius > KINDA_SMALL_NUMBER;
 }
 
+FVector ASRCameraPawn::ClampPivotLocationInsideSpace(const FVector& CandidateLocation) const
+{
+	FVector SpaceCenter = FVector::ZeroVector;
+	float SpaceRadius = 0.0f;
+	if (!ResolveSpaceBoundary(SpaceCenter, SpaceRadius))
+	{
+		return CandidateLocation;
+	}
+
+	const FVector SpaceToCandidate = CandidateLocation - SpaceCenter;
+	const float SafeRadius = FMath::Max(0.0f, SpaceRadius);
+	if (SpaceToCandidate.SizeSquared() <= FMath::Square(SafeRadius))
+	{
+		return CandidateLocation;
+	}
+
+	return SpaceCenter + (SpaceToCandidate.GetSafeNormal() * SafeRadius);
+}
+
+float ASRCameraPawn::ClampZoomDistanceAgainstSpace(float ZoomDistance, const FVector& CandidatePawnLocation) const
+{
+	FVector SpaceCenter = FVector::ZeroVector;
+	float SpaceRadius = 0.0f;
+	if (!ResolveSpaceBoundary(SpaceCenter, SpaceRadius))
+	{
+		return ZoomDistance;
+	}
+
+	const float SafeSpaceRadius = FMath::Max(0.0f, SpaceRadius - FMath::Max(0.0f, CameraSurfacePadding));
+	if (SafeSpaceRadius <= KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	const FVector CameraDirection = GetCameraDirectionFromPivot();
+	if (CameraDirection.SizeSquared() <= UE_SMALL_NUMBER)
+	{
+		return ZoomDistance;
+	}
+
+	const FVector SpaceToPivot = CandidatePawnLocation - SpaceCenter;
+	const float B = FVector::DotProduct(SpaceToPivot, CameraDirection);
+	const float C = SpaceToPivot.SizeSquared() - FMath::Square(SafeSpaceRadius);
+	const float Discriminant = FMath::Square(B) - C;
+	if (Discriminant < 0.0f)
+	{
+		return 0.0f;
+	}
+
+	const float ExitDistance = -B + FMath::Sqrt(Discriminant);
+	const float MaximumZoomDistance = FMath::Max(0.0f, ExitDistance);
+	return FMath::Min(FMath::Max(0.0f, ZoomDistance), MaximumZoomDistance);
+}
+
 bool ASRCameraPawn::ResolveCelestialCameraAvoidanceSphere(const AActor* Actor, FVector& OutCenter, float& OutRadius) const
 {
 	OutCenter = FVector::ZeroVector;
 	OutRadius = 0.0f;
 
 	if (!USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(Actor))
+	{
+		return false;
+	}
+
+	if (USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(Actor))
 	{
 		return false;
 	}
@@ -849,7 +974,9 @@ bool ASRCameraPawn::ResolveCelestialCameraAvoidanceSphere(const AActor* Actor, F
 			|| !PrimitiveComponent->IsVisible()
 			|| PrimitiveComponent->ComponentHasTag(TEXT("StarRovers.GravityLine"))
 			|| PrimitiveComponent->ComponentHasTag(TEXT("StarRovers.GravityLineRoot"))
-			|| PrimitiveComponent->ComponentHasTag(TEXT("StarRovers.GravityLineSegment")))
+			|| PrimitiveComponent->ComponentHasTag(TEXT("StarRovers.GravityLineSegment"))
+			|| PrimitiveComponent->ComponentHasTag(TEXT("StarRovers.RotationAxisLine"))
+			|| PrimitiveComponent->ComponentHasTag(TEXT("StarRovers.RotationAxisLineRoot")))
 		{
 			continue;
 		}
@@ -1002,7 +1129,7 @@ void ASRCameraPawn::ApplyZoomDrivenViewRotation(float ZoomDistance)
 	if (ShouldAllowFocusSurface())
 	{
 		const FQuat BaseViewQuat = BaseViewRotation.Quaternion();
-		const FQuat SurfaceLookQuat = FQuat(FocusSurfaceOffset);
+		const FQuat SurfaceLookQuat = FocusSurfaceRotation.GetNormalized();
 		SpringArm->SetWorldRotation((BaseViewQuat * SurfaceLookQuat).Rotator().GetNormalized());
 		return;
 	}
@@ -1017,34 +1144,75 @@ bool ASRCameraPawn::ShouldAllowFocusSurface() const
 		return false;
 	}
 
-	return !USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(FocusedActor);
+	return true;
 }
 
 void ASRCameraPawn::UpdateFocusSurface(float DeltaSeconds)
 {
+	if (DeltaSeconds <= UE_SMALL_NUMBER || !ShouldAllowFocusSurface())
+	{
+		ClearFocusSurfaceMotion();
+		return;
+	}
+
 	const FVector2D CombinedLookInput = FocusSurfaceInput.GetClampedToMaxSize(1.0f);
-	if (CombinedLookInput.IsNearlyZero() || DeltaSeconds <= UE_SMALL_NUMBER || !ShouldAllowFocusSurface())
-	{
-		bIsFocusSurfaceActive = false;
-		return;
-	}
-
+	const bool bHasDirectInput = !CombinedLookInput.IsNearlyZero();
 	const float SafeLookSpeed = FMath::Max(0.0f, FocusSurfaceSpeed);
-	if (SafeLookSpeed <= KINDA_SMALL_NUMBER)
+	const float SafeMinInertiaSpeed = FMath::Max(0.0f, FocusSurfaceMinInertiaSpeed);
+	bool bAppliedDirectInput = false;
+	if (bHasDirectInput && SafeLookSpeed > KINDA_SMALL_NUMBER)
 	{
-		bIsFocusSurfaceActive = false;
+		ApplyFocusSurfaceDelta(FVector2D(-CombinedLookInput.X, CombinedLookInput.Y) * SafeLookSpeed * DeltaSeconds);
+		bAppliedDirectInput = true;
+	}
+
+	if (!bIsDraggingFocusSurface && !FocusSurfaceAngularVelocity.IsNearlyZero(SafeMinInertiaSpeed))
+	{
+		ApplyFocusSurfaceDelta(FocusSurfaceAngularVelocity * DeltaSeconds);
+
+		const float SafeDamping = FMath::Max(0.0f, FocusSurfaceInertiaDamping);
+		if (SafeDamping <= KINDA_SMALL_NUMBER)
+		{
+			FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
+		}
+		else
+		{
+			FocusSurfaceAngularVelocity.X = FMath::FInterpTo(FocusSurfaceAngularVelocity.X, 0.0f, DeltaSeconds, SafeDamping);
+			FocusSurfaceAngularVelocity.Y = FMath::FInterpTo(FocusSurfaceAngularVelocity.Y, 0.0f, DeltaSeconds, SafeDamping);
+		}
+	}
+
+	if (FocusSurfaceAngularVelocity.IsNearlyZero(SafeMinInertiaSpeed))
+	{
+		FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
+	}
+
+	bIsFocusSurfaceActive = bAppliedDirectInput || bIsDraggingFocusSurface || !FocusSurfaceAngularVelocity.IsNearlyZero();
+}
+
+void ASRCameraPawn::ApplyFocusSurfaceDelta(const FVector2D& DegreesDelta)
+{
+	if (DegreesDelta.IsNearlyZero())
+	{
 		return;
 	}
 
-	const float MaxPitch = FMath::Clamp(FocusSurfaceMaxPitch, 0.0f, 89.0f);
-	FocusSurfaceOffset.Yaw += CombinedLookInput.X * SafeLookSpeed * DeltaSeconds;
-	FocusSurfaceOffset.Pitch = FMath::Clamp(
-		FocusSurfaceOffset.Pitch + (CombinedLookInput.Y * SafeLookSpeed * DeltaSeconds),
-		-MaxPitch,
-		MaxPitch);
-	FocusSurfaceOffset.Roll = 0.0f;
-	FocusSurfaceOffset.Normalize();
-	bIsFocusSurfaceActive = true;
+	FQuat CurrentRotation = FocusSurfaceRotation.GetNormalized();
+	if (!FMath::IsNearlyZero(DegreesDelta.X))
+	{
+		const FVector CurrentUpAxis = CurrentRotation.RotateVector(FVector::UpVector).GetSafeNormal();
+		const FQuat YawDelta(CurrentUpAxis, FMath::DegreesToRadians(DegreesDelta.X));
+		CurrentRotation = (YawDelta * CurrentRotation).GetNormalized();
+	}
+
+	if (!FMath::IsNearlyZero(DegreesDelta.Y))
+	{
+		const FVector CurrentRightAxis = CurrentRotation.RotateVector(FVector::RightVector).GetSafeNormal();
+		const FQuat PitchDelta(CurrentRightAxis, FMath::DegreesToRadians(DegreesDelta.Y));
+		CurrentRotation = (PitchDelta * CurrentRotation).GetNormalized();
+	}
+
+	FocusSurfaceRotation = CurrentRotation;
 }
 
 void ASRCameraPawn::RefreshScreenSpaceThicknessReferenceView()
@@ -1349,7 +1517,7 @@ bool ASRCameraPawn::GetMouseScreenPosition(FVector2D& OutMouseScreenPosition) co
 	return true;
 }
 
-FVector ASRCameraPawn::ConvertScreenDeltaToDragOffset(const FVector2D& ScreenDelta) const
+FVector ASRCameraPawn::ConvertScreenDragToDragOffset(const FVector2D& StartScreenPosition, const FVector2D& CurrentScreenPosition) const
 {
 	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (!PlayerController || !Camera)
@@ -1365,80 +1533,88 @@ FVector ASRCameraPawn::ConvertScreenDeltaToDragOffset(const FVector2D& ScreenDel
 		return FVector::ZeroVector;
 	}
 
-	const FVector CameraLocation = Camera->GetComponentLocation();
-	const FVector PlaneOrigin(FixedPlaneX, 0.0f, 0.0f);
-	const FVector CameraForward = Camera->GetForwardVector();
-	const float ForwardToPlaneDot = FVector::DotProduct(CameraForward, FVector::ForwardVector);
-	if (FMath::Abs(ForwardToPlaneDot) <= UE_SMALL_NUMBER)
+	const FVector PlaneOrigin = DragStartTargetLocation;
+	const FVector PlaneNormal = Camera
+		? Camera->GetForwardVector().GetSafeNormal()
+		: SpringArm ? SpringArm->GetForwardVector().GetSafeNormal() : FVector::ForwardVector;
+	if (PlaneNormal.SizeSquared() <= UE_SMALL_NUMBER)
 	{
 		return FVector::ZeroVector;
 	}
 
-	const float DistanceToDragPlane = FMath::Abs(FVector::DotProduct(PlaneOrigin - CameraLocation, FVector::ForwardVector) / ForwardToPlaneDot);
+	const float DistanceToDragPlane = FVector::DotProduct(PlaneOrigin - Camera->GetComponentLocation(), PlaneNormal);
 	if (DistanceToDragPlane <= UE_SMALL_NUMBER)
 	{
 		return FVector::ZeroVector;
 	}
 
-	const float VerticalFieldOfViewRadians = FMath::DegreesToRadians(Camera->FieldOfView);
-	const float HalfPlaneHeight = DistanceToDragPlane * FMath::Tan(VerticalFieldOfViewRadians * 0.5f);
-	const float HalfPlaneWidth = HalfPlaneHeight * (static_cast<float>(ViewportWidth) / static_cast<float>(ViewportHeight));
-	const float WorldUnitsPerPixelHorizontal = (HalfPlaneWidth * 2.0f) / static_cast<float>(ViewportWidth);
-	const float WorldUnitsPerPixelVertical = (HalfPlaneHeight * 2.0f) / static_cast<float>(ViewportHeight);
+	const float ReferenceZoomDistance = FMath::Max(1.0f, GetScreenSpaceThicknessReferenceZoomDistance());
+	const float ReferenceFieldOfView = FMath::Clamp(GetScreenSpaceThicknessReferenceFieldOfView(), 5.0f, 170.0f);
+	const float ReferenceTanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(ReferenceFieldOfView * 0.5f));
+	const float ReferenceWorldUnitsPerPixelVertical = (ReferenceZoomDistance * ReferenceTanHalfFieldOfView * 2.0f)
+		/ static_cast<float>(ViewportHeight);
+	const float AdaptiveScale = GetScreenSpaceInputScale(DistanceToDragPlane)
+		* FMath::Max(0.0f, LeftDragInputScaleMultiplier);
+	const float WorldUnitsPerPixelVertical = ReferenceWorldUnitsPerPixelVertical * AdaptiveScale;
+	const float WorldUnitsPerPixelHorizontal = WorldUnitsPerPixelVertical;
 
-	FVector DragOffset = (-Camera->GetRightVector() * (ScreenDelta.X * WorldUnitsPerPixelHorizontal))
+	const FVector2D ScreenDelta = CurrentScreenPosition - StartScreenPosition;
+	return (-Camera->GetRightVector() * (ScreenDelta.X * WorldUnitsPerPixelHorizontal))
 		+ (Camera->GetUpVector() * (ScreenDelta.Y * WorldUnitsPerPixelVertical));
-	DragOffset.X = 0.0f;
-	return DragOffset;
 }
 
 FVector ASRCameraPawn::GetFocusLocation() const
 {
 	if (!FocusedActor)
 	{
-		return FVector(FixedPlaneX, DragTargetLocation.Y, DragTargetLocation.Z);
+		return DragTargetLocation;
 	}
 
-	const FVector FocusLocation = FocusedActor->GetActorLocation();
-	return FVector(FixedPlaneX, FocusLocation.Y, FocusLocation.Z);
+	return FocusedActor->GetActorLocation();
 }
 
-bool ASRCameraPawn::ShouldRotateFocusedBody() const
+bool ASRCameraPawn::ShouldDragFocusedSurface() const
 {
-	if (!IsValid(FocusedActor) || !USRCelestialBodyRuntimeLibrary::GetCelestialCanConstruct(FocusedActor))
-	{
-		return false;
-	}
-
-	if (!USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(FocusedActor))
-	{
-		return false;
-	}
-
-	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	if (!PlayerController)
-	{
-		return false;
-	}
-
-	FHitResult HitResult;
-	return PlayerController->GetHitResultUnderCursor(ECC_Visibility, false, HitResult)
-		&& HitResult.GetActor() == FocusedActor;
+	return ShouldAllowFocusSurface();
 }
 
-void ASRCameraPawn::HandleFocusedBodyRotation(const FVector2D& DragDelta)
+void ASRCameraPawn::HandleFocusSurfaceDrag(const FVector2D& DragDelta)
 {
-	if (!IsValid(FocusedActor))
+	if (!ShouldAllowFocusSurface() || DragDelta.IsNearlyZero())
 	{
 		return;
 	}
 
-	const FVector RotationUpAxis = Camera ? Camera->GetUpVector() : FVector::UpVector;
-	const FVector RotationRightAxis = Camera ? Camera->GetRightVector() : FVector::RightVector;
-	const float HorizontalDegrees = -DragDelta.X * SurfaceRotateSensitivity;
-	const float VerticalDegrees = DragDelta.Y * SurfaceRotateSensitivity;
-	const FQuat HorizontalRotation(RotationUpAxis, FMath::DegreesToRadians(HorizontalDegrees));
-	const FQuat VerticalRotation(RotationRightAxis, FMath::DegreesToRadians(VerticalDegrees));
+	const float CurrentZoomDistance = FMath::Max(1.0f, SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
+	const float UnclampedAdaptiveScale = GetScreenSpaceInputScale(CurrentZoomDistance)
+		* FMath::Max(0.0f, RightDragInputScaleMultiplier);
+	const float SafeRightDragInputScaleMax = FMath::Max(0.0f, RightDragInputScaleMax);
+	const float AdaptiveScale = SafeRightDragInputScaleMax > KINDA_SMALL_NUMBER
+		? FMath::Min(UnclampedAdaptiveScale, SafeRightDragInputScaleMax)
+		: UnclampedAdaptiveScale;
+	const FVector2D DegreesDelta(
+		DragDelta.X * FMath::Max(0.0f, SurfaceRotateSensitivity) * AdaptiveScale,
+		DragDelta.Y * FMath::Max(0.0f, SurfaceRotateSensitivity) * AdaptiveScale);
+	if (DegreesDelta.IsNearlyZero())
+	{
+		return;
+	}
 
-	FocusedActor->AddActorWorldRotation(VerticalRotation * HorizontalRotation, false, nullptr, ETeleportType::TeleportPhysics);
+	ApplyFocusSurfaceDelta(DegreesDelta);
+
+	const UWorld* World = GetWorld();
+	const float DeltaSeconds = World ? World->GetDeltaSeconds() : 0.0f;
+	if (DeltaSeconds > UE_SMALL_NUMBER)
+	{
+		FocusSurfaceAngularVelocity = DegreesDelta / DeltaSeconds;
+	}
+	bIsFocusSurfaceActive = true;
+}
+
+void ASRCameraPawn::ClearFocusSurfaceMotion()
+{
+	FocusSurfaceInput = FVector2D::ZeroVector;
+	FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
+	bIsFocusSurfaceActive = false;
+	bIsDraggingFocusSurface = false;
 }

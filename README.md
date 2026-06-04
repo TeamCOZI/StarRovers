@@ -1,6 +1,6 @@
 # StarRovers
 
-업데이트: 2026-06-01
+업데이트: 2026-06-04
 
 ## 1. 문서 개요
 
@@ -44,7 +44,7 @@ flowchart TD
 
 `BP_CelestialBody`의 공통 Native 컴포넌트는 `CelestialBodyStaticMesh`, `CelestialBodyDynamicMesh`, `ClickSphereCollision`, `GravityParent`, `GravityLineBatch`다. `Ocean`, `ProceduralTerrain`, `Orbit`은 공통 BP가 아니라 필요한 타입 쪽에서 다룬다.
 
-`ASRPlanet`은 `Orbit`, `OceanStaticMesh`, `AtmosphereStaticMesh`, `SurfaceGrid`를 Native 컴포넌트로 가진다. `SurfaceGrid` 타입은 `USRPlanetSurfaceGrid`다. 현재 `SurfaceGrid` 활성화는 `BodyCategory == Planet`일 때만 허용하므로, Moon은 Dynamic Mesh terrain은 생성될 수 있지만 표면 grid는 숨겨진다.
+`ASRPlanet`은 `Orbit`, `OceanStaticMesh`, `AtmosphereStaticMesh`, `SurfaceGrid`, `RotationAxisNorthSpline`, `RotationAxisSouthSpline`을 Native 컴포넌트로 가진다. 자전축 표시는 local +Z/-Z 극점 바깥쪽 두 개의 `USplineMeshComponent` 세그먼트로 구성하며, 표면 내부 선분은 만들지 않아 body surface depth에 자연스럽게 가려진다. 축 mesh는 기본 엔진 Cylinder를 사용하고, 자전축 선은 orbit/gravity line과 같은 screen-space thickness 기준을 사용해 zoom/FOV에 적응하며, `StarRovers|Axis`에서 표시 여부, 색, opacity, thickness, 길이 multiplier, spline mesh, material을 정한다. `SurfaceGrid` 타입은 `USRPlanetSurfaceGrid`다. 현재 `SurfaceGrid` 활성화는 `BodyCategory == Planet`일 때만 허용하므로, Moon은 Dynamic Mesh terrain은 생성될 수 있지만 표면 grid는 숨겨진다.
 
 ### 4.3 Data Asset 항목
 
@@ -57,7 +57,7 @@ Star Data Asset의 `Star Rovers` 항목은 `Identity`, `CelestialBody`, `Gravity
 
 Star Material의 emissive scalar 값은 Material 또는 Material Instance에 저장된 값을 그대로 사용한다. C++는 `Emissive Strength`, `EmissiveStrength`, `GlowIntensity`, `Glow`, `Intensity`, `Brightness` 같은 scalar parameter를 덮어쓰지 않는다.
 
-Planet/Moon Data Asset의 `Star Rovers` 항목은 `Identity`, `CelestialBody`, `Gravity`, `Orbit`, `Surface`, `Dynamic Mesh Generation`, `Ocean`, `Atmosphere`다. `Surface`에는 `SurfaceGridHeightOffset`, `ConstructionHeightOffset`을 둔다. `Dynamic Mesh Generation`에는 `bMinecraft`를 포함한 `FSRDynamicMeshGeneration` 값을 직접 노출한다. `AtmosphereThreshold`는 `OceanThreshold` 바로 아래에 두며 `AtmosphereStaticMesh`의 body radius 대비 크기를 정한다. `bMinecraft`가 true이면 Dynamic Mesh와 Surface Grid 높이를 `DynamicMeshHeight / 24` 단위로 계단화하고, false이면 terrain sample의 높이 값을 그대로 사용한다.
+Planet/Moon Data Asset의 `Star Rovers` 항목은 `Identity`, `CelestialBody`, `Gravity`, `Orbit`, `Surface`, `Dynamic Mesh Generation`, `Ocean`, `Atmosphere`다. `Surface`에는 `SurfaceGridHeightOffset`을 둔다. 구조물 배치 높이는 Planet/Moon DA가 아니라 Structure DA의 `ConstructionHeightOffset`만 사용한다. `Dynamic Mesh Generation`에는 `bMinecraft`를 포함한 `FSRDynamicMeshGeneration` 값을 직접 노출하고, 선택적으로 `TerrainProfileDataAsset`을 참조한다. Planet/Moon DA는 가장 큰 설정 단위로 Profile 선택, biome material, Profile 단 자연 생성 구조물 수치 override를 가진다. `TerrainProfileDataAsset`은 Biome DA 목록과 Profile 단 자연 생성 구조물 규칙을 제공한다. Terrain Generator는 DA로 선택하지 않으며 코드에 하나만 존재한다. Biome material은 같은 Biome이라도 Planet/Moon마다 다를 수 있으므로 Profile이나 Biome DA가 아니라 Planet/Moon DA의 `BiomeMaterials`에 둔다. `BiomeMaterials`는 선택된 Profile의 Biome DA 목록에 따라 정규화된다. `AtmosphereThreshold`는 `OceanThreshold` 바로 아래에 두며 `AtmosphereStaticMesh`의 body radius 대비 크기를 정한다. `bMinecraft`가 true이면 Dynamic Mesh와 Surface Grid 높이를 `DynamicMeshHeight / 24` 단위로 계단화하고, false이면 terrain sample의 높이 값을 그대로 사용한다.
 
 ### 4.4 Generator와 Camera
 
@@ -65,7 +65,11 @@ Planet/Moon Data Asset의 `Star Rovers` 항목은 `Identity`, `CelestialBody`, `
 
 생성기는 랜덤 선택된 Star/Planet/Moon Data Asset에 필수 spec, mesh, material, `VariableName`이 없으면 fallback 후보로 대체하지 않고 Error를 기록한 뒤 해당 생성 과정을 중단한다. 궤도 packing이 부모 중력 반경에 맞지 않는 경우에도 후보 수를 줄여 재시도하지 않고 Error를 기록한다.
 
-`ASRCameraPawn`은 `SpringArm.TargetArmLength`로 zoom을 제어하고, `BP_Space`의 PrimitiveComponent bounds를 기준으로 최대 zoom과 drag/focus pivot 위치를 제한한다. `SpringArm` collision test는 사용하지 않는다.
+`ASRSolarSystemGenerator`는 `bGenerateNaturalStructures`가 true일 때 Dynamic Mesh와 Surface Grid cache 준비가 끝난 뒤 Planet Surface Grid 위에 자연 생성 구조물을 배치한다. Planet/Moon DA에서 전달된 `TerrainProfileDataAsset`의 `ProfileNaturalStructureSpawnRules`를 전체 cell 후보에 적용하며, Planet/Moon DA의 `ProfileNaturalStructureSpawnRuleOverrides`가 같은 `RuleId`의 수치값을 덮어쓸 수 있다. 이어서 Profile의 `Biomes`에 들어 있는 각 `USRPlanetBiomeDataAsset`의 `NaturalStructureSpawnRules`를 cell biome별 후보에 적용하며, Profile의 Biome entry가 같은 `RuleId`의 수치값을 덮어쓸 수 있다. Generator Actor에는 더 이상 전역 자연 구조물 fallback 규칙을 두지 않는다. 각 규칙은 `StructureDataAsset`, `SpawnChancePerCell`, `MaxCount`, `MinCellSpacing`을 사용한다. `MaxCount`가 0이면 해당 규칙의 개수 제한을 두지 않는다.
+
+`ASRCameraPawn`은 camera pawn 위치를 camera pivot으로 사용하고 `SpringArm.TargetArmLength`로 zoom을 제어한다. `BP_Space`의 PrimitiveComponent bounds를 기준으로 pivot 위치와 camera endpoint zoom 거리를 제한하며, non-star 천체 관통 방지는 `SpringArm` collision test와 C++ camera avoidance sphere 보정을 함께 사용한다. SpringArm probe는 `ECC_Camera`를 사용하고, 천체 클릭용 `ClickSphereCollision`은 `ECC_Visibility`만 block하며 `ECC_Camera`는 ignore한다. Star actor는 C++ avoidance sphere 대상에서 제외하고 visual mesh collision을 끈다.
+
+`IA_LeftClick` 기반 Left Click drag는 현재 camera forward를 법선으로 하는 drag 시작 pivot 평면에서 camera rotation이 반영된 screen-space 방향으로 pivot을 자유 XYZ 이동한다. Left Click drag와 Right Click surface drag는 zoom/FOV 변화에 맞춘 `GetScreenSpaceInputScale()`을 사용해 zoom input과 같은 기준으로 적응형 동작한다. 기본 screen-space scale `x = CurrentZoomDistance * tan(CurrentFOV / 2) / (ReferenceZoomDistance * tan(ReferenceFOV / 2))`에 입력별 multiplier를 적용한다. Zoom은 `ZoomInputScaleMultiplier`, Left Click drag는 `LeftDragInputScaleMultiplier`, Right Click drag는 `RightDragInputScaleMultiplier`를 사용하며, Right Click drag는 `RightDragInputScaleMax`가 0보다 클 때 최종 scale을 해당 값으로 제한한다. Focused 천체에서 `DragHoldAction` 기반 Right Click drag를 시작하면 천체 Actor를 직접 회전하지 않고 `FocusSurfaceRotation` quaternion을 현재 surface camera orientation 기준으로 조정해 표면을 훑는 camera surface control을 수행한다. drag 중 계산된 각속도는 release 이후 관성으로 이어지며 `FocusSurfaceInertiaDamping`으로 감쇠한다. `IA_FocusSurface` 기반 IJKL 입력은 같은 `FocusSurfaceRotation`을 계속 제어한다.
 
 현재 Static/Dynamic Mesh 전환 로직은 `ASRCameraPawn::ShouldUseDynamicMesh()`와 `ApplyCelestialBodyMeshVisibility()`에 있다. focused actor는 frustum 안에 있을 때 Dynamic Mesh 후보가 되고, non-focused actor는 카메라 앞/frustum 조건을 만족하면서 화면 점유율이 0.15 이상일 때만 후보가 된다. 한 프레임에서 실제 Dynamic Mesh로 전환되는 대상은 focused planet 또는 가장 크게 보이는 non-focused planet 하나다.
 
@@ -73,14 +77,14 @@ Planet/Moon Data Asset의 `Star Rovers` 항목은 `Identity`, `CelestialBody`, `
 
 ### 5.1 설정 위치
 
-Planet/Moon Data Asset의 `Dynamic Mesh Generation` 항목은 `FSRDynamicMeshGeneration` struct를 직접 노출한다.
+Planet/Moon Data Asset의 `Dynamic Mesh Generation` 항목은 `FSRDynamicMeshGeneration` struct를 직접 노출하고, 별도 `TerrainProfileDataAsset` 참조를 가진다.
 
 주요 값은 다음과 같다.
 
 - `bDynamicMeshGeneration`
 - `bMinecraft`
-- `BiomeProfile`
 - `BiomeMaterials`
+- `ProfileNaturalStructureSpawnRuleOverrides`
 - `GenerationSeed`
 - `DynamicMeshHeight`
 - `OceanThreshold`
@@ -99,16 +103,19 @@ Planet/Moon Data Asset의 `Dynamic Mesh Generation` 항목은 `FSRDynamicMeshGen
 - `NoiseOctaves`
 - `NoisePersistence`
 
-현재 C++ 생성자 기본값은 Planet DA가 `EarthLike`, Moon DA가 `RockyMoon`이다. 기존에 저장된 `.uasset` Data Asset은 C++ 생성자 기본값이 자동으로 덮이지 않을 수 있으므로, 실제 값은 에디터에서 직접 확인해야 한다.
+각 필드의 의미는 다음과 같다. `bDynamicMeshGeneration`은 절차 지형 생성 On/Off이고, `bMinecraft`는 높이를 `DynamicMeshHeight / 24` 단위 계단형으로 끊을지 정한다. `BiomeMaterials`는 Profile의 Biome DA 순서에 맞는 material slot 목록이며, `GenerationSeed`는 같은 설정에서 같은 지형/biome 배치를 재현하는 seed다. `DynamicMeshHeight`는 전체 높낮이 스케일이라 키우면 산/골짜기/해저 높이 차가 커진다. `OceanThreshold`는 바다/육지 경계 보정값이며 키우면 바다 비중이 늘고 낮추면 육지가 늘어난다. `AtmosphereThreshold`는 body radius 대비 대기 mesh 배율이다. `ContinentFrequency`, `MountainFrequency`, `TemperatureFrequency`, `MoistureFrequency`, `DetailFrequency`는 각각 대륙, 산맥, 기온, 습도, 미세 기복 noise를 얼마나 촘촘하게 샘플할지 정하며, 값을 키우면 패턴이 더 잘게 쪼개진다. `MountainStrength`, `ValleyStrength`, `RiverStrength`, `LakeStrength`, `DetailStrength`는 각 효과가 최종 지형에 반영되는 강도다. `NoiseStrength`는 domain warp 강도라 키울수록 대륙선/산맥/기후 패턴이 더 불규칙하게 휘고, `NoiseOctaves`와 `NoisePersistence`는 fractal noise의 세밀함과 작은 패턴 영향 유지율을 정한다.
+
+현재 C++ 생성자 기본값은 Planet DA와 Moon DA 모두 단일 terrain generator를 사용한다. Random 생성용 Planet/Moon DA에는 `TerrainProfileDataAsset`이 필수다. Profile이 없거나 Profile에 유효한 Biome DA가 없으면 fallback material/biome을 만들지 않고 Error를 기록한 뒤 해당 생성 요청을 실패 처리한다. `TerrainProfileDataAsset`이 있으면 `BuildData()`에서 해당 Profile의 Biome DA 목록에 맞춰 `BiomeMaterials` entry를 정규화한다. material 값 자체는 Planet/Moon DA에 남는다. 실제 저장 값은 에디터에서 다시 저장해 확인해야 한다.
 
 ### 5.2 생성 데이터 흐름
 
-1. Planet/Moon Data Asset의 `BuildData()`가 `FSRDynamicMeshGeneration`을 `FSRCelestialBodyData.DynamicMeshGeneration`으로 복사한다.
+1. Planet/Moon Data Asset의 `BuildData()`가 `FSRDynamicMeshGeneration`을 `FSRCelestialBodyData.DynamicMeshGeneration`으로 복사하고, `TerrainProfileDataAsset`이 있으면 Profile의 Biome 목록에 맞춰 Planet/Moon DA의 biome material entry를 정규화한다.
 2. `ASRSolarSystemGenerator`가 행성/위성 생성 요청을 만들 때 `GenerationSeed`를 랜덤으로 정하고, 같은 값을 `DynamicMeshGeneration.GenerationSeed`에 넣는다.
-3. `ASRCelestialBody::SetData()`가 `DynamicMeshGeneration`을 Actor 내부 상태로 복사한다.
+3. `ASRCelestialBody::SetData()`가 `DynamicMeshGeneration`과 `TerrainProfileDataAsset`을 Actor 내부 상태로 복사하고, Profile이 있으면 Profile의 Biome DA 목록과 terrain generator를 다시 적용한다.
 4. `ASRCelestialBody::ApplyData()`가 `EnsureCelestialBodyDynamicMeshVisuals(false)` 경로로 Static Mesh와 Material을 검증한다.
 5. `ASRPlanet::ApplyData()`는 같은 `DynamicMeshGeneration`을 `SurfaceGrid->ConfigureTerrain()`에도 넘긴다.
 6. Runtime system 생성이 끝나면 `ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()`가 생성된 planet/moon 전체에 `PrepareCelestialBodyDynamicMesh()`를 호출해 Dynamic Mesh와 Grid cache를 시작 시점에 준비한다.
+7. `ASRSolarSystemGenerator::GenerateRuntimeNaturalStructures()`가 Planet의 `TerrainProfileDataAsset`에 있는 Profile 단 규칙과 Profile이 포함한 Biome DA의 Biome 단 규칙을 기준으로 자연 생성 구조물을 배치한다.
 
 ### 5.3 Mesh 생성 방식
 
@@ -121,17 +128,61 @@ Planet/Moon Data Asset의 `Dynamic Mesh Generation` 항목은 `FSRDynamicMeshGen
 - `DynamicMeshHeight > 0`
 - 원본 Static Mesh 삼각형을 사각형 cell로 복원할 수 있음
 
-조건을 만족하면 원본 삼각형 두 개를 하나의 quad cell로 복원한다. 각 cell 중심 방향을 기준으로 `FSRPlanetTerrainGenerator::SampleTerrain()`을 호출하고, 반환된 `HeightOffset`에 따라 cell 네 꼭짓점을 천체 중심 기준으로 scale up/down한다.
+조건을 만족하면 원본 삼각형 두 개를 하나의 quad cell로 복원한다. 각 cell 중심 방향과 recovered cube face/cell 정보를 담은 `FSRBiomeSampleContext`를 기준으로 `FSRPlanetTerrainGenerator::SampleTerrain()`을 호출하고, 반환된 `HeightOffset`에 따라 cell 네 꼭짓점을 천체 중심 기준으로 scale up/down한다.
 
-`bMinecraft`가 true이면 높이는 `DynamicMeshHeight / 24` 단위로 계단식 quantize된다. false이면 sampler가 반환한 `HeightOffset`이 그대로 적용된다. 인접 cell 높이가 다르면 side wall face를 추가해 틈을 막는다. 각 surface quad와 side wall에는 vertex color가 기록되고, `BiomeMaterials`가 있으면 biome별 material slot id도 지정한다.
+`bMinecraft`가 true이면 높이는 `DynamicMeshHeight / 24` 단위로 계단식 quantize된다. false이면 sampler가 반환한 `HeightOffset`이 그대로 적용된다. 인접 cell 높이가 다르면 side wall face를 추가해 틈을 막는다. 각 surface quad와 side wall에는 vertex color가 기록되고, `BiomeMaterials` entry가 있으면 profile별 biome 순서에 맞춘 material slot id도 지정한다.
 
 quad 복원에 실패하면 Error가 아니라 Warning을 남기고, 원본 triangle mesh를 변형 없이 Dynamic Mesh로 복사한다. 이 fallback에서는 procedural terrain 높이 변형이 적용되지 않는다.
 
 ### 5.4 Terrain Sampler
 
-현재 구현된 `BiomeProfile`은 `None`, `EarthLike`, `GasGiant`, `RockyMoon`, `MarsLike`, `IceWorld`, `Volcanic`, `OceanWorld`다.
+Current terrain generation is Profile/Biome DA driven and uses exactly one code generator:
+`FSRPlanetTerrainGenerator::SampleTerrain()`. There is no terrain generator DA and no per-profile
+generator selection.
 
-`None`과 `GasGiant`는 procedural terrain을 생성하지 않는다. 그 외 profile은 현재 같은 Minecraft Overworld 스타일 sampler를 공유한다. `OceanWorld`만 continentalness bias를 낮춰 바다 비중을 키운다. 완전한 Minecraft 원본 noise/router 이식은 아니며, 현재 프로젝트의 정사각형 cell 지형에 맞춘 deterministic noise 근사다.
+The default generator no longer chooses a hard-coded biome list. It samples deterministic terrain and
+climate values for each cell, then evaluates every `USRPlanetBiomeDataAsset` supplied by the active
+Profile:
+
+- terrain values: height, continentalness, erosion, weirdness, mountain mask, river mask, lake mask
+- climate values: temperature, moisture, latitude, rare-region noise
+- biome controls: `PlacementRules`, `WaterRole`, `SpawnWeight`, `RegionSize`, priority override
+
+`PlacementRules` is the only runtime biome placement filter. It compares sampled terrain/climate
+metrics against designer-authored thresholds. Multiple rules are AND conditions, so a biome becomes
+a candidate only when every rule passes. Legacy `PlacementRestrictions` data is kept only as hidden
+load-time migration data; loaded assets convert it into equivalent `PlacementRules` and runtime
+generation no longer evaluates the enum restrictions.
+
+Supported metrics are `HeightAlpha`, `Continentalness`, `LandMask`, `CoastMask`, `OceanDepthMask`,
+`InlandMask`, `MountainMask`, `RiverMask`, `LakeMask`, `Erosion`, `Temperature`, `Moisture`,
+`AbsLatitudeDegrees`, and `RareRegionNoise`. Supported comparisons are greater-than,
+greater-or-equal, less-than, less-or-equal, inclusive range, and inclusive outside-range. Each
+`FSRBiomePlacementRule` stores metric reference defaults in `MetricDefaultThreshold` and
+`MetricDefaultMaxThreshold`; when `bUseMetricDefaultThresholds` is enabled, new or edited rules copy
+those values into `Threshold` and `MaxThreshold`. Each rule exposes a Korean read-only
+`MetricDescription` in the editor that explains what the selected metric means and how raising or
+lowering the threshold changes biome placement. Reference defaults currently include examples such
+as `OceanDepthMask >= 0.62`, `CoastMask >= 0.48`, `MountainMask >= 0.42`,
+`AbsLatitudeDegrees >= 58`, `Temperature >= 0.62`, and `RareRegionNoise >= 0.68`. If no Profile biome
+passes its placement rules for a cell, the generator logs an error instead of ignoring the filter.
+
+Biome selection uses a combined score: climate fit, deterministic biome anchor regions, patch noise,
+and `SpawnWeight`. The anchor score is derived from `BiomeId`, `GenerationSeed`, and `RegionSize`,
+so every Profile biome has stable preferred regions without the generator knowing the biome name.
+The selected biome writes DA-based `BiomeId`; material and natural structure matching uses `BiomeId`.
+If a passing biome has `bCanOverrideLowerPriorityBiomes` enabled, its score is at least
+`OverrideMinScore`, and its `Priority` is higher than the normal best-scoring biome, it overrides the
+normal score winner. This is intended for overlay-like biomes such as snow. Biome visual identity is
+expected to come from the `BiomeId` material entry, not from a broad runtime category. `WaterRole`
+is a separate water classification used by runtime water logic such as ocean scale estimation.
+Supported water roles are `None`, `Ocean`, `Coast`, `River`, and `Lake`; `Ocean`, `River`, and `Lake`
+are treated as water samples, while `Coast` is treated as conditional water when river/lake masks are
+strong enough.
+
+Profile/Biome 선택은 enum이 아니라 DA 참조로 한다. Planet/Moon DA는 `TerrainProfileDataAsset`을 참조하고, Profile DA는 `Biomes` 배열에 들어 있는 `USRPlanetBiomeDataAsset`들을 참조한다.
+
+Terrain 생성 로직은 `FSRPlanetTerrainGenerator` 하나만 사용한다. Profile DA의 `Biomes` 배열은 Profile에서 실제로 사용할 Biome 후보와 material slot 순서를 결정한다. `FSRDynamicMeshGeneration::NormalizeBiomeMaterials()`는 Planet/Moon DA의 `BiomeMaterials` 배열을 이 Biome DA 목록에 맞춘다. `USRPlanetTerrainProfileDataAsset`은 Profile 전체에 적용되는 자연 생성 구조물 규칙과 포함할 Biome DA 목록을 가진다. `USRPlanetBiomeDataAsset`은 `BiomeId`, `WaterRole`, `PlacementRules`, `SpawnWeight`, `RegionSize`, `Priority`, `bCanOverrideLowerPriorityBiomes`, `OverrideMinScore`, 해당 Biome 단 자연 생성 구조물 규칙을 가진다. terrain sampler는 Profile의 모든 Biome DA를 후보로 평가하고, `PlacementRules`를 모두 통과한 후보 중 climate score, anchor region score, patch noise, spawn weight를 합산해 일반 우승 후보를 정한다. 이후 priority override 조건을 만족하는 더 높은 priority Biome이 있으면 일반 우승 후보를 덮어쓴다. runtime cell과 material/spawn 연결은 `BiomeId`를 기준으로 한다. `WaterRole`은 BiomeId와 별개로 물 판정만 제공하며 `FSRPlanetTerrainSample`과 Surface Grid cell/cache에도 저장된다. 완전한 Minecraft 원본 noise/router 이식은 아니며, 현재 프로젝트의 정사각형 cell 지형에 맞춘 deterministic noise 근사다.
 
 sampler는 다음 개념을 섞어 `FSRPlanetTerrainSample`을 만든다.
 
@@ -143,13 +194,15 @@ sampler는 다음 개념을 섞어 `FSRPlanetTerrainSample`을 만든다.
 - `temperature`, `humidity`: biome 판정
 - `river`, `lake` mask: 물길/호수 carve와 coast 처리
 
+Biome 결정은 단일 terrain sampler에서 수행한다. Cell마다 height, continentalness, erosion, weirdness, temperature, moisture, latitude, river/lake/mountain mask를 계산하고, Profile의 Biome DA 후보를 모두 평가한다. Biome DA의 `PlacementRules`가 먼저 filter로 적용되며, 통과한 후보가 있을 때만 점수 경쟁에 들어간다. 후보가 하나도 통과하지 못하면 제한 filter를 풀지 않고 Error를 기록한다. Rule은 예를 들어 `AbsLatitudeDegrees >= 55`, `Temperature <= 0.38`, `LandMask >= 0.35`처럼 Biome DA에서 임계값을 직접 지정한다.
+
 `DetailFrequency`는 detail noise를 얼마나 촘촘하게 샘플할지 정한다. 값이 높을수록 작은 기복이 더 자주 나온다. `DetailStrength`는 그 detail noise가 최종 `HeightOffset`에 더해지는 세기다. 즉 `DetailFrequency`는 패턴의 스케일, `DetailStrength`는 높이 반영량을 제어한다.
 
 `NoiseOctaves`와 `NoisePersistence`의 `Noise`는 `SampleFractalNoise()`가 여러 겹으로 합성하는 Perlin noise를 뜻한다. `NoiseOctaves`는 합성할 레이어 수이며 continentalness, erosion, weirdness, detail 계열 샘플에 쓰인다. `NoisePersistence`는 다음 octave로 넘어갈 때 amplitude가 얼마나 유지되는지 정하며, 현재 코드에서는 detail noise의 persistence 값에 직접 반영된다.
 
 `Detail`은 최종 높이에 더해지는 작은 표면 기복 항목이다. `Noise`는 그 detail뿐 아니라 continentalness, erosion, weirdness, temperature, moisture, river, lake mask를 만드는 기반 샘플링 방식 전체를 가리킨다. `NoiseStrength`는 noise를 샘플하기 전에 방향 벡터를 다른 noise 값으로 살짝 휘게 만드는 강도다. 값이 커질수록 대륙선, 산맥, 기후 패턴이 직선적이거나 균일하게 반복되지 않고 더 뒤틀린 형태가 된다.
 
-`FSRPlanetTerrainSample`은 `HeightOffset`, `Continent`, `MountainMask`, `Temperature`, `Moisture`, `RiverMask`, `LakeMask`, `PlateBeltMask`, `Biome`, `SurfaceColor`를 반환한다. Dynamic Mesh는 `SurfaceColor`를 vertex color로 기록하므로, Data Asset의 Material이 Vertex Color를 Base Color 또는 색상 블렌딩에 사용해야 지형 색이 화면에 반영된다.
+`FSRPlanetTerrainSample`은 `HeightOffset`, `Continent`, `MountainMask`, `Temperature`, `Moisture`, `RiverMask`, `LakeMask`, `PlateBeltMask`, `Biome`, `BiomeId`, `WaterRole`, `SurfaceColor`를 반환한다. Dynamic Mesh는 `BiomeId`에 맞는 material slot을 지정하고 `SurfaceColor`도 vertex color로 기록한다. 지형의 최종 시각 표현은 기본적으로 Data Asset의 Material이 담당하며, Material이 Vertex Color를 Base Color 또는 색상 블렌딩에 사용하면 `SurfaceColor`도 화면에 반영된다.
 
 ### 5.5 Ocean, Atmosphere와 Surface Grid
 
@@ -157,7 +210,7 @@ Ocean scale은 `ASRPlanet::EstimateProceduralOceanScaleMultiplier()`가 terrain 
 
 Atmosphere는 `ASRPlanet`의 Native `AtmosphereStaticMesh`로 표현한다. Planet/Moon Data Asset의 `Atmosphere` 항목은 `bHasAtmosphere`, `AtmosphereMesh`, `AtmosphereMaterial`을 노출하고, 내부 `AtmosphereScaleMultiplier`는 Ocean 쪽과 같은 전달 구조를 유지한다. 실제 크기는 `Dynamic Mesh Generation`의 `AtmosphereThreshold`를 body radius 대비 배율로 사용해 계산한다. 저장된 `.uasset` Data Asset의 Atmosphere mesh/material 값은 에디터에서 직접 설정해야 한다.
 
-Surface Grid는 Planet에서만 켜진다. `ASRPlanet::ApplyData()`가 body radius를 기준으로 `FaceResolution`을 자동 계산하고, `SurfaceGrid->ConfigureTerrain(DynamicMeshGeneration)`을 호출한다. Surface Grid는 collision trace로 표면을 다시 찾지 않고, Dynamic Mesh Generation과 같은 height/normal 계산을 사용한다. Dynamic Mesh Generation 중 recovered quad cell은 cube face별 2D 좌표로 정리한다. Face는 1-6에 대응하는 enum으로 저장하고, 각 face의 왼쪽 아래를 `(0, 0)`으로 보며 오른쪽/위쪽으로 `CellX`, `CellY`가 1씩 증가한다. `USRPlanetSurfaceGrid`는 `FSRPlanetSurfaceGridCell` 목록과 `FSRPlanetSurfaceGridCellInfo` 맵을 함께 유지해 Face, CellX/CellY, Face UV, local/world 위치, 이웃 cell, 점유 상태를 CellId 기준으로 조회할 수 있게 한다.
+Surface Grid는 Planet에서만 켜진다. `ASRPlanet::ApplyData()`가 body radius를 기준으로 `FaceResolution`을 자동 계산하고, `SurfaceGrid->ConfigureTerrain(DynamicMeshGeneration)`을 호출한다. Surface Grid는 collision trace로 표면을 다시 찾지 않고, Dynamic Mesh Generation과 같은 height/normal 계산을 사용한다. Dynamic Mesh Generation 중 recovered quad cell은 cube face별 2D 좌표로 정리한다. Face는 1-6에 대응하는 enum으로 저장하고, 각 face의 왼쪽 아래를 `(0, 0)`으로 보며 오른쪽/위쪽으로 `CellX`, `CellY`가 1씩 증가한다. `USRPlanetSurfaceGrid`는 `FSRPlanetSurfaceGridCell` 목록과 `FSRPlanetSurfaceGridCellInfo` 맵을 함께 유지해 Face, CellX/CellY, Face UV, local/world 위치, local +Z 기준 `LatitudeDegrees`, `Biome`, 이웃 cell, 점유 상태를 CellId 기준으로 조회할 수 있게 한다. 구조물 footprint는 `GetFootprintCellIds()`, `CanOccupyCells()`, `SetCellsOccupied()`로 여러 cell을 함께 검사/점유하며, 현재 footprint는 같은 cube face 안에 들어와야 한다.
 
 ### 5.6 Dynamic Mesh / Assembly Mode 최적화
 
@@ -165,26 +218,28 @@ Game world에서는 `ASRCelestialBody::ApplyData()`가 Static Mesh와 Material�
 
 `ASRPlanet::ApplyData()`는 Surface Grid 설정만 갱신하고 `RebuildGrid()`를 즉시 호출하지 않는다. Runtime prebuild가 성공하면 같은 pass에서 Surface Grid cell, grid mesh, raycast index도 준비되지만, `PrepareGridForAssembly()`는 호출하지 않고 grid는 숨겨둔다. generator 밖에서 추가로 생성된 body가 아직 prebuild되지 않은 경우에는 Focus 유지 또는 Assembly Mode visibility 전환 시점에 `PrepareCelestialBodyDynamicMesh()`가 fallback으로 cache를 준비한다.
 
-Dynamic Mesh 생성은 복원된 quad cell별 render data를 함께 기록한다. `ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()`는 행성 Dynamic Mesh quad, `FSRPlanetSurfaceGridCell`, cell별 vertex color element를 같은 quad 생성 루프에서 함께 만든다. 행성 Dynamic Mesh는 cube sphere의 6개 face에 맞춰 6개 `UDynamicMeshComponent`로 분할하며, 각 cell의 vertex color element에는 component index가 함께 저장된다. `USRPlanetSurfaceGrid::ApplyGeneratedGridBuild()`는 이 cell 목록을 그대로 받아 cell index/raycast index를 갱신하므로, Assembly Mode 진입 시 같은 StaticMesh에서 quad를 다시 복원하지 않는다.
+Dynamic Mesh 생성은 복원된 quad cell별 render data를 함께 기록한다. `ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()`는 행성 Dynamic Mesh quad, `FSRPlanetSurfaceGridCell`, cell별 vertex color element를 같은 quad 생성 루프에서 함께 만든다. 각 `FSRPlanetSurfaceGridCell`에는 terrain sampler가 반환한 `Biome`도 저장된다. 행성 Dynamic Mesh는 cube sphere의 6개 face에 맞춰 6개 `UDynamicMeshComponent`로 분할하며, 각 cell의 vertex color element에는 component index가 함께 저장된다. `USRPlanetSurfaceGrid::ApplyGeneratedGridBuild()`는 이 cell 목록을 그대로 받아 cell index/raycast index를 갱신하므로, Assembly Mode 진입 시 같은 StaticMesh에서 quad를 다시 복원하지 않는다.
 
 Hover와 Select 색상은 가능한 경우 별도 mesh를 덮는 방식이 아니라 기존 행성 Dynamic Mesh의 vertex color를 `UDynamicMesh::EditMesh()`로 직접 수정한다. 색상은 base vertex color를 교체하지 않고 highlight 색을 가산해 덧입히며, Material ID는 변경하지 않는다. 이 경로에서는 선택된 cell의 top surface와 side face 색상이 함께 바뀐다. 6 face 분할 이후에는 이전/현재 highlight가 포함된 face component만 edit해 vertex color update 범위를 줄인다. Dynamic Mesh cell color data가 없는 fallback 상황에서만 interaction overlay mesh를 사용한다.
 
 Assembly Mode의 grid drawing은 전체 행성 Grid line mesh를 상시 렌더링하지 않는다. Hover 또는 Select로 작용 중인 cell 주변 5x5 patch만 그리고, patch 내부 line opacity는 일관되게 유지한다. Grid line은 cell corner에서 직접 만든 quad mesh로 그리며 shared edge는 patch 단위로 중복 제거한다. recovered quad cell에서는 line endpoint를 원래 cell/side face 위치에 유지하고, 실제 side wall quad가 생성될 때 side face outline segment도 cell cache에 함께 기록해 같은 overlay mesh 경로로 그린다. `Grid Overlay Material`에는 depth test를 끈 one-sided vertex-color material을 지정해 지형 mesh에 가려지는 현상을 줄일 수 있다. 숨겨진 grid는 `bCellsDirty`, `bGridMeshDirty`로 cell rebuild를 지연하고, fallback 상황에서만 별도 갱신한다.
 
-Focus 전환 후에는 cache가 없는 focused body에 대해서만 Dynamic Mesh build를 지연 실행하고, Surface Grid의 `PrepareGridForAssembly()`는 Assembly Mode 진입 시점까지 실행하지 않는다. 시작 시점 prebuild가 이미 끝난 경우 Assembly Mode 진입 시에는 같은 pass에서 생성된 grid cache를 재사용한다. Hover raycast는 face별 64x64 spatial bin index로 후보 cell을 줄이고, 마우스가 움직이지 않은 경우에는 같은 raycast를 매 tick 반복하지 않는다. Assembly Mode에서 cell hover가 바뀌면 `USRAssemblyComponent`가 hovered `FSRPlanetSurfaceGridCellInfo`를 Focus Info UI에 전달하고, UI는 `Face`, `X`, `Y`만 표시한다.
+Focus 전환 후에는 cache가 없는 focused body에 대해서만 Dynamic Mesh build를 지연 실행하고, Surface Grid의 `PrepareGridForAssembly()`는 Assembly Mode 진입 시점까지 실행하지 않는다. 시작 시점 prebuild가 이미 끝난 경우 Assembly Mode 진입 시에는 같은 pass에서 생성된 grid cache를 재사용한다. Hover raycast는 face별 64x64 spatial bin index로 후보 cell을 줄이고, 마우스가 움직이지 않은 경우에는 같은 raycast를 매 tick 반복하지 않는다. Assembly Mode에서 cell hover가 바뀌면 `USRAssemblyComponent`가 hovered `FSRPlanetSurfaceGridCellInfo`를 Focus Info UI에 전달하고, UI는 `Face`, 내부 `Cell`, display 좌표, `LatitudeDegrees`를 표시한다.
 
-Assembly Mode 진입 시 `ASRPlayerController`는 `USRStructureSelectionWidget`을 표시한다. 이 위젯은 `FSRStructureBuildOption` 목록을 버튼으로 보여주고, 선택된 `StructureId`를 `ASRPlayerController::SelectedStructureBuildId`에 저장한다. 선택된 구조물 DA가 있고 grid 위 Hover Cell이 있으면 `USRAssemblyComponent`가 DA의 `StructureActorClass`를 Ghost actor로 spawn하고, `ISRBuildableStructureInterface`를 통해 DA 적용과 Ghost mode 전환을 호출한다. Ghost actor는 `USRPlanetSurfaceGrid::GetCellWorldTransform()` 결과에 구조물 DA의 `ConstructionHeightOffset`과 `PlacementYawDegrees`를 반영해 Hover Cell 위에 배치된다. Left Click으로 배치가 확정되면 같은 transform에 실제 구조물 Actor를 spawn하고 Ghost mode를 끈 뒤, `USRPlanetSurfaceGrid::SetCellOccupied()`로 해당 Cell의 `bOccupied`와 `OccupantId`를 갱신한다. Occupied Cell은 grid의 occupied 색상으로 표시되고 이후 구조물 배치 후보에서 제외된다.
+Assembly Mode 진입 시 `ASRPlayerController`는 `USRStructureSelectionWidget`을 표시한다. 이 위젯은 `FSRStructureBuildOption` 목록을 버튼으로 보여주고, 선택된 `StructureId`를 `ASRPlayerController::SelectedStructureBuildId`에 저장한다. 선택된 구조물 DA가 있고 grid 위 Hover Cell이 있으면 `USRAssemblyComponent`가 DA의 `StructureActorClass`를 Ghost actor로 spawn하고, `ISRBuildableStructureInterface`를 통해 DA 적용과 Ghost mode 전환을 호출한다. Ghost actor는 `USRStructurePlacementLibrary::BuildStructurePlacementTransform()` 결과에 구조물 DA의 `ConstructionHeightOffset`과 `PlacementYawDegrees`를 반영해 Hover Cell 위에 배치된다. Left Click으로 배치가 확정되면 `USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid()`가 실제 구조물 Actor를 spawn하고, `SetCellsOccupied()`로 footprint 전체 cell의 `bOccupied`와 `OccupantId`를 갱신한다. Occupied Cell은 grid의 occupied 색상으로 표시되고 이후 구조물 배치 후보에서 제외된다.
 
 구조물 데이터는 `USRStructureDataAsset`이 담당한다. 주요 항목은 `StructureId`, `DisplayName`, `Description`, `StructureActorClass`, `StaticMesh`, `Material`, `GhostMaterial`, mesh relative transform, footprint cell 수, `ConstructionHeightOffset`, placement yaw, surface normal 정렬 여부다. `ASRStructure`는 `ISRBuildableStructureInterface`를 구현한 기본 구조물 Actor이며, 구조물 BP는 이 클래스를 부모로 두거나 같은 interface를 구현한다. `ASRPlayerController`의 `AvailableStructureDataAssets`에 등록된 DA 목록이 `WBP_StructureSelection`의 선택 버튼으로 노출된다.
+
+자연 생성 구조물도 같은 `USRStructurePlacementLibrary` 경로를 사용한다. `ASRSolarSystemGenerator`는 Dynamic Mesh/Grid cache 준비 후 Planet cell 목록에 대해 `TerrainProfileDataAsset`의 Profile rule을 전체 후보로 먼저 적용하고, Profile에 포함된 각 Biome DA의 rule은 cell `BiomeId`로 필터링해 적용한다. Profile rule의 수치값은 Planet/Moon DA의 `ProfileNaturalStructureSpawnRuleOverrides`가 `RuleId` 기준으로 덮어쓸 수 있고, Biome rule의 수치값은 Profile의 Biome entry가 가진 `NaturalStructureSpawnRuleOverrides`가 `RuleId` 기준으로 덮어쓸 수 있다. Generator Actor 전역 자연 구조물 fallback은 사용하지 않는다. 각 rule은 확률/최대 개수/최소 cell 간격을 적용해 `USRStructureDataAsset`의 `StructureActorClass`를 spawn한다. 생성된 자연 구조물 Actor는 대상 Planet에 attach되고 generator의 `RuntimeNaturalStructureActors`에 추적되어 runtime system clear 시 함께 제거된다.
 
 ## 6. 현재 에셋 상태
 
 확인된 주요 Blueprint Class 에셋은 다음과 같다.
 
-- `Content/BlueprintClasses/CelestialBody/BP_CelestialBody.uasset`
-- `Content/BlueprintClasses/CelestialBody/BP_Planet.uasset`
-- `Content/BlueprintClasses/CelestialBody/BP_Space.uasset`
-- `Content/BlueprintClasses/CelestialBody/BP_Star.uasset`
+- `Content/BlueprintClasses/CelestialBody/Blueprints/BP_CelestialBody.uasset`
+- `Content/BlueprintClasses/CelestialBody/Blueprints/BP_Planet.uasset`
+- `Content/BlueprintClasses/CelestialBody/Blueprints/BP_Space.uasset`
+- `Content/BlueprintClasses/CelestialBody/Blueprints/BP_Star.uasset`
 - `Content/BlueprintClasses/Core/BP_SRCameraPawn.uasset`
 - `Content/BlueprintClasses/Core/BP_SRGameMode.uasset`
 - `Content/BlueprintClasses/Core/BP_SRPlayerController.uasset`
@@ -196,13 +251,21 @@ Assembly Mode 진입 시 `ASRPlayerController`는 `USRStructureSelectionWidget`�
 
 구조물 선택 UI는 `USRStructureSelectionWidget` C++ 위젯을 부모로 둔 `WBP_StructureSelection` 에셋을 사용한다. `ASRPlayerController`의 `StructureSelectionWidgetClass`가 비어 있으면 fallback을 만들지 않고 Error를 기록한 뒤 생성하지 않는다.
 
-구조물 Actor BP와 구조물 DA 에셋은 아직 에디터에서 생성해야 한다. 구조물 BP는 `ASRStructure`를 부모로 만들거나 `ISRBuildableStructureInterface`를 구현한 Actor BP로 만들고, 구조물 DA는 `USRStructureDataAsset` 타입으로 생성한 뒤 `ASRPlayerController.AvailableStructureDataAssets`에 등록한다.
+구조물 Actor BP와 구조물 DA 에셋은 아직 에디터에서 생성해야 한다. 구조물 BP는 `ASRStructure`를 부모로 만들거나 `ISRBuildableStructureInterface`를 구현한 Actor BP로 만들고, 구조물 DA는 `USRStructureDataAsset` 타입으로 생성한 뒤 `ASRPlayerController.AvailableStructureDataAssets`에 등록한다. 자연 생성용 terrain profile 에셋도 아직 에디터에서 생성해야 하며, 타입은 `USRPlanetTerrainProfileDataAsset`이다. Biome 단 자연 생성 규칙용 에셋 타입은 `USRPlanetBiomeDataAsset`이다. 별도 terrain generator 에셋은 만들지 않는다. Profile 에셋을 Planet/Moon DA의 `TerrainProfileDataAsset`에 지정하면 Profile의 Biome DA 목록에 맞춰 Planet/Moon DA의 biome material entry가 정규화되고, Profile/Biome 자연 생성 구조물 규칙이 적용된다.
 
 확인된 Data Asset 에셋은 다음과 같다.
 
-- `Content/BlueprintClasses/CelestialBody/DA_Star_MainSequenceStar.uasset`
-- `Content/BlueprintClasses/CelestialBody/DA_Planet_LavaOcean.uasset`
-- `Content/BlueprintClasses/CelestialBody/DA_Moon_BadLands.uasset`
+- `Content/BlueprintClasses/CelestialBody/DataAssets/Stars/DA_Star_MainSequenceStar.uasset`
+- `Content/BlueprintClasses/CelestialBody/DataAssets/Planets/DA_Planet_BadLands.uasset`
+- `Content/BlueprintClasses/CelestialBody/DataAssets/Planets/DA_Planet_LavaOcean.uasset`
+- `Content/BlueprintClasses/CelestialBody/DataAssets/Moons/DA_Moon_BadLands.uasset`
+- `Content/BlueprintClasses/CelestialBody/DataAssets/TerrainProfiles/DA_Profile_Earth.uasset`
+
+확인된 CelestialBody Mesh 에셋은 다음과 같다.
+
+- `Content/BlueprintClasses/CelestialBody/Meshes/CelestialBodySphere.uasset`
+- `Content/BlueprintClasses/CelestialBody/Meshes/CelestialBodySphere1.uasset`
+- `Content/BlueprintClasses/CelestialBody/Meshes/SpaceSphere.uasset`
 
 최근 C++ 이름 변경에 대한 리다이렉트는 두지 않는다. Blueprint 부모 클래스, Data Asset 타입, 저장된 SCS 컴포넌트 중복 여부는 에디터에서 확인해야 한다.
 

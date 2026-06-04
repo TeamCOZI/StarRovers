@@ -85,6 +85,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Orbit", meta = (DisplayName = "MoonOrbitIncrease", ClampMin = "0.0"))
 	float MoonOrbitIncrease;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "bGenerateNaturalStructures"))
+	bool bGenerateNaturalStructures;
+
 private:
 	ASRCelestialBody* SpawnPrimaryStar(FRandomStream& RandomStream, const USRStarDataAsset*& OutSelectedStarDataAsset);
 	ASRCelestialBody* SpawnOrbitingBody(const TSubclassOf<ASRCelestialBody>& BodyClass, const FSRCelestialBodyGenerateRequest& CelestialBodyRequest, ASRCelestialBody* ParentBody);
@@ -100,6 +103,9 @@ private:
 	void SpawnPlanets(ASRCelestialBody* ParentStar, const USRStarDataAsset* SourceStarDataAsset, FRandomStream& RandomStream, TArray<TObjectPtr<ASRCelestialBody>>& OutGeneratedPlanets);
 	void SpawnMoons(ASRCelestialBody* ParentPlanet, FRandomStream& RandomStream, TArray<TObjectPtr<ASRCelestialBody>>& OutGeneratedMoons);
 	void PrepareRuntimeGeneratedDynamicMeshes();
+	void GenerateRuntimeNaturalStructures();
+	void GenerateNaturalStructuresForBody(ASRCelestialBody* Body, FRandomStream& RandomStream);
+	void DestroyRuntimeNaturalStructures();
 	void DestroyTrackedActor(TObjectPtr<ASRCelestialBody>& ActorToDestroy);
 	void DestroyTrackedActors(TArray<TObjectPtr<ASRCelestialBody>>& ActorsToDestroy);
 
@@ -111,4 +117,7 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ASRCelestialBody>> RuntimeMoonBodies;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<AActor>> RuntimeNaturalStructureActors;
 };

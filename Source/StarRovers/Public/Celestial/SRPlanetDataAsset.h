@@ -6,6 +6,7 @@
 #include "SRPlanetDataAsset.generated.h"
 
 class UMaterialInterface;
+class USRPlanetTerrainProfileDataAsset;
 class UStaticMesh;
 
 UCLASS(BlueprintType)
@@ -15,6 +16,11 @@ class STARROVERS_API USRPlanetDataAsset : public UDataAsset
 
 public:
 	USRPlanetDataAsset();
+
+	virtual void PostLoad() override;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 
 	FSRCelestialBodyData BuildData() const;
 
@@ -48,11 +54,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "SurfaceGridHeightOffset", ClampMin = "0.0"))
 	float SurfaceGridHeightOffset = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "ConstructionHeightOffset", ClampMin = "0.0"))
-	float ConstructionHeightOffset = 15.0f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "Dynamic Mesh Generation", ShowOnlyInnerProperties))
 	FSRDynamicMeshGeneration DynamicMeshGeneration;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "TerrainProfileDataAsset"))
+	TObjectPtr<USRPlanetTerrainProfileDataAsset> TerrainProfileDataAsset = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Natural Structures", meta = (DisplayName = "ProfileNaturalStructureSpawnRuleOverrides"))
+	TArray<FSRNaturalStructureSpawnRuleOverride> ProfileNaturalStructureSpawnRuleOverrides;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "bHasOcean"))
 	bool bHasOcean = true;
