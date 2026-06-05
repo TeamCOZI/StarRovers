@@ -3,6 +3,7 @@
 #include "Camera/SRCameraPawn.h"
 #include "Camera/SRPlayerController.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Conveyor/SRConveyorNetworkComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -14,6 +15,53 @@
 namespace
 {
 	constexpr uint64 StructureGhostPlacementDebugMessageKey = 0x535247686F73744FULL;
+
+	void AppendGridLineCellIds(
+		const FSRPlanetSurfaceGridCellId& StartCellId,
+		const FSRPlanetSurfaceGridCellId& EndCellId,
+		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds)
+	{
+		if (StartCellId.Face != EndCellId.Face)
+		{
+			OutCellIds.Add(EndCellId);
+			return;
+		}
+
+		const int32 DeltaX = FMath::Abs(EndCellId.CellX - StartCellId.CellX);
+		const int32 DeltaY = FMath::Abs(EndCellId.CellY - StartCellId.CellY);
+		const int32 StepX = StartCellId.CellX < EndCellId.CellX ? 1 : -1;
+		const int32 StepY = StartCellId.CellY < EndCellId.CellY ? 1 : -1;
+
+		int32 CurrentX = StartCellId.CellX;
+		int32 CurrentY = StartCellId.CellY;
+		int32 Error = DeltaX - DeltaY;
+
+		while (true)
+		{
+			FSRPlanetSurfaceGridCellId CellId;
+			CellId.Face = StartCellId.Face;
+			CellId.CellX = CurrentX;
+			CellId.CellY = CurrentY;
+			OutCellIds.Add(CellId);
+
+			if (CurrentX == EndCellId.CellX && CurrentY == EndCellId.CellY)
+			{
+				break;
+			}
+
+			const int32 Error2 = Error * 2;
+			if (Error2 > -DeltaY)
+			{
+				Error -= DeltaY;
+				CurrentX += StepX;
+			}
+			if (Error2 < DeltaX)
+			{
+				Error += DeltaX;
+				CurrentY += StepY;
+			}
+		}
+	}
 }
 
 USRAssemblyComponent::USRAssemblyComponent()
@@ -21,6 +69,8 @@ USRAssemblyComponent::USRAssemblyComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
 	bAssemblyModeActive = false;
+	MaxStructurePlacementsPerFrame = 4;
+	MaxQueuedStructurePlacements = 256;
 	ActiveAssemblySurfaceGrid = nullptr;
 	LastHoveredSampleSurfaceGrid = nullptr;
 	LastPublishedHoveredSurfaceGrid = nullptr;
@@ -33,6 +83,13 @@ USRAssemblyComponent::USRAssemblyComponent()
 	LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
 	StructureGhostCellId = FSRPlanetSurfaceGridCellId();
 	bHasStructureGhostCellId = false;
+	bIsStructurePlacementDragActive = false;
+	LastStructurePlacementDragSurfaceGrid = nullptr;
+	LastStructurePlacementDragCellId = FSRPlanetSurfaceGridCellId();
+	bHasLastStructurePlacementDragCellId = false;
+	PendingConveyorStartSurfaceGrid = nullptr;
+	PendingConveyorStartCellId = FSRPlanetSurfaceGridCellId();
+	bHasPendingConveyorStartCell = false;
 }
 
 void USRAssemblyComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -40,6 +97,7 @@ void USRAssemblyComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	UpdateSurfaceHover();
+	ProcessQueuedStructurePlacements();
 	UpdateStructureGhostPreview();
 }
 
@@ -78,6 +136,9 @@ void USRAssemblyComponent::SetAssemblyModeActive(bool bNewAssemblyModeActive)
 	ApplyAssemblyModeToFocusedSurfaceGrid();
 	if (!bAssemblyModeActive)
 	{
+		EndStructurePlacementDrag();
+		ClearPendingConveyorPathStart();
+		PendingStructurePlacementQueue.Reset();
 		DestroyStructureGhostPreview();
 	}
 }
@@ -85,6 +146,12 @@ void USRAssemblyComponent::SetAssemblyModeActive(bool bNewAssemblyModeActive)
 void USRAssemblyComponent::ToggleAssemblyMode()
 {
 	SetAssemblyModeActive(!bAssemblyModeActive);
+}
+
+void USRAssemblyComponent::ConfigurePlacementPerformance(int32 NewMaxStructurePlacementsPerFrame, int32 NewMaxQueuedStructurePlacements)
+{
+	MaxStructurePlacementsPerFrame = FMath::Max(1, NewMaxStructurePlacementsPerFrame);
+	MaxQueuedStructurePlacements = FMath::Max(1, NewMaxQueuedStructurePlacements);
 }
 
 bool USRAssemblyComponent::TryHandleAssemblyClick(AActor*& OutSelectedActor)
@@ -106,18 +173,111 @@ bool USRAssemblyComponent::TryHandleAssemblyClick(AActor*& OutSelectedActor)
 		&& TryProjectCursorToSurfaceCell(FocusedSurfaceGrid, HoveredCell, HoverHitLocation))
 	{
 		OutSelectedActor = FocusedActor;
-		if (PlayerController->GetSelectedStructureDataAsset())
+		if (USRStructureDataAsset* SelectedStructureDataAsset = PlayerController->GetSelectedStructureDataAsset())
 		{
+			const FSRStructureData StructureData = SelectedStructureDataAsset->BuildData();
+			if (StructureData.BuildKind == ESRStructureBuildKind::Conveyor)
+			{
+				if (!bHasPendingConveyorStartCell || PendingConveyorStartSurfaceGrid != FocusedSurfaceGrid)
+				{
+					PendingConveyorStartSurfaceGrid = FocusedSurfaceGrid;
+					PendingConveyorStartCellId = HoveredCell.CellId;
+					bHasPendingConveyorStartCell = true;
+					FocusedSurfaceGrid->SetSelectedCell(HoveredCell.CellId);
+					PublishHoveredCellInfo(FocusedSurfaceGrid, HoveredCell);
+					return true;
+				}
+
+				const FSRPlanetSurfaceGridCellId StartCellId = PendingConveyorStartCellId;
+				ClearPendingConveyorPathStart();
+				FocusedSurfaceGrid->ClearSelectedCell();
+				TryPlaceSelectedConveyorPath(FocusedSurfaceGrid, StartCellId, HoveredCell, SelectedStructureDataAsset);
+				return true;
+			}
+
+			ClearPendingConveyorPathStart();
 			FocusedSurfaceGrid->ClearSelectedCell();
 			TryPlaceSelectedStructure(FocusedSurfaceGrid, HoveredCell);
 			return true;
 		}
 
+		ClearPendingConveyorPathStart();
 		FocusedSurfaceGrid->SetSelectedCell(HoveredCell.CellId);
 		return true;
 	}
 
 	return false;
+}
+
+bool USRAssemblyComponent::ShouldHandleStructurePlacementDrag() const
+{
+	const ASRPlayerController* PlayerController = GetOwnerController();
+	if (!PlayerController || !bAssemblyModeActive || !IsValid(PlayerController->GetSelectedStructureDataAsset()))
+	{
+		return false;
+	}
+
+	if (PlayerController->GetSelectedStructureDataAsset()->BuildData().BuildKind == ESRStructureBuildKind::Conveyor)
+	{
+		return false;
+	}
+
+	AActor* FocusedActor = nullptr;
+	USRPlanetSurfaceGrid* FocusedSurfaceGrid = nullptr;
+	return TryGetFocusedSurfaceGrid(FocusedActor, FocusedSurfaceGrid);
+}
+
+bool USRAssemblyComponent::BeginStructurePlacementDrag(AActor*& OutSelectedActor)
+{
+	OutSelectedActor = nullptr;
+	EndStructurePlacementDrag();
+
+	AActor* FocusedActor = nullptr;
+	USRPlanetSurfaceGrid* SurfaceGrid = nullptr;
+	FSRPlanetSurfaceGridCell TargetCell;
+	if (!TryResolveStructurePlacementDragTarget(FocusedActor, SurfaceGrid, TargetCell))
+	{
+		return false;
+	}
+
+	ASRPlayerController* PlayerController = GetOwnerController();
+	USRStructureDataAsset* SelectedStructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
+	if (IsValid(SelectedStructureDataAsset) && SelectedStructureDataAsset->BuildData().BuildKind == ESRStructureBuildKind::Conveyor)
+	{
+		return false;
+	}
+
+	bIsStructurePlacementDragActive = true;
+	OutSelectedActor = FocusedActor;
+	return TryPlaceStructureDragPath(SurfaceGrid, TargetCell);
+}
+
+bool USRAssemblyComponent::ContinueStructurePlacementDrag(AActor*& OutSelectedActor)
+{
+	OutSelectedActor = nullptr;
+	if (!bIsStructurePlacementDragActive)
+	{
+		return false;
+	}
+
+	AActor* FocusedActor = nullptr;
+	USRPlanetSurfaceGrid* SurfaceGrid = nullptr;
+	FSRPlanetSurfaceGridCell TargetCell;
+	if (!TryResolveStructurePlacementDragTarget(FocusedActor, SurfaceGrid, TargetCell))
+	{
+		return false;
+	}
+
+	OutSelectedActor = FocusedActor;
+	return TryPlaceStructureDragPath(SurfaceGrid, TargetCell);
+}
+
+void USRAssemblyComponent::EndStructurePlacementDrag()
+{
+	bIsStructurePlacementDragActive = false;
+	LastStructurePlacementDragSurfaceGrid = nullptr;
+	LastStructurePlacementDragCellId = FSRPlanetSurfaceGridCellId();
+	bHasLastStructurePlacementDragCellId = false;
 }
 
 void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
@@ -140,6 +300,9 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 	}
 	ClearPublishedHoveredCellInfo();
 	ResetHoverSampleCache();
+	EndStructurePlacementDrag();
+	ClearPendingConveyorPathStart();
+	PendingStructurePlacementQueue.Reset();
 	DestroyStructureGhostPreview();
 }
 
@@ -153,6 +316,9 @@ void USRAssemblyComponent::ClearSurfaceHover()
 	HoveredSurfaceGrid = nullptr;
 	ClearPublishedHoveredCellInfo();
 	ResetHoverSampleCache();
+	EndStructurePlacementDrag();
+	ClearPendingConveyorPathStart();
+	PendingStructurePlacementQueue.Reset();
 	DestroyStructureGhostPreview();
 }
 
@@ -286,6 +452,68 @@ void USRAssemblyComponent::UpdateSurfaceHover()
 	}
 }
 
+void USRAssemblyComponent::ProcessQueuedStructurePlacements()
+{
+	if (PendingStructurePlacementQueue.IsEmpty())
+	{
+		return;
+	}
+
+	const int32 PlacementBudget = FMath::Max(1, MaxStructurePlacementsPerFrame);
+	TSet<USRPlanetSurfaceGrid*> BatchedSurfaceGrids;
+	BatchedSurfaceGrids.Reserve(PlacementBudget);
+	bool bPlacedAnyStructure = false;
+
+	const int32 PlacementCount = FMath::Min(PlacementBudget, PendingStructurePlacementQueue.Num());
+	for (int32 PlacementIndex = 0; PlacementIndex < PlacementCount; ++PlacementIndex)
+	{
+		FSRQueuedStructurePlacement QueuedPlacement = PendingStructurePlacementQueue[0];
+		PendingStructurePlacementQueue.RemoveAt(0, 1, EAllowShrinking::No);
+
+		USRPlanetSurfaceGrid* SurfaceGrid = QueuedPlacement.SurfaceGrid.Get();
+		if (!IsValid(SurfaceGrid))
+		{
+			continue;
+		}
+
+		if (!BatchedSurfaceGrids.Contains(SurfaceGrid))
+		{
+			SurfaceGrid->BeginInteractionHighlightBatch();
+			BatchedSurfaceGrids.Add(SurfaceGrid);
+		}
+
+		FSRPlanetSurfaceGridCell TargetCell;
+		if (SurfaceGrid->GetCellById(QueuedPlacement.CellId, TargetCell))
+		{
+			bPlacedAnyStructure |= TryPlaceSelectedStructure(SurfaceGrid, TargetCell, false);
+		}
+	}
+
+	for (USRPlanetSurfaceGrid* SurfaceGrid : BatchedSurfaceGrids)
+	{
+		if (IsValid(SurfaceGrid))
+		{
+			SurfaceGrid->EndInteractionHighlightBatch();
+		}
+	}
+
+	if (bPlacedAnyStructure)
+	{
+		DestroyStructureGhostPreview();
+		if (IsValid(HoveredSurfaceGrid))
+		{
+			FSRPlanetSurfaceGridCell HoveredCell;
+			if (HoveredSurfaceGrid->GetHoveredCell(HoveredCell))
+			{
+				bHasLastPublishedHoveredCellInfo = false;
+				LastPublishedHoveredSurfaceGrid = nullptr;
+				LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+				PublishHoveredCellInfo(HoveredSurfaceGrid, HoveredCell);
+			}
+		}
+	}
+}
+
 void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
 {
 	AActor* FocusedActor = nullptr;
@@ -389,6 +617,12 @@ void USRAssemblyComponent::UpdateStructureGhostPreview()
 	}
 
 	const FSRStructureData StructureData = SelectedStructureDataAsset->BuildData();
+	if (StructureData.BuildKind == ESRStructureBuildKind::Conveyor)
+	{
+		DestroyStructureGhostPreview();
+		return;
+	}
+
 	TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
 	if (!HoveredSurfaceGrid->GetFootprintCellIds(HoveredCell.CellId, StructureData.FootprintCellsX, StructureData.FootprintCellsY, FootprintCellIds)
 		|| !HoveredSurfaceGrid->CanOccupyCells(FootprintCellIds))
@@ -555,7 +789,175 @@ void USRAssemblyComponent::PublishStructureGhostPlacementDebug(
 	}
 }
 
-bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell)
+bool USRAssemblyComponent::TryResolveStructurePlacementDragTarget(
+	AActor*& OutFocusedActor,
+	USRPlanetSurfaceGrid*& OutSurfaceGrid,
+	FSRPlanetSurfaceGridCell& OutTargetCell) const
+{
+	OutFocusedActor = nullptr;
+	OutSurfaceGrid = nullptr;
+	OutTargetCell = FSRPlanetSurfaceGridCell();
+
+	const ASRPlayerController* PlayerController = GetOwnerController();
+	if (!PlayerController || !bAssemblyModeActive || !IsValid(PlayerController->GetSelectedStructureDataAsset()))
+	{
+		return false;
+	}
+
+	FVector HoverHitLocation = FVector::ZeroVector;
+	return TryGetFocusedSurfaceGrid(OutFocusedActor, OutSurfaceGrid)
+		&& TryProjectCursorToSurfaceCell(OutSurfaceGrid, OutTargetCell, HoverHitLocation);
+}
+
+bool USRAssemblyComponent::TryGetFocusedConveyorNetwork(AActor*& OutFocusedActor, USRConveyorNetworkComponent*& OutConveyorNetwork) const
+{
+	OutFocusedActor = nullptr;
+	OutConveyorNetwork = nullptr;
+
+	USRPlanetSurfaceGrid* UnusedSurfaceGrid = nullptr;
+	if (!TryGetFocusedSurfaceGrid(OutFocusedActor, UnusedSurfaceGrid) || !IsValid(OutFocusedActor))
+	{
+		return false;
+	}
+
+	OutConveyorNetwork = OutFocusedActor->FindComponentByClass<USRConveyorNetworkComponent>();
+	return IsValid(OutConveyorNetwork);
+}
+
+void USRAssemblyComponent::EnqueueStructurePlacement(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& CellId)
+{
+	if (!IsValid(SurfaceGrid))
+	{
+		return;
+	}
+
+	for (const FSRQueuedStructurePlacement& PendingPlacement : PendingStructurePlacementQueue)
+	{
+		if (PendingPlacement.SurfaceGrid.Get() == SurfaceGrid && PendingPlacement.CellId == CellId)
+		{
+			return;
+		}
+	}
+
+	const int32 MaxQueueSize = FMath::Max(1, MaxQueuedStructurePlacements);
+	if (PendingStructurePlacementQueue.Num() >= MaxQueueSize)
+	{
+		PendingStructurePlacementQueue.RemoveAt(0, PendingStructurePlacementQueue.Num() - MaxQueueSize + 1, EAllowShrinking::No);
+	}
+
+	FSRQueuedStructurePlacement QueuedPlacement;
+	QueuedPlacement.SurfaceGrid = SurfaceGrid;
+	QueuedPlacement.CellId = CellId;
+	PendingStructurePlacementQueue.Add(QueuedPlacement);
+}
+
+bool USRAssemblyComponent::TryPlaceStructureDragPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell)
+{
+	if (!IsValid(SurfaceGrid))
+	{
+		return false;
+	}
+
+	ASRPlayerController* PlayerController = GetOwnerController();
+	USRStructureDataAsset* SelectedStructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
+	if (IsValid(SelectedStructureDataAsset) && SelectedStructureDataAsset->BuildData().BuildKind == ESRStructureBuildKind::Conveyor)
+	{
+		return TryPlaceConveyorDragPath(SurfaceGrid, TargetCell, SelectedStructureDataAsset);
+	}
+
+	if (LastStructurePlacementDragSurfaceGrid == SurfaceGrid
+		&& bHasLastStructurePlacementDragCellId
+		&& LastStructurePlacementDragCellId == TargetCell.CellId)
+	{
+		return true;
+	}
+
+	TArray<FSRPlanetSurfaceGridCellId> PathCellIds;
+	if (LastStructurePlacementDragSurfaceGrid == SurfaceGrid && bHasLastStructurePlacementDragCellId)
+	{
+		AppendGridLineCellIds(LastStructurePlacementDragCellId, TargetCell.CellId, PathCellIds);
+	}
+	else
+	{
+		PathCellIds.Add(TargetCell.CellId);
+	}
+
+	for (const FSRPlanetSurfaceGridCellId& PathCellId : PathCellIds)
+	{
+		if (LastStructurePlacementDragSurfaceGrid == SurfaceGrid
+			&& bHasLastStructurePlacementDragCellId
+			&& LastStructurePlacementDragCellId == PathCellId)
+		{
+			continue;
+		}
+
+		EnqueueStructurePlacement(SurfaceGrid, PathCellId);
+	}
+
+	SurfaceGrid->SetHoveredCell(TargetCell.CellId);
+	PublishHoveredCellInfo(SurfaceGrid, TargetCell);
+	LastStructurePlacementDragSurfaceGrid = SurfaceGrid;
+	LastStructurePlacementDragCellId = TargetCell.CellId;
+	bHasLastStructurePlacementDragCellId = true;
+	return !PathCellIds.IsEmpty();
+}
+
+bool USRAssemblyComponent::TryPlaceConveyorDragPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset)
+{
+	if (!IsValid(SurfaceGrid) || !IsValid(ConveyorDataAsset))
+	{
+		return false;
+	}
+
+	AActor* FocusedActor = nullptr;
+	USRConveyorNetworkComponent* ConveyorNetwork = nullptr;
+	if (!TryGetFocusedConveyorNetwork(FocusedActor, ConveyorNetwork))
+	{
+		return false;
+	}
+
+	if (LastStructurePlacementDragSurfaceGrid == SurfaceGrid
+		&& bHasLastStructurePlacementDragCellId
+		&& LastStructurePlacementDragCellId == TargetCell.CellId)
+	{
+		return true;
+	}
+
+	const FSRStructureData ConveyorData = ConveyorDataAsset->BuildData();
+	TArray<FSRPlanetSurfaceGridCellId> PathCellIds;
+	if (LastStructurePlacementDragSurfaceGrid == SurfaceGrid && bHasLastStructurePlacementDragCellId)
+	{
+		if (!ConveyorNetwork->FindConveyorPath(SurfaceGrid, LastStructurePlacementDragCellId, TargetCell.CellId, ConveyorData.ConveyorLayer, PathCellIds))
+		{
+			return false;
+		}
+	}
+	else
+	{
+		PathCellIds.Add(TargetCell.CellId);
+	}
+
+	const FName NetworkId = FName(*FString::Printf(TEXT("Conveyor_%s_%d"), *GetNameSafe(FocusedActor), static_cast<int32>(ConveyorData.ConveyorLayer)));
+	if (!ConveyorNetwork->TryPlaceConveyorPath(
+		SurfaceGrid,
+		PathCellIds,
+		ConveyorData.ConveyorLayer,
+		ConveyorData.ConveyorLayerHeight,
+		ConveyorDataAsset,
+		NetworkId))
+	{
+		return false;
+	}
+
+	SurfaceGrid->SetHoveredCell(TargetCell.CellId);
+	PublishHoveredCellInfo(SurfaceGrid, TargetCell);
+	LastStructurePlacementDragSurfaceGrid = SurfaceGrid;
+	LastStructurePlacementDragCellId = TargetCell.CellId;
+	bHasLastStructurePlacementDragCellId = true;
+	return true;
+}
+
+bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, bool bRefreshPreviewAndUI)
 {
 	ASRPlayerController* PlayerController = GetOwnerController();
 	USRStructureDataAsset* SelectedStructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
@@ -565,11 +967,19 @@ bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* Surfa
 	}
 
 	const FSRStructureData StructureData = SelectedStructureDataAsset->BuildData();
+	if (StructureData.BuildKind == ESRStructureBuildKind::Conveyor)
+	{
+		return TryPlaceSelectedConveyor(SurfaceGrid, TargetCell, SelectedStructureDataAsset, bRefreshPreviewAndUI);
+	}
+
 	TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
 	if (!SurfaceGrid->GetFootprintCellIds(TargetCell.CellId, StructureData.FootprintCellsX, StructureData.FootprintCellsY, FootprintCellIds)
 		|| !SurfaceGrid->CanOccupyCells(FootprintCellIds))
 	{
-		DestroyStructureGhostPreview();
+		if (bRefreshPreviewAndUI)
+		{
+			DestroyStructureGhostPreview();
+		}
 		return false;
 	}
 
@@ -579,13 +989,111 @@ bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* Surfa
 		return false;
 	}
 
-	DestroyStructureGhostPreview();
+	if (bRefreshPreviewAndUI)
+	{
+		DestroyStructureGhostPreview();
 
-	bHasLastPublishedHoveredCellInfo = false;
-	LastPublishedHoveredSurfaceGrid = nullptr;
-	LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
-	PublishHoveredCellInfo(SurfaceGrid, TargetCell);
+		bHasLastPublishedHoveredCellInfo = false;
+		LastPublishedHoveredSurfaceGrid = nullptr;
+		LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+		PublishHoveredCellInfo(SurfaceGrid, TargetCell);
+	}
 	return true;
+}
+
+bool USRAssemblyComponent::TryPlaceSelectedConveyor(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset, bool bRefreshPreviewAndUI)
+{
+	if (!IsValid(SurfaceGrid) || !IsValid(ConveyorDataAsset))
+	{
+		return false;
+	}
+
+	AActor* FocusedActor = nullptr;
+	USRConveyorNetworkComponent* ConveyorNetwork = nullptr;
+	if (!TryGetFocusedConveyorNetwork(FocusedActor, ConveyorNetwork))
+	{
+		return false;
+	}
+
+	const FSRStructureData ConveyorData = ConveyorDataAsset->BuildData();
+	const TArray<FSRPlanetSurfaceGridCellId> PathCellIds = { TargetCell.CellId };
+	const FName NetworkId = FName(*FString::Printf(TEXT("Conveyor_%s_%d"), *GetNameSafe(FocusedActor), static_cast<int32>(ConveyorData.ConveyorLayer)));
+	if (!ConveyorNetwork->TryPlaceConveyorPath(
+		SurfaceGrid,
+		PathCellIds,
+		ConveyorData.ConveyorLayer,
+		ConveyorData.ConveyorLayerHeight,
+		ConveyorDataAsset,
+		NetworkId))
+	{
+		return false;
+	}
+
+	if (bRefreshPreviewAndUI)
+	{
+		DestroyStructureGhostPreview();
+		bHasLastPublishedHoveredCellInfo = false;
+		LastPublishedHoveredSurfaceGrid = nullptr;
+		LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+		PublishHoveredCellInfo(SurfaceGrid, TargetCell);
+	}
+	return true;
+}
+
+bool USRAssemblyComponent::TryPlaceSelectedConveyorPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& StartCellId, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset, bool bRefreshPreviewAndUI)
+{
+	if (!IsValid(SurfaceGrid) || !IsValid(ConveyorDataAsset))
+	{
+		return false;
+	}
+
+	AActor* FocusedActor = nullptr;
+	USRConveyorNetworkComponent* ConveyorNetwork = nullptr;
+	if (!TryGetFocusedConveyorNetwork(FocusedActor, ConveyorNetwork))
+	{
+		return false;
+	}
+
+	const FSRStructureData ConveyorData = ConveyorDataAsset->BuildData();
+	TArray<FSRPlanetSurfaceGridCellId> PathCellIds;
+	if (!ConveyorNetwork->FindConveyorPath(SurfaceGrid, StartCellId, TargetCell.CellId, ConveyorData.ConveyorLayer, PathCellIds))
+	{
+		return false;
+	}
+
+	const FName NetworkId = FName(*FString::Printf(TEXT("Conveyor_%s_%d"), *GetNameSafe(FocusedActor), static_cast<int32>(ConveyorData.ConveyorLayer)));
+	if (!ConveyorNetwork->TryPlaceConveyorPath(
+		SurfaceGrid,
+		PathCellIds,
+		ConveyorData.ConveyorLayer,
+		ConveyorData.ConveyorLayerHeight,
+		ConveyorDataAsset,
+		NetworkId))
+	{
+		return false;
+	}
+
+	if (bRefreshPreviewAndUI)
+	{
+		DestroyStructureGhostPreview();
+		bHasLastPublishedHoveredCellInfo = false;
+		LastPublishedHoveredSurfaceGrid = nullptr;
+		LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+		PublishHoveredCellInfo(SurfaceGrid, TargetCell);
+	}
+	return true;
+}
+
+void USRAssemblyComponent::ClearPendingConveyorPathStart()
+{
+	if (IsValid(PendingConveyorStartSurfaceGrid))
+	{
+		PendingConveyorStartSurfaceGrid->ClearSelectedCell();
+	}
+
+	PendingConveyorStartSurfaceGrid = nullptr;
+	PendingConveyorStartCellId = FSRPlanetSurfaceGridCellId();
+	bHasPendingConveyorStartCell = false;
 }
 
 void USRAssemblyComponent::LogInvalidGhostDataAssetOnce(USRStructureDataAsset* StructureDataAsset, const TCHAR* Reason)

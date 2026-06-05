@@ -12,6 +12,9 @@ USRStructureDataAsset::USRStructureDataAsset()
 	PlacementYawDegrees = 0.0f;
 	bAlignToSurfaceNormal = true;
 	bAvailableForConstruction = true;
+	BuildKind = ESRStructureBuildKind::Structure;
+	ConveyorLayer = 0;
+	ConveyorLayerHeight = 160.0f;
 }
 
 FSRStructureData USRStructureDataAsset::BuildData() const
@@ -33,5 +36,8 @@ FSRStructureData USRStructureDataAsset::BuildData() const
 	Result.PlacementYawDegrees = PlacementYawDegrees;
 	Result.bAlignToSurfaceNormal = bAlignToSurfaceNormal;
 	Result.bAvailableForConstruction = bAvailableForConstruction;
+	Result.BuildKind = BuildKind;
+	Result.ConveyorLayer = FMath::Max(0, ConveyorLayer);
+	Result.ConveyorLayerHeight = FMath::Max(0.0f, ConveyorLayerHeight);
 	return Result;
 }

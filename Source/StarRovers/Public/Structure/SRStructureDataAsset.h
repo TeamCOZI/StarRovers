@@ -8,6 +8,13 @@
 class UMaterialInterface;
 class UStaticMesh;
 
+UENUM(BlueprintType)
+enum class ESRStructureBuildKind : uint8
+{
+	Structure UMETA(DisplayName = "Structure"),
+	Conveyor UMETA(DisplayName = "Conveyor"),
+};
+
 USTRUCT(BlueprintType)
 struct STARROVERS_API FSRStructureData
 {
@@ -60,6 +67,15 @@ struct STARROVERS_API FSRStructureData
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Placement", meta = (DisplayName = "bAvailableForConstruction"))
 	bool bAvailableForConstruction = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Build", meta = (DisplayName = "BuildKind"))
+	ESRStructureBuildKind BuildKind = ESRStructureBuildKind::Structure;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorLayer"))
+	int32 ConveyorLayer = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorLayerHeight"))
+	float ConveyorLayerHeight = 160.0f;
 };
 
 UCLASS(BlueprintType)
@@ -120,4 +136,13 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Placement", meta = (DisplayName = "bAvailableForConstruction"))
 	bool bAvailableForConstruction = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Build", meta = (DisplayName = "BuildKind"))
+	ESRStructureBuildKind BuildKind = ESRStructureBuildKind::Structure;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorLayer", ClampMin = "0"))
+	int32 ConveyorLayer = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorLayerHeight", ClampMin = "0.0"))
+	float ConveyorLayerHeight = 160.0f;
 };

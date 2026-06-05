@@ -23,6 +23,7 @@ public class StarRovers : ModuleRules
         PrivateDependencyModuleNames.AddRange(
             new[]
             {
+                "PCG",
                 "Slate",
                 "SlateCore",
             }

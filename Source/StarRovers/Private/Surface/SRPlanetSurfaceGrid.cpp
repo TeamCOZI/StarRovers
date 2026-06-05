@@ -900,6 +900,8 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 	bUsingRecoveredQuadCells = false;
 	bGridMeshDirty = true;
 	bCellsDirty = true;
+	InteractionHighlightBatchDepth = 0;
+	bHasBatchedInteractionHighlightRefresh = false;
 
 	SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SetGenerateOverlapEvents(false);
@@ -966,7 +968,7 @@ void USRPlanetSurfaceGrid::RebuildGrid()
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
-		RefreshInteractionHighlight();
+		RequestInteractionHighlightRefresh();
 	}
 }
 
@@ -1008,7 +1010,7 @@ void USRPlanetSurfaceGrid::ClearOccupancy()
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
-		RefreshInteractionHighlight();
+		RequestInteractionHighlightRefresh();
 	}
 }
 
@@ -1362,7 +1364,7 @@ bool USRPlanetSurfaceGrid::SetCellOccupied(const FSRPlanetSurfaceGridCellId& Cel
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
-		RefreshInteractionHighlight();
+		RequestInteractionHighlightRefresh();
 	}
 	return true;
 }
@@ -1422,9 +1424,24 @@ bool USRPlanetSurfaceGrid::SetCellsOccupied(const TArray<FSRPlanetSurfaceGridCel
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
-		RefreshInteractionHighlight();
+		RequestInteractionHighlightRefresh();
 	}
 	return true;
+}
+
+void USRPlanetSurfaceGrid::BeginInteractionHighlightBatch()
+{
+	++InteractionHighlightBatchDepth;
+}
+
+void USRPlanetSurfaceGrid::EndInteractionHighlightBatch()
+{
+	InteractionHighlightBatchDepth = FMath::Max(0, InteractionHighlightBatchDepth - 1);
+	if (InteractionHighlightBatchDepth == 0 && bHasBatchedInteractionHighlightRefresh)
+	{
+		bHasBatchedInteractionHighlightRefresh = false;
+		RefreshInteractionHighlight();
+	}
 }
 
 bool USRPlanetSurfaceGrid::SetHoveredCell(const FSRPlanetSurfaceGridCellId& CellId)
@@ -1442,7 +1459,7 @@ bool USRPlanetSurfaceGrid::SetHoveredCell(const FSRPlanetSurfaceGridCellId& Cell
 
 	bHasHoveredCell = true;
 	HoveredCellId = CellId;
-	RefreshInteractionHighlight();
+	RequestInteractionHighlightRefresh();
 	UpdateDebugTickState();
 	return true;
 }
@@ -1456,7 +1473,7 @@ void USRPlanetSurfaceGrid::ClearHoveredCell()
 
 	bHasHoveredCell = false;
 	HoveredCellId = FSRPlanetSurfaceGridCellId();
-	RefreshInteractionHighlight();
+	RequestInteractionHighlightRefresh();
 	UpdateDebugTickState();
 }
 
@@ -2002,7 +2019,7 @@ bool USRPlanetSurfaceGrid::SetSelectedCell(const FSRPlanetSurfaceGridCellId& Cel
 
 	bHasSelectedCell = true;
 	SelectedCellId = CellId;
-	RefreshInteractionHighlight();
+	RequestInteractionHighlightRefresh();
 	UpdateDebugTickState();
 	return true;
 }
@@ -2016,7 +2033,7 @@ void USRPlanetSurfaceGrid::ClearSelectedCell()
 
 	bHasSelectedCell = false;
 	SelectedCellId = FSRPlanetSurfaceGridCellId();
-	RefreshInteractionHighlight();
+	RequestInteractionHighlightRefresh();
 	UpdateDebugTickState();
 }
 
@@ -2129,7 +2146,7 @@ void USRPlanetSurfaceGrid::SetGridVisible(bool bNewGridVisible)
 		{
 			RebuildGrid();
 		}
-		RefreshInteractionHighlight();
+		RequestInteractionHighlightRefresh();
 	}
 	UpdateDebugTickState();
 }
@@ -2180,11 +2197,7 @@ void USRPlanetSurfaceGrid::ConfigureDebugGrid(
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
-		RefreshInteractionHighlight();
-	}
-	else
-	{
-		RefreshInteractionHighlight();
+		RequestInteractionHighlightRefresh();
 	}
 }
 
@@ -2292,6 +2305,14 @@ FSRPlanetTerrainSample USRPlanetSurfaceGrid::GetTerrainSampleAtDirection(FVector
 		Sample.HeightOffset = FMath::RoundToFloat(Sample.HeightOffset / HeightStep) * HeightStep;
 	}
 	return Sample;
+}
+
+float USRPlanetSurfaceGrid::GetTerrainHeightStep() const
+{
+	const float SafeDynamicMeshHeight = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight);
+	return DynamicMeshGeneration.bMinecraft && DynamicMeshGeneration.bDynamicMeshGeneration && SafeDynamicMeshHeight > KINDA_SMALL_NUMBER
+		? FMath::Max(1.0f, SafeDynamicMeshHeight / 24.0f)
+		: 0.0f;
 }
 
 void USRPlanetSurfaceGrid::AppendGeneratedGridCell(
@@ -2850,6 +2871,17 @@ void USRPlanetSurfaceGrid::EnsureInteractionOverlay()
 	{
 		InteractionOverlayMesh->SetMaterial(0, GridMaterial);
 	}
+}
+
+void USRPlanetSurfaceGrid::RequestInteractionHighlightRefresh()
+{
+	if (InteractionHighlightBatchDepth > 0)
+	{
+		bHasBatchedInteractionHighlightRefresh = true;
+		return;
+	}
+
+	RefreshInteractionHighlight();
 }
 
 void USRPlanetSurfaceGrid::RefreshInteractionHighlight()

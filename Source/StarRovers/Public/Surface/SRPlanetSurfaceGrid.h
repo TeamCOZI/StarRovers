@@ -82,6 +82,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     bool SetCellsOccupied(const TArray<FSRPlanetSurfaceGridCellId>& CellIds, bool bOccupied, FName OccupantId);
 
+    void BeginInteractionHighlightBatch();
+    void EndInteractionHighlightBatch();
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     bool SetHoveredCell(const FSRPlanetSurfaceGridCellId& CellId);
 
@@ -152,6 +155,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Terrain")
     FSRPlanetTerrainSample GetTerrainSampleAtDirection(FVector LocalUnitDirection) const;
 
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Terrain")
+    float GetTerrainHeightStep() const;
+
     void AppendGeneratedGridCell(UE::Geometry::FDynamicMesh3& GridMesh, const FSRPlanetSurfaceGridCell& Cell, TSet<uint64>& DrawnEdges) const;
     void ApplyGeneratedGridBuild(TArray<FSRPlanetSurfaceGridCell>&& NewCells, UE::Geometry::FDynamicMesh3&& NewGridMesh);
 
@@ -219,9 +225,13 @@ protected:
     UPROPERTY()
     bool bCellsDirty;
 
+    int32 InteractionHighlightBatchDepth;
+    bool bHasBatchedInteractionHighlightRefresh;
+
 private:
     bool RebuildCellsFromOwnerStaticMeshQuads();
     void EnsureInteractionOverlay();
+    void RequestInteractionHighlightRefresh();
     void RefreshInteractionHighlight();
     void RebuildInteractionOverlayMesh(bool bIncludeCellHighlightOverlay);
     void SetInteractionOverlayVisible(bool bNewVisible);

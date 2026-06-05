@@ -31,6 +31,8 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Focus")
     void FocusActor(AActor* NewFocusActor);
 
+    void FocusActorWithTransition(AActor* NewFocusActor, bool bUseArcTransition);
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Focus")
     void ClearFocusActor();
 
@@ -85,6 +87,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "ResetFocusAction"))
     TObjectPtr<UInputAction> ResetFocusAction;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "AlignFocusSurfaceGridAction"))
+    TObjectPtr<UInputAction> AlignFocusSurfaceGridAction;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera", meta = (DisplayName = "ZoomSpeed", ClampMin = "0.0"))
     float ZoomSpeed;
 
@@ -121,11 +126,29 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Focus", meta = (DisplayName = "FocusFollowSmoothTime", ClampMin = "0.01"))
     float FocusFollowSmoothTime;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Focus|Transition", meta = (DisplayName = "FocusArcTransitionDuration", ClampMin = "0.10"))
+    float FocusArcTransitionDuration;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Focus|Transition", meta = (DisplayName = "FocusArcHeightMultiplier", ClampMin = "0.0"))
+    float FocusArcHeightMultiplier;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Focus|Transition", meta = (DisplayName = "FocusArcMinHeight", ClampMin = "0.0"))
+    float FocusArcMinHeight;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Focus|Transition", meta = (DisplayName = "FocusArcZoomOutDistanceMultiplier", ClampMin = "0.0"))
+    float FocusArcZoomOutDistanceMultiplier;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "SurfaceRotateSensitivity", ClampMin = "0.0"))
     float SurfaceRotateSensitivity;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusSurfaceSpeed", ClampMin = "0.0"))
     float FocusSurfaceSpeed;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusSurfaceInputAcceleration", ClampMin = "0.0"))
+    float FocusSurfaceInputAcceleration;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusSurfaceInputDeceleration", ClampMin = "0.0"))
+    float FocusSurfaceInputDeceleration;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "FocusSurfaceInertiaDamping", ClampMin = "0.0"))
     float FocusSurfaceInertiaDamping;
@@ -164,6 +187,9 @@ private:
     void ApplyMappingContext();
     void ConfigureSpringArmCollision();
     void BroadcastFocusedActorChangedIfNeeded(AActor* PreviousFocusedActor);
+    void BeginFocusArcTransition(float FinalZoomDistance);
+    void StopFocusArcTransition();
+    bool UpdateFocusArcTransition(float DeltaSeconds, FVector& OutNewLocation);
     void HandleDragHoldStarted();
     void HandleDragHoldCompleted();
     void HandleFocusSurfaceDragHoldStarted();
@@ -173,6 +199,7 @@ private:
     void HandleFocusSurface(const FInputActionValue& Value);
     void HandleFocusSurfaceCompleted();
     void HandleResetFocus();
+    void HandleAlignFocusSurfaceGrid();
     bool HasExitedFocusedActorGravityField() const;
     bool GetMouseScreenPosition(FVector2D& OutMouseScreenPosition) const;
     FVector ConvertScreenDragToDragOffset(const FVector2D& StartScreenPosition, const FVector2D& CurrentScreenPosition) const;
@@ -191,7 +218,9 @@ private:
     FRotator GetViewRotationForZoom(float ZoomDistance) const;
     void ApplyZoomDrivenViewRotation(float ZoomDistance);
     bool ShouldAllowFocusSurface() const;
+    bool TryComputeFocusSurfaceGridAlignmentRoll(const FQuat& ViewQuat, float ZoomDistance, float& OutRollRadians) const;
     void UpdateFocusSurface(float DeltaSeconds);
+    void UpdateFocusSurfaceRotation(float DeltaSeconds);
     void ApplyFocusSurfaceDelta(const FVector2D& DegreesDelta);
     void RefreshScreenSpaceThicknessReferenceView();
     void UpdateDynamicMeshVisibility();
@@ -208,18 +237,28 @@ private:
     FSRFocusedActorChangedSignature FocusedActorChangedEvent;
     FVector DragTargetLocation;
     float ZoomDistanceTarget;
+    FVector FocusArcTransitionStartLocation;
+    float FocusArcTransitionElapsed;
+    float FocusArcTransitionStartZoomDistance;
+    float FocusArcTransitionFinalZoomDistance;
+    float FocusArcTransitionPeakZoomDistance;
     float ScreenSpaceThicknessReferenceZoomDistance;
     float ScreenSpaceThicknessReferenceFieldOfView;
     FVector2D DragStartMouseScreenPosition;
     FVector DragStartFocusDragOffset;
     FVector DragStartTargetLocation;
     FVector2D FocusSurfaceInput;
+    FVector2D FocusSurfaceAcceleratedInput;
     FVector2D FocusSurfaceAngularVelocity;
     FQuat FocusSurfaceRotation;
+    FQuat FocusSurfaceTargetRotation;
+    FVector FocusSurfaceRotationSmoothVelocity;
     FVector LastDynamicMeshVisibilityCameraLocation;
     FRotator LastDynamicMeshVisibilityCameraRotation;
     TWeakObjectPtr<AActor> LastDynamicMeshVisibilityFocusedActor;
     float LastDynamicMeshVisibilityZoomDistance;
     double LastDynamicMeshVisibilityUpdateTime;
     bool bHasDynamicMeshVisibilityState;
+    bool bIsResettingFocusSurfaceRotation;
+    bool bIsFocusArcTransitionActive;
 };

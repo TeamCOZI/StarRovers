@@ -71,6 +71,11 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
     USRStructureDataAsset* GetSelectedStructureDataAsset() const;
 
+    bool ShouldHandleAssemblyPlacementDrag() const;
+    bool BeginAssemblyPlacementDrag();
+    bool ContinueAssemblyPlacementDrag();
+    void EndAssemblyPlacementDrag();
+
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "LeftClickAction"))
     TObjectPtr<UInputAction> LeftClickAction;
@@ -123,6 +128,12 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "AvailableStructureDataAssets"))
     TArray<TObjectPtr<USRStructureDataAsset>> AvailableStructureDataAssets;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly|Performance", meta = (DisplayName = "MaxStructurePlacementsPerFrame", ClampMin = "1"))
+    int32 MaxStructurePlacementsPerFrame;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly|Performance", meta = (DisplayName = "MaxQueuedStructurePlacements", ClampMin = "1"))
+    int32 MaxQueuedStructurePlacements;
+
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "SelectedStructureBuildId"))
     FName SelectedStructureBuildId;
 
@@ -138,7 +149,7 @@ protected:
     UPROPERTY(Transient)
     TObjectPtr<USRCelestialBodyRegistrySubsystem> BoundCelestialBodyRegistry;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "AssemblyComponent"))
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "AssemblyComponent"))
     TObjectPtr<USRAssemblyComponent> AssemblyComponent;
 
     UFUNCTION(BlueprintImplementableEvent, Category = "StarRovers|Selection")

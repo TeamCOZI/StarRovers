@@ -4,6 +4,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/SplineMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Conveyor/SRConveyorNetworkComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -180,6 +181,9 @@ ASRPlanet::ASRPlanet()
 
 	SurfaceGrid = CreateDefaultSubobject<USRPlanetSurfaceGrid>(TEXT("SurfaceGrid"));
 	SurfaceGrid->SetupAttachment(SceneRoot);
+
+	ConveyorNetwork = CreateDefaultSubobject<USRConveyorNetworkComponent>(TEXT("ConveyorNetwork"));
+	ConveyorNetwork->SetupAttachment(SceneRoot);
 }
 
 void ASRPlanet::Tick(float DeltaSeconds)
@@ -368,6 +372,11 @@ USROrbit* ASRPlanet::GetOrbit() const
 USRPlanetSurfaceGrid* ASRPlanet::GetSurfaceGrid() const
 {
 	return SurfaceGrid;
+}
+
+USRConveyorNetworkComponent* ASRPlanet::GetConveyorNetwork() const
+{
+	return ConveyorNetwork;
 }
 
 void ASRPlanet::SetCelestialBodyMesh(bool bUseDynamicMesh)

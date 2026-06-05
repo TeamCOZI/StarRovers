@@ -61,17 +61,25 @@ ASRPlayerController::ASRPlayerController()
 	OverviewWidgetZOrder = 1;
 	TimeControlWidgetZOrder = 2;
 	StructureSelectionWidgetZOrder = 3;
+	MaxStructurePlacementsPerFrame = 4;
+	MaxQueuedStructurePlacements = 256;
 	SelectedStructureBuildId = NAME_None;
 	bHasSelectedStructureBuildId = false;
 	SelectedStructureDataAsset = nullptr;
 	bPendingInitialPrimaryStarFocus = true;
 
 	AssemblyComponent = CreateDefaultSubobject<USRAssemblyComponent>(TEXT("AssemblyComponent"));
+	AssemblyComponent->ConfigurePlacementPerformance(MaxStructurePlacementsPerFrame, MaxQueuedStructurePlacements);
 }
 
 void ASRPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (AssemblyComponent)
+	{
+		AssemblyComponent->ConfigurePlacementPerformance(MaxStructurePlacementsPerFrame, MaxQueuedStructurePlacements);
+	}
 
 	FInputModeGameAndUI InputMode;
 	InputMode.SetHideCursorDuringCapture(false);
@@ -235,6 +243,46 @@ USRStructureDataAsset* ASRPlayerController::GetSelectedStructureDataAsset() cons
 	return SelectedStructureDataAsset;
 }
 
+bool ASRPlayerController::ShouldHandleAssemblyPlacementDrag() const
+{
+	return AssemblyComponent && AssemblyComponent->ShouldHandleStructurePlacementDrag();
+}
+
+bool ASRPlayerController::BeginAssemblyPlacementDrag()
+{
+	AActor* AssemblySelectedActor = nullptr;
+	if (!AssemblyComponent || !AssemblyComponent->BeginStructurePlacementDrag(AssemblySelectedActor))
+	{
+		return false;
+	}
+
+	UpdateSelection(AssemblySelectedActor);
+	return true;
+}
+
+bool ASRPlayerController::ContinueAssemblyPlacementDrag()
+{
+	AActor* AssemblySelectedActor = nullptr;
+	if (!AssemblyComponent || !AssemblyComponent->ContinueStructurePlacementDrag(AssemblySelectedActor))
+	{
+		return false;
+	}
+
+	if (IsValid(AssemblySelectedActor) && SelectedActor != AssemblySelectedActor)
+	{
+		UpdateSelection(AssemblySelectedActor);
+	}
+	return true;
+}
+
+void ASRPlayerController::EndAssemblyPlacementDrag()
+{
+	if (AssemblyComponent)
+	{
+		AssemblyComponent->EndStructurePlacementDrag();
+	}
+}
+
 USRCelestialBodyRegistrySubsystem* ASRPlayerController::GetCelestialBodyRegistry() const
 {
 	UWorld* World = GetWorld();
@@ -244,6 +292,11 @@ USRCelestialBodyRegistrySubsystem* ASRPlayerController::GetCelestialBodyRegistry
 void ASRPlayerController::HandleLeftClick()
 {
 	bPendingInitialPrimaryStarFocus = false;
+
+	if (BeginAssemblyPlacementDrag())
+	{
+		return;
+	}
 
 	AActor* AssemblySelectedActor = nullptr;
 	if (AssemblyComponent && AssemblyComponent->TryHandleAssemblyClick(AssemblySelectedActor))
@@ -545,7 +598,7 @@ void ASRPlayerController::RequestFocusActor(AActor* NewFocusedActor, bool bSnapI
 
 	if (IsValid(NewFocusedActor))
 	{
-		CameraPawn->FocusActor(NewFocusedActor);
+		CameraPawn->FocusActorWithTransition(NewFocusedActor, !bSnapImmediately);
 		if (bSnapImmediately)
 		{
 			CameraPawn->SnapToFocusTarget();

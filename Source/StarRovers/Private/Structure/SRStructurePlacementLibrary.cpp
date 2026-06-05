@@ -66,6 +66,11 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 	}
 
 	const FSRStructureData StructureData = StructureDataAsset->BuildData();
+	if (StructureData.BuildKind != ESRStructureBuildKind::Structure)
+	{
+		return false;
+	}
+
 	UClass* StructureActorClass = StructureData.StructureActorClass.Get();
 	if (!IsValid(StructureActorClass))
 	{

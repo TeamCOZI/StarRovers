@@ -8,6 +8,7 @@ class ULineBatchComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class USRPlanetSurfaceGrid;
+class USRConveyorNetworkComponent;
 class USROrbit;
 class USplineMeshComponent;
 class UStaticMesh;
@@ -27,6 +28,8 @@ public:
 	virtual FSRCelestialBodyData GetData() const override;
 	virtual USROrbit* GetOrbit() const override;
 	virtual USRPlanetSurfaceGrid* GetSurfaceGrid() const override;
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor")
+	USRConveyorNetworkComponent* GetConveyorNetwork() const;
 	virtual void SetCelestialBodyMesh(bool bUseDynamicMesh) override;
 	virtual void RefreshRotationAxisLineVisual() override;
 
@@ -42,6 +45,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SurfaceGrid"))
 	TObjectPtr<USRPlanetSurfaceGrid> SurfaceGrid;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "ConveyorNetwork"))
+	TObjectPtr<USRConveyorNetworkComponent> ConveyorNetwork;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "GridLineColor"))
 	FLinearColor GridLineColor;
