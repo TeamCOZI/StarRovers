@@ -4,9 +4,11 @@
 #include "Components/LineBatchComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
+#include "Conveyor/SRConveyorBeltActor.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Materials/MaterialInterface.h"
 #include "PCGComponent.h"
@@ -27,10 +29,10 @@ USRConveyorNetworkComponent::USRConveyorNetworkComponent()
 	BeltThickness = 80.0f;
 	BeltSurfaceOffset = 0.0f;
 	bBuildDynamicMeshVisuals = false;
-	bBuildPCGSplineInputs = true;
+	bBuildPCGSplineInputs = false;
 	PCGSplineComponentTag = TEXT("ConveyorVisualSpline");
 	PCGSplineHeightOffset = 0.0f;
-	bAutoGeneratePCG = true;
+	bAutoGeneratePCG = false;
 	bShowPathDebugLine = false;
 	PathDebugLineColor = FLinearColor(1.0f, 0.1f, 0.0f, 1.0f);
 	PathDebugLineThickness = 8.0f;
@@ -69,9 +71,7 @@ void USRConveyorNetworkComponent::PostEditChangeProperty(FPropertyChangedEvent& 
 	{
 		USRPlanetSurfaceGrid* SurfaceGrid = OwnerActor->FindComponentByClass<USRPlanetSurfaceGrid>();
 		RefreshConveyorVisuals(SurfaceGrid);
-		RefreshPCGSplineInputs(SurfaceGrid);
 		RefreshPathDebugLines(SurfaceGrid);
-		RequestPCGGeneration();
 	}
 }
 #endif
@@ -116,6 +116,14 @@ void USRConveyorNetworkComponent::ClearConveyors()
 
 	Segments.Reset();
 	VisualPaths.Reset();
+	for (ASRConveyorBeltActor* ConveyorActor : PlacedConveyorActors)
+	{
+		if (IsValid(ConveyorActor))
+		{
+			ConveyorActor->Destroy();
+		}
+	}
+	PlacedConveyorActors.Reset();
 	if (IsValid(BeltMeshComponent))
 	{
 		UE::Geometry::FDynamicMesh3 EmptyMesh;
@@ -129,7 +137,6 @@ void USRConveyorNetworkComponent::ClearConveyors()
 		PathDebugLineBatchComponent->Flush();
 	}
 	ClearUnusedPCGSplineComponents(0);
-	RequestPCGGeneration();
 }
 
 void USRConveyorNetworkComponent::SetPathDebugLineVisible(bool bNewPathDebugLineVisible)
@@ -313,32 +320,76 @@ bool USRConveyorNetworkComponent::TryPlaceConveyorPath(
 	VisualPath.StructureDataAsset = StructureDataAsset;
 	VisualPaths.Add(VisualPath);
 
+	ASRConveyorBeltActor* PlacedConveyorActor = nullptr;
+	auto RollbackConveyorPlacement = [&]()
+	{
+		for (const FSRPlanetSurfaceGridCellId& CellId : PathCellIds)
+		{
+			const FSRConveyorLaneKey LaneKey = MakeLaneKey(CellId, SafeLayer);
+			if (const FSRConveyorSegment* PreviousSegment = PreviousSegments.Find(LaneKey))
+			{
+				Segments.Add(LaneKey, *PreviousSegment);
+			}
+			else
+			{
+				Segments.Remove(LaneKey);
+			}
+		}
+		VisualPaths.SetNum(PreviousVisualPathCount);
+		if (IsValid(PlacedConveyorActor))
+		{
+			PlacedConveyorActor->Destroy();
+		}
+	};
+
+	AActor* SurfaceOwner = SurfaceGrid->GetOwner();
+	UWorld* World = SurfaceOwner ? SurfaceOwner->GetWorld() : nullptr;
+	const FSRStructureData StructureData = StructureDataAsset->BuildData();
+	UClass* ConveyorActorClass = StructureData.StructureActorClass.Get();
+	if (!IsValid(SurfaceOwner) || !World || !IsValid(ConveyorActorClass) || !ConveyorActorClass->IsChildOf(ASRConveyorBeltActor::StaticClass()))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Cannot place conveyor from '%s': StructureActorClass must be set to a subclass of ASRConveyorBeltActor."), *GetNameSafe(StructureDataAsset));
+		RollbackConveyorPlacement();
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = SurfaceOwner;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	PlacedConveyorActor = World->SpawnActor<ASRConveyorBeltActor>(ConveyorActorClass, SurfaceOwner->GetActorTransform(), SpawnParameters);
+	if (!IsValid(PlacedConveyorActor))
+	{
+		RollbackConveyorPlacement();
+		return false;
+	}
+
+	PlacedConveyorActor->SetOwner(SurfaceOwner);
+	PlacedConveyorActor->SetActorHiddenInGame(false);
+	if (!PlacedConveyorActor->AttachToActor(SurfaceOwner, FAttachmentTransformRules::KeepWorldTransform))
+	{
+		RollbackConveyorPlacement();
+		return false;
+	}
+
+	if (!PlacedConveyorActor->InitializeConveyorPath(SurfaceGrid, VisualPath, PCGSplineComponentTag, BeltSurfaceOffset + PCGSplineHeightOffset))
+	{
+		RollbackConveyorPlacement();
+		return false;
+	}
+
 	if (SafeLayer == 0)
 	{
 		TArray<FSRPlanetSurfaceGridCellId> OccupiedCellIds = PathCellIds;
 		if (!SurfaceGrid->SetCellsOccupied(OccupiedCellIds, true, NetworkId.IsNone() ? FName(TEXT("Conveyor")) : NetworkId))
 		{
-			for (const FSRPlanetSurfaceGridCellId& CellId : PathCellIds)
-			{
-				const FSRConveyorLaneKey LaneKey = MakeLaneKey(CellId, SafeLayer);
-				if (const FSRConveyorSegment* PreviousSegment = PreviousSegments.Find(LaneKey))
-				{
-					Segments.Add(LaneKey, *PreviousSegment);
-				}
-				else
-				{
-					Segments.Remove(LaneKey);
-				}
-			}
-			VisualPaths.SetNum(PreviousVisualPathCount);
+			RollbackConveyorPlacement();
 			return false;
 		}
 	}
 
+	PlacedConveyorActors.Add(PlacedConveyorActor);
 	RefreshConveyorVisuals(SurfaceGrid);
-	RefreshPCGSplineInputs(SurfaceGrid);
 	RefreshPathDebugLines(SurfaceGrid);
-	RequestPCGGeneration();
 	return true;
 }
 

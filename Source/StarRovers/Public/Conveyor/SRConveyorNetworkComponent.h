@@ -6,6 +6,7 @@
 #include "UObject/UnrealType.h"
 #include "SRConveyorNetworkComponent.generated.h"
 
+class ASRConveyorBeltActor;
 class UDynamicMeshComponent;
 class ULineBatchComponent;
 class UMaterialInterface;
@@ -112,6 +113,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<USplineComponent>> PCGSplineComponents;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<ASRConveyorBeltActor>> PlacedConveyorActors;
 
 private:
 	static FSRConveyorLaneKey MakeLaneKey(const FSRPlanetSurfaceGridCellId& CellId, int32 Layer);

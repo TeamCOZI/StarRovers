@@ -16,6 +16,7 @@ public class StarRovers : ModuleRules
                 "GeometryCore",
                 "GeometryFramework",
                 "InputCore",
+                "PCG",
                 "UMG",
             }
         );
@@ -23,7 +24,6 @@ public class StarRovers : ModuleRules
         PrivateDependencyModuleNames.AddRange(
             new[]
             {
-                "PCG",
                 "Slate",
                 "SlateCore",
             }
