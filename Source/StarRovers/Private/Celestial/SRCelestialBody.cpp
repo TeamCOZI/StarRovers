@@ -433,6 +433,63 @@ namespace
 		return BuildSourcePositionEdgeKey(HashSourcePosition(PositionA), HashSourcePosition(PositionB));
 	}
 
+	struct FSRTerrainVertexKey
+	{
+		int32 A = 0;
+		int32 B = 0;
+		int32 C = 0;
+		int32 D = 0;
+
+		bool operator==(const FSRTerrainVertexKey& Other) const
+		{
+			return A == Other.A && B == Other.B && C == Other.C && D == Other.D;
+		}
+	};
+
+	uint32 GetTypeHash(const FSRTerrainVertexKey& Key)
+	{
+		uint32 Hash = ::GetTypeHash(Key.A);
+		Hash = HashCombine(Hash, ::GetTypeHash(Key.B));
+		Hash = HashCombine(Hash, ::GetTypeHash(Key.C));
+		Hash = HashCombine(Hash, ::GetTypeHash(Key.D));
+		return Hash;
+	}
+
+	FSRTerrainVertexKey MakeTerrainVertexKey(const FVector& Position)
+	{
+		constexpr double PositionQuantizationScale = 100000.0;
+		FSRTerrainVertexKey Key;
+		Key.A = FMath::RoundToInt(Position.X * PositionQuantizationScale);
+		Key.B = FMath::RoundToInt(Position.Y * PositionQuantizationScale);
+		Key.C = FMath::RoundToInt(Position.Z * PositionQuantizationScale);
+		Key.D = 0;
+		return Key;
+	}
+
+	FSRTerrainVertexKey MakeTerrainVertexKey(uint32 SourcePositionHash, float HeightOffset)
+	{
+		constexpr float HeightQuantizationScale = 10000.0f;
+		FSRTerrainVertexKey Key;
+		Key.A = static_cast<int32>(SourcePositionHash);
+		Key.B = FMath::RoundToInt(HeightOffset * HeightQuantizationScale);
+		Key.C = 0;
+		Key.D = 1;
+		return Key;
+	}
+
+	int32 CountDynamicMeshBoundaryEdges(const UE::Geometry::FDynamicMesh3& Mesh)
+	{
+		int32 BoundaryEdgeCount = 0;
+		for (const int32 EdgeId : Mesh.EdgeIndicesItr())
+		{
+			if (Mesh.IsBoundaryEdge(EdgeId))
+			{
+				++BoundaryEdgeCount;
+			}
+		}
+		return BoundaryEdgeCount;
+	}
+
 	float ComputeRegularCubeFaceCellEdgeLength(float SourceRadius, int32 FaceResolution)
 	{
 		return (2.0f * FMath::Max(1.0f, SourceRadius)) / static_cast<float>(FMath::Max(1, FaceResolution));
@@ -2050,6 +2107,8 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				FaceDynamicMesh.Attributes()->EnablePrimaryColors();
 				FaceDynamicMesh.Attributes()->EnableMaterialID();
 			}
+			TMap<FSRTerrainVertexKey, int32> WeldedVertexIds;
+			WeldedVertexIds.Reserve(SourceQuads.Num() * 4);
 
 			struct FSRGeneratedTerrainEdge
 			{
@@ -2076,7 +2135,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				FSRPlanetSurfaceGridCellId CellId;
 			};
 
-			auto AppendFlatColoredQuad = [this, &FaceDynamicMeshes](
+			auto AppendFlatColoredQuad = [this, &FaceDynamicMeshes, &WeldedVertexIds](
 				int32 MeshComponentIndex,
 				const FVector& Point0,
 				const FVector& Point1,
@@ -2084,10 +2143,13 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				const FVector& Point3,
 				const FLinearColor& SurfaceColor,
 				const int32 MaterialId,
-				bool bDoubleSided = false)
+				bool bDoubleSided = false,
+				const FSRTerrainVertexKey* VertexKeys = nullptr,
+				const FVector* NormalReferenceDirectionOverride = nullptr)
 			{
 				FSRCelestialBodyDynamicMeshQuadRenderData RenderData;
-				MeshComponentIndex = FMath::Clamp(MeshComponentIndex, 0, FaceDynamicMeshes.Num() - 1);
+				// A single welded render mesh avoids light leaks between independently generated quad cells.
+				MeshComponentIndex = 0;
 				UE::Geometry::FDynamicMesh3& TargetDynamicMesh = FaceDynamicMeshes[MeshComponentIndex];
 				UE::Geometry::FDynamicMeshNormalOverlay* NormalOverlay = TargetDynamicMesh.Attributes()->PrimaryNormals();
 				auto* ColorOverlay = TargetDynamicMesh.Attributes()->PrimaryColors();
@@ -2098,12 +2160,26 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				}
 
 				FVector QuadPoints[4] = { Point0, Point1, Point2, Point3 };
+				FSRTerrainVertexKey ResolvedVertexKeys[4];
+				if (VertexKeys)
+				{
+					for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
+					{
+						ResolvedVertexKeys[CornerIndex] = VertexKeys[CornerIndex];
+					}
+				}
 				const FVector QuadCenter = (Point0 + Point1 + Point2 + Point3) * 0.25f;
-				const FVector OutwardDirection = QuadCenter.GetSafeNormal();
+				const FVector OutwardDirection = NormalReferenceDirectionOverride
+					? NormalReferenceDirectionOverride->GetSafeNormal()
+					: QuadCenter.GetSafeNormal();
 				FVector QuadNormal = FVector::CrossProduct(QuadPoints[1] - QuadPoints[0], QuadPoints[2] - QuadPoints[0]).GetSafeNormal();
 				if (!OutwardDirection.IsNearlyZero() && FVector::DotProduct(QuadNormal, OutwardDirection) < 0.0f)
 				{
 					Swap(QuadPoints[1], QuadPoints[3]);
+					if (VertexKeys)
+					{
+						Swap(ResolvedVertexKeys[1], ResolvedVertexKeys[3]);
+					}
 					QuadNormal *= -1.0f;
 				}
 				if (QuadNormal.IsNearlyZero())
@@ -2111,10 +2187,23 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					QuadNormal = OutwardDirection.IsNearlyZero() ? FVector::UpVector : OutwardDirection;
 				}
 
-				const int32 Vertex0 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[0]));
-				const int32 Vertex1 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[1]));
-				const int32 Vertex2 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[2]));
-				const int32 Vertex3 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[3]));
+				auto FindOrAppendVertex = [&TargetDynamicMesh, &WeldedVertexIds](const FVector& Position, const FSRTerrainVertexKey* VertexKey)
+				{
+					const FSRTerrainVertexKey ResolvedVertexKey = VertexKey ? *VertexKey : MakeTerrainVertexKey(Position);
+					if (const int32* ExistingVertexId = WeldedVertexIds.Find(ResolvedVertexKey))
+					{
+						return *ExistingVertexId;
+					}
+
+					const int32 NewVertexId = TargetDynamicMesh.AppendVertex(FVector3d(Position));
+					WeldedVertexIds.Add(ResolvedVertexKey, NewVertexId);
+					return NewVertexId;
+				};
+
+				const int32 Vertex0 = FindOrAppendVertex(QuadPoints[0], VertexKeys ? &ResolvedVertexKeys[0] : nullptr);
+				const int32 Vertex1 = FindOrAppendVertex(QuadPoints[1], VertexKeys ? &ResolvedVertexKeys[1] : nullptr);
+				const int32 Vertex2 = FindOrAppendVertex(QuadPoints[2], VertexKeys ? &ResolvedVertexKeys[2] : nullptr);
+				const int32 Vertex3 = FindOrAppendVertex(QuadPoints[3], VertexKeys ? &ResolvedVertexKeys[3] : nullptr);
 
 				const int32 Normal0 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
 				const int32 Normal1 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
@@ -2165,11 +2254,6 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 				if (bDoubleSided)
 				{
-					const int32 BackVertex0 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[0]));
-					const int32 BackVertex1 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[1]));
-					const int32 BackVertex2 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[2]));
-					const int32 BackVertex3 = TargetDynamicMesh.AppendVertex(FVector3d(QuadPoints[3]));
-
 					const FVector BackNormal = -QuadNormal;
 					const int32 BackNormal0 = NormalOverlay->AppendElement(FVector3f(BackNormal));
 					const int32 BackNormal1 = NormalOverlay->AppendElement(FVector3f(BackNormal));
@@ -2184,8 +2268,8 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					TrackColorElement(BackColor2);
 					TrackColorElement(BackColor3);
 
-					const int32 BackTriangle0 = TargetDynamicMesh.AppendTriangle(BackVertex0, BackVertex1, BackVertex2);
-					const int32 BackTriangle1 = TargetDynamicMesh.AppendTriangle(BackVertex0, BackVertex2, BackVertex3);
+					const int32 BackTriangle0 = TargetDynamicMesh.AppendTriangle(Vertex0, Vertex1, Vertex2);
+					const int32 BackTriangle1 = TargetDynamicMesh.AppendTriangle(Vertex0, Vertex2, Vertex3);
 					if (BackTriangle0 >= 0)
 					{
 						NormalOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(BackNormal0, BackNormal1, BackNormal2));
@@ -2396,7 +2480,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 							OrderedPointA,
 							WallColor,
 							ExistingEdge->MaterialId != 0 ? ExistingEdge->MaterialId : MaterialId,
-							true);
+							false);
 						AddCachedSideWallOutline(
 							ExistingEdge->CellId,
 							CellId,
@@ -2610,11 +2694,16 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 				const int32 MaterialId = BiomeMaterialSlotIndexById.FindRef(TerrainSample.BiomeId);
 				const int32 CellMeshComponentIndex = GetCubeSphereFaceComponentIndex(CellId.Face);
+				FSRTerrainVertexKey SurfaceVertexKeys[4];
+				for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
+				{
+					SurfaceVertexKeys[CornerIndex] = MakeTerrainVertexKey(SourcePositionHashes[CornerIndex], TerrainSample.HeightOffset);
+				}
 				double LocalBuildFacePrepareMs = SRCelestialElapsedMilliseconds(SubStageStart);
 
 				SubStageStart = SRCelestialNowSeconds();
 				const FSRCelestialBodyDynamicMeshQuadRenderData SurfaceRenderData =
-					AppendFlatColoredQuad(CellMeshComponentIndex, TargetPositions[0], TargetPositions[1], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor, MaterialId);
+					AppendFlatColoredQuad(CellMeshComponentIndex, TargetPositions[0], TargetPositions[1], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor, MaterialId, false, SurfaceVertexKeys);
 				FSRCelestialBodyDynamicMeshCellColorData& CellColorData = DynamicMeshColorDataByCell.FindOrAdd(CellId);
 				CellColorData.SurfaceColorElements.Append(SurfaceRenderData.ColorElements);
 				double LocalBuildFaceSurfaceMeshMs = SRCelestialElapsedMilliseconds(SubStageStart);
@@ -2788,6 +2877,22 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					const bool bSecondCellIsHigher = EdgeHeightB > EdgeHeightA + KINDA_SMALL_NUMBER;
 					const FSRGeneratedQuadRuntimeData& HigherQuad = bSecondCellIsHigher ? QuadB : QuadA;
 					const int32 SideMeshComponentIndex = GetCubeSphereFaceComponentIndex(HigherQuad.CellId.Face);
+					const FVector QuadACenter = (QuadA.TargetPositions[0] + QuadA.TargetPositions[1] + QuadA.TargetPositions[2] + QuadA.TargetPositions[3]) * 0.25f;
+					const FVector QuadBCenter = (QuadB.TargetPositions[0] + QuadB.TargetPositions[1] + QuadB.TargetPositions[2] + QuadB.TargetPositions[3]) * 0.25f;
+					FVector WallNormalReferenceDirection = bFirstCellIsHigher
+						? (QuadBCenter - QuadACenter)
+						: (QuadACenter - QuadBCenter);
+					if (WallNormalReferenceDirection.IsNearlyZero())
+					{
+						WallNormalReferenceDirection = bSecondCellIsHigher ? QuadBCenter.GetSafeNormal() : QuadACenter.GetSafeNormal();
+					}
+					const FSRTerrainVertexKey WallVertexKeys[4] =
+					{
+						MakeTerrainVertexKey(QuadA.SourcePositionHashes[A0Index], QuadA.HeightOffset),
+						MakeTerrainVertexKey(QuadA.SourcePositionHashes[A1Index], QuadA.HeightOffset),
+						MakeTerrainVertexKey(QuadB.SourcePositionHashes[B1Index], QuadB.HeightOffset),
+						MakeTerrainVertexKey(QuadB.SourcePositionHashes[B0Index], QuadB.HeightOffset),
+					};
 					const FSRCelestialBodyDynamicMeshQuadRenderData SideRenderData = AppendFlatColoredQuad(
 						SideMeshComponentIndex,
 						PointA0,
@@ -2796,7 +2901,9 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 						PointB0,
 						WallColor,
 						HigherQuad.MaterialId != 0 ? HigherQuad.MaterialId : QuadA.MaterialId,
-						true);
+						false,
+						WallVertexKeys,
+						&WallNormalReferenceDirection);
 
 					AddCachedSideWallOutline(QuadA.CellId, QuadB.CellId, true, PointA0, PointA1, PointB1, PointB0);
 					AddCachedSideWallOutline(QuadB.CellId, QuadA.CellId, true, PointA0, PointA1, PointB1, PointB0);
@@ -2899,6 +3006,17 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				}
 
 				const FLinearColor WallColor = PendingEdge.SurfaceColor * 0.78f;
+				const uint32 SourceHashA = HashSourcePosition(PendingEdge.SourcePointA);
+				const uint32 SourceHashB = HashSourcePosition(PendingEdge.SourcePointB);
+				const float HeightOffsetA = PendingEdge.PointA.Length() - PendingEdge.SourcePointA.Length();
+				const float HeightOffsetB = PendingEdge.PointB.Length() - PendingEdge.SourcePointB.Length();
+				const FSRTerrainVertexKey BoundaryWallVertexKeys[4] =
+				{
+					MakeTerrainVertexKey(SourceHashA, HeightOffsetA),
+					MakeTerrainVertexKey(SourceHashB, HeightOffsetB),
+					MakeTerrainVertexKey(SourceHashB, 0.0f),
+					MakeTerrainVertexKey(SourceHashA, 0.0f),
+				};
 				const FSRCelestialBodyDynamicMeshQuadRenderData SideRenderData = AppendFlatColoredQuad(
 					GetCubeSphereFaceComponentIndex(PendingEdge.CellId.Face),
 					PendingEdge.PointA,
@@ -2907,7 +3025,8 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					PendingEdge.SourcePointA,
 					WallColor,
 					PendingEdge.MaterialId,
-					true);
+					false,
+					BoundaryWallVertexKeys);
 				AddCachedSideWallOutline(
 					PendingEdge.CellId,
 					FSRPlanetSurfaceGridCellId(),
@@ -2936,6 +3055,35 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				}
 			}
 			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' BuildBoundaryWalls %.2f ms"), *GetName(), SRCelestialElapsedMilliseconds(StageStart)));
+
+			int32 WeldedBoundaryEdgeCount = 0;
+			int32 NonEmptyDynamicMeshCount = 0;
+			for (const UE::Geometry::FDynamicMesh3& FaceDynamicMesh : FaceDynamicMeshes)
+			{
+				if (FaceDynamicMesh.TriangleCount() <= 0)
+				{
+					continue;
+				}
+
+				++NonEmptyDynamicMeshCount;
+				WeldedBoundaryEdgeCount += CountDynamicMeshBoundaryEdges(FaceDynamicMesh);
+			}
+			if (WeldedBoundaryEdgeCount > 0)
+			{
+				UE_LOG(
+					LogStarRoversCelestial,
+					Warning,
+					TEXT("Dynamic mesh '%s' generated with %d open boundary edges after welding."),
+					*GetName(),
+					WeldedBoundaryEdgeCount);
+			}
+			FSRTimingLog::AddLine(FString::Printf(
+				TEXT("DynamicMesh '%s' WeldedMeshCheck BoundaryEdges=%d Meshes=%d Vertices=%d Triangles=%d"),
+				*GetName(),
+				WeldedBoundaryEdgeCount,
+				NonEmptyDynamicMeshCount,
+				FaceDynamicMeshes[0].VertexCount(),
+				FaceDynamicMeshes[0].TriangleCount()));
 
 			double RuntimeCacheStoreMs = 0.0;
 			if (bEnableGlobalDynamicMeshRuntimeCache)

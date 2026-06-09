@@ -13,10 +13,21 @@
 #include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Structure/SRStructurePlacementLibrary.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
+#include "Utility/SRTimingLog.h"
 
 namespace
 {
 	constexpr uint64 StructureGhostPlacementDebugMessageKey = 0x535247686F73744FULL;
+
+	double SRAssemblyNowSeconds()
+	{
+		return FPlatformTime::Seconds();
+	}
+
+	double SRAssemblyElapsedMilliseconds(double StartSeconds)
+	{
+		return (FPlatformTime::Seconds() - StartSeconds) * 1000.0;
+	}
 
 	void AppendGridLineCellIds(
 		const FSRPlanetSurfaceGridCellId& StartCellId,
@@ -398,37 +409,76 @@ bool USRAssemblyComponent::TryProjectCursorToSurfaceCell(USRPlanetSurfaceGrid* S
 {
 	OutCell = FSRPlanetSurfaceGridCell();
 	OutHitLocation = FVector::ZeroVector;
+	const double TotalStart = SRAssemblyNowSeconds();
 
 	if (!IsValid(SurfaceGrid))
 	{
 		return false;
 	}
 
+	double StageStart = SRAssemblyNowSeconds();
 	if (AActor* OwnerActor = SurfaceGrid->GetOwner())
 	{
 		OwnerActor->UpdateComponentTransforms();
 	}
 	SurfaceGrid->UpdateComponentToWorld();
+	const double TransformMs = SRAssemblyElapsedMilliseconds(StageStart);
 
 	FVector RayOrigin = FVector::ZeroVector;
 	FVector RayDirection = FVector::ZeroVector;
+	StageStart = SRAssemblyNowSeconds();
 	if (!GetCursorRay(RayOrigin, RayDirection))
 	{
+		const double CursorRayMs = SRAssemblyElapsedMilliseconds(StageStart);
+		FSRTimingLog::AddLine(FString::Printf(
+			TEXT("Assembly.ProjectCursorToSurfaceCell Body=%s Total=%.3fms Hit=false Transform=%.3fms CursorRay=%.3fms Raycast=0.000ms Reason=NoCursorRay"),
+			*GetNameSafe(SurfaceGrid->GetOwner()),
+			SRAssemblyElapsedMilliseconds(TotalStart),
+			TransformMs,
+			CursorRayMs));
 		return false;
 	}
+	const double CursorRayMs = SRAssemblyElapsedMilliseconds(StageStart);
 
-	return SurfaceGrid->RaycastCell(RayOrigin, RayDirection, OutCell, OutHitLocation);
+	StageStart = SRAssemblyNowSeconds();
+	const bool bHit = SurfaceGrid->RaycastCell(RayOrigin, RayDirection, OutCell, OutHitLocation);
+	const double RaycastMs = SRAssemblyElapsedMilliseconds(StageStart);
+	const double TotalMs = SRAssemblyElapsedMilliseconds(TotalStart);
+
+	static uint64 ProjectSampleCounter = 0;
+	++ProjectSampleCounter;
+	constexpr uint64 SampleInterval = 60;
+	constexpr double SlowThresholdMs = 0.25;
+	if (TotalMs >= SlowThresholdMs || (ProjectSampleCounter % SampleInterval) == 0)
+	{
+		FSRTimingLog::AddLine(FString::Printf(
+			TEXT("Assembly.ProjectCursorToSurfaceCell Body=%s Total=%.3fms Hit=%s Transform=%.3fms CursorRay=%.3fms Raycast=%.3fms Cell=(%d,%d,%d)"),
+			*GetNameSafe(SurfaceGrid->GetOwner()),
+			TotalMs,
+			bHit ? TEXT("true") : TEXT("false"),
+			TransformMs,
+			CursorRayMs,
+			RaycastMs,
+			static_cast<int32>(OutCell.CellId.Face),
+			OutCell.CellId.CellX,
+			OutCell.CellId.CellY));
+	}
+
+	return bHit;
 }
 
 void USRAssemblyComponent::UpdateSurfaceHover()
 {
+	const double TotalStart = SRAssemblyNowSeconds();
 	if (!bAssemblyModeActive)
 	{
 		ClearSurfaceHover();
 		return;
 	}
 
+	double StageStart = SRAssemblyNowSeconds();
 	ASRPlayerController* PlayerController = GetOwnerController();
+	const double ControllerMs = SRAssemblyElapsedMilliseconds(StageStart);
 	if (!PlayerController)
 	{
 		ClearSurfaceHover();
@@ -437,14 +487,18 @@ void USRAssemblyComponent::UpdateSurfaceHover()
 
 	AActor* FocusedActor = nullptr;
 	USRPlanetSurfaceGrid* SurfaceGrid = nullptr;
+	StageStart = SRAssemblyNowSeconds();
 	if (!TryGetFocusedSurfaceGrid(FocusedActor, SurfaceGrid))
 	{
 		ClearSurfaceHover();
 		return;
 	}
+	const double FocusedGridMs = SRAssemblyElapsedMilliseconds(StageStart);
 
 	FVector2D CurrentMousePosition = FVector2D::ZeroVector;
+	StageStart = SRAssemblyNowSeconds();
 	const bool bHasMousePosition = PlayerController->GetMousePosition(CurrentMousePosition.X, CurrentMousePosition.Y);
+	const double MouseMs = SRAssemblyElapsedMilliseconds(StageStart);
 	if (bHasMousePosition
 		&& bHasLastHoveredSampleMousePosition
 		&& LastHoveredSampleSurfaceGrid == SurfaceGrid
@@ -457,25 +511,76 @@ void USRAssemblyComponent::UpdateSurfaceHover()
 
 	FSRPlanetSurfaceGridCell HoveredCell;
 	FVector HoverHitLocation = FVector::ZeroVector;
+	StageStart = SRAssemblyNowSeconds();
 	if (!TryProjectCursorToSurfaceCell(SurfaceGrid, HoveredCell, HoverHitLocation))
 	{
+		const double ProjectMs = SRAssemblyElapsedMilliseconds(StageStart);
+		const double ClearStart = SRAssemblyNowSeconds();
 		ClearSurfaceHover();
+		const double ClearMs = SRAssemblyElapsedMilliseconds(ClearStart);
+		const double TotalMs = SRAssemblyElapsedMilliseconds(TotalStart);
+		if (TotalMs >= 0.25)
+		{
+			FSRTimingLog::AddLine(FString::Printf(
+				TEXT("Assembly.UpdateSurfaceHover Body=%s Total=%.3fms Hit=false Controller=%.3fms Focus=%.3fms Mouse=%.3fms Project=%.3fms Clear=%.3fms"),
+				*GetNameSafe(SurfaceGrid ? SurfaceGrid->GetOwner() : nullptr),
+				TotalMs,
+				ControllerMs,
+				FocusedGridMs,
+				MouseMs,
+				ProjectMs,
+				ClearMs));
+		}
 		return;
 	}
+	const double ProjectMs = SRAssemblyElapsedMilliseconds(StageStart);
 
+	StageStart = SRAssemblyNowSeconds();
 	if (HoveredSurfaceGrid && HoveredSurfaceGrid != SurfaceGrid)
 	{
 		HoveredSurfaceGrid->ClearHoveredCell();
 	}
+	const double ClearPreviousMs = SRAssemblyElapsedMilliseconds(StageStart);
 
 	HoveredSurfaceGrid = SurfaceGrid;
-	HoveredSurfaceGrid->SetHoveredCell(HoveredCell.CellId);
+	StageStart = SRAssemblyNowSeconds();
+	const bool bSetHovered = HoveredSurfaceGrid->SetHoveredCell(HoveredCell.CellId);
+	const double SetHoveredMs = SRAssemblyElapsedMilliseconds(StageStart);
+	StageStart = SRAssemblyNowSeconds();
 	PublishHoveredCellInfo(SurfaceGrid, HoveredCell);
+	const double PublishMs = SRAssemblyElapsedMilliseconds(StageStart);
+	StageStart = SRAssemblyNowSeconds();
 	if (bHasMousePosition)
 	{
 		LastHoveredSampleSurfaceGrid = SurfaceGrid;
 		LastHoveredSampleMousePosition = CurrentMousePosition;
 		bHasLastHoveredSampleMousePosition = true;
+	}
+	const double CacheStoreMs = SRAssemblyElapsedMilliseconds(StageStart);
+	const double TotalMs = SRAssemblyElapsedMilliseconds(TotalStart);
+
+	static uint64 HoverSampleCounter = 0;
+	++HoverSampleCounter;
+	constexpr uint64 SampleInterval = 60;
+	constexpr double SlowThresholdMs = 0.25;
+	if (TotalMs >= SlowThresholdMs || (HoverSampleCounter % SampleInterval) == 0)
+	{
+		FSRTimingLog::AddLine(FString::Printf(
+			TEXT("Assembly.UpdateSurfaceHover Body=%s Total=%.3fms Hit=true SetHovered=%s Controller=%.3fms Focus=%.3fms Mouse=%.3fms Project=%.3fms ClearPrev=%.3fms SetHoveredMs=%.3fms Publish=%.3fms Cache=%.3fms Cell=(%d,%d,%d)"),
+			*GetNameSafe(SurfaceGrid->GetOwner()),
+			TotalMs,
+			bSetHovered ? TEXT("true") : TEXT("false"),
+			ControllerMs,
+			FocusedGridMs,
+			MouseMs,
+			ProjectMs,
+			ClearPreviousMs,
+			SetHoveredMs,
+			PublishMs,
+			CacheStoreMs,
+			static_cast<int32>(HoveredCell.CellId.Face),
+			HoveredCell.CellId.CellX,
+			HoveredCell.CellId.CellY));
 	}
 }
 

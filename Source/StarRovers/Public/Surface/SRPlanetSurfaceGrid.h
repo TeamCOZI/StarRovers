@@ -232,6 +232,15 @@ protected:
     bool bHasBatchedInteractionHighlightRefresh;
 
 private:
+    struct FSRSurfaceGridRaycastBucket
+    {
+        ESRCubeSphereFace Face = ESRCubeSphereFace::PositiveX;
+        int32 BucketX = 0;
+        int32 BucketY = 0;
+        FBox LocalBounds = FBox(ForceInit);
+        TArray<int32> CellIndices;
+    };
+
     bool RebuildCellsFromOwnerStaticMeshQuads();
     void EnsureInteractionOverlay();
     void RequestInteractionHighlightRefresh();
@@ -262,6 +271,7 @@ private:
 
     TMap<FSRPlanetSurfaceGridCellId, int32> CellIndexById;
     TMap<FSRPlanetSurfaceGridCellId, FSRPlanetSurfaceGridCellInfo> CellInfoById;
+    TArray<FSRSurfaceGridRaycastBucket> RaycastBuckets;
 
     UPROPERTY(Transient)
     TObjectPtr<UDynamicMeshComponent> InteractionOverlayMesh;

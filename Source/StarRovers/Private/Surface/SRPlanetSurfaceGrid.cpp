@@ -843,6 +843,107 @@ namespace
 		return Addresses;
 	}
 
+	bool IntersectRayTriangle(
+		const FVector& RayOrigin,
+		const FVector& RayDirection,
+		const FVector& TriangleA,
+		const FVector& TriangleB,
+		const FVector& TriangleC,
+		float& OutHitDistance)
+	{
+		OutHitDistance = 0.0f;
+
+		const FVector Edge1 = TriangleB - TriangleA;
+		const FVector Edge2 = TriangleC - TriangleA;
+		const FVector P = FVector::CrossProduct(RayDirection, Edge2);
+		const float Determinant = FVector::DotProduct(Edge1, P);
+		if (FMath::Abs(Determinant) <= UE_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		const float InvDeterminant = 1.0f / Determinant;
+		const FVector T = RayOrigin - TriangleA;
+		const float U = FVector::DotProduct(T, P) * InvDeterminant;
+		if (U < 0.0f || U > 1.0f)
+		{
+			return false;
+		}
+
+		const FVector Q = FVector::CrossProduct(T, Edge1);
+		const float V = FVector::DotProduct(RayDirection, Q) * InvDeterminant;
+		if (V < 0.0f || U + V > 1.0f)
+		{
+			return false;
+		}
+
+		const float HitDistance = FVector::DotProduct(Edge2, Q) * InvDeterminant;
+		if (HitDistance < 0.0f)
+		{
+			return false;
+		}
+
+		OutHitDistance = HitDistance;
+		return true;
+	}
+
+	bool IntersectRayBox(const FVector& RayOrigin, const FVector& RayDirection, const FBox& Box, float& OutHitDistance)
+	{
+		OutHitDistance = 0.0f;
+		if (!Box.IsValid)
+		{
+			return false;
+		}
+
+		float MinDistance = 0.0f;
+		float MaxDistance = BIG_NUMBER;
+
+		auto ClipAxis = [&MinDistance, &MaxDistance](float Origin, float Direction, float MinValue, float MaxValue)
+		{
+			if (FMath::Abs(Direction) <= UE_SMALL_NUMBER)
+			{
+				return Origin >= MinValue && Origin <= MaxValue;
+			}
+
+			float Distance0 = (MinValue - Origin) / Direction;
+			float Distance1 = (MaxValue - Origin) / Direction;
+			if (Distance0 > Distance1)
+			{
+				Swap(Distance0, Distance1);
+			}
+
+			MinDistance = FMath::Max(MinDistance, Distance0);
+			MaxDistance = FMath::Min(MaxDistance, Distance1);
+			return MinDistance <= MaxDistance;
+		};
+
+		if (!ClipAxis(RayOrigin.X, RayDirection.X, Box.Min.X, Box.Max.X)
+			|| !ClipAxis(RayOrigin.Y, RayDirection.Y, Box.Min.Y, Box.Max.Y)
+			|| !ClipAxis(RayOrigin.Z, RayDirection.Z, Box.Min.Z, Box.Max.Z)
+			|| MaxDistance < 0.0f)
+		{
+			return false;
+		}
+
+		OutHitDistance = FMath::Max(0.0f, MinDistance);
+		return true;
+	}
+
+	struct FSRSurfaceGridRaycastStats
+	{
+		int32 BucketTests = 0;
+		int32 BucketHits = 0;
+		int32 BucketSkippedByBestHit = 0;
+		int32 CellTests = 0;
+		int32 DuplicateCellSkips = 0;
+		int32 TopTriangleTests = 0;
+		int32 SideTriangleTests = 0;
+		int32 TriangleHits = 0;
+		int32 BestHitUpdates = 0;
+	};
+
+	constexpr int32 SurfaceGridRaycastBucketResolution = 16;
+
 }
 
 USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
@@ -1199,20 +1300,149 @@ bool USRPlanetSurfaceGrid::ProjectWorldLocationToCell(const FVector& WorldLocati
 bool USRPlanetSurfaceGrid::RaycastCell(const FVector& RayOrigin, const FVector& RayDirection, FSRPlanetSurfaceGridCell& OutCell, FVector& OutHitLocation) const
 {
 	OutHitLocation = FVector::ZeroVector;
+	const double RaycastStartSeconds = SRSurfaceGridNowSeconds();
+	FSRSurfaceGridRaycastStats RaycastStats;
+	auto LogRaycastStats = [this, RaycastStartSeconds, &RaycastStats](bool bHit, bool bRecoveredPath, float BestHitDistance)
+	{
+		static uint64 RaycastSampleCounter = 0;
+		++RaycastSampleCounter;
+
+		const double ElapsedMs = SRSurfaceGridElapsedMilliseconds(RaycastStartSeconds);
+		constexpr uint64 SampleInterval = 60;
+		constexpr double SlowRaycastThresholdMs = 0.25;
+		if (ElapsedMs < SlowRaycastThresholdMs && (RaycastSampleCounter % SampleInterval) != 0)
+		{
+			return;
+		}
+
+		FSRTimingLog::AddLine(FString::Printf(
+			TEXT("SurfaceGrid.RaycastCell Body=%s Total=%.3fms Hit=%s Recovered=%s Buckets=%d/%d SkipBuckets=%d Cells=%d DupSkips=%d TopTris=%d SideTris=%d TriHits=%d BestUpdates=%d BestDist=%.2f"),
+			*GetNameSafe(GetOwner()),
+			ElapsedMs,
+			bHit ? TEXT("true") : TEXT("false"),
+			bRecoveredPath ? TEXT("true") : TEXT("false"),
+			RaycastStats.BucketHits,
+			RaycastStats.BucketTests,
+			RaycastStats.BucketSkippedByBestHit,
+			RaycastStats.CellTests,
+			RaycastStats.DuplicateCellSkips,
+			RaycastStats.TopTriangleTests,
+			RaycastStats.SideTriangleTests,
+			RaycastStats.TriangleHits,
+			RaycastStats.BestHitUpdates,
+			BestHitDistance));
+	};
+
+	if (bUsingRecoveredQuadCells && !Cells.IsEmpty())
+	{
+		const FTransform ComponentTransform = GetComponentTransform();
+		const FVector LocalRayOrigin = ComponentTransform.InverseTransformPosition(RayOrigin);
+		const FVector LocalRayDirection = ComponentTransform.InverseTransformVectorNoScale(RayDirection).GetSafeNormal();
+		if (!LocalRayDirection.IsNearlyZero())
+		{
+			float BestHitDistance = BIG_NUMBER;
+			int32 BestCellIndex = INDEX_NONE;
+
+			auto ConsiderCell = [this, &LocalRayOrigin, &LocalRayDirection, &BestHitDistance, &BestCellIndex, &RaycastStats](int32 CellIndex)
+			{
+				if (!Cells.IsValidIndex(CellIndex))
+				{
+					return;
+				}
+
+				++RaycastStats.CellTests;
+
+				auto ConsiderTriangleHit = [&LocalRayOrigin, &LocalRayDirection, &BestHitDistance, &BestCellIndex, &RaycastStats, CellIndex](
+					const FVector& Point0,
+					const FVector& Point1,
+					const FVector& Point2,
+					bool bSideTriangle)
+				{
+					if (bSideTriangle)
+					{
+						++RaycastStats.SideTriangleTests;
+					}
+					else
+					{
+						++RaycastStats.TopTriangleTests;
+					}
+
+					float HitDistance = 0.0f;
+					if (!IntersectRayTriangle(LocalRayOrigin, LocalRayDirection, Point0, Point1, Point2, HitDistance))
+					{
+						return;
+					}
+
+					++RaycastStats.TriangleHits;
+					if (HitDistance < BestHitDistance)
+					{
+						BestHitDistance = HitDistance;
+						BestCellIndex = CellIndex;
+						++RaycastStats.BestHitUpdates;
+					}
+				};
+
+				const FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
+				ConsiderTriangleHit(Cell.Corner00, Cell.Corner10, Cell.Corner11, false);
+				ConsiderTriangleHit(Cell.Corner00, Cell.Corner11, Cell.Corner01, false);
+				for (const FSRPlanetSurfaceGridSideFace& SideFace : Cell.SideFaces)
+				{
+					ConsiderTriangleHit(SideFace.LocalPoint0, SideFace.LocalPoint1, SideFace.LocalPoint2, true);
+					ConsiderTriangleHit(SideFace.LocalPoint0, SideFace.LocalPoint2, SideFace.LocalPoint3, true);
+				}
+			};
+
+			for (const FSRSurfaceGridRaycastBucket& Bucket : RaycastBuckets)
+			{
+				++RaycastStats.BucketTests;
+				float BucketHitDistance = 0.0f;
+				if (!IntersectRayBox(LocalRayOrigin, LocalRayDirection, Bucket.LocalBounds, BucketHitDistance))
+				{
+					continue;
+				}
+				++RaycastStats.BucketHits;
+				if (BucketHitDistance > BestHitDistance)
+				{
+					++RaycastStats.BucketSkippedByBestHit;
+					continue;
+				}
+
+				for (const int32 CellIndex : Bucket.CellIndices)
+				{
+					ConsiderCell(CellIndex);
+				}
+			}
+
+			if (Cells.IsValidIndex(BestCellIndex))
+			{
+				OutCell = Cells[BestCellIndex];
+				OutHitLocation = ComponentTransform.TransformPosition(LocalRayOrigin + (LocalRayDirection * BestHitDistance));
+				LogRaycastStats(true, true, BestHitDistance);
+				return true;
+			}
+
+			LogRaycastStats(false, true, BestHitDistance);
+			return false;
+		}
+	}
+
 	if (!IntersectRayWithSurfaceSphere(RayOrigin, RayDirection, OutHitLocation))
 	{
 		OutCell = FSRPlanetSurfaceGridCell();
+		LogRaycastStats(false, false, BIG_NUMBER);
 		return false;
 	}
 
 	if (!ProjectWorldLocationToCell(OutHitLocation, OutCell))
 	{
+		LogRaycastStats(false, false, BIG_NUMBER);
 		return false;
 	}
 
 	OutHitLocation = bUsingRecoveredQuadCells
 		? GetComponentTransform().TransformPosition(OutCell.LocalCenter)
 		: ResolveWorldSurfacePoint(OutCell.LocalNormal, 0.0f);
+	LogRaycastStats(true, false, 0.0f);
 	return true;
 }
 
@@ -1377,6 +1607,89 @@ bool USRPlanetSurfaceGrid::GetInteractionGridPatchCellIds(
 	}
 
 	constexpr int32 PatchRadius = 2;
+	if (bUsingRecoveredQuadCells)
+	{
+		TSet<FSRPlanetSurfaceGridCellId> PatchCellIds;
+		PatchCellIds.Reserve((PatchRadius * 2 + 1) * (PatchRadius * 2 + 1));
+		OutCellIds.Reserve((PatchRadius * 2 + 1) * (PatchRadius * 2 + 1));
+
+		auto AddPatchCellId = [this, &PatchCellIds, &OutCellIds](const FSRPlanetSurfaceGridCellId& PatchCellId)
+		{
+			FSRPlanetSurfaceGridCell PatchCell;
+			if (!GetCellById(PatchCellId, PatchCell) || PatchCellIds.Contains(PatchCellId))
+			{
+				return;
+			}
+
+			PatchCellIds.Add(PatchCellId);
+			OutCellIds.Add(PatchCellId);
+		};
+
+		auto TryStepNeighbor = [this](const FSRPlanetSurfaceGridCellId& FromCellId, bool bStepU, int32 StepSign, FSRPlanetSurfaceGridCellId& OutCellId)
+		{
+			FSRPlanetSurfaceGridCell FromCell;
+			if (!GetCellById(FromCellId, FromCell))
+			{
+				return false;
+			}
+
+			OutCellId = bStepU
+				? (StepSign < 0 ? FromCell.Neighbors.NegativeU : FromCell.Neighbors.PositiveU)
+				: (StepSign < 0 ? FromCell.Neighbors.NegativeV : FromCell.Neighbors.PositiveV);
+
+			FSRPlanetSurfaceGridCell NeighborCell;
+			return GetCellById(OutCellId, NeighborCell);
+		};
+
+		auto TryWalkOffset = [&TryStepNeighbor, CenterCellId](int32 OffsetU, int32 OffsetV, FSRPlanetSurfaceGridCellId& OutCellId)
+		{
+			FSRPlanetSurfaceGridCellId CurrentCellId = CenterCellId;
+			auto WalkAxis = [&TryStepNeighbor, &CurrentCellId](int32 Offset, bool bStepU)
+			{
+				if (Offset == 0)
+				{
+					return true;
+				}
+
+				const int32 StepSign = Offset < 0 ? -1 : 1;
+				for (int32 StepIndex = 0; StepIndex < FMath::Abs(Offset); ++StepIndex)
+				{
+					FSRPlanetSurfaceGridCellId NextCellId;
+					if (!TryStepNeighbor(CurrentCellId, bStepU, StepSign, NextCellId))
+					{
+						return false;
+					}
+
+					CurrentCellId = NextCellId;
+				}
+
+				return true;
+			};
+
+			if (!WalkAxis(OffsetU, true) || !WalkAxis(OffsetV, false))
+			{
+				return false;
+			}
+
+			OutCellId = CurrentCellId;
+			return true;
+		};
+
+		for (int32 OffsetV = -PatchRadius; OffsetV <= PatchRadius; ++OffsetV)
+		{
+			for (int32 OffsetU = -PatchRadius; OffsetU <= PatchRadius; ++OffsetU)
+			{
+				FSRPlanetSurfaceGridCellId PatchCellId;
+				if (TryWalkOffset(OffsetU, OffsetV, PatchCellId))
+				{
+					AddPatchCellId(PatchCellId);
+				}
+			}
+		}
+
+		return !OutCellIds.IsEmpty();
+	}
+
 	const int32 SafeFaceResolution = FMath::Max(1, FaceResolution);
 
 	enum class ESRGridDisplayEdge : uint8
@@ -2407,6 +2720,95 @@ void USRPlanetSurfaceGrid::RebuildCellInfoIndex()
 
 void USRPlanetSurfaceGrid::RebuildRaycastIndex()
 {
+	RaycastBuckets.Reset();
+	if (!bUsingRecoveredQuadCells || Cells.IsEmpty())
+	{
+		return;
+	}
+
+	constexpr int32 FaceCount = 6;
+	constexpr int32 BucketResolution = SurfaceGridRaycastBucketResolution;
+	const ESRCubeSphereFace Faces[FaceCount] =
+	{
+		ESRCubeSphereFace::PositiveX,
+		ESRCubeSphereFace::NegativeX,
+		ESRCubeSphereFace::PositiveY,
+		ESRCubeSphereFace::NegativeY,
+		ESRCubeSphereFace::PositiveZ,
+		ESRCubeSphereFace::NegativeZ,
+	};
+
+	auto GetFaceBucketOffset = [&Faces](ESRCubeSphereFace Face) -> int32
+	{
+		for (int32 FaceIndex = 0; FaceIndex < 6; ++FaceIndex)
+		{
+			if (Faces[FaceIndex] == Face)
+			{
+				return FaceIndex * BucketResolution * BucketResolution;
+			}
+		}
+		return INDEX_NONE;
+	};
+
+	RaycastBuckets.SetNum(FaceCount * BucketResolution * BucketResolution);
+	for (int32 FaceIndex = 0; FaceIndex < FaceCount; ++FaceIndex)
+	{
+		for (int32 BucketY = 0; BucketY < BucketResolution; ++BucketY)
+		{
+			for (int32 BucketX = 0; BucketX < BucketResolution; ++BucketX)
+			{
+				const int32 BucketIndex = FaceIndex * BucketResolution * BucketResolution + BucketY * BucketResolution + BucketX;
+				FSRSurfaceGridRaycastBucket& Bucket = RaycastBuckets[BucketIndex];
+				Bucket.Face = Faces[FaceIndex];
+				Bucket.BucketX = BucketX;
+				Bucket.BucketY = BucketY;
+				Bucket.LocalBounds = FBox(ForceInit);
+				Bucket.CellIndices.Reset();
+			}
+		}
+	}
+
+	const int32 BucketCellSize = FMath::Max(1, FMath::DivideAndRoundUp(FMath::Max(1, FaceResolution), BucketResolution));
+	for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
+	{
+		const FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
+		const int32 FaceBucketOffset = GetFaceBucketOffset(Cell.CellId.Face);
+		if (FaceBucketOffset == INDEX_NONE)
+		{
+			continue;
+		}
+
+		const int32 BucketX = FMath::Clamp(Cell.CellId.CellX / BucketCellSize, 0, BucketResolution - 1);
+		const int32 BucketY = FMath::Clamp(Cell.CellId.CellY / BucketCellSize, 0, BucketResolution - 1);
+		const int32 BucketIndex = FaceBucketOffset + BucketY * BucketResolution + BucketX;
+		if (!RaycastBuckets.IsValidIndex(BucketIndex))
+		{
+			continue;
+		}
+
+		FSRSurfaceGridRaycastBucket& Bucket = RaycastBuckets[BucketIndex];
+		Bucket.CellIndices.Add(CellIndex);
+		Bucket.LocalBounds += Cell.Corner00;
+		Bucket.LocalBounds += Cell.Corner10;
+		Bucket.LocalBounds += Cell.Corner11;
+		Bucket.LocalBounds += Cell.Corner01;
+		for (const FSRPlanetSurfaceGridSideFace& SideFace : Cell.SideFaces)
+		{
+			Bucket.LocalBounds += SideFace.LocalPoint0;
+			Bucket.LocalBounds += SideFace.LocalPoint1;
+			Bucket.LocalBounds += SideFace.LocalPoint2;
+			Bucket.LocalBounds += SideFace.LocalPoint3;
+		}
+	}
+
+	const float BoundsPadding = FMath::Max(1.0f, GridSurfaceOffset + 1.0f);
+	for (FSRSurfaceGridRaycastBucket& Bucket : RaycastBuckets)
+	{
+		if (Bucket.LocalBounds.IsValid)
+		{
+			Bucket.LocalBounds = Bucket.LocalBounds.ExpandBy(BoundsPadding);
+		}
+	}
 }
 
 bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerStaticMeshQuads()
@@ -2696,8 +3098,11 @@ void USRPlanetSurfaceGrid::RequestInteractionHighlightRefresh()
 
 void USRPlanetSurfaceGrid::RefreshInteractionHighlight()
 {
+	const double TotalStart = SRSurfaceGridNowSeconds();
 	ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner());
-	const bool bAppliedDynamicMeshHighlight = IsValid(OwnerBody)
+	double StageStart = SRSurfaceGridNowSeconds();
+	const bool bUseDynamicMeshHighlight = !bGridVisible;
+	const bool bAppliedDynamicMeshHighlight = bUseDynamicMeshHighlight && IsValid(OwnerBody)
 		&& OwnerBody->ApplySurfaceCellHighlights(
 			HoveredCellId,
 			bHasHoveredCell,
@@ -2705,36 +3110,75 @@ void USRPlanetSurfaceGrid::RefreshInteractionHighlight()
 			bHasSelectedCell,
 			HoveredCellColor,
 			SelectedCellColor);
+	const double ApplyHighlightMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 
-	if (IsValid(OwnerBody) && !bHasHoveredCell && !bHasSelectedCell)
+	StageStart = SRSurfaceGridNowSeconds();
+	if (IsValid(OwnerBody) && (!bUseDynamicMeshHighlight || (!bHasHoveredCell && !bHasSelectedCell)))
 	{
 		OwnerBody->ClearSurfaceCellHighlights();
 	}
+	const double ClearHighlightMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 
+	StageStart = SRSurfaceGridNowSeconds();
 	RebuildInteractionOverlayMesh(!bAppliedDynamicMeshHighlight);
+	const double OverlayMs = SRSurfaceGridElapsedMilliseconds(StageStart);
+	const double TotalMs = SRSurfaceGridElapsedMilliseconds(TotalStart);
+
+	static uint64 RefreshSampleCounter = 0;
+	++RefreshSampleCounter;
+	constexpr uint64 SampleInterval = 60;
+	constexpr double SlowThresholdMs = 0.25;
+	if (TotalMs >= SlowThresholdMs || (RefreshSampleCounter % SampleInterval) == 0)
+	{
+		FSRTimingLog::AddLine(FString::Printf(
+			TEXT("SurfaceGrid.RefreshInteractionHighlight Body=%s Total=%.3fms UseDynamicMesh=%s AppliedDynamicMesh=%s HasHover=%s HasSelected=%s ApplyHighlight=%.3fms ClearHighlight=%.3fms Overlay=%.3fms"),
+			*GetNameSafe(GetOwner()),
+			TotalMs,
+			bUseDynamicMeshHighlight ? TEXT("true") : TEXT("false"),
+			bAppliedDynamicMeshHighlight ? TEXT("true") : TEXT("false"),
+			bHasHoveredCell ? TEXT("true") : TEXT("false"),
+			bHasSelectedCell ? TEXT("true") : TEXT("false"),
+			ApplyHighlightMs,
+			ClearHighlightMs,
+			OverlayMs));
+	}
 }
 
 void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighlightOverlay)
 {
+	const double TotalStart = SRSurfaceGridNowSeconds();
+	double StageStart = SRSurfaceGridNowSeconds();
 	EnsureInteractionOverlay();
+	const double EnsureOverlayMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 	if (!InteractionOverlayMesh)
 	{
 		return;
 	}
 
+	StageStart = SRSurfaceGridNowSeconds();
 	UE::Geometry::FDynamicMesh3 OverlayMesh;
 	OverlayMesh.EnableAttributes();
 	OverlayMesh.Attributes()->EnablePrimaryColors();
 
 	TSet<uint64> PatchDrawnEdges;
 	PatchDrawnEdges.Reserve(320);
+	const double SetupMeshMs = SRSurfaceGridElapsedMilliseconds(StageStart);
+	double SelectedMs = 0.0;
+	double HoverPatchMs = 0.0;
+	double HoverHighlightMs = 0.0;
+	double OccupiedPatchMs = 0.0;
+	int32 PatchCellCount = 0;
+	int32 OccupiedOverlayCellCount = 0;
+
 	FSRPlanetSurfaceGridCell SelectedCell;
 	if (bHasSelectedCell && GetCellById(SelectedCellId, SelectedCell))
 	{
+		StageStart = SRSurfaceGridNowSeconds();
 		if (bIncludeCellHighlightOverlay)
 		{
 			AppendInteractionCell(OverlayMesh, SelectedCell, SelectedCellColor, DebugLineThickness * 2.5f);
 		}
+		SelectedMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 	}
 
 	if (bHasHoveredCell)
@@ -2742,29 +3186,73 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighli
 		FSRPlanetSurfaceGridCell HoveredCell;
 		if (GetCellById(HoveredCellId, HoveredCell))
 		{
+			StageStart = SRSurfaceGridNowSeconds();
 			AppendInteractionGridPatch(OverlayMesh, HoveredCellId, HoveredCellColor, DebugLineThickness, PatchDrawnEdges);
+			HoverPatchMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 			if (bIncludeCellHighlightOverlay && (!bHasSelectedCell || !(HoveredCellId == SelectedCellId)))
 			{
+				StageStart = SRSurfaceGridNowSeconds();
 				AppendInteractionCell(OverlayMesh, HoveredCell, HoveredCellColor, DebugLineThickness * 2.0f);
+				HoverHighlightMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 			}
 		}
 
+		StageStart = SRSurfaceGridNowSeconds();
 		TArray<FSRPlanetSurfaceGridCellId> PatchCellIds;
 		if (GetInteractionGridPatchCellIds(HoveredCellId, PatchCellIds))
 		{
+			PatchCellCount = PatchCellIds.Num();
 			for (const FSRPlanetSurfaceGridCellId& PatchCellId : PatchCellIds)
 			{
 				FSRPlanetSurfaceGridCell PatchCell;
 				if (GetCellById(PatchCellId, PatchCell) && PatchCell.bOccupied)
 				{
 					AppendInteractionCell(OverlayMesh, PatchCell, OccupiedCellColor, DebugLineThickness * 2.5f);
+					++OccupiedOverlayCellCount;
 				}
 			}
 		}
+		OccupiedPatchMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 	}
 
+	const int32 OverlayVertexCount = OverlayMesh.VertexCount();
+	const int32 OverlayTriangleCount = OverlayMesh.TriangleCount();
+	const int32 DrawnEdgeCount = PatchDrawnEdges.Num();
+	StageStart = SRSurfaceGridNowSeconds();
 	InteractionOverlayMesh->SetMesh(MoveTemp(OverlayMesh));
+	const double SetMeshMs = SRSurfaceGridElapsedMilliseconds(StageStart);
+	StageStart = SRSurfaceGridNowSeconds();
 	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell));
+	const double VisibilityMs = SRSurfaceGridElapsedMilliseconds(StageStart);
+	const double TotalMs = SRSurfaceGridElapsedMilliseconds(TotalStart);
+
+	static uint64 OverlaySampleCounter = 0;
+	++OverlaySampleCounter;
+	constexpr uint64 SampleInterval = 60;
+	constexpr double SlowThresholdMs = 0.25;
+	if (TotalMs >= SlowThresholdMs || (OverlaySampleCounter % SampleInterval) == 0)
+	{
+		FSRTimingLog::AddLine(FString::Printf(
+			TEXT("SurfaceGrid.RebuildInteractionOverlayMesh Body=%s Total=%.3fms IncludeCell=%s HasHover=%s HasSelected=%s Ensure=%.3fms Setup=%.3fms Selected=%.3fms HoverPatch=%.3fms HoverCell=%.3fms OccupiedPatch=%.3fms SetMesh=%.3fms Visibility=%.3fms PatchCells=%d OccupiedCells=%d Edges=%d Verts=%d Tris=%d"),
+			*GetNameSafe(GetOwner()),
+			TotalMs,
+			bIncludeCellHighlightOverlay ? TEXT("true") : TEXT("false"),
+			bHasHoveredCell ? TEXT("true") : TEXT("false"),
+			bHasSelectedCell ? TEXT("true") : TEXT("false"),
+			EnsureOverlayMs,
+			SetupMeshMs,
+			SelectedMs,
+			HoverPatchMs,
+			HoverHighlightMs,
+			OccupiedPatchMs,
+			SetMeshMs,
+			VisibilityMs,
+			PatchCellCount,
+			OccupiedOverlayCellCount,
+			DrawnEdgeCount,
+			OverlayVertexCount,
+			OverlayTriangleCount));
+	}
 }
 
 void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
