@@ -87,3 +87,49 @@ int32 FSRDynamicMeshGeneration::GetBiomeMaterialSlotIndex(FName BiomeId) const
 
 	return 0;
 }
+
+FSRDynamicMeshGenerationSnapshot FSRDynamicMeshGeneration::MakeThreadSafeSnapshot() const
+{
+	FSRDynamicMeshGenerationSnapshot Snapshot;
+	Snapshot.bDynamicMeshGeneration = bDynamicMeshGeneration;
+	Snapshot.bMinecraft = bMinecraft;
+	Snapshot.GenerationSeed = GenerationSeed;
+	Snapshot.bRandomizeGenerationSeedEachRun = bRandomizeGenerationSeedEachRun;
+	Snapshot.DynamicMeshHeight = DynamicMeshHeight;
+	Snapshot.OceanThreshold = OceanThreshold;
+	Snapshot.ContinentFrequency = ContinentFrequency;
+	Snapshot.MountainFrequency = MountainFrequency;
+	Snapshot.MountainStrength = MountainStrength;
+	Snapshot.ValleyStrength = ValleyStrength;
+	Snapshot.RiverStrength = RiverStrength;
+	Snapshot.LakeStrength = LakeStrength;
+	Snapshot.TemperatureFrequency = TemperatureFrequency;
+	Snapshot.MoistureFrequency = MoistureFrequency;
+	Snapshot.DetailFrequency = DetailFrequency;
+	Snapshot.DetailStrength = DetailStrength;
+	Snapshot.NoiseStrength = NoiseStrength;
+	Snapshot.NoiseOctaves = NoiseOctaves;
+	Snapshot.NoisePersistence = NoisePersistence;
+	Snapshot.Biomes.Reserve(BiomeDataAssets.Num());
+
+	for (const TObjectPtr<USRPlanetBiomeDataAsset>& BiomeDataAsset : BiomeDataAssets)
+	{
+		if (!IsValid(BiomeDataAsset.Get()))
+		{
+			continue;
+		}
+
+		FSRPlanetBiomeGenerationSnapshot BiomeSnapshot;
+		BiomeSnapshot.BiomeId = BiomeDataAsset->BiomeId;
+		BiomeSnapshot.WaterRole = BiomeDataAsset->WaterRole;
+		BiomeSnapshot.PlacementRules = BiomeDataAsset->PlacementRules;
+		BiomeSnapshot.SpawnWeight = BiomeDataAsset->SpawnWeight;
+		BiomeSnapshot.RegionSize = BiomeDataAsset->RegionSize;
+		BiomeSnapshot.Priority = BiomeDataAsset->Priority;
+		BiomeSnapshot.bCanOverrideLowerPriorityBiomes = BiomeDataAsset->bCanOverrideLowerPriorityBiomes;
+		BiomeSnapshot.OverrideMinScore = BiomeDataAsset->OverrideMinScore;
+		Snapshot.Biomes.Add(MoveTemp(BiomeSnapshot));
+	}
+
+	return Snapshot;
+}

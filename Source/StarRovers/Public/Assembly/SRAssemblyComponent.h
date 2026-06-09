@@ -33,6 +33,7 @@ public:
 	void ConfigurePlacementPerformance(int32 NewMaxStructurePlacementsPerFrame, int32 NewMaxQueuedStructurePlacements);
 
 	bool TryHandleAssemblyClick(AActor*& OutSelectedActor);
+	bool TryHandleAssemblyDelete(AActor*& OutSelectedActor);
 	bool ShouldHandleStructurePlacementDrag() const;
 	bool BeginStructurePlacementDrag(AActor*& OutSelectedActor);
 	bool ContinueStructurePlacementDrag(AActor*& OutSelectedActor);
@@ -115,6 +116,8 @@ private:
 	bool TryPlaceSelectedStructure(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, bool bRefreshPreviewAndUI = true);
 	bool TryPlaceSelectedConveyor(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset, bool bRefreshPreviewAndUI = true);
 	bool TryPlaceSelectedConveyorPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& StartCellId, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset, bool bRefreshPreviewAndUI = true);
+	bool TryDeleteStructureAtCell(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId);
+	bool TryDestroyAttachedOccupantActor(AActor* SurfaceOwner, FName OccupantId) const;
 	void ClearPendingConveyorPathStart();
 	void LogInvalidGhostDataAssetOnce(USRStructureDataAsset* StructureDataAsset, const TCHAR* Reason);
 

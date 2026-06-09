@@ -53,6 +53,7 @@ FSRCelestialBodyData USRMoonDataAsset::BuildData() const
 	Result.BodyCategory = BodyCategory;
 	Result.Scale = FMath::Max(0.0f, Scale);
 	Result.StaticMesh = StaticMesh;
+	Result.StaticMeshQuadGridCacheDataAsset = StaticMeshQuadGridCacheDataAsset;
 	Result.Material = Material;
 	Result.Mass = FMath::Max(0.0f, Mass);
 	Result.GravityRatio = FMath::Max(0.0f, GravityRatio);
@@ -65,6 +66,7 @@ FSRCelestialBodyData USRMoonDataAsset::BuildData() const
 	Result.TerrainProfileDataAsset = TerrainProfileDataAsset;
 	Result.ProfileNaturalStructureSpawnRuleOverrides = ProfileNaturalStructureSpawnRuleOverrides;
 	Result.GenerationSeed = Result.DynamicMeshGeneration.GenerationSeed;
+	Result.bRandomizeGenerationSeedEachRun = Result.DynamicMeshGeneration.bRandomizeGenerationSeedEachRun;
 	Result.bHasOcean = bHasOcean;
 	Result.OceanMesh = OceanMesh;
 	Result.OceanMaterial = OceanMaterial;

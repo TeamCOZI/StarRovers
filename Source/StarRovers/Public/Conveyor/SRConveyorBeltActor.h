@@ -28,6 +28,13 @@ public:
 		FName SplineComponentTag,
 		float SurfaceOffset);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
+	bool InitializeConveyorPaths(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const TArray<FSRConveyorVisualPath>& VisualPaths,
+		FName SplineComponentTag,
+		float SurfaceOffset);
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SceneRoot"))
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -37,6 +44,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorVisualPath"))
 	FSRConveyorVisualPath ConveyorVisualPath;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorVisualPaths"))
+	TArray<FSRConveyorVisualPath> ConveyorVisualPaths;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|PCG", meta = (DisplayName = "bAutoGeneratePCG"))
 	bool bAutoGeneratePCG;

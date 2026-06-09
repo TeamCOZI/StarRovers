@@ -8,7 +8,9 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Structure/SRBuildableStructureInterface.h"
+#include "Structure/SRStructure.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Structure/SRStructurePlacementLibrary.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
@@ -209,22 +211,47 @@ bool USRAssemblyComponent::TryHandleAssemblyClick(AActor*& OutSelectedActor)
 	return false;
 }
 
-bool USRAssemblyComponent::ShouldHandleStructurePlacementDrag() const
+bool USRAssemblyComponent::TryHandleAssemblyDelete(AActor*& OutSelectedActor)
 {
-	const ASRPlayerController* PlayerController = GetOwnerController();
-	if (!PlayerController || !bAssemblyModeActive || !IsValid(PlayerController->GetSelectedStructureDataAsset()))
-	{
-		return false;
-	}
+	OutSelectedActor = nullptr;
 
-	if (PlayerController->GetSelectedStructureDataAsset()->BuildData().BuildKind == ESRStructureBuildKind::Conveyor)
+	ASRPlayerController* PlayerController = GetOwnerController();
+	if (!PlayerController || !bAssemblyModeActive)
 	{
 		return false;
 	}
 
 	AActor* FocusedActor = nullptr;
 	USRPlanetSurfaceGrid* FocusedSurfaceGrid = nullptr;
-	return TryGetFocusedSurfaceGrid(FocusedActor, FocusedSurfaceGrid);
+	FSRPlanetSurfaceGridCell HoveredCell;
+	FVector HoverHitLocation = FVector::ZeroVector;
+	if (!TryGetFocusedSurfaceGrid(FocusedActor, FocusedSurfaceGrid)
+		|| !TryProjectCursorToSurfaceCell(FocusedSurfaceGrid, HoveredCell, HoverHitLocation))
+	{
+		return false;
+	}
+
+	OutSelectedActor = FocusedActor;
+	if (!TryDeleteStructureAtCell(FocusedActor, FocusedSurfaceGrid, HoveredCell.CellId))
+	{
+		return true;
+	}
+
+	ClearPendingConveyorPathStart();
+	PendingStructurePlacementQueue.Reset();
+	DestroyStructureGhostPreview();
+	FocusedSurfaceGrid->SetHoveredCell(HoveredCell.CellId);
+	FocusedSurfaceGrid->ClearSelectedCell();
+	bHasLastPublishedHoveredCellInfo = false;
+	LastPublishedHoveredSurfaceGrid = nullptr;
+	LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+	PublishHoveredCellInfo(FocusedSurfaceGrid, HoveredCell);
+	return true;
+}
+
+bool USRAssemblyComponent::ShouldHandleStructurePlacementDrag() const
+{
+	return false;
 }
 
 bool USRAssemblyComponent::BeginStructurePlacementDrag(AActor*& OutSelectedActor)
@@ -634,6 +661,10 @@ void USRAssemblyComponent::UpdateStructureGhostPreview()
 	UClass* StructureActorClass = StructureData.StructureActorClass.Get();
 	if (!IsValid(StructureActorClass))
 	{
+		StructureActorClass = ASRStructure::StaticClass();
+	}
+	if (!IsValid(StructureActorClass))
+	{
 		LogInvalidGhostDataAssetOnce(SelectedStructureDataAsset, TEXT("StructureActorClass is not set"));
 		DestroyStructureGhostPreview();
 		return;
@@ -983,6 +1014,27 @@ bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* Surfa
 		return false;
 	}
 
+	if (AActor* SurfaceOwner = SurfaceGrid->GetOwner())
+	{
+		if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
+		{
+			FName OccupantId = NAME_None;
+			if (StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(SurfaceGrid, TargetCell.CellId, SelectedStructureDataAsset, OccupantId, false))
+			{
+				if (bRefreshPreviewAndUI)
+				{
+					DestroyStructureGhostPreview();
+
+					bHasLastPublishedHoveredCellInfo = false;
+					LastPublishedHoveredSurfaceGrid = nullptr;
+					LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+					PublishHoveredCellInfo(SurfaceGrid, TargetCell);
+				}
+				return true;
+			}
+		}
+	}
+
 	AActor* PlacedStructureActor = nullptr;
 	if (!USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(SurfaceGrid, TargetCell.CellId, SelectedStructureDataAsset, PlacedStructureActor))
 	{
@@ -1082,6 +1134,92 @@ bool USRAssemblyComponent::TryPlaceSelectedConveyorPath(USRPlanetSurfaceGrid* Su
 		PublishHoveredCellInfo(SurfaceGrid, TargetCell);
 	}
 	return true;
+}
+
+bool USRAssemblyComponent::TryDeleteStructureAtCell(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId)
+{
+	if (!IsValid(FocusedActor) || !IsValid(SurfaceGrid))
+	{
+		return false;
+	}
+
+	USRConveyorNetworkComponent* ConveyorNetwork = FocusedActor->FindComponentByClass<USRConveyorNetworkComponent>();
+	if (IsValid(ConveyorNetwork))
+	{
+		TArray<int32> CandidateConveyorLayers;
+		if (const ASRPlayerController* PlayerController = GetOwnerController())
+		{
+			if (USRStructureDataAsset* SelectedStructureDataAsset = PlayerController->GetSelectedStructureDataAsset())
+			{
+				const FSRStructureData SelectedStructureData = SelectedStructureDataAsset->BuildData();
+				if (SelectedStructureData.BuildKind == ESRStructureBuildKind::Conveyor)
+				{
+					CandidateConveyorLayers.Add(FMath::Max(0, SelectedStructureData.ConveyorLayer));
+				}
+			}
+		}
+		CandidateConveyorLayers.AddUnique(0);
+
+		for (const int32 CandidateLayer : CandidateConveyorLayers)
+		{
+			if (ConveyorNetwork->TryRemoveConveyorAtCell(SurfaceGrid, TargetCellId, CandidateLayer))
+			{
+				return true;
+			}
+		}
+	}
+
+	FSRPlanetSurfaceGridCellInfo TargetCellInfo;
+	if (!SurfaceGrid->GetCellInfoById(TargetCellId, TargetCellInfo) || !TargetCellInfo.bOccupied || TargetCellInfo.OccupantId.IsNone())
+	{
+		return false;
+	}
+
+	if (USRStructureInstanceManagerComponent* StructureInstanceManager = FocusedActor->FindComponentByClass<USRStructureInstanceManagerComponent>())
+	{
+		if (StructureInstanceManager->TryRemoveStructureAtCell(SurfaceGrid, TargetCellId))
+		{
+			return true;
+		}
+	}
+
+	TArray<FSRPlanetSurfaceGridCellId> OccupantCellIds;
+	for (const FSRPlanetSurfaceGridCell& Cell : SurfaceGrid->GetCells())
+	{
+		if (Cell.bOccupied && Cell.OccupantId == TargetCellInfo.OccupantId)
+		{
+			OccupantCellIds.Add(Cell.CellId);
+		}
+	}
+
+	if (OccupantCellIds.IsEmpty())
+	{
+		OccupantCellIds.Add(TargetCellId);
+	}
+
+	TryDestroyAttachedOccupantActor(FocusedActor, TargetCellInfo.OccupantId);
+	return SurfaceGrid->SetCellsOccupied(OccupantCellIds, false, NAME_None);
+}
+
+bool USRAssemblyComponent::TryDestroyAttachedOccupantActor(AActor* SurfaceOwner, FName OccupantId) const
+{
+	if (!IsValid(SurfaceOwner) || OccupantId.IsNone())
+	{
+		return false;
+	}
+
+	TArray<AActor*> AttachedActors;
+	SurfaceOwner->GetAttachedActors(AttachedActors);
+	for (AActor* AttachedActor : AttachedActors)
+	{
+		if (IsValid(AttachedActor) && AttachedActor->GetFName() == OccupantId)
+		{
+			AttachedActor->Destroy();
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void USRAssemblyComponent::ClearPendingConveyorPathStart()

@@ -39,64 +39,92 @@ bool ASRConveyorBeltActor::InitializeConveyorPath(
 	FName SplineComponentTag,
 	float SurfaceOffset)
 {
-	if (!IsValid(SurfaceGrid) || VisualPath.CellIds.IsEmpty())
+	TArray<FSRConveyorVisualPath> SingleVisualPath;
+	SingleVisualPath.Add(VisualPath);
+	return InitializeConveyorPaths(SurfaceGrid, SingleVisualPath, SplineComponentTag, SurfaceOffset);
+}
+
+bool ASRConveyorBeltActor::InitializeConveyorPaths(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const TArray<FSRConveyorVisualPath>& VisualPaths,
+	FName SplineComponentTag,
+	float SurfaceOffset)
+{
+	if (!IsValid(SurfaceGrid) || VisualPaths.IsEmpty())
 	{
 		return false;
 	}
 
-	ConveyorVisualPath = VisualPath;
+	ConveyorVisualPath = FSRConveyorVisualPath();
+	ConveyorVisualPaths.Reset();
+	for (const FSRConveyorVisualPath& VisualPath : VisualPaths)
+	{
+		if (!VisualPath.CellIds.IsEmpty())
+		{
+			ConveyorVisualPaths.Add(VisualPath);
+		}
+	}
+
+	if (ConveyorVisualPaths.IsEmpty())
+	{
+		return false;
+	}
+
+	ConveyorVisualPath = ConveyorVisualPaths[0];
 	ConveyorSplineComponentTag = SplineComponentTag.IsNone() ? FName(TEXT("ConveyorVisualSpline")) : SplineComponentTag;
 	ConveyorSurfaceOffset = FMath::Max(0.0f, SurfaceOffset);
 
 	TArray<FVector> WorldPoints;
 	TArray<FVector> WorldNormals;
-	if (!BuildConveyorPathPoints(SurfaceGrid, ConveyorVisualPath, WorldPoints, WorldNormals))
-	{
-		ClearUnusedConveyorSplineComponents(0);
-		return false;
-	}
-
 	int32 UsedSplineCount = 0;
-	for (int32 SegmentIndex = 0; SegmentIndex + 1 < WorldPoints.Num(); ++SegmentIndex)
+	for (const FSRConveyorVisualPath& VisualPath : ConveyorVisualPaths)
 	{
-		const FVector SegmentStart = WorldPoints[SegmentIndex];
-		const FVector SegmentEnd = WorldPoints[SegmentIndex + 1];
-		const FVector SegmentVector = SegmentEnd - SegmentStart;
-		if (SegmentVector.SizeSquared() <= FMath::Square(KINDA_SMALL_NUMBER))
+		if (!BuildConveyorPathPoints(SurfaceGrid, VisualPath, WorldPoints, WorldNormals))
 		{
 			continue;
 		}
 
-		USplineComponent* SplineComponent = EnsureConveyorSplineComponent(UsedSplineCount);
-		if (!IsValid(SplineComponent))
+		for (int32 SegmentIndex = 0; SegmentIndex + 1 < WorldPoints.Num(); ++SegmentIndex)
 		{
-			continue;
+			const FVector SegmentStart = WorldPoints[SegmentIndex];
+			const FVector SegmentEnd = WorldPoints[SegmentIndex + 1];
+			const FVector SegmentVector = SegmentEnd - SegmentStart;
+			if (SegmentVector.SizeSquared() <= FMath::Square(KINDA_SMALL_NUMBER))
+			{
+				continue;
+			}
+
+			USplineComponent* SplineComponent = EnsureConveyorSplineComponent(UsedSplineCount);
+			if (!IsValid(SplineComponent))
+			{
+				continue;
+			}
+
+			const FTransform SplineTransform = SplineComponent->GetComponentTransform();
+			const FVector LocalSegmentStart = SplineTransform.InverseTransformPosition(SegmentStart);
+			const FVector LocalSegmentEnd = SplineTransform.InverseTransformPosition(SegmentEnd);
+			const FVector LocalSegmentVector = SplineTransform.InverseTransformVectorNoScale(SegmentVector);
+			const FVector LocalStartNormal = SplineTransform.InverseTransformVectorNoScale(WorldNormals[SegmentIndex].GetSafeNormal()).GetSafeNormal();
+			const FVector LocalEndNormal = SplineTransform.InverseTransformVectorNoScale(WorldNormals[SegmentIndex + 1].GetSafeNormal()).GetSafeNormal();
+
+			SplineComponent->ClearSplinePoints(false);
+			SplineComponent->ComponentTags.Reset();
+			SplineComponent->ComponentTags.AddUnique(ConveyorSplineComponentTag);
+			SplineComponent->ComponentTags.AddUnique(TEXT("StarRovers.ConveyorBeltSpline"));
+			SplineComponent->AddSplinePoint(LocalSegmentStart, ESplineCoordinateSpace::Local, false);
+			SplineComponent->AddSplinePoint(LocalSegmentEnd, ESplineCoordinateSpace::Local, false);
+			SplineComponent->SetSplinePointType(0, ESplinePointType::Linear, false);
+			SplineComponent->SetSplinePointType(1, ESplinePointType::Linear, false);
+			SplineComponent->SetTangentAtSplinePoint(0, LocalSegmentVector, ESplineCoordinateSpace::Local, false);
+			SplineComponent->SetTangentAtSplinePoint(1, LocalSegmentVector, ESplineCoordinateSpace::Local, false);
+			SplineComponent->SetUpVectorAtSplinePoint(0, LocalStartNormal, ESplineCoordinateSpace::Local, false);
+			SplineComponent->SetUpVectorAtSplinePoint(1, LocalEndNormal, ESplineCoordinateSpace::Local, false);
+			SplineComponent->SetClosedLoop(false, false);
+			SplineComponent->SetVisibility(false);
+			SplineComponent->SetHiddenInGame(true);
+			SplineComponent->UpdateSpline();
+			++UsedSplineCount;
 		}
-
-		const FTransform SplineTransform = SplineComponent->GetComponentTransform();
-		const FVector LocalSegmentStart = SplineTransform.InverseTransformPosition(SegmentStart);
-		const FVector LocalSegmentEnd = SplineTransform.InverseTransformPosition(SegmentEnd);
-		const FVector LocalSegmentVector = SplineTransform.InverseTransformVectorNoScale(SegmentVector);
-		const FVector LocalStartNormal = SplineTransform.InverseTransformVectorNoScale(WorldNormals[SegmentIndex].GetSafeNormal()).GetSafeNormal();
-		const FVector LocalEndNormal = SplineTransform.InverseTransformVectorNoScale(WorldNormals[SegmentIndex + 1].GetSafeNormal()).GetSafeNormal();
-
-		SplineComponent->ClearSplinePoints(false);
-		SplineComponent->ComponentTags.Reset();
-		SplineComponent->ComponentTags.AddUnique(ConveyorSplineComponentTag);
-		SplineComponent->ComponentTags.AddUnique(TEXT("StarRovers.ConveyorBeltSpline"));
-		SplineComponent->AddSplinePoint(LocalSegmentStart, ESplineCoordinateSpace::Local, false);
-		SplineComponent->AddSplinePoint(LocalSegmentEnd, ESplineCoordinateSpace::Local, false);
-		SplineComponent->SetSplinePointType(0, ESplinePointType::Linear, false);
-		SplineComponent->SetSplinePointType(1, ESplinePointType::Linear, false);
-		SplineComponent->SetTangentAtSplinePoint(0, LocalSegmentVector, ESplineCoordinateSpace::Local, false);
-		SplineComponent->SetTangentAtSplinePoint(1, LocalSegmentVector, ESplineCoordinateSpace::Local, false);
-		SplineComponent->SetUpVectorAtSplinePoint(0, LocalStartNormal, ESplineCoordinateSpace::Local, false);
-		SplineComponent->SetUpVectorAtSplinePoint(1, LocalEndNormal, ESplineCoordinateSpace::Local, false);
-		SplineComponent->SetClosedLoop(false, false);
-		SplineComponent->SetVisibility(false);
-		SplineComponent->SetHiddenInGame(true);
-		SplineComponent->UpdateSpline();
-		++UsedSplineCount;
 	}
 
 	ClearUnusedConveyorSplineComponents(UsedSplineCount);
@@ -206,6 +234,33 @@ bool ASRConveyorBeltActor::BuildConveyorPathPoints(
 
 		OutWorldPoints.Add(CellInfo.WorldCenter + OutwardNormal * HeightOffset);
 		OutWorldNormals.Add(OutwardNormal);
+	}
+
+	if (OutWorldPoints.Num() == 1)
+	{
+		const FSRPlanetSurfaceGridCellId& CellId = VisualPath.CellIds[0];
+		FSRPlanetSurfaceGridCell Cell;
+		if (SurfaceGrid->GetCellById(CellId, Cell))
+		{
+			const FTransform SurfaceGridTransform = SurfaceGrid->GetComponentTransform();
+			FVector SingleTangent = SurfaceGridTransform.TransformPosition(Cell.Corner10) - SurfaceGridTransform.TransformPosition(Cell.Corner00);
+			SingleTangent = SingleTangent - OutWorldNormals[0] * FVector::DotProduct(SingleTangent, OutWorldNormals[0]);
+			if (SingleTangent.Normalize())
+			{
+				const FVector CenterPoint = OutWorldPoints[0];
+				const FVector CenterNormal = OutWorldNormals[0];
+				const float CellEdgeLength = FVector::Distance(
+					SurfaceGridTransform.TransformPosition(Cell.Corner00),
+					SurfaceGridTransform.TransformPosition(Cell.Corner10));
+				const float HalfLength = FMath::Max(1.0f, CellEdgeLength * 0.35f);
+				OutWorldPoints.Reset();
+				OutWorldNormals.Reset();
+				OutWorldPoints.Add(CenterPoint - SingleTangent * HalfLength);
+				OutWorldPoints.Add(CenterPoint + SingleTangent * HalfLength);
+				OutWorldNormals.Add(CenterNormal);
+				OutWorldNormals.Add(CenterNormal);
+			}
+		}
 	}
 
 	return OutWorldPoints.Num() >= 2 && OutWorldPoints.Num() == OutWorldNormals.Num();

@@ -129,6 +129,7 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 	PlacedStructureActor->SetOwner(SurfaceOwner);
 	PlacedStructureActor->SetActorTransform(StructureTransform);
 	PlacedStructureActor->SetActorHiddenInGame(false);
+	PlacedStructureActor->SetActorEnableCollision(false);
 	if (!PlacedStructureActor->AttachToActor(SurfaceOwner, FAttachmentTransformRules::KeepWorldTransform))
 	{
 		RollbackPlacedStructureActor(PlacedStructureActor);

@@ -25,6 +25,7 @@ class UStaticMeshComponent;
 class USRGravityParent;
 class USRCelestialBodyRegistrySubsystem;
 class USRPlanetTerrainProfileDataAsset;
+class USRStaticMeshQuadGridCacheDataAsset;
 
 struct FSRCelestialBodyDynamicMeshColorElement
 {
@@ -35,13 +36,13 @@ struct FSRCelestialBodyDynamicMeshColorElement
 
 struct FSRCelestialBodyDynamicMeshQuadRenderData
 {
-	TArray<FSRCelestialBodyDynamicMeshColorElement> ColorElements;
+	TArray<FSRCelestialBodyDynamicMeshColorElement, TInlineAllocator<8>> ColorElements;
 };
 
 struct FSRCelestialBodyDynamicMeshCellColorData
 {
-	TArray<FSRCelestialBodyDynamicMeshColorElement> SurfaceColorElements;
-	TArray<FSRCelestialBodyDynamicMeshColorElement> SideColorElements;
+	TArray<FSRCelestialBodyDynamicMeshColorElement, TInlineAllocator<4>> SurfaceColorElements;
+	TArray<FSRCelestialBodyDynamicMeshColorElement, TInlineAllocator<8>> SideColorElements;
 };
 
 USTRUCT(BlueprintType)
@@ -103,6 +104,9 @@ struct STARROVERS_API FSRCelestialBodyData
 	TObjectPtr<UStaticMesh> StaticMesh = nullptr;
 
 	UPROPERTY()
+	TObjectPtr<USRStaticMeshQuadGridCacheDataAsset> StaticMeshQuadGridCacheDataAsset = nullptr;
+
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> Material = nullptr;
 
 	UPROPERTY()
@@ -116,6 +120,9 @@ struct STARROVERS_API FSRCelestialBodyData
 
 	UPROPERTY()
 	int32 GenerationSeed = 1000;
+
+	UPROPERTY()
+	bool bRandomizeGenerationSeedEachRun = false;
 
 	UPROPERTY()
 	FSRDynamicMeshGeneration DynamicMeshGeneration;
@@ -263,6 +270,7 @@ public:
 	bool GetCachedSurfaceGridCells(TArray<FSRPlanetSurfaceGridCell>& OutCells) const;
 	bool PrepareCelestialBodyDynamicMesh();
 	bool HasCelestialBodyDynamicMeshBuild() const;
+	static void AppendRuntimeMemoryDiagnostics(TArray<FString>& OutLines);
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SceneRoot"))
@@ -319,6 +327,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "GenerationSeed"))
 	int32 GenerationSeed;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "bRandomizeGenerationSeedEachRun"))
+	bool bRandomizeGenerationSeedEachRun;
+
 	UPROPERTY()
 	TObjectPtr<USRPlanetTerrainProfileDataAsset> TerrainProfileDataAsset = nullptr;
 
@@ -329,6 +340,9 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> StaticMesh;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "StaticMeshQuadGridCacheDataAsset"))
+	TObjectPtr<USRStaticMeshQuadGridCacheDataAsset> StaticMeshQuadGridCacheDataAsset;
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> Material;
@@ -352,8 +366,8 @@ private:
 	mutable bool bHasLoggedMissingDataError = false;
 
 	TMap<FSRPlanetSurfaceGridCellId, FSRCelestialBodyDynamicMeshCellColorData> DynamicMeshColorDataByCell;
-	TMap<uint64, FLinearColor> DynamicMeshBaseColorByElement;
 	TSet<uint64> HighlightedDynamicMeshColorElements;
+	TMap<uint64, FLinearColor> HighlightedDynamicMeshBaseColorByElement;
 	TArray<FSRPlanetSurfaceGridCell> CachedSurfaceGridCells;
 	uint32 CachedDynamicMeshBuildHash = 0;
 	bool bHasCachedDynamicMeshBuildHash = false;

@@ -3,6 +3,38 @@
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "EngineUtils.h"
 
+namespace
+{
+	bool AreActorListsEquivalent(const TArray<TObjectPtr<AActor>>& PreviousActors, const TArray<TObjectPtr<AActor>>& CurrentActors)
+	{
+		int32 PreviousValidActorCount = 0;
+		for (const TObjectPtr<AActor>& PreviousActor : PreviousActors)
+		{
+			if (!IsValid(PreviousActor))
+			{
+				continue;
+			}
+
+			++PreviousValidActorCount;
+			if (!CurrentActors.Contains(PreviousActor))
+			{
+				return false;
+			}
+		}
+
+		int32 CurrentValidActorCount = 0;
+		for (const TObjectPtr<AActor>& CurrentActor : CurrentActors)
+		{
+			if (IsValid(CurrentActor))
+			{
+				++CurrentValidActorCount;
+			}
+		}
+
+		return PreviousValidActorCount == CurrentValidActorCount;
+	}
+}
+
 void USRCelestialBodyRegistrySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -72,13 +104,18 @@ void USRCelestialBodyRegistrySubsystem::UnregisterCelestialBody(AActor* BodyActo
 
 void USRCelestialBodyRegistrySubsystem::RefreshCelestialBodies()
 {
+	const TArray<TObjectPtr<AActor>> PreviousCelestialBodies = CelestialBodies;
 	CelestialBodies.Reset();
 
 	UWorld* World = GetWorld();
 	if (!World)
 	{
+		const bool bBodiesChanged = !AreActorListsEquivalent(PreviousCelestialBodies, CelestialBodies);
 		SetResolvedPrimaryStarActor(nullptr, true);
-		CelestialBodiesChangedEvent.Broadcast();
+		if (bBodiesChanged)
+		{
+			CelestialBodiesChangedEvent.Broadcast();
+		}
 		return;
 	}
 
@@ -113,7 +150,10 @@ void USRCelestialBodyRegistrySubsystem::RefreshCelestialBodies()
 	}
 
 	SetResolvedPrimaryStarActor(ResolvedPrimaryStarActor, true);
-	CelestialBodiesChangedEvent.Broadcast();
+	if (!AreActorListsEquivalent(PreviousCelestialBodies, CelestialBodies))
+	{
+		CelestialBodiesChangedEvent.Broadcast();
+	}
 }
 
 void USRCelestialBodyRegistrySubsystem::GetCelestialBodies(TArray<AActor*>& OutCelestialBodies) const

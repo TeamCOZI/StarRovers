@@ -10,6 +10,8 @@ USRStarDataAsset::USRStarDataAsset()
 	Mass = 2000.0f;
 	GravityRatio = 1.0f;
 	GravityRadiusRatio = 100.0f;
+	GenerationSeed = 1000;
+	bRandomizeGenerationSeedEachRun = false;
 	StarPointLightIntensity = 100.0f;
 	StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 }
@@ -26,7 +28,10 @@ FSRCelestialBodyData USRStarDataAsset::BuildData() const
 	Result.GravityRatio = FMath::Max(0.0f, GravityRatio);
 	Result.GravityRadiusRatio = FMath::Max(0.0f, GravityRadiusRatio);
 	Result.DynamicMeshGeneration.bDynamicMeshGeneration = false;
-	Result.GenerationSeed = Result.DynamicMeshGeneration.GenerationSeed;
+	Result.GenerationSeed = GenerationSeed;
+	Result.DynamicMeshGeneration.GenerationSeed = GenerationSeed;
+	Result.bRandomizeGenerationSeedEachRun = bRandomizeGenerationSeedEachRun;
+	Result.DynamicMeshGeneration.bRandomizeGenerationSeedEachRun = bRandomizeGenerationSeedEachRun;
 	Result.bHasOcean = false;
 	Result.StarPointLightIntensity = FMath::Max(0.0f, StarPointLightIntensity);
 	Result.StarPointLightColor = StarPointLightColor;

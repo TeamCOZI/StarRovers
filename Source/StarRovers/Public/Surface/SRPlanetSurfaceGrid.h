@@ -49,6 +49,8 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     TArray<FSRPlanetSurfaceGridCell> GetCells() const;
 
+    const TArray<FSRPlanetSurfaceGridCell>& GetCellsRef() const;
+
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     bool GetCellById(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCell& OutCell) const;
 
@@ -160,6 +162,7 @@ public:
 
     void AppendGeneratedGridCell(UE::Geometry::FDynamicMesh3& GridMesh, const FSRPlanetSurfaceGridCell& Cell, TSet<uint64>& DrawnEdges) const;
     void ApplyGeneratedGridBuild(TArray<FSRPlanetSurfaceGridCell>&& NewCells, UE::Geometry::FDynamicMesh3&& NewGridMesh);
+    void ApplyGeneratedGridBuild(TArray<FSRPlanetSurfaceGridCell>&& NewCells, UE::Geometry::FDynamicMesh3&& NewGridMesh, TMap<FSRPlanetSurfaceGridCellId, int32>&& NewCellIndexById);
 
 protected:
     UPROPERTY()
@@ -239,10 +242,6 @@ private:
     bool GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const;
     void RebuildCellIndex();
     void RebuildRaycastIndex();
-    uint64 BuildRaycastBinKey(const FSRPlanetSurfaceGridCellId& BinId) const;
-    void AddCellToRaycastBin(const FSRPlanetSurfaceGridCellId& BinId, int32 CellIndex);
-    bool GetRaycastBinForDirection(const FVector& LocalDirection, FSRPlanetSurfaceGridCellId& OutBinId) const;
-    void GatherRaycastCandidateCells(const FVector& LocalDirection, TArray<int32>& OutCandidateCellIndices) const;
     void UpdateDebugTickState();
     void AppendInteractionCell(UE::Geometry::FDynamicMesh3& OverlayMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness) const;
     void RebuildGridMesh();
@@ -263,8 +262,6 @@ private:
 
     TMap<FSRPlanetSurfaceGridCellId, int32> CellIndexById;
     TMap<FSRPlanetSurfaceGridCellId, FSRPlanetSurfaceGridCellInfo> CellInfoById;
-    TMap<uint64, TArray<int32>> RaycastCellIndicesByBin;
-    static constexpr int32 RaycastBinResolution = 64;
 
     UPROPERTY(Transient)
     TObjectPtr<UDynamicMeshComponent> InteractionOverlayMesh;

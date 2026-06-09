@@ -38,27 +38,6 @@ void ASRStar::ApplyStarAppearance()
 {
 	StarPointLightIntensity = FMath::Max(0.0f, StarPointLightIntensity);
 
-	if (IsValid(CelestialBodyStaticMesh.Get()))
-	{
-		CelestialBodyStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	}
-
-	for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
-	{
-		if (IsValid(DynamicMeshComponent))
-		{
-			DynamicMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		}
-	}
-
-	if (IsValid(ClickSphereCollision.Get()))
-	{
-		ClickSphereCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-		ClickSphereCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
-		ClickSphereCollision->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
-		ClickSphereCollision->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-	}
-
 	if (UPointLightComponent* ActiveStarPointLight = StarPointLight)
 	{
 		ActiveStarPointLight->SetVisibility(true);

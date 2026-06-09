@@ -664,6 +664,7 @@ void ASRCameraPawn::SnapToFocusTarget()
 		ApplyZoomDrivenViewRotation(SpringArm->TargetArmLength);
 	}
 	SetActorLocation(DesiredLocation);
+	RefreshScreenSpaceThicknessReferenceView();
 }
 
 void ASRCameraPawn::ResetFocus()
@@ -845,6 +846,13 @@ void ASRCameraPawn::HandleDragHoldStarted()
 {
 	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
 	{
+		if (PlayerController->ShouldBlockAssemblyCameraDrag())
+		{
+			bIsDragging = false;
+			bHasDragStartMousePosition = false;
+			return;
+		}
+
 		if (PlayerController->ShouldHandleAssemblyPlacementDrag())
 		{
 			PlayerController->BeginAssemblyPlacementDrag();
@@ -881,6 +889,15 @@ void ASRCameraPawn::HandleDragHoldCompleted()
 
 void ASRCameraPawn::HandleFocusSurfaceDragHoldStarted()
 {
+	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
+	{
+		if (PlayerController->IsAssemblyModeActive())
+		{
+			bIsDraggingFocusSurface = false;
+			return;
+		}
+	}
+
 	StopFocusArcTransition();
 	bIsDraggingFocusSurface = ShouldDragFocusedSurface();
 	if (!bIsDraggingFocusSurface)

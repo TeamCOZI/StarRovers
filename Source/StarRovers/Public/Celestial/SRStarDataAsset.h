@@ -42,6 +42,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "GravityRadiusRatio", ClampMin = "0.0"))
 	float GravityRadiusRatio = 100.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "GenerationSeed", ClampMin = "0"))
+	int32 GenerationSeed = 1000;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "bRandomizeGenerationSeedEachRun"))
+	bool bRandomizeGenerationSeedEachRun = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star", meta = (DisplayName = "StarPointLightIntensity", ClampMin = "0.0"))
 	float StarPointLightIntensity = 100.0f;
 

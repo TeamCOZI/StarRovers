@@ -28,6 +28,7 @@ public:
 	USRConveyorNetworkComponent();
 
 	virtual void BeginPlay() override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
@@ -65,6 +66,12 @@ public:
 		USRStructureDataAsset* StructureDataAsset,
 		FName NetworkId);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
+	bool TryRemoveConveyorAtCell(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& CellId,
+		int32 Layer);
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "DefaultLayerHeight", ClampMin = "0.0"))
 	float DefaultLayerHeight;
@@ -80,6 +87,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Visual", meta = (DisplayName = "bBuildDynamicMeshVisuals"))
 	bool bBuildDynamicMeshVisuals;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Visual", meta = (DisplayName = "bSpawnConveyorBeltActors"))
+	bool bSpawnConveyorBeltActors;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Visual", meta = (DisplayName = "MaxConveyorActorGroupsRefreshedPerFrame", ClampMin = "1"))
+	int32 MaxConveyorActorGroupsRefreshedPerFrame;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|PCG", meta = (DisplayName = "bBuildPCGSplineInputs"))
 	bool bBuildPCGSplineInputs;
@@ -117,8 +130,19 @@ protected:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ASRConveyorBeltActor>> PlacedConveyorActors;
 
+	UPROPERTY(Transient)
+	TWeakObjectPtr<USRPlanetSurfaceGrid> PendingConveyorActorRefreshSurfaceGrid;
+
 private:
+	struct FSRConveyorActorGroupState
+	{
+		TArray<FSRConveyorVisualPath> VisualPaths;
+		ASRConveyorBeltActor* Actor = nullptr;
+		bool bDirty = false;
+	};
+
 	static FSRConveyorLaneKey MakeLaneKey(const FSRPlanetSurfaceGridCellId& CellId, int32 Layer);
+	static FName MakeActorGroupKey(USRStructureDataAsset* StructureDataAsset, int32 Layer);
 	static ESRConveyorGridDirection GetOppositeDirection(ESRConveyorGridDirection Direction);
 	static ESRConveyorSegmentShape ResolveSegmentShape(ESRConveyorGridDirection InputDirection, ESRConveyorGridDirection OutputDirection);
 	static bool GetNeighborCellIdByDirection(const FSRPlanetSurfaceGridCellNeighbors& Neighbors, ESRConveyorGridDirection Direction, FSRPlanetSurfaceGridCellId& OutCellId);
@@ -146,6 +170,20 @@ private:
 		UE::Geometry::FDynamicMesh3& BeltMesh,
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRConveyorVisualPath& VisualPath) const;
+	ASRConveyorBeltActor* SpawnConveyorActorForVisualPaths(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const TArray<FSRConveyorVisualPath>& GroupedVisualPaths);
+	void DestroyPlacedConveyorActors();
+	void MarkConveyorActorGroupDirty(USRStructureDataAsset* StructureDataAsset, int32 Layer);
+	void MarkConveyorActorGroupPlacementDiagnosticPending(USRStructureDataAsset* StructureDataAsset, int32 Layer);
+	void MarkConveyorActorGroupDeletionDiagnosticPending(USRStructureDataAsset* StructureDataAsset, int32 Layer);
+	void ScheduleDirtyConveyorActorGroupRefresh(USRPlanetSurfaceGrid* SurfaceGrid);
+	bool RefreshConveyorActorGroup(USRPlanetSurfaceGrid* SurfaceGrid, FName ActorGroupKey);
+	bool RefreshDirtyConveyorActorGroups(USRPlanetSurfaceGrid* SurfaceGrid, int32 MaxGroupCount = INDEX_NONE);
+	bool HasDirtyConveyorActorGroups() const;
+	void LogConveyorMutationMemoryDiagnostics(const TCHAR* Label, FName ActorGroupKey, bool bRequestGarbageCollection) const;
+	void RebuildSegmentsFromVisualPaths(USRPlanetSurfaceGrid* SurfaceGrid);
+	bool RebuildPlacedConveyorActors(USRPlanetSurfaceGrid* SurfaceGrid);
 	void RefreshConveyorVisuals(USRPlanetSurfaceGrid* SurfaceGrid);
 	void RefreshPCGSplineInputs(USRPlanetSurfaceGrid* SurfaceGrid);
 	void RefreshPathDebugLines(USRPlanetSurfaceGrid* SurfaceGrid);
@@ -153,4 +191,8 @@ private:
 	void BindPCGGenerationDelegates();
 	void HandlePCGGraphGenerated(UPCGComponent* PCGComponent);
 	void RebaseGeneratedPCGSplineMeshes(UPCGComponent* PCGComponent);
+
+	TMap<FName, FSRConveyorActorGroupState> ConveyorActorGroupsByKey;
+	TSet<FName> PendingPlacementDiagnosticActorGroupKeys;
+	TSet<FName> PendingDeletionDiagnosticActorGroupKeys;
 };

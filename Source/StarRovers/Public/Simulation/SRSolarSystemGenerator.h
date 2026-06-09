@@ -2,12 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "TimerManager.h"
 #include "Celestial/SRCelestialBody.h"
 #include "SRSolarSystemGenerator.generated.h"
 
 class USRMoonDataAsset;
 class USRPlanetDataAsset;
 class USRStarDataAsset;
+class USRLoadingScreenWidget;
 class USceneComponent;
 
 USTRUCT()
@@ -45,6 +47,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "GenerationSeed", ClampMin = "0"))
 	int32 GenerationSeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "bRandomizeGenerationSeedEachRun"))
+	bool bRandomizeGenerationSeedEachRun;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|CelestialBodyClass", meta = (DisplayName = "StarClass"))
 	TSubclassOf<ASRCelestialBody> StarClass;
@@ -88,7 +93,35 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "bGenerateNaturalStructures"))
 	bool bGenerateNaturalStructures;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Loading", meta = (DisplayName = "LoadingScreenWidgetClass"))
+	TSubclassOf<USRLoadingScreenWidget> LoadingScreenWidgetClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Loading", meta = (DisplayName = "LoadingScreenZOrder"))
+	int32 LoadingScreenZOrder;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Diagnostics", meta = (DisplayName = "bEnableMemoryDiagnostics"))
+	bool bEnableMemoryDiagnostics;
+
 private:
+	struct FSRAsyncGenerationStageTiming
+	{
+		FString Name;
+		double Milliseconds = 0.0;
+	};
+
+	void StartRuntimeSystemGenerationWithLoadingScreen();
+	void GenerateRuntimeSystemDeferred();
+	void BeginRuntimeSystemGenerationDeferred();
+	void ContinueRuntimeDynamicMeshPreparation();
+	void ContinueRuntimeNaturalStructureGeneration();
+	void FinishRuntimeSystemGeneration();
+	void ShowLoadingScreen();
+	void HideLoadingScreen();
+	void UpdateLoadingProgress(float Progress, const FText& StatusText);
+	void ScheduleLoadingGenerationStep(void (ASRSolarSystemGenerator::*StepFunction)(), float DelaySeconds = 0.0f);
+	void LogAsyncGenerationStageTiming(const TCHAR* StageName, double Milliseconds, const FString& Suffix = FString());
+	void EnsureMemoryDiagnosticTrackedClasses() const;
+	void LogMemoryDiagnosticsSnapshot(const FString& Label) const;
 	ASRCelestialBody* SpawnPrimaryStar(FRandomStream& RandomStream, const USRStarDataAsset*& OutSelectedStarDataAsset);
 	ASRCelestialBody* SpawnOrbitingBody(const TSubclassOf<ASRCelestialBody>& BodyClass, const FSRCelestialBodyGenerateRequest& CelestialBodyRequest, ASRCelestialBody* ParentBody);
 	void BuildOrbitingBodyRequests(
@@ -103,7 +136,7 @@ private:
 	void SpawnPlanets(ASRCelestialBody* ParentStar, const USRStarDataAsset* SourceStarDataAsset, FRandomStream& RandomStream, TArray<TObjectPtr<ASRCelestialBody>>& OutGeneratedPlanets);
 	void SpawnMoons(ASRCelestialBody* ParentPlanet, FRandomStream& RandomStream, TArray<TObjectPtr<ASRCelestialBody>>& OutGeneratedMoons);
 	void PrepareRuntimeGeneratedDynamicMeshes();
-	void GenerateRuntimeNaturalStructures();
+	void GenerateRuntimeNaturalStructures(int32 RuntimeGenerationSeed);
 	void GenerateNaturalStructuresForBody(ASRCelestialBody* Body, FRandomStream& RandomStream);
 	void DestroyRuntimeNaturalStructures();
 	void DestroyTrackedActor(TObjectPtr<ASRCelestialBody>& ActorToDestroy);
@@ -120,4 +153,32 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AActor>> RuntimeNaturalStructureActors;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRLoadingScreenWidget> LoadingScreenWidget;
+
+	FTimerHandle DeferredGenerateRuntimeSystemTimerHandle;
+	bool bRuntimeGenerationInProgress = false;
+	double AsyncGenerationTotalStart = 0.0;
+	double AsyncCurrentStageStart = 0.0;
+	double AsyncDynamicMeshTotalStart = 0.0;
+	double AsyncNaturalStructuresTotalStart = 0.0;
+	TArray<FSRAsyncGenerationStageTiming> AsyncGenerationStageTimings;
+	FRandomStream AsyncGenerationRandomStream;
+	FRandomStream AsyncNaturalStructureRandomStream;
+	int32 AsyncRuntimeGenerationSeed = 0;
+	const USRStarDataAsset* AsyncSelectedStarDataAsset = nullptr;
+	int32 AsyncPrepareBodyIndex = 0;
+	int32 AsyncPreparePlanetCount = 0;
+	int32 AsyncPrepareMoonCount = 0;
+	double AsyncPreparePlanetTotalMs = 0.0;
+	double AsyncPrepareMoonTotalMs = 0.0;
+	double AsyncPrepareSlowestBodyMs = 0.0;
+	FString AsyncPrepareSlowestBodyName;
+	TArray<FString> AsyncPrepareSlowestBodyDetailLines;
+	int32 AsyncNaturalPlanetIndex = 0;
+	int32 AsyncNaturalPlanetCount = 0;
+	double AsyncNaturalPlanetTotalMs = 0.0;
+	double AsyncNaturalSlowestBodyMs = 0.0;
+	FString AsyncNaturalSlowestBodyName;
 };

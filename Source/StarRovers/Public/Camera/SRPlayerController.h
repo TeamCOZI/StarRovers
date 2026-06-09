@@ -72,6 +72,7 @@ public:
     USRStructureDataAsset* GetSelectedStructureDataAsset() const;
 
     bool ShouldHandleAssemblyPlacementDrag() const;
+    bool ShouldBlockAssemblyCameraDrag() const;
     bool BeginAssemblyPlacementDrag();
     bool ContinueAssemblyPlacementDrag();
     void EndAssemblyPlacementDrag();
@@ -82,6 +83,9 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "FocusParentAction"))
     TObjectPtr<UInputAction> FocusParentAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "DeleteStructureAction"))
+    TObjectPtr<UInputAction> DeleteStructureAction;
 
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Selection", meta = (DisplayName = "SelectedActor"))
     TObjectPtr<AActor> SelectedActor;
@@ -176,6 +180,7 @@ private:
     void RequestFocusActor(AActor* NewFocusedActor, bool bSnapImmediately = false);
     void TryAutoFocusPrimaryStar();
     void HandleLeftClick();
+    void HandleRightClick();
     void HandleFocusParent();
     void UpdateSelection(AActor* NewSelectedActor);
 

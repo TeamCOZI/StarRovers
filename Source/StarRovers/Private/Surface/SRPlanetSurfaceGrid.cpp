@@ -17,10 +17,21 @@
 #include "Surface/SRPlanetTerrainGenerator.h"
 #include "UDynamicMesh.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Utility/SRTimingLog.h"
 #include "Visual/SRLineThicknessUtils.h"
 
 namespace
 {
+	double SRNowSeconds()
+	{
+		return FPlatformTime::Seconds();
+	}
+
+	double SRElapsedMilliseconds(double StartSeconds)
+	{
+		return (FPlatformTime::Seconds() - StartSeconds) * 1000.0;
+	}
+
 	struct FSRSurfaceGridCubeFaceBasis
 	{
 		FVector Normal = FVector::ForwardVector;
@@ -832,49 +843,6 @@ namespace
 		return Addresses;
 	}
 
-	bool IntersectRayTriangle(
-		const FVector& RayOrigin,
-		const FVector& RayDirection,
-		const FVector& TriangleA,
-		const FVector& TriangleB,
-		const FVector& TriangleC,
-		float& OutHitDistance)
-	{
-		OutHitDistance = 0.0f;
-
-		const FVector Edge1 = TriangleB - TriangleA;
-		const FVector Edge2 = TriangleC - TriangleA;
-		const FVector P = FVector::CrossProduct(RayDirection, Edge2);
-		const float Determinant = FVector::DotProduct(Edge1, P);
-		if (FMath::Abs(Determinant) <= UE_SMALL_NUMBER)
-		{
-			return false;
-		}
-
-		const float InvDeterminant = 1.0f / Determinant;
-		const FVector T = RayOrigin - TriangleA;
-		const float U = FVector::DotProduct(T, P) * InvDeterminant;
-		if (U < 0.0f || U > 1.0f)
-		{
-			return false;
-		}
-
-		const FVector Q = FVector::CrossProduct(T, Edge1);
-		const float V = FVector::DotProduct(RayDirection, Q) * InvDeterminant;
-		if (V < 0.0f || U + V > 1.0f)
-		{
-			return false;
-		}
-
-		const float HitDistance = FVector::DotProduct(Edge2, Q) * InvDeterminant;
-		if (HitDistance < 0.0f)
-		{
-			return false;
-		}
-
-		OutHitDistance = HitDistance;
-		return true;
-	}
 }
 
 USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
@@ -1030,6 +998,11 @@ int32 USRPlanetSurfaceGrid::GetCellCount() const
 }
 
 TArray<FSRPlanetSurfaceGridCell> USRPlanetSurfaceGrid::GetCells() const
+{
+	return Cells;
+}
+
+const TArray<FSRPlanetSurfaceGridCell>& USRPlanetSurfaceGrid::GetCellsRef() const
 {
 	return Cells;
 }
@@ -1212,30 +1185,6 @@ bool USRPlanetSurfaceGrid::ProjectWorldLocationToCell(const FVector& WorldLocati
 		return false;
 	}
 
-	if (bUsingRecoveredQuadCells)
-	{
-		float BestDot = -BIG_NUMBER;
-		int32 BestCellIndex = INDEX_NONE;
-		for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
-		{
-			const float CandidateDot = FVector::DotProduct(Cells[CellIndex].LocalNormal.GetSafeNormal(), LocalDirection);
-			if (CandidateDot > BestDot)
-			{
-				BestDot = CandidateDot;
-				BestCellIndex = CellIndex;
-			}
-		}
-
-		if (!Cells.IsValidIndex(BestCellIndex))
-		{
-			OutCell = FSRPlanetSurfaceGridCell();
-			return false;
-		}
-
-		OutCell = Cells[BestCellIndex];
-		return true;
-	}
-
 	FSRPlanetSurfaceGridCellId CellId;
 	FVector2D UnusedFaceCoordinates = FVector2D::ZeroVector;
 	if (!USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(LocalDirection, FaceResolution, CellId, UnusedFaceCoordinates))
@@ -1250,85 +1199,6 @@ bool USRPlanetSurfaceGrid::ProjectWorldLocationToCell(const FVector& WorldLocati
 bool USRPlanetSurfaceGrid::RaycastCell(const FVector& RayOrigin, const FVector& RayDirection, FSRPlanetSurfaceGridCell& OutCell, FVector& OutHitLocation) const
 {
 	OutHitLocation = FVector::ZeroVector;
-	if (bUsingRecoveredQuadCells && !Cells.IsEmpty())
-	{
-		const FTransform ComponentTransform = GetComponentTransform();
-		const FVector LocalRayOrigin = ComponentTransform.InverseTransformPosition(RayOrigin);
-		const FVector LocalRayDirection = ComponentTransform.InverseTransformVectorNoScale(RayDirection).GetSafeNormal();
-		if (!LocalRayDirection.IsNearlyZero())
-		{
-			TArray<int32> CandidateCellIndices;
-			FVector BroadHitLocation = FVector::ZeroVector;
-			if (IntersectRayWithSurfaceSphere(RayOrigin, RayDirection, BroadHitLocation))
-			{
-				const FVector LocalBroadHitDirection = ComponentTransform.InverseTransformPosition(BroadHitLocation).GetSafeNormal();
-				GatherRaycastCandidateCells(LocalBroadHitDirection, CandidateCellIndices);
-			}
-
-			auto TryRaycastCandidates = [this, &ComponentTransform, &LocalRayOrigin, &LocalRayDirection, &OutCell, &OutHitLocation](const TArray<int32>& CandidateIndices)
-			{
-				float BestHitDistance = BIG_NUMBER;
-				int32 BestCellIndex = INDEX_NONE;
-				for (const int32 CellIndex : CandidateIndices)
-				{
-					if (!Cells.IsValidIndex(CellIndex))
-					{
-						continue;
-					}
-
-					auto ConsiderTriangleHit = [&BestHitDistance, &BestCellIndex, CellIndex, &LocalRayOrigin, &LocalRayDirection](
-						const FVector& Point0,
-						const FVector& Point1,
-						const FVector& Point2)
-					{
-						float HitDistance = 0.0f;
-						if (IntersectRayTriangle(LocalRayOrigin, LocalRayDirection, Point0, Point1, Point2, HitDistance)
-							&& HitDistance < BestHitDistance)
-						{
-							BestHitDistance = HitDistance;
-							BestCellIndex = CellIndex;
-						}
-					};
-
-					const FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
-					ConsiderTriangleHit(Cell.Corner00, Cell.Corner10, Cell.Corner11);
-					ConsiderTriangleHit(Cell.Corner00, Cell.Corner11, Cell.Corner01);
-
-					for (const FSRPlanetSurfaceGridSideFace& SideFace : Cell.SideFaces)
-					{
-						ConsiderTriangleHit(SideFace.LocalPoint0, SideFace.LocalPoint1, SideFace.LocalPoint2);
-						ConsiderTriangleHit(SideFace.LocalPoint0, SideFace.LocalPoint2, SideFace.LocalPoint3);
-					}
-				}
-
-				if (!Cells.IsValidIndex(BestCellIndex))
-				{
-					return false;
-				}
-
-				OutCell = Cells[BestCellIndex];
-				OutHitLocation = ComponentTransform.TransformPosition(LocalRayOrigin + (LocalRayDirection * BestHitDistance));
-				return true;
-			};
-
-			if (!CandidateCellIndices.IsEmpty() && TryRaycastCandidates(CandidateCellIndices))
-			{
-				return true;
-			}
-
-			TArray<int32> AllCellIndices;
-			AllCellIndices.Reserve(Cells.Num());
-			for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
-			{
-				AllCellIndices.Add(CellIndex);
-			}
-			if (TryRaycastCandidates(AllCellIndices))
-			{
-				return true;
-			}
-		}
-	}
-
 	if (!IntersectRayWithSurfaceSphere(RayOrigin, RayDirection, OutHitLocation))
 	{
 		OutCell = FSRPlanetSurfaceGridCell();
@@ -1340,7 +1210,9 @@ bool USRPlanetSurfaceGrid::RaycastCell(const FVector& RayOrigin, const FVector& 
 		return false;
 	}
 
-	OutHitLocation = ResolveWorldSurfacePoint(OutCell.LocalNormal, 0.0f);
+	OutHitLocation = bUsingRecoveredQuadCells
+		? GetComponentTransform().TransformPosition(OutCell.LocalCenter)
+		: ResolveWorldSurfacePoint(OutCell.LocalNormal, 0.0f);
 	return true;
 }
 
@@ -2146,6 +2018,7 @@ void USRPlanetSurfaceGrid::SetGridVisible(bool bNewGridVisible)
 		{
 			RebuildGrid();
 		}
+
 		RequestInteractionHighlightRefresh();
 	}
 	UpdateDebugTickState();
@@ -2298,10 +2171,9 @@ FSRPlanetTerrainSample USRPlanetSurfaceGrid::GetTerrainSampleAtDirection(FVector
 	}
 
 	FSRPlanetTerrainSample Sample = FSRPlanetTerrainGenerator::SampleTerrain(SampleContext, DynamicMeshGeneration);
-	const float SafeDynamicMeshHeight = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight);
-	if (DynamicMeshGeneration.bMinecraft && DynamicMeshGeneration.bDynamicMeshGeneration && SafeDynamicMeshHeight > KINDA_SMALL_NUMBER)
+	const float HeightStep = GetTerrainHeightStep();
+	if (HeightStep > KINDA_SMALL_NUMBER)
 	{
-		const float HeightStep = FMath::Max(1.0f, SafeDynamicMeshHeight / 24.0f);
 		Sample.HeightOffset = FMath::RoundToFloat(Sample.HeightOffset / HeightStep) * HeightStep;
 	}
 	return Sample;
@@ -2311,7 +2183,7 @@ float USRPlanetSurfaceGrid::GetTerrainHeightStep() const
 {
 	const float SafeDynamicMeshHeight = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight);
 	return DynamicMeshGeneration.bMinecraft && DynamicMeshGeneration.bDynamicMeshGeneration && SafeDynamicMeshHeight > KINDA_SMALL_NUMBER
-		? FMath::Max(1.0f, SafeDynamicMeshHeight / 24.0f)
+		? (2.0f * FMath::Max(1.0f, PlanetRadius)) / static_cast<float>(FMath::Max(1, FaceResolution))
 		: 0.0f;
 }
 
@@ -2357,11 +2229,26 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	TArray<FSRPlanetSurfaceGridCell>&& NewCells,
 	UE::Geometry::FDynamicMesh3&& NewGridMesh)
 {
+	TMap<FSRPlanetSurfaceGridCellId, int32> EmptyCellIndexById;
+	ApplyGeneratedGridBuild(MoveTemp(NewCells), MoveTemp(NewGridMesh), MoveTemp(EmptyCellIndexById));
+}
+
+void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
+	TArray<FSRPlanetSurfaceGridCell>&& NewCells,
+	UE::Geometry::FDynamicMesh3&& NewGridMesh,
+	TMap<FSRPlanetSurfaceGridCellId, int32>&& NewCellIndexById)
+{
+	FSRTimingLogSession TimingLogSession(FString::Printf(TEXT("SurfaceGrid.ApplyGeneratedGridBuild Body=%s"), *GetNameSafe(GetOwner())));
+	const double TotalStart = SRNowSeconds();
+	const int32 IncomingCellCount = NewCells.Num();
+	double StageStart = SRNowSeconds();
 	if (ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner()))
 	{
 		OwnerBody->ClearSurfaceCellHighlights();
 	}
+	const double ClearHighlightMs = SRElapsedMilliseconds(StageStart);
 
+	StageStart = SRNowSeconds();
 	Cells = MoveTemp(NewCells);
 	bUsingRecoveredQuadCells = true;
 	TMap<ESRCubeSphereFace, int32> CellCountByFace;
@@ -2379,9 +2266,28 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	bHasSelectedCell = false;
 	SelectedCellId = FSRPlanetSurfaceGridCellId();
 	SetInteractionOverlayVisible(false);
-	RebuildCellIndex();
+	const double AssignCellsMs = SRElapsedMilliseconds(StageStart);
+
+	StageStart = SRNowSeconds();
+	if (NewCellIndexById.Num() == Cells.Num())
+	{
+		CellIndexById = MoveTemp(NewCellIndexById);
+	}
+	else
+	{
+		RebuildCellIndex();
+	}
+	const double RebuildCellIndexMs = SRElapsedMilliseconds(StageStart);
+
+	StageStart = SRNowSeconds();
 	RebuildCellInfoIndex();
+	const double RebuildCellInfoIndexMs = SRElapsedMilliseconds(StageStart);
+
+	StageStart = SRNowSeconds();
 	RebuildRaycastIndex();
+	const double RebuildRaycastIndexMs = SRElapsedMilliseconds(StageStart);
+
+	StageStart = SRNowSeconds();
 	UE::Geometry::FDynamicMesh3 EmptyGridMesh;
 	EmptyGridMesh.EnableAttributes();
 	EmptyGridMesh.Attributes()->EnablePrimaryColors();
@@ -2391,6 +2297,19 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	bCellsDirty = false;
 	bGridMeshDirty = false;
 	UpdateDebugTickState();
+	const double FinalizeMs = SRElapsedMilliseconds(StageStart);
+
+	FSRTimingLog::AddLine(FString::Printf(TEXT("SurfaceGrid.ApplyGeneratedGridBuild Body=%s Total=%.2fms Cells=%d FaceResolution=%d ClearHighlights=%.2fms AssignCells=%.2fms CellIndex=%.2fms CellInfoIndex=%.2fms RaycastIndex=%.2fms Finalize=%.2fms"),
+		*GetNameSafe(GetOwner()),
+		SRElapsedMilliseconds(TotalStart),
+		IncomingCellCount,
+		FaceResolution,
+		ClearHighlightMs,
+		AssignCellsMs,
+		RebuildCellIndexMs,
+		RebuildCellInfoIndexMs,
+		RebuildRaycastIndexMs,
+		FinalizeMs));
 }
 
 bool USRPlanetSurfaceGrid::GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const
@@ -2454,7 +2373,7 @@ FSRPlanetSurfaceGridCellInfo USRPlanetSurfaceGrid::BuildCellInfo(const FSRPlanet
 	CellInfo.bOccupied = Cell.bOccupied;
 	CellInfo.OccupantId = Cell.OccupantId;
 	CellInfo.bCanConstruct = !Cell.bOccupied;
-	return ResolveRuntimeCellInfo(CellInfo);
+	return CellInfo;
 }
 
 FSRPlanetSurfaceGridCellInfo USRPlanetSurfaceGrid::ResolveRuntimeCellInfo(const FSRPlanetSurfaceGridCellInfo& CellInfo) const
@@ -2486,117 +2405,8 @@ void USRPlanetSurfaceGrid::RebuildCellInfoIndex()
 	}
 }
 
-uint64 USRPlanetSurfaceGrid::BuildRaycastBinKey(const FSRPlanetSurfaceGridCellId& BinId) const
-{
-	return (static_cast<uint64>(static_cast<uint8>(BinId.Face)) << 32)
-		| (static_cast<uint64>(static_cast<uint16>(BinId.CellX)) << 16)
-		| static_cast<uint64>(static_cast<uint16>(BinId.CellY));
-}
-
-void USRPlanetSurfaceGrid::AddCellToRaycastBin(const FSRPlanetSurfaceGridCellId& BinId, int32 CellIndex)
-{
-	if (!Cells.IsValidIndex(CellIndex)
-		|| BinId.CellX < 0
-		|| BinId.CellY < 0
-		|| BinId.CellX >= RaycastBinResolution
-		|| BinId.CellY >= RaycastBinResolution)
-	{
-		return;
-	}
-
-	RaycastCellIndicesByBin.FindOrAdd(BuildRaycastBinKey(BinId)).AddUnique(CellIndex);
-}
-
-bool USRPlanetSurfaceGrid::GetRaycastBinForDirection(const FVector& LocalDirection, FSRPlanetSurfaceGridCellId& OutBinId) const
-{
-	FVector2D UnusedFaceCoordinates = FVector2D::ZeroVector;
-	return USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(
-		LocalDirection.GetSafeNormal(),
-		RaycastBinResolution,
-		OutBinId,
-		UnusedFaceCoordinates);
-}
-
 void USRPlanetSurfaceGrid::RebuildRaycastIndex()
 {
-	RaycastCellIndicesByBin.Reset();
-	if (!bUsingRecoveredQuadCells || Cells.IsEmpty())
-	{
-		return;
-	}
-
-	RaycastCellIndicesByBin.Reserve(Cells.Num());
-	for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
-	{
-		const FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
-		const FVector SampleDirections[5] =
-		{
-			Cell.LocalCenter,
-			Cell.Corner00,
-			Cell.Corner10,
-			Cell.Corner11,
-			Cell.Corner01,
-		};
-
-		for (const FVector& SampleDirection : SampleDirections)
-		{
-			FSRPlanetSurfaceGridCellId BinId;
-			if (!GetRaycastBinForDirection(SampleDirection, BinId))
-			{
-				continue;
-			}
-
-			for (int32 OffsetY = -1; OffsetY <= 1; ++OffsetY)
-			{
-				for (int32 OffsetX = -1; OffsetX <= 1; ++OffsetX)
-				{
-					FSRPlanetSurfaceGridCellId ExpandedBinId = BinId;
-					ExpandedBinId.CellX += OffsetX;
-					ExpandedBinId.CellY += OffsetY;
-					AddCellToRaycastBin(ExpandedBinId, CellIndex);
-				}
-			}
-		}
-	}
-}
-
-void USRPlanetSurfaceGrid::GatherRaycastCandidateCells(const FVector& LocalDirection, TArray<int32>& OutCandidateCellIndices) const
-{
-	OutCandidateCellIndices.Reset();
-
-	FSRPlanetSurfaceGridCellId BinId;
-	if (!GetRaycastBinForDirection(LocalDirection, BinId))
-	{
-		return;
-	}
-
-	for (int32 OffsetY = -1; OffsetY <= 1; ++OffsetY)
-	{
-		for (int32 OffsetX = -1; OffsetX <= 1; ++OffsetX)
-		{
-			FSRPlanetSurfaceGridCellId CandidateBinId = BinId;
-			CandidateBinId.CellX += OffsetX;
-			CandidateBinId.CellY += OffsetY;
-			if (CandidateBinId.CellX < 0
-				|| CandidateBinId.CellY < 0
-				|| CandidateBinId.CellX >= RaycastBinResolution
-				|| CandidateBinId.CellY >= RaycastBinResolution)
-			{
-				continue;
-			}
-
-			const TArray<int32>* BinCellIndices = RaycastCellIndicesByBin.Find(BuildRaycastBinKey(CandidateBinId));
-			if (!BinCellIndices)
-			{
-				continue;
-			}
-
-			for (const int32 CellIndex : *BinCellIndices)
-			{
-				OutCandidateCellIndices.AddUnique(CellIndex);
-			}
-		}
-	}
 }
 
 bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerStaticMeshQuads()

@@ -9,6 +9,7 @@ class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class USRPlanetSurfaceGrid;
 class USRConveyorNetworkComponent;
+class USRStructureInstanceManagerComponent;
 class USROrbit;
 class USplineMeshComponent;
 class UStaticMesh;
@@ -30,6 +31,8 @@ public:
 	virtual USRPlanetSurfaceGrid* GetSurfaceGrid() const override;
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor")
 	USRConveyorNetworkComponent* GetConveyorNetwork() const;
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Structure")
+	USRStructureInstanceManagerComponent* GetStructureInstanceManager() const;
 	virtual void SetCelestialBodyMesh(bool bUseDynamicMesh) override;
 	virtual void RefreshRotationAxisLineVisual() override;
 
@@ -48,6 +51,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "ConveyorNetwork"))
 	TObjectPtr<USRConveyorNetworkComponent> ConveyorNetwork;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "StructureInstanceManager"))
+	TObjectPtr<USRStructureInstanceManagerComponent> StructureInstanceManager;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "GridLineColor"))
 	FLinearColor GridLineColor;

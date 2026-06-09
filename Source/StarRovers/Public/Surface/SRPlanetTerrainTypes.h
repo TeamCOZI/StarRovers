@@ -8,6 +8,42 @@
 class UMaterialInterface;
 class USRPlanetBiomeDataAsset;
 
+struct STARROVERS_API FSRPlanetBiomeGenerationSnapshot
+{
+	FName BiomeId = FName(TEXT("Plains"));
+	ESRBiomeWaterRole WaterRole = ESRBiomeWaterRole::None;
+	TArray<FSRBiomePlacementRule> PlacementRules;
+	float SpawnWeight = 1.0f;
+	float RegionSize = 0.35f;
+	int32 Priority = 0;
+	bool bCanOverrideLowerPriorityBiomes = false;
+	float OverrideMinScore = 0.65f;
+};
+
+struct STARROVERS_API FSRDynamicMeshGenerationSnapshot
+{
+	bool bDynamicMeshGeneration = true;
+	bool bMinecraft = false;
+	int32 GenerationSeed = 1000;
+	bool bRandomizeGenerationSeedEachRun = false;
+	float DynamicMeshHeight = 120.0f;
+	float OceanThreshold = -0.05f;
+	float ContinentFrequency = 1.15f;
+	float MountainFrequency = 7.0f;
+	float MountainStrength = 1.8f;
+	float ValleyStrength = 0.35f;
+	float RiverStrength = 0.28f;
+	float LakeStrength = 0.18f;
+	float TemperatureFrequency = 1.75f;
+	float MoistureFrequency = 2.5f;
+	float DetailFrequency = 18.0f;
+	float DetailStrength = 0.45f;
+	float NoiseStrength = 0.18f;
+	int32 NoiseOctaves = 5;
+	float NoisePersistence = 0.5f;
+	TArray<FSRPlanetBiomeGenerationSnapshot> Biomes;
+};
+
 USTRUCT(BlueprintType)
 struct STARROVERS_API FSRBiomeMaterialEntry
 {
@@ -57,7 +93,7 @@ struct STARROVERS_API FSRDynamicMeshGeneration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "bDynamicMeshGeneration", ToolTip = "절차 지형 생성을 사용할지 정합니다. 끄면 Static Mesh 형태를 그대로 사용하고 Dynamic Mesh 높이 변형을 적용하지 않습니다."))
 	bool bDynamicMeshGeneration = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "bMinecraft", ToolTip = "높이를 계단식 블록 형태로 양자화할지 정합니다. 켜면 DynamicMeshHeight / 24 단위로 높이가 끊기고, 끄면 연속적인 지형 높이를 사용합니다."))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "bMinecraft", ToolTip = "Quantizes terrain height to block steps. When enabled, the step matches one regular cube-face cell edge length; when disabled, continuous terrain height is used."))
 	bool bMinecraft = false;
 
 	UPROPERTY()
@@ -65,6 +101,9 @@ struct STARROVERS_API FSRDynamicMeshGeneration
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "BiomeMaterials", EditFixedSize, ToolTip = "Profile에 포함된 Biome DA별 머티리얼 슬롯입니다. Profile의 Biome 목록 순서에 맞춰 자동 정규화되며, 최종 표면 표현은 여기 지정한 머티리얼을 우선 사용합니다."))
 	TArray<FSRBiomeMaterialEntry> BiomeMaterials;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "bRandomizeGenerationSeedEachRun", ToolTip = "When enabled, runtime generation replaces GenerationSeed with a fresh random seed each level run."))
+	bool bRandomizeGenerationSeedEachRun = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "GenerationSeed", ToolTip = "지형, 기후, biome 패치 배치를 재현하기 위한 시드입니다. 같은 설정과 같은 Seed는 같은 결과를 만듭니다. 값을 바꾸면 전체 패턴이 달라집니다."))
 	int32 GenerationSeed = 1000;
@@ -120,6 +159,7 @@ struct STARROVERS_API FSRDynamicMeshGeneration
 	void NormalizeBiomeMaterials(const TArray<TObjectPtr<USRPlanetBiomeDataAsset>>& AllowedBiomeDataAssets);
 	UMaterialInterface* GetBiomeMaterial(FName BiomeId) const;
 	int32 GetBiomeMaterialSlotIndex(FName BiomeId) const;
+	FSRDynamicMeshGenerationSnapshot MakeThreadSafeSnapshot() const;
 };
 
 USTRUCT(BlueprintType)

@@ -7,6 +7,7 @@
 
 class UMaterialInterface;
 class USRPlanetTerrainProfileDataAsset;
+class USRStaticMeshQuadGridCacheDataAsset;
 class UStaticMesh;
 
 UCLASS(BlueprintType)
@@ -35,6 +36,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "StaticMesh"))
 	TObjectPtr<UStaticMesh> StaticMesh = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "StaticMeshQuadGridCacheDataAsset"))
+	TObjectPtr<USRStaticMeshQuadGridCacheDataAsset> StaticMeshQuadGridCacheDataAsset = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "Material"))
 	TObjectPtr<UMaterialInterface> Material = nullptr;

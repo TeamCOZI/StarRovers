@@ -2,7 +2,6 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Engine/CollisionProfile.h"
 #include "Materials/MaterialInterface.h"
 
 ASRStructure::ASRStructure()
@@ -14,7 +13,8 @@ ASRStructure::ASRStructure()
 
 	StructureStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StructureStaticMesh"));
 	StructureStaticMesh->SetupAttachment(SceneRoot);
-	StructureStaticMesh->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	StructureStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	StructureStaticMesh->SetGenerateOverlapEvents(false);
 }
 
 void ASRStructure::OnConstruction(const FTransform& Transform)
@@ -107,9 +107,9 @@ void ASRStructure::ApplyStructureVisuals()
 		StructureStaticMesh->SetMaterial(0, ActiveMaterial);
 	}
 
-	StructureStaticMesh->SetCollisionEnabled(bStructureGhostMode ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryAndPhysics);
-	StructureStaticMesh->SetGenerateOverlapEvents(!bStructureGhostMode);
-	SetActorEnableCollision(!bStructureGhostMode);
+	StructureStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	StructureStaticMesh->SetGenerateOverlapEvents(false);
+	SetActorEnableCollision(false);
 }
 
 UMaterialInterface* ASRStructure::ResolveActiveMaterial() const

@@ -20,6 +20,7 @@
 namespace StarRoversControllerInputPaths
 {
 	static constexpr TCHAR LeftClickAction[] = TEXT("/Game/BlueprintClasses/Core/IA_LeftClick.IA_LeftClick");
+	static constexpr TCHAR DeleteStructureAction[] = TEXT("/Game/BlueprintClasses/Core/IA_DragHold.IA_DragHold");
 	static constexpr TCHAR FocusParentAction[] = TEXT("/Game/BlueprintClasses/Core/IA_FocusParent.IA_FocusParent");
 }
 
@@ -55,6 +56,16 @@ ASRPlayerController::ASRPlayerController()
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires FocusParentAction at '%s'."), StarRoversControllerInputPaths::FocusParentAction);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UInputAction> DeleteStructureActionFinder(StarRoversControllerInputPaths::DeleteStructureAction);
+	if (DeleteStructureActionFinder.Succeeded())
+	{
+		DeleteStructureAction = DeleteStructureActionFinder.Object;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires DeleteStructureAction at '%s' for right-click structure deletion."), StarRoversControllerInputPaths::DeleteStructureAction);
 	}
 
 	FocusInfoWidgetZOrder = 0;
@@ -130,6 +141,15 @@ void ASRPlayerController::SetupInputComponent()
 		else
 		{
 			UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires FocusParentAction before input binding."));
+		}
+
+		if (DeleteStructureAction)
+		{
+			EnhancedInputComponent->BindAction(DeleteStructureAction, ETriggerEvent::Started, this, &ASRPlayerController::HandleRightClick);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires DeleteStructureAction before right-click structure deletion binding."));
 		}
 	}
 }
@@ -248,6 +268,11 @@ bool ASRPlayerController::ShouldHandleAssemblyPlacementDrag() const
 	return AssemblyComponent && AssemblyComponent->ShouldHandleStructurePlacementDrag();
 }
 
+bool ASRPlayerController::ShouldBlockAssemblyCameraDrag() const
+{
+	return IsAssemblyModeActive() && IsValid(SelectedStructureDataAsset);
+}
+
 bool ASRPlayerController::BeginAssemblyPlacementDrag()
 {
 	AActor* AssemblySelectedActor = nullptr;
@@ -293,11 +318,6 @@ void ASRPlayerController::HandleLeftClick()
 {
 	bPendingInitialPrimaryStarFocus = false;
 
-	if (BeginAssemblyPlacementDrag())
-	{
-		return;
-	}
-
 	AActor* AssemblySelectedActor = nullptr;
 	if (AssemblyComponent && AssemblyComponent->TryHandleAssemblyClick(AssemblySelectedActor))
 	{
@@ -325,6 +345,18 @@ void ASRPlayerController::HandleLeftClick()
 	}
 
 	RequestFocusActor(SelectedBody);
+}
+
+void ASRPlayerController::HandleRightClick()
+{
+	AActor* AssemblySelectedActor = nullptr;
+	if (AssemblyComponent && AssemblyComponent->TryHandleAssemblyDelete(AssemblySelectedActor))
+	{
+		if (IsValid(AssemblySelectedActor) && SelectedActor != AssemblySelectedActor)
+		{
+			UpdateSelection(AssemblySelectedActor);
+		}
+	}
 }
 
 void ASRPlayerController::HandleFocusParent()
@@ -706,29 +738,6 @@ void ASRPlayerController::HandleFocusedActorChanged(AActor* NewFocusedActor)
 	else if (USRPlanetSurfaceGrid* FocusedSurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(NewFocusedActor))
 	{
 		FocusedSurfaceGrid->ClearHoveredCell();
-	}
-
-	if (ASRCelestialBody* FocusedBody = Cast<ASRCelestialBody>(NewFocusedActor))
-	{
-		if (!FocusedBody->HasCelestialBodyDynamicMeshBuild())
-		{
-			TWeakObjectPtr<ASRCelestialBody> WeakFocusedBody = FocusedBody;
-			TWeakObjectPtr<ASRCameraPawn> WeakCameraPawn = BoundCameraPawn;
-			FTimerHandle PrepareDynamicMeshTimerHandle;
-			GetWorldTimerManager().SetTimer(
-				PrepareDynamicMeshTimerHandle,
-				[WeakFocusedBody, WeakCameraPawn]()
-				{
-					ASRCelestialBody* Body = WeakFocusedBody.Get();
-					ASRCameraPawn* CameraPawn = WeakCameraPawn.Get();
-					if (Body && CameraPawn && CameraPawn->GetFocusedActor() == Body)
-					{
-						Body->PrepareCelestialBodyDynamicMesh();
-					}
-				},
-				0.75f,
-				false);
-		}
 	}
 
 	if (!IsValid(NewFocusedActor) || SelectedActor != NewFocusedActor)

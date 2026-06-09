@@ -9,6 +9,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Simulation/SROrbit.h"
+#include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetTerrainGenerator.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "UObject/ConstructorHelpers.h"
@@ -184,6 +185,9 @@ ASRPlanet::ASRPlanet()
 
 	ConveyorNetwork = CreateDefaultSubobject<USRConveyorNetworkComponent>(TEXT("ConveyorNetwork"));
 	ConveyorNetwork->SetupAttachment(SceneRoot);
+
+	StructureInstanceManager = CreateDefaultSubobject<USRStructureInstanceManagerComponent>(TEXT("StructureInstanceManager"));
+	StructureInstanceManager->SetupAttachment(SceneRoot);
 }
 
 void ASRPlanet::Tick(float DeltaSeconds)
@@ -377,6 +381,11 @@ USRPlanetSurfaceGrid* ASRPlanet::GetSurfaceGrid() const
 USRConveyorNetworkComponent* ASRPlanet::GetConveyorNetwork() const
 {
 	return ConveyorNetwork;
+}
+
+USRStructureInstanceManagerComponent* ASRPlanet::GetStructureInstanceManager() const
+{
+	return StructureInstanceManager;
 }
 
 void ASRPlanet::SetCelestialBodyMesh(bool bUseDynamicMesh)
