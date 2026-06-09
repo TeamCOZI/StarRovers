@@ -22,12 +22,12 @@
 
 namespace
 {
-	double SRNowSeconds()
+	double SRSurfaceGridNowSeconds()
 	{
 		return FPlatformTime::Seconds();
 	}
 
-	double SRElapsedMilliseconds(double StartSeconds)
+	double SRSurfaceGridElapsedMilliseconds(double StartSeconds)
 	{
 		return (FPlatformTime::Seconds() - StartSeconds) * 1000.0;
 	}
@@ -2239,16 +2239,16 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	TMap<FSRPlanetSurfaceGridCellId, int32>&& NewCellIndexById)
 {
 	FSRTimingLogSession TimingLogSession(FString::Printf(TEXT("SurfaceGrid.ApplyGeneratedGridBuild Body=%s"), *GetNameSafe(GetOwner())));
-	const double TotalStart = SRNowSeconds();
+	const double TotalStart = SRSurfaceGridNowSeconds();
 	const int32 IncomingCellCount = NewCells.Num();
-	double StageStart = SRNowSeconds();
+	double StageStart = SRSurfaceGridNowSeconds();
 	if (ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner()))
 	{
 		OwnerBody->ClearSurfaceCellHighlights();
 	}
-	const double ClearHighlightMs = SRElapsedMilliseconds(StageStart);
+	const double ClearHighlightMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 
-	StageStart = SRNowSeconds();
+	StageStart = SRSurfaceGridNowSeconds();
 	Cells = MoveTemp(NewCells);
 	bUsingRecoveredQuadCells = true;
 	TMap<ESRCubeSphereFace, int32> CellCountByFace;
@@ -2266,9 +2266,9 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	bHasSelectedCell = false;
 	SelectedCellId = FSRPlanetSurfaceGridCellId();
 	SetInteractionOverlayVisible(false);
-	const double AssignCellsMs = SRElapsedMilliseconds(StageStart);
+	const double AssignCellsMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 
-	StageStart = SRNowSeconds();
+	StageStart = SRSurfaceGridNowSeconds();
 	if (NewCellIndexById.Num() == Cells.Num())
 	{
 		CellIndexById = MoveTemp(NewCellIndexById);
@@ -2277,17 +2277,17 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	{
 		RebuildCellIndex();
 	}
-	const double RebuildCellIndexMs = SRElapsedMilliseconds(StageStart);
+	const double RebuildCellIndexMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 
-	StageStart = SRNowSeconds();
+	StageStart = SRSurfaceGridNowSeconds();
 	RebuildCellInfoIndex();
-	const double RebuildCellInfoIndexMs = SRElapsedMilliseconds(StageStart);
+	const double RebuildCellInfoIndexMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 
-	StageStart = SRNowSeconds();
+	StageStart = SRSurfaceGridNowSeconds();
 	RebuildRaycastIndex();
-	const double RebuildRaycastIndexMs = SRElapsedMilliseconds(StageStart);
+	const double RebuildRaycastIndexMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 
-	StageStart = SRNowSeconds();
+	StageStart = SRSurfaceGridNowSeconds();
 	UE::Geometry::FDynamicMesh3 EmptyGridMesh;
 	EmptyGridMesh.EnableAttributes();
 	EmptyGridMesh.Attributes()->EnablePrimaryColors();
@@ -2297,11 +2297,11 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	bCellsDirty = false;
 	bGridMeshDirty = false;
 	UpdateDebugTickState();
-	const double FinalizeMs = SRElapsedMilliseconds(StageStart);
+	const double FinalizeMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 
 	FSRTimingLog::AddLine(FString::Printf(TEXT("SurfaceGrid.ApplyGeneratedGridBuild Body=%s Total=%.2fms Cells=%d FaceResolution=%d ClearHighlights=%.2fms AssignCells=%.2fms CellIndex=%.2fms CellInfoIndex=%.2fms RaycastIndex=%.2fms Finalize=%.2fms"),
 		*GetNameSafe(GetOwner()),
-		SRElapsedMilliseconds(TotalStart),
+		SRSurfaceGridElapsedMilliseconds(TotalStart),
 		IncomingCellCount,
 		FaceResolution,
 		ClearHighlightMs,

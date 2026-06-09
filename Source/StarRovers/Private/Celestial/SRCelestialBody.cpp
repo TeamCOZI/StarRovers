@@ -45,12 +45,12 @@ namespace
 		0.25f,
 		TEXT("Minimum Minecraft height-step ratio required to generate an internal terrain side wall. Set 0 to only skip exact same-height edges."));
 
-	double SRNowSeconds()
+	double SRCelestialNowSeconds()
 	{
 		return FPlatformTime::Seconds();
 	}
 
-	double SRElapsedMilliseconds(double StartSeconds)
+	double SRCelestialElapsedMilliseconds(double StartSeconds)
 	{
 		return (FPlatformTime::Seconds() - StartSeconds) * 1000.0;
 	}
@@ -1855,7 +1855,7 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicM
 bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 {
 	FSRTimingLogSession TimingLogSession(FString::Printf(TEXT("DynamicMesh '%s'"), *GetName()));
-	const double TotalStart = SRNowSeconds();
+	const double TotalStart = SRCelestialNowSeconds();
 	if (!IsValid(CelestialBodyDynamicMesh.Get()) || !IsValid(StaticMesh.Get()))
 	{
 		return false;
@@ -1864,13 +1864,13 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 	const uint32 DynamicMeshBuildHash = ComputeDynamicMeshBuildHash();
 	if (bHasCachedDynamicMeshBuildHash && CachedDynamicMeshBuildHash == DynamicMeshBuildHash)
 	{
-		FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' AlreadyBuilt %.2f ms"), *GetName(), SRElapsedMilliseconds(TotalStart)));
+		FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' AlreadyBuilt %.2f ms"), *GetName(), SRCelestialElapsedMilliseconds(TotalStart)));
 		return true;
 	}
 
 	auto ApplyRuntimeCacheEntry = [this, DynamicMeshBuildHash](const FSRCelestialBodyDynamicMeshRuntimeCacheEntry& CacheEntry)
 	{
-		const double ApplyStart = SRNowSeconds();
+		const double ApplyStart = SRCelestialNowSeconds();
 		ResetDynamicMeshCellColorData();
 
 		DynamicMeshColorDataByCell = CacheEntry.ColorDataByCell;
@@ -1899,19 +1899,19 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 		{
 			if (!CachedSurfaceGridCells.IsEmpty())
 			{
-				const double SurfaceGridApplyStart = SRNowSeconds();
+				const double SurfaceGridApplyStart = SRCelestialNowSeconds();
 				TArray<FSRPlanetSurfaceGridCell> GeneratedGridCells = CachedSurfaceGridCells;
 				UE::Geometry::FDynamicMesh3 EmptyGridMesh;
 				EmptyGridMesh.EnableAttributes();
 				EmptyGridMesh.Attributes()->EnablePrimaryColors();
 				SurfaceGrid->ApplyGeneratedGridBuild(MoveTemp(GeneratedGridCells), MoveTemp(EmptyGridMesh));
-				SurfaceGridApplyMs = SRElapsedMilliseconds(SurfaceGridApplyStart);
+				SurfaceGridApplyMs = SRCelestialElapsedMilliseconds(SurfaceGridApplyStart);
 			}
 		}
 
 		CachedDynamicMeshBuildHash = DynamicMeshBuildHash;
 		bHasCachedDynamicMeshBuildHash = true;
-		FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh.ApplyCache '%s' %.2f ms SurfaceGrid=%.2f ms Meshes=%d Cells=%d"), *GetName(), SRElapsedMilliseconds(ApplyStart), SurfaceGridApplyMs, CacheEntry.FaceDynamicMeshes.Num(), CacheEntry.SurfaceGridCells.Num()));
+		FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh.ApplyCache '%s' %.2f ms SurfaceGrid=%.2f ms Meshes=%d Cells=%d"), *GetName(), SRCelestialElapsedMilliseconds(ApplyStart), SurfaceGridApplyMs, CacheEntry.FaceDynamicMeshes.Num(), CacheEntry.SurfaceGridCells.Num()));
 		return true;
 	};
 
@@ -1920,14 +1920,14 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 		if (const FSRCelestialBodyDynamicMeshRuntimeCacheEntry* CacheEntry = GCelestialBodyDynamicMeshRuntimeCache.Find(DynamicMeshBuildHash))
 		{
 			const bool bApplied = ApplyRuntimeCacheEntry(*CacheEntry);
-			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' RuntimeCacheHit Total=%.2f ms"), *GetName(), SRElapsedMilliseconds(TotalStart)));
+			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' RuntimeCacheHit Total=%.2f ms"), *GetName(), SRCelestialElapsedMilliseconds(TotalStart)));
 			return bApplied;
 		}
 	}
 
 	ResetDynamicMeshCellColorData();
 
-	const double RenderDataStart = SRNowSeconds();
+	const double RenderDataStart = SRCelestialNowSeconds();
 	const FStaticMeshRenderData* RenderData = StaticMesh->GetRenderData();
 	if (!RenderData || RenderData->LODResources.IsEmpty())
 	{
@@ -1947,7 +1947,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 		return false;
 	}
 	const float SourceBodyRadius = FMath::Max(1.0f, StaticMesh->GetBounds().SphereRadius);
-	FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' RenderData %.2f ms Vertices=%d Indices=%d"), *GetName(), SRElapsedMilliseconds(RenderDataStart), VertexCount, IndexCount));
+	FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' RenderData %.2f ms Vertices=%d Indices=%d"), *GetName(), SRCelestialElapsedMilliseconds(RenderDataStart), VertexCount, IndexCount));
 
 	UE::Geometry::FDynamicMesh3 DynamicMesh;
 	DynamicMesh.EnableAttributes();
@@ -1971,7 +1971,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 		TArray<FSRStaticMeshQuadGridCacheEdgeLink> QuadEdgeLinks;
 		TArray<FSRStaticMeshQuadGridCacheBoundaryEdge> QuadBoundaryEdges;
 
-		const double QuadCacheStart = SRNowSeconds();
+		const double QuadCacheStart = SRCelestialNowSeconds();
 		if (TryLoadStaticMeshQuadGridPrecomputedCache(
 			StaticMeshQuadGridCacheDataAsset.Get(),
 			StaticMesh.Get(),
@@ -1987,7 +1987,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 			FSRTimingLog::AddLine(FString::Printf(
 				TEXT("DynamicMesh '%s' StaticMeshQuadPrecomputedCacheHit %.2f ms Cache='%s' Quads=%d"),
 				*GetName(),
-				SRElapsedMilliseconds(QuadCacheStart),
+				SRCelestialElapsedMilliseconds(QuadCacheStart),
 				*GetNameSafe(StaticMeshQuadGridCacheDataAsset.Get()),
 				SourceQuads.Num()));
 		}
@@ -1998,30 +1998,30 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 			QuadGridAddresses = QuadCacheEntry->QuadGridAddresses;
 			QuadEdgeLinks = QuadCacheEntry->EdgeLinks;
 			QuadBoundaryEdges = QuadCacheEntry->BoundaryEdges;
-			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' StaticMeshQuadCacheHit %.2f ms Quads=%d"), *GetName(), SRElapsedMilliseconds(QuadCacheStart), SourceQuads.Num()));
+			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' StaticMeshQuadCacheHit %.2f ms Quads=%d"), *GetName(), SRCelestialElapsedMilliseconds(QuadCacheStart), SourceQuads.Num()));
 		}
 		else
 		{
-			double StageStart = SRNowSeconds();
+			double StageStart = SRCelestialNowSeconds();
 			SourceVertexPositions.SetNum(VertexCount);
 			for (int32 VertexIndex = 0; VertexIndex < VertexCount; ++VertexIndex)
 			{
 				SourceVertexPositions[VertexIndex] = FVector(PositionVertexBuffer.VertexPosition(VertexIndex));
 			}
-			const double SourcePositionsMs = SRElapsedMilliseconds(StageStart);
+			const double SourcePositionsMs = SRCelestialElapsedMilliseconds(StageStart);
 
-			StageStart = SRNowSeconds();
+			StageStart = SRCelestialNowSeconds();
 			SourceQuads = RecoverSourceQuads(PositionVertexBuffer, IndexBuffer, IndexCount);
-			const double RecoverQuadsMs = SRElapsedMilliseconds(StageStart);
+			const double RecoverQuadsMs = SRCelestialElapsedMilliseconds(StageStart);
 			if (!SourceQuads.IsEmpty())
 			{
-				StageStart = SRNowSeconds();
+				StageStart = SRCelestialNowSeconds();
 				QuadGridAddresses = BuildRecoveredQuadGridAddresses(SourceQuads, PositionVertexBuffer);
-				FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' BuildQuadGridAddresses %.2f ms"), *GetName(), SRElapsedMilliseconds(StageStart)));
+				FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' BuildQuadGridAddresses %.2f ms"), *GetName(), SRCelestialElapsedMilliseconds(StageStart)));
 				BuildStaticMeshQuadEdgeAdjacency(SourceQuads, SourceVertexPositions, QuadEdgeLinks, QuadBoundaryEdges);
 			}
 
-			StageStart = SRNowSeconds();
+			StageStart = SRCelestialNowSeconds();
 			StoreCelestialBodyStaticMeshQuadRuntimeCache(
 				StaticMeshQuadCacheKey,
 				SourceVertexPositions,
@@ -2030,16 +2030,16 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				QuadEdgeLinks,
 				QuadBoundaryEdges,
 				SourceBodyRadius);
-			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' StaticMeshQuadCacheMiss Total=%.2f ms SourcePositions=%.2f ms RecoverQuads=%.2f ms Store=%.2f ms Quads=%d"), *GetName(), SRElapsedMilliseconds(QuadCacheStart), SourcePositionsMs, RecoverQuadsMs, SRElapsedMilliseconds(StageStart), SourceQuads.Num()));
+			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' StaticMeshQuadCacheMiss Total=%.2f ms SourcePositions=%.2f ms RecoverQuads=%.2f ms Store=%.2f ms Quads=%d"), *GetName(), SRCelestialElapsedMilliseconds(QuadCacheStart), SourcePositionsMs, RecoverQuadsMs, SRCelestialElapsedMilliseconds(StageStart), SourceQuads.Num()));
 		}
 
 		if (!SourceQuads.IsEmpty())
 		{
 			if (QuadEdgeLinks.IsEmpty() && QuadBoundaryEdges.IsEmpty())
 			{
-				const double EdgeAdjacencyStart = SRNowSeconds();
+				const double EdgeAdjacencyStart = SRCelestialNowSeconds();
 				BuildStaticMeshQuadEdgeAdjacency(SourceQuads, SourceVertexPositions, QuadEdgeLinks, QuadBoundaryEdges);
-				FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' BuildQuadEdgeAdjacency %.2f ms EdgeLinks=%d BoundaryEdges=%d"), *GetName(), SRElapsedMilliseconds(EdgeAdjacencyStart), QuadEdgeLinks.Num(), QuadBoundaryEdges.Num()));
+				FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' BuildQuadEdgeAdjacency %.2f ms EdgeLinks=%d BoundaryEdges=%d"), *GetName(), SRCelestialElapsedMilliseconds(EdgeAdjacencyStart), QuadEdgeLinks.Num(), QuadBoundaryEdges.Num()));
 			}
 
 			TArray<UE::Geometry::FDynamicMesh3> FaceDynamicMeshes;
@@ -2477,7 +2477,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 			}
 			TArray<FSRPlanetTerrainSample> QuadTerrainSamples;
 			QuadTerrainSamples.SetNum(SourceQuads.Num());
-			double StageStart = SRNowSeconds();
+			double StageStart = SRCelestialNowSeconds();
 			ParallelFor(SourceQuads.Num(), [&SourceQuads, &QuadGridAddresses, &SourceVertexPositions, SourceBodyRadius, &DynamicMeshGenerationSnapshot, &QuadTerrainSamples](int32 QuadIndex)
 			{
 				const FSRSourceQuad& SourceQuad = SourceQuads[QuadIndex];
@@ -2521,9 +2521,9 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				const float TerrainHeightStep = ComputeRegularCubeFaceCellEdgeLength(SourceBodyRadius, QuadGridAddress.FaceResolution);
 				QuadTerrainSamples[QuadIndex] = SampleTerrainForDynamicMesh(TerrainSampleContext, DynamicMeshGenerationSnapshot, TerrainHeightStep);
 			});
-			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' TerrainSamples %.2f ms Samples=%d"), *GetName(), SRElapsedMilliseconds(StageStart), QuadTerrainSamples.Num()));
+			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' TerrainSamples %.2f ms Samples=%d"), *GetName(), SRCelestialElapsedMilliseconds(StageStart), QuadTerrainSamples.Num()));
 
-			StageStart = SRNowSeconds();
+			StageStart = SRCelestialNowSeconds();
 			double BuildFacePrepareMs = 0.0;
 			double BuildFaceSurfaceMeshMs = 0.0;
 			double BuildFaceCachedCellMs = 0.0;
@@ -2535,7 +2535,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 			GeneratedQuadRuntimeData.SetNum(SourceQuads.Num());
 			auto BuildFaceMeshAndCellForQuad = [&](int32 QuadIndex)
 			{
-				double SubStageStart = SRNowSeconds();
+				double SubStageStart = SRCelestialNowSeconds();
 				const FSRSourceQuad& SourceQuad = SourceQuads[QuadIndex];
 				FVector SourcePositions[4];
 				int32 SourceVertexIds[4];
@@ -2610,16 +2610,16 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 
 				const int32 MaterialId = BiomeMaterialSlotIndexById.FindRef(TerrainSample.BiomeId);
 				const int32 CellMeshComponentIndex = GetCubeSphereFaceComponentIndex(CellId.Face);
-				double LocalBuildFacePrepareMs = SRElapsedMilliseconds(SubStageStart);
+				double LocalBuildFacePrepareMs = SRCelestialElapsedMilliseconds(SubStageStart);
 
-				SubStageStart = SRNowSeconds();
+				SubStageStart = SRCelestialNowSeconds();
 				const FSRCelestialBodyDynamicMeshQuadRenderData SurfaceRenderData =
 					AppendFlatColoredQuad(CellMeshComponentIndex, TargetPositions[0], TargetPositions[1], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor, MaterialId);
 				FSRCelestialBodyDynamicMeshCellColorData& CellColorData = DynamicMeshColorDataByCell.FindOrAdd(CellId);
 				CellColorData.SurfaceColorElements.Append(SurfaceRenderData.ColorElements);
-				double LocalBuildFaceSurfaceMeshMs = SRElapsedMilliseconds(SubStageStart);
+				double LocalBuildFaceSurfaceMeshMs = SRCelestialElapsedMilliseconds(SubStageStart);
 
-				SubStageStart = SRNowSeconds();
+				SubStageStart = SRCelestialNowSeconds();
 				FSRPlanetSurfaceGridCell CachedCell;
 				CachedCell.CellId = CellId;
 				CachedCell.LocalCenter = CellDirection * ((SourceCellRadius + TerrainSample.HeightOffset) * Scale);
@@ -2645,15 +2645,15 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				CachedCellIndex = CachedSurfaceGridCells.Num();
 				CachedSurfaceGridCells.Add(CachedCell);
 				CachedCellIndexById.Add(CellId, CachedCellIndex);
-				double LocalBuildFaceCachedCellMs = SRElapsedMilliseconds(SubStageStart);
+				double LocalBuildFaceCachedCellMs = SRCelestialElapsedMilliseconds(SubStageStart);
 				double LocalBuildFaceGridMeshMs = 0.0;
 				if (bBuildGeneratedGridMesh)
 				{
-					SubStageStart = SRNowSeconds();
+					SubStageStart = SRCelestialNowSeconds();
 					SurfaceGrid->AppendGeneratedGridCell(GeneratedGridMesh, CachedCell, GeneratedGridEdges);
-					LocalBuildFaceGridMeshMs = SRElapsedMilliseconds(SubStageStart);
+					LocalBuildFaceGridMeshMs = SRCelestialElapsedMilliseconds(SubStageStart);
 				}
-				SubStageStart = SRNowSeconds();
+				SubStageStart = SRCelestialNowSeconds();
 				const uint64 CachedEdgeKeys[4] =
 				{
 					BuildSourceEdgeKey(SourceVertexIds[0], SourceVertexIds[1]),
@@ -2686,9 +2686,9 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					CachedCellEdgeBySourceEdge.Add(CachedEdgeKeys[EdgeIndex], FIntPoint(CachedCellIndex, EdgeIndex));
 					CachedCellEdgeBySourcePositionEdge.Add(CachedPositionEdgeKeys[EdgeIndex], FIntPoint(CachedCellIndex, EdgeIndex));
 				}
-				double LocalBuildFaceNeighborCacheMs = SRElapsedMilliseconds(SubStageStart);
+				double LocalBuildFaceNeighborCacheMs = SRCelestialElapsedMilliseconds(SubStageStart);
 
-				SubStageStart = SRNowSeconds();
+				SubStageStart = SRCelestialNowSeconds();
 				if (GeneratedQuadRuntimeData.IsValidIndex(QuadIndex))
 				{
 					FSRGeneratedQuadRuntimeData& QuadRuntimeData = GeneratedQuadRuntimeData[QuadIndex];
@@ -2706,7 +2706,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 						QuadRuntimeData.SourcePositionHashes[CornerIndex] = SourcePositionHashes[CornerIndex];
 					}
 				}
-				double LocalBuildFaceTerrainEdgeMs = SRElapsedMilliseconds(SubStageStart);
+				double LocalBuildFaceTerrainEdgeMs = SRCelestialElapsedMilliseconds(SubStageStart);
 
 				BuildFacePrepareMs += LocalBuildFacePrepareMs;
 				BuildFaceSurfaceMeshMs += LocalBuildFaceSurfaceMeshMs;
@@ -2721,7 +2721,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				BuildFaceMeshAndCellForQuad(QuadIndex);
 			}
 			{
-				const double TerrainEdgeStart = SRNowSeconds();
+				const double TerrainEdgeStart = SRCelestialNowSeconds();
 				auto GetEdgePointIndices = [](int32 EdgeIndex, int32& OutStartIndex, int32& OutEndIndex)
 				{
 					const int32 SafeEdgeIndex = FMath::Clamp(EdgeIndex, 0, 3);
@@ -2869,9 +2869,9 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					PendingTerrainEdges.Add(BuildSourcePositionEdgeKey(QuadData.SourcePositionHashes[EdgeStartIndex], QuadData.SourcePositionHashes[EdgeEndIndex]), BoundaryTerrainEdge);
 					++TerrainEdgeRegisterCount;
 				}
-				BuildFaceTerrainEdgeMs += SRElapsedMilliseconds(TerrainEdgeStart);
+				BuildFaceTerrainEdgeMs += SRCelestialElapsedMilliseconds(TerrainEdgeStart);
 			}
-			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' BuildFaceMeshesAndCells %.2f ms Cells=%d PendingEdges=%d"), *GetName(), SRElapsedMilliseconds(StageStart), CachedSurfaceGridCells.Num(), PendingTerrainEdges.Num()));
+			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' BuildFaceMeshesAndCells %.2f ms Cells=%d PendingEdges=%d"), *GetName(), SRCelestialElapsedMilliseconds(StageStart), CachedSurfaceGridCells.Num(), PendingTerrainEdges.Num()));
 			FSRTimingLog::AddLine(FString::Printf(
 				TEXT("DynamicMesh '%s' BuildFaceMeshesAndCellsDetail Prepare=%.2f ms SurfaceMesh=%.2f ms CachedCells=%.2f ms GridMesh=%.2f ms NeighborCache=%.2f ms TerrainEdges=%.2f ms ValidQuads=%d EdgeRegisters=%d EdgeMatches=%d SideWalls=%d"),
 				*GetName(),
@@ -2886,7 +2886,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				TerrainEdgeMatchCount,
 				TerrainSideWallCount));
 
-			StageStart = SRNowSeconds();
+			StageStart = SRCelestialNowSeconds();
 			for (const TPair<uint64, FSRGeneratedTerrainEdge>& PendingEdgePair : PendingTerrainEdges)
 			{
 				const FSRGeneratedTerrainEdge& PendingEdge = PendingEdgePair.Value;
@@ -2935,7 +2935,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					}
 				}
 			}
-			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' BuildBoundaryWalls %.2f ms"), *GetName(), SRElapsedMilliseconds(StageStart)));
+			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' BuildBoundaryWalls %.2f ms"), *GetName(), SRCelestialElapsedMilliseconds(StageStart)));
 
 			double RuntimeCacheStoreMs = 0.0;
 			if (bEnableGlobalDynamicMeshRuntimeCache)
@@ -2944,13 +2944,13 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 				GeneratedCacheEntry.FaceDynamicMeshes = FaceDynamicMeshes;
 				GeneratedCacheEntry.SurfaceGridCells = CachedSurfaceGridCells;
 				GeneratedCacheEntry.ColorDataByCell = DynamicMeshColorDataByCell;
-				StageStart = SRNowSeconds();
+				StageStart = SRCelestialNowSeconds();
 				StoreCelestialBodyDynamicMeshRuntimeCache(DynamicMeshBuildHash, GeneratedCacheEntry);
-				RuntimeCacheStoreMs = SRElapsedMilliseconds(StageStart);
+				RuntimeCacheStoreMs = SRCelestialElapsedMilliseconds(StageStart);
 			}
 			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' CacheStore Runtime=%.2f ms Enabled=%s"), *GetName(), RuntimeCacheStoreMs, bEnableGlobalDynamicMeshRuntimeCache ? TEXT("true") : TEXT("false")));
 
-			StageStart = SRNowSeconds();
+			StageStart = SRCelestialNowSeconds();
 			for (int32 FaceIndex = 0; FaceIndex < FaceDynamicMeshes.Num(); ++FaceIndex)
 			{
 				if (UDynamicMeshComponent* FaceDynamicMeshComponent = GetDynamicMeshFaceComponent(FaceIndex))
@@ -2958,18 +2958,18 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 					FaceDynamicMeshComponent->SetMesh(MoveTemp(FaceDynamicMeshes[FaceIndex]));
 				}
 			}
-			const double SetMeshMs = SRElapsedMilliseconds(StageStart);
+			const double SetMeshMs = SRCelestialElapsedMilliseconds(StageStart);
 			double SurfaceGridApplyMs = 0.0;
 			if (bHasSurfaceGrid)
 			{
-				StageStart = SRNowSeconds();
+				StageStart = SRCelestialNowSeconds();
 				TArray<FSRPlanetSurfaceGridCell> GeneratedGridCells = CachedSurfaceGridCells;
 				SurfaceGrid->ApplyGeneratedGridBuild(MoveTemp(GeneratedGridCells), MoveTemp(GeneratedGridMesh), MoveTemp(CachedCellIndexById));
-				SurfaceGridApplyMs = SRElapsedMilliseconds(StageStart);
+				SurfaceGridApplyMs = SRCelestialElapsedMilliseconds(StageStart);
 			}
 			CachedDynamicMeshBuildHash = DynamicMeshBuildHash;
 			bHasCachedDynamicMeshBuildHash = true;
-			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' GeneratedStepped Total=%.2f ms SetMesh=%.2f ms SurfaceGrid=%.2f ms"), *GetName(), SRElapsedMilliseconds(TotalStart), SetMeshMs, SurfaceGridApplyMs));
+			FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' GeneratedStepped Total=%.2f ms SetMesh=%.2f ms SurfaceGrid=%.2f ms"), *GetName(), SRCelestialElapsedMilliseconds(TotalStart), SetMeshMs, SurfaceGridApplyMs));
 			return true;
 		}
 
@@ -2987,7 +2987,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 	TArray<int32> DynamicColorIds;
 	DynamicColorIds.Reserve(VertexCount);
 
-	double StageStart = SRNowSeconds();
+	double StageStart = SRCelestialNowSeconds();
 	for (int32 VertexIndex = 0; VertexIndex < VertexCount; ++VertexIndex)
 	{
 		const FVector SourcePosition(PositionVertexBuffer.VertexPosition(VertexIndex));
@@ -3009,9 +3009,9 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 		DynamicNormalIds.Add(NormalOverlay->AppendElement(FVector3f(TargetNormal)));
 		DynamicColorIds.Add(ColorOverlay->AppendElement(FVector4f(TargetColor.R, TargetColor.G, TargetColor.B, TargetColor.A)));
 	}
-	const double FallbackVertexMs = SRElapsedMilliseconds(StageStart);
+	const double FallbackVertexMs = SRCelestialElapsedMilliseconds(StageStart);
 
-	StageStart = SRNowSeconds();
+	StageStart = SRCelestialNowSeconds();
 	for (int32 Index = 0; Index + 2 < IndexCount; Index += 3)
 	{
 		const int32 SourceVertexIndex0 = static_cast<int32>(IndexBuffer.GetIndex(Index));
@@ -3048,7 +3048,7 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 			}
 		}
 	}
-	const double FallbackTriangleMs = SRElapsedMilliseconds(StageStart);
+	const double FallbackTriangleMs = SRCelestialElapsedMilliseconds(StageStart);
 
 	double RuntimeCacheStoreMs = 0.0;
 	if (bEnableGlobalDynamicMeshRuntimeCache)
@@ -3065,12 +3065,12 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 		GeneratedCacheEntry.FaceDynamicMeshes = CachedFaceDynamicMeshes;
 		GeneratedCacheEntry.SurfaceGridCells = CachedSurfaceGridCells;
 		GeneratedCacheEntry.ColorDataByCell = DynamicMeshColorDataByCell;
-		StageStart = SRNowSeconds();
+		StageStart = SRCelestialNowSeconds();
 		StoreCelestialBodyDynamicMeshRuntimeCache(DynamicMeshBuildHash, GeneratedCacheEntry);
-		RuntimeCacheStoreMs = SRElapsedMilliseconds(StageStart);
+		RuntimeCacheStoreMs = SRCelestialElapsedMilliseconds(StageStart);
 	}
 
-	StageStart = SRNowSeconds();
+	StageStart = SRCelestialNowSeconds();
 	CelestialBodyDynamicMesh->SetMesh(MoveTemp(DynamicMesh));
 	for (int32 FaceIndex = 1; FaceIndex < CubeSphereFaceComponentCount; ++FaceIndex)
 	{
@@ -3082,10 +3082,10 @@ bool ASRCelestialBody::CopyStaticMeshToCelestialBodyDynamicMesh()
 			FaceDynamicMeshComponent->SetMesh(MoveTemp(EmptyMesh));
 		}
 	}
-	const double SetMeshMs = SRElapsedMilliseconds(StageStart);
+	const double SetMeshMs = SRCelestialElapsedMilliseconds(StageStart);
 	CachedDynamicMeshBuildHash = DynamicMeshBuildHash;
 	bHasCachedDynamicMeshBuildHash = true;
-	FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' FallbackTriangle Total=%.2f ms Vertices=%.2f ms Triangles=%.2f ms RuntimeCache=%.2f ms SetMesh=%.2f ms"), *GetName(), SRElapsedMilliseconds(TotalStart), FallbackVertexMs, FallbackTriangleMs, RuntimeCacheStoreMs, SetMeshMs));
+	FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' FallbackTriangle Total=%.2f ms Vertices=%.2f ms Triangles=%.2f ms RuntimeCache=%.2f ms SetMesh=%.2f ms"), *GetName(), SRCelestialElapsedMilliseconds(TotalStart), FallbackVertexMs, FallbackTriangleMs, RuntimeCacheStoreMs, SetMeshMs));
 	return true;
 }
 
