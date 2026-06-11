@@ -6,8 +6,8 @@
 #include "SRMoonDataAsset.generated.h"
 
 class UMaterialInterface;
+class USRDynamicMeshBaseDataAsset;
 class USRPlanetTerrainProfileDataAsset;
-class USRStaticMeshQuadGridCacheDataAsset;
 class UStaticMesh;
 
 UCLASS(BlueprintType)
@@ -34,11 +34,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "Scale", ClampMin = "0.0"))
 	float Scale = 5.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "StaticMesh"))
-	TObjectPtr<UStaticMesh> StaticMesh = nullptr;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "StaticMeshQuadGridCacheDataAsset"))
-	TObjectPtr<USRStaticMeshQuadGridCacheDataAsset> StaticMeshQuadGridCacheDataAsset = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "DynamicMeshBaseDataAsset"))
+	TObjectPtr<USRDynamicMeshBaseDataAsset> DynamicMeshBaseDataAsset = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "Material"))
 	TObjectPtr<UMaterialInterface> Material = nullptr;

@@ -1,5 +1,6 @@
 #include "Celestial/SRPlanet.h"
 
+#include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/LineBatchComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/SplineMeshComponent.h"
@@ -272,7 +273,9 @@ void ASRPlanet::ApplyData()
 	{
 		const float BodyRadius = IsValid(StaticMesh.Get())
 			? StaticMesh->GetBounds().SphereRadius * Scale
-			: 0.0f;
+			: IsValid(DynamicMeshBaseDataAsset.Get())
+				? DynamicMeshBaseDataAsset->GetSafeBaseRadius() * Scale
+				: 0.0f;
 		const float OceanRadius = bHasOcean && IsValid(OceanMesh.Get())
 			? OceanMesh->GetBounds().SphereRadius * ResolveOceanScale()
 			: 0.0f;
@@ -290,7 +293,9 @@ void ASRPlanet::ApplyData()
 		{
 			const float BodyRadius = IsValid(StaticMesh.Get())
 				? StaticMesh->GetBounds().SphereRadius * Scale
-				: 0.0f;
+				: IsValid(DynamicMeshBaseDataAsset.Get())
+					? DynamicMeshBaseDataAsset->GetSafeBaseRadius() * Scale
+					: 0.0f;
 			const float SurfaceGridPlanetRadius = FMath::Max(BodyRadius, 1.0f);
 			const int32 ResolvedSurfaceGridResolution = FMath::Clamp(
 				FMath::RoundToInt((SurfaceGridPlanetRadius * 2.0f) / SurfaceGridTargetCellSize),
@@ -580,12 +585,16 @@ float ASRPlanet::EstimateProceduralOceanScaleMultiplier() const
 		return 0.0f;
 	}
 
-	if (!IsValid(StaticMesh.Get()) || !IsValid(OceanMesh.Get()))
+	if (!IsValid(OceanMesh.Get()))
 	{
 		return 0.0f;
 	}
 
-	const float BodyMeshRadius = StaticMesh->GetBounds().SphereRadius;
+	const float BodyMeshRadius = IsValid(StaticMesh.Get())
+		? StaticMesh->GetBounds().SphereRadius
+		: IsValid(DynamicMeshBaseDataAsset.Get())
+			? DynamicMeshBaseDataAsset->GetSafeBaseRadius()
+			: 0.0f;
 	const float OceanMeshRadius = OceanMesh->GetBounds().SphereRadius;
 	if (BodyMeshRadius <= KINDA_SMALL_NUMBER || OceanMeshRadius <= KINDA_SMALL_NUMBER)
 	{
@@ -669,9 +678,13 @@ void ASRPlanet::ApplyAtmosphereStaticMeshSettings()
 float ASRPlanet::ResolveAtmosphereScale() const
 {
 	const float AtmosphereThreshold = FMath::Max(0.01f, DynamicMeshGeneration.AtmosphereThreshold);
-	if (IsValid(StaticMesh.Get()) && IsValid(AtmosphereMesh.Get()))
+	if (IsValid(AtmosphereMesh.Get()))
 	{
-		const float BodyMeshRadius = StaticMesh->GetBounds().SphereRadius;
+		const float BodyMeshRadius = IsValid(StaticMesh.Get())
+			? StaticMesh->GetBounds().SphereRadius
+			: IsValid(DynamicMeshBaseDataAsset.Get())
+				? DynamicMeshBaseDataAsset->GetSafeBaseRadius()
+				: 0.0f;
 		const float AtmosphereMeshRadius = AtmosphereMesh->GetBounds().SphereRadius;
 		if (BodyMeshRadius > KINDA_SMALL_NUMBER && AtmosphereMeshRadius > KINDA_SMALL_NUMBER)
 		{
@@ -687,7 +700,9 @@ float ASRPlanet::ComputeRotationAxisSurfaceRadius() const
 {
 	const float BodyRadius = IsValid(StaticMesh.Get())
 		? StaticMesh->GetBounds().SphereRadius * Scale
-		: Scale;
+		: IsValid(DynamicMeshBaseDataAsset.Get())
+			? DynamicMeshBaseDataAsset->GetSafeBaseRadius() * Scale
+			: Scale;
 	const float TerrainPadding = DynamicMeshGeneration.bDynamicMeshGeneration
 		? FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight) * Scale
 		: 0.0f;

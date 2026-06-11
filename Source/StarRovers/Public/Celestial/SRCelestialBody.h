@@ -24,8 +24,8 @@ class UStaticMesh;
 class UStaticMeshComponent;
 class USRGravityParent;
 class USRCelestialBodyRegistrySubsystem;
+class USRDynamicMeshBaseDataAsset;
 class USRPlanetTerrainProfileDataAsset;
-class USRStaticMeshQuadGridCacheDataAsset;
 
 struct FSRCelestialBodyDynamicMeshColorElement
 {
@@ -104,7 +104,7 @@ struct STARROVERS_API FSRCelestialBodyData
 	TObjectPtr<UStaticMesh> StaticMesh = nullptr;
 
 	UPROPERTY()
-	TObjectPtr<USRStaticMeshQuadGridCacheDataAsset> StaticMeshQuadGridCacheDataAsset = nullptr;
+	TObjectPtr<USRDynamicMeshBaseDataAsset> DynamicMeshBaseDataAsset = nullptr;
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> Material = nullptr;
@@ -341,8 +341,8 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> StaticMesh;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "StaticMeshQuadGridCacheDataAsset"))
-	TObjectPtr<USRStaticMeshQuadGridCacheDataAsset> StaticMeshQuadGridCacheDataAsset;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "DynamicMeshBaseDataAsset"))
+	TObjectPtr<USRDynamicMeshBaseDataAsset> DynamicMeshBaseDataAsset;
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> Material;
@@ -352,7 +352,8 @@ protected:
 private:
 	void ApplyGravityLineSettings();
 	void EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicMesh);
-	bool CopyStaticMeshToCelestialBodyDynamicMesh();
+	bool BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildHash, double TotalStart);
+	bool BuildCelestialBodyDynamicMesh();
 	UDynamicMeshComponent* GetDynamicMeshFaceComponent(int32 FaceIndex) const;
 	void SyncDynamicMeshFaceComponentSettings();
 	uint32 ComputeDynamicMeshBuildHash() const;

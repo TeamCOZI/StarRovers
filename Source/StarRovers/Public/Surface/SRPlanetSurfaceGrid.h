@@ -220,7 +220,7 @@ protected:
     FSRPlanetSurfaceGridCellId SelectedCellId;
 
     UPROPERTY()
-    bool bUsingRecoveredQuadCells;
+    bool bUsingGeneratedGridCells;
 
     UPROPERTY()
     bool bGridMeshDirty;
@@ -241,7 +241,7 @@ private:
         TArray<int32> CellIndices;
     };
 
-    bool RebuildCellsFromOwnerStaticMeshQuads();
+    bool RebuildCellsFromOwnerGeneratedGrid();
     void EnsureInteractionOverlay();
     void RequestInteractionHighlightRefresh();
     void RefreshInteractionHighlight();

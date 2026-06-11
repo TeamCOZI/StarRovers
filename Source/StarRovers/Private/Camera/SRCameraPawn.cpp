@@ -4,6 +4,7 @@
 #include "Camera/SRPlayerController.h"
 #include "Celestial/SRCelestialBody.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -66,8 +67,12 @@ namespace
 		if (const ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(Actor))
 		{
 			const FSRCelestialBodyData BodyData = CelestialBody->GetData();
-			return IsValid(BodyData.StaticMesh.Get())
-				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale)
+			if (IsValid(BodyData.StaticMesh.Get()))
+			{
+				return BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale);
+			}
+			return IsValid(BodyData.DynamicMeshBaseDataAsset.Get())
+				? BodyData.DynamicMeshBaseDataAsset->GetSafeBaseRadius() * FMath::Max(0.0f, BodyData.Scale)
 				: 0.0f;
 		}
 

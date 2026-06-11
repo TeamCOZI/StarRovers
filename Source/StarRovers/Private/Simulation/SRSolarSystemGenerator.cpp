@@ -1,6 +1,7 @@
 #include "Simulation/SRSolarSystemGenerator.h"
 
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Celestial/SRMoonDataAsset.h"
 #include "Celestial/SRPlanet.h"
 #include "Celestial/SRPlanetDataAsset.h"
@@ -92,14 +93,22 @@ namespace
 	{
 		OutRadius = 0.0f;
 		const UStaticMesh* MeshAsset = CelestialBodyRequest.BodyData.StaticMesh.Get();
-		if (!IsValid(MeshAsset))
+		const float BodyScale = FMath::Max(0.0f, CelestialBodyRequest.BodyData.Scale);
+		if (IsValid(MeshAsset))
 		{
-			UE_LOG(LogTemp, Error, TEXT("Solar system generation requires StaticMesh for '%s'."), *CelestialBodyRequest.BodyData.VariableName.ToString());
-			return false;
+			OutRadius = FMath::Max(0.0f, MeshAsset->GetBounds().SphereRadius * BodyScale);
+			return true;
 		}
 
-		OutRadius = FMath::Max(0.0f, MeshAsset->GetBounds().SphereRadius * FMath::Max(0.0f, CelestialBodyRequest.BodyData.Scale));
-		return true;
+		const USRDynamicMeshBaseDataAsset* DynamicMeshBase = CelestialBodyRequest.BodyData.DynamicMeshBaseDataAsset.Get();
+		if (IsValid(DynamicMeshBase))
+		{
+			OutRadius = FMath::Max(0.0f, DynamicMeshBase->GetSafeBaseRadius() * BodyScale);
+			return true;
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("Solar system generation requires StaticMesh or DynamicMeshBaseDataAsset for '%s'."), *CelestialBodyRequest.BodyData.VariableName.ToString());
+		return false;
 	}
 
 	float ComputeScaledBodyRadius(const ASRCelestialBody* CelestialBody)
@@ -110,8 +119,12 @@ namespace
 		}
 
 		const FSRCelestialBodyData BodyData = CelestialBody->GetData();
-		return IsValid(BodyData.StaticMesh.Get())
-			? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale)
+		if (IsValid(BodyData.StaticMesh.Get()))
+		{
+			return BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale);
+		}
+		return IsValid(BodyData.DynamicMeshBaseDataAsset.Get())
+			? BodyData.DynamicMeshBaseDataAsset->GetSafeBaseRadius() * FMath::Max(0.0f, BodyData.Scale)
 			: 0.0f;
 	}
 
@@ -242,7 +255,15 @@ namespace
 		}
 		ApplyClassDefaultRuntimeVisualSettings(BodyClass, OutRequest.BodyData);
 
-		if (!IsValid(OutRequest.BodyData.StaticMesh))
+		const bool bRequiresDynamicMeshBase =
+			OutRequest.BodyData.BodyCategory == ESRCelestialBodyCategory::Planet
+			|| OutRequest.BodyData.BodyCategory == ESRCelestialBodyCategory::Moon;
+		if (bRequiresDynamicMeshBase && !IsValid(OutRequest.BodyData.DynamicMeshBaseDataAsset.Get()))
+		{
+			LogGeneratorMissingData(DataAsset, TEXT("DynamicMeshBaseDataAsset"));
+			return false;
+		}
+		if (!bRequiresDynamicMeshBase && !IsValid(OutRequest.BodyData.StaticMesh))
 		{
 			LogGeneratorMissingData(DataAsset, TEXT("StaticMesh"));
 			return false;

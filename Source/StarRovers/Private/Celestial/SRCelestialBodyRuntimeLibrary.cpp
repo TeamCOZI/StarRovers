@@ -1,6 +1,7 @@
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 
 #include "Celestial/SRCelestialBody.h"
+#include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -312,8 +313,12 @@ namespace
 		if (const ASRCelestialBody* ProceduralBody = Cast<ASRCelestialBody>(Actor))
 		{
 			const FSRCelestialBodyData BodyData = ProceduralBody->GetData();
-			return IsValid(BodyData.StaticMesh.Get())
-				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale)
+			if (IsValid(BodyData.StaticMesh.Get()))
+			{
+				return BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale);
+			}
+			return IsValid(BodyData.DynamicMeshBaseDataAsset.Get())
+				? BodyData.DynamicMeshBaseDataAsset->GetSafeBaseRadius() * FMath::Max(0.0f, BodyData.Scale)
 				: 0.0f;
 		}
 

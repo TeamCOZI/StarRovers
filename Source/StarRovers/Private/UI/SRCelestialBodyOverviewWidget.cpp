@@ -4,6 +4,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Celestial/SRCelestialBody.h"
+#include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
@@ -78,9 +79,16 @@ namespace
 		{
 			const FSRCelestialBodyData BodyData = ProceduralBody->GetData();
 			OutCenter = CelestialBodyActor->GetActorLocation();
-			OutRadius = IsValid(BodyData.StaticMesh.Get())
-				? BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale)
-				: 0.0f;
+			if (IsValid(BodyData.StaticMesh.Get()))
+			{
+				OutRadius = BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale);
+			}
+			else
+			{
+				OutRadius = IsValid(BodyData.DynamicMeshBaseDataAsset.Get())
+					? BodyData.DynamicMeshBaseDataAsset->GetSafeBaseRadius() * FMath::Max(0.0f, BodyData.Scale)
+					: 0.0f;
+			}
 			return OutRadius > KINDA_SMALL_NUMBER;
 		}
 

@@ -18,7 +18,7 @@ public:
     static FText GetCubeSphereFaceText(ESRCubeSphereFace Face);
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
-    static FVector GetSpherifiedCubeDirection(ESRCubeSphereFace Face, float FaceU, float FaceV);
+    static FVector GetCubeSphereDirection(ESRCubeSphereFace Face, float FaceU, float FaceV);
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     static bool BuildCubeSphereCell(int32 Resolution, float Radius, const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCell& OutCell);

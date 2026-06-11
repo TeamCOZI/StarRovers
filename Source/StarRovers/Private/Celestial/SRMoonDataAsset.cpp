@@ -52,8 +52,7 @@ FSRCelestialBodyData USRMoonDataAsset::BuildData() const
 	Result.VariableName = VariableName;
 	Result.BodyCategory = BodyCategory;
 	Result.Scale = FMath::Max(0.0f, Scale);
-	Result.StaticMesh = StaticMesh;
-	Result.StaticMeshQuadGridCacheDataAsset = StaticMeshQuadGridCacheDataAsset;
+	Result.DynamicMeshBaseDataAsset = DynamicMeshBaseDataAsset;
 	Result.Material = Material;
 	Result.Mass = FMath::Max(0.0f, Mass);
 	Result.GravityRatio = FMath::Max(0.0f, GravityRatio);

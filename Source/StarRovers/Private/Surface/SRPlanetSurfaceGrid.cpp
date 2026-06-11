@@ -1,17 +1,13 @@
 #include "Surface/SRPlanetSurfaceGrid.h"
 
-#include "Algo/Reverse.h"
 #include "Celestial/SRCelestialBody.h"
 #include "DrawDebugHelpers.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
 #include "Engine/World.h"
-#include "Engine/StaticMesh.h"
 #include "Math/RotationMatrix.h"
 #include "Materials/MaterialInterface.h"
-#include "Rendering/PositionVertexBuffer.h"
-#include "Rendering/StaticMeshVertexBuffer.h"
 #include "SceneManagement.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
 #include "Surface/SRPlanetTerrainGenerator.h"
@@ -73,28 +69,6 @@ namespace
 	float GetCubeFaceCellCenter(int32 CellIndex, int32 Resolution)
 	{
 		return -1.0f + (GetCubeFaceCellStep(Resolution) * (static_cast<float>(CellIndex) + 0.5f));
-	}
-
-	bool ProjectPointToCubeFaceCoordinates(const FVector& Point, ESRCubeSphereFace Face, FVector2D& OutFaceCoordinates)
-	{
-		const FVector Direction = Point.GetSafeNormal();
-		if (Direction.IsNearlyZero())
-		{
-			return false;
-		}
-
-		const FSRSurfaceGridCubeFaceBasis Basis = GetCubeFaceBasis(Face);
-		const float MajorAxis = FVector::DotProduct(Direction, Basis.Normal);
-		if (MajorAxis <= KINDA_SMALL_NUMBER)
-		{
-			return false;
-		}
-
-		const FVector CubePoint = Direction / MajorAxis;
-		OutFaceCoordinates = FVector2D(
-			FMath::Clamp(FVector::DotProduct(CubePoint, Basis.AxisU), -1.0f, 1.0f),
-			FMath::Clamp(FVector::DotProduct(CubePoint, Basis.AxisV), -1.0f, 1.0f));
-		return true;
 	}
 
 	uint32 HashGridPoint(const FVector& LocalPoint)
@@ -230,7 +204,7 @@ namespace
 		return BestScore <= 0.0001f;
 	}
 
-	FVector OffsetRecoveredGridWirePoint(const FVector& LocalPoint, float SurfaceOffset)
+	FVector OffsetGeneratedGridWirePoint(const FVector& LocalPoint, float SurfaceOffset)
 	{
 		if (SurfaceOffset <= KINDA_SMALL_NUMBER)
 		{
@@ -346,501 +320,6 @@ namespace
 		AppendColoredQuad(A3, A0, B0, B3);
 		AppendColoredQuad(A0, A3, A2, A1);
 		AppendColoredQuad(B0, B1, B2, B3);
-	}
-
-	struct FSRSurfaceGridSourceTriangle
-	{
-		UE::Geometry::FIndex3i Vertices = UE::Geometry::FIndex3i(INDEX_NONE, INDEX_NONE, INDEX_NONE);
-		bool bPaired = false;
-	};
-
-	struct FSRSurfaceGridSourceQuad
-	{
-		int32 Vertices[4] = { INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE };
-	};
-
-	struct FSRRecoveredSurfaceGridQuadAddress
-	{
-		FSRPlanetSurfaceGridCellId CellId;
-		FVector2D FaceCoordinates = FVector2D::ZeroVector;
-		int32 FaceResolution = 1;
-	};
-
-	struct FSRRecoveredSurfaceGridQuadEdge
-	{
-		int32 QuadIndex = INDEX_NONE;
-		int32 DeltaX = 0;
-		int32 DeltaY = 0;
-		uint64 EdgeKey = 0;
-	};
-
-	uint64 BuildSurfaceGridSourceEdgeKey(int32 VertexIndexA, int32 VertexIndexB)
-	{
-		const uint32 MinVertex = static_cast<uint32>(FMath::Min(VertexIndexA, VertexIndexB));
-		const uint32 MaxVertex = static_cast<uint32>(FMath::Max(VertexIndexA, VertexIndexB));
-		return (static_cast<uint64>(MinVertex) << 32) | static_cast<uint64>(MaxVertex);
-	}
-
-	bool ContainsSurfaceGridSourceVertex(const UE::Geometry::FIndex3i& Triangle, int32 VertexIndex)
-	{
-		return Triangle.A == VertexIndex || Triangle.B == VertexIndex || Triangle.C == VertexIndex;
-	}
-
-	bool TryGetSurfaceGridTriangleOppositeVertex(const UE::Geometry::FIndex3i& Triangle, int32 SharedVertexA, int32 SharedVertexB, int32& OutOppositeVertex)
-	{
-		if (Triangle.A != SharedVertexA && Triangle.A != SharedVertexB)
-		{
-			OutOppositeVertex = Triangle.A;
-			return true;
-		}
-		if (Triangle.B != SharedVertexA && Triangle.B != SharedVertexB)
-		{
-			OutOppositeVertex = Triangle.B;
-			return true;
-		}
-		if (Triangle.C != SharedVertexA && Triangle.C != SharedVertexB)
-		{
-			OutOppositeVertex = Triangle.C;
-			return true;
-		}
-
-		OutOppositeVertex = INDEX_NONE;
-		return false;
-	}
-
-	bool TryOrderSurfaceGridQuadVertices(
-		const FPositionVertexBuffer& PositionVertexBuffer,
-		int32 VertexIndex0,
-		int32 VertexIndex1,
-		int32 VertexIndex2,
-		int32 VertexIndex3,
-		FSRSurfaceGridSourceQuad& OutQuad)
-	{
-		struct FSRQuadCorner
-		{
-			int32 VertexIndex = INDEX_NONE;
-			FVector Position = FVector::ZeroVector;
-			float Angle = 0.0f;
-		};
-
-		FSRQuadCorner Corners[4];
-		Corners[0].VertexIndex = VertexIndex0;
-		Corners[1].VertexIndex = VertexIndex1;
-		Corners[2].VertexIndex = VertexIndex2;
-		Corners[3].VertexIndex = VertexIndex3;
-
-		FVector Center = FVector::ZeroVector;
-		for (FSRQuadCorner& Corner : Corners)
-		{
-			if (Corner.VertexIndex == INDEX_NONE)
-			{
-				return false;
-			}
-
-			Corner.Position = FVector(PositionVertexBuffer.VertexPosition(Corner.VertexIndex));
-			Center += Corner.Position;
-		}
-		Center /= 4.0f;
-
-		const FVector SurfaceNormal = Center.GetSafeNormal();
-		if (SurfaceNormal.IsNearlyZero())
-		{
-			return false;
-		}
-
-		FVector TangentA = FVector::CrossProduct(SurfaceNormal, FVector::UpVector).GetSafeNormal();
-		if (TangentA.IsNearlyZero())
-		{
-			TangentA = FVector::CrossProduct(SurfaceNormal, FVector::RightVector).GetSafeNormal();
-		}
-		const FVector TangentB = FVector::CrossProduct(SurfaceNormal, TangentA).GetSafeNormal();
-		if (TangentA.IsNearlyZero() || TangentB.IsNearlyZero())
-		{
-			return false;
-		}
-
-		TArray<FSRQuadCorner> OrderedCorners;
-		OrderedCorners.Reserve(4);
-		for (FSRQuadCorner& Corner : Corners)
-		{
-			const FVector Offset = Corner.Position - Center;
-			Corner.Angle = FMath::Atan2(FVector::DotProduct(Offset, TangentB), FVector::DotProduct(Offset, TangentA));
-			OrderedCorners.Add(Corner);
-		}
-
-		OrderedCorners.Sort([](const FSRQuadCorner& Left, const FSRQuadCorner& Right)
-		{
-			return Left.Angle < Right.Angle;
-		});
-
-		const FVector WindingNormal = FVector::CrossProduct(
-			OrderedCorners[1].Position - OrderedCorners[0].Position,
-			OrderedCorners[2].Position - OrderedCorners[0].Position).GetSafeNormal();
-		if (FVector::DotProduct(WindingNormal, SurfaceNormal) < 0.0f)
-		{
-			Algo::Reverse(OrderedCorners);
-		}
-
-		for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
-		{
-			OutQuad.Vertices[CornerIndex] = OrderedCorners[CornerIndex].VertexIndex;
-		}
-
-		return true;
-	}
-
-	TArray<FSRSurfaceGridSourceQuad> RecoverSurfaceGridSourceQuads(const FPositionVertexBuffer& PositionVertexBuffer, const FRawStaticIndexBuffer& IndexBuffer, int32 IndexCount)
-	{
-		TArray<FSRSurfaceGridSourceTriangle> SourceTriangles;
-		SourceTriangles.Reserve(IndexCount / 3);
-
-		TMap<uint64, TArray<int32>> TriangleIndicesByEdge;
-		for (int32 Index = 0; Index + 2 < IndexCount; Index += 3)
-		{
-			const int32 TriangleIndex = SourceTriangles.Num();
-			FSRSurfaceGridSourceTriangle SourceTriangle;
-			SourceTriangle.Vertices = UE::Geometry::FIndex3i(
-				static_cast<int32>(IndexBuffer.GetIndex(Index)),
-				static_cast<int32>(IndexBuffer.GetIndex(Index + 1)),
-				static_cast<int32>(IndexBuffer.GetIndex(Index + 2)));
-			SourceTriangles.Add(SourceTriangle);
-
-			TriangleIndicesByEdge.FindOrAdd(BuildSurfaceGridSourceEdgeKey(SourceTriangle.Vertices.A, SourceTriangle.Vertices.B)).Add(TriangleIndex);
-			TriangleIndicesByEdge.FindOrAdd(BuildSurfaceGridSourceEdgeKey(SourceTriangle.Vertices.B, SourceTriangle.Vertices.C)).Add(TriangleIndex);
-			TriangleIndicesByEdge.FindOrAdd(BuildSurfaceGridSourceEdgeKey(SourceTriangle.Vertices.C, SourceTriangle.Vertices.A)).Add(TriangleIndex);
-		}
-
-		TArray<uint64> CandidateEdgeKeys;
-		TriangleIndicesByEdge.GetKeys(CandidateEdgeKeys);
-		CandidateEdgeKeys.Sort([&TriangleIndicesByEdge, &SourceTriangles, &PositionVertexBuffer](uint64 LeftKey, uint64 RightKey)
-		{
-			auto ResolveSharedLength = [&TriangleIndicesByEdge, &SourceTriangles, &PositionVertexBuffer](uint64 EdgeKey)
-			{
-				const TArray<int32>* TriangleIndices = TriangleIndicesByEdge.Find(EdgeKey);
-				if (!TriangleIndices || TriangleIndices->Num() != 2)
-				{
-					return 0.0;
-				}
-
-				const int32 SharedVertexA = static_cast<int32>(EdgeKey >> 32);
-				const int32 SharedVertexB = static_cast<int32>(EdgeKey & 0xffffffff);
-				const FVector PositionA(PositionVertexBuffer.VertexPosition(SharedVertexA));
-				const FVector PositionB(PositionVertexBuffer.VertexPosition(SharedVertexB));
-				return FVector::DistSquared(PositionA, PositionB);
-			};
-
-			return ResolveSharedLength(LeftKey) > ResolveSharedLength(RightKey);
-		});
-
-		TArray<FSRSurfaceGridSourceQuad> SourceQuads;
-		SourceQuads.Reserve(SourceTriangles.Num() / 2);
-		for (const uint64 EdgeKey : CandidateEdgeKeys)
-		{
-			const TArray<int32>* TriangleIndices = TriangleIndicesByEdge.Find(EdgeKey);
-			if (!TriangleIndices || TriangleIndices->Num() != 2)
-			{
-				continue;
-			}
-
-			const int32 TriangleIndexA = (*TriangleIndices)[0];
-			const int32 TriangleIndexB = (*TriangleIndices)[1];
-			if (!SourceTriangles.IsValidIndex(TriangleIndexA)
-				|| !SourceTriangles.IsValidIndex(TriangleIndexB)
-				|| SourceTriangles[TriangleIndexA].bPaired
-				|| SourceTriangles[TriangleIndexB].bPaired)
-			{
-				continue;
-			}
-
-			const int32 SharedVertexA = static_cast<int32>(EdgeKey >> 32);
-			const int32 SharedVertexB = static_cast<int32>(EdgeKey & 0xffffffff);
-			const UE::Geometry::FIndex3i TriangleA = SourceTriangles[TriangleIndexA].Vertices;
-			const UE::Geometry::FIndex3i TriangleB = SourceTriangles[TriangleIndexB].Vertices;
-			if (!ContainsSurfaceGridSourceVertex(TriangleA, SharedVertexA)
-				|| !ContainsSurfaceGridSourceVertex(TriangleA, SharedVertexB)
-				|| !ContainsSurfaceGridSourceVertex(TriangleB, SharedVertexA)
-				|| !ContainsSurfaceGridSourceVertex(TriangleB, SharedVertexB))
-			{
-				continue;
-			}
-
-			int32 OppositeVertexA = INDEX_NONE;
-			int32 OppositeVertexB = INDEX_NONE;
-			if (!TryGetSurfaceGridTriangleOppositeVertex(TriangleA, SharedVertexA, SharedVertexB, OppositeVertexA)
-				|| !TryGetSurfaceGridTriangleOppositeVertex(TriangleB, SharedVertexA, SharedVertexB, OppositeVertexB))
-			{
-				continue;
-			}
-
-			const FVector SharedPositionA(PositionVertexBuffer.VertexPosition(SharedVertexA));
-			const FVector SharedPositionB(PositionVertexBuffer.VertexPosition(SharedVertexB));
-			const FVector OppositePositionA(PositionVertexBuffer.VertexPosition(OppositeVertexA));
-			const FVector OppositePositionB(PositionVertexBuffer.VertexPosition(OppositeVertexB));
-			const float SharedLength = FVector::Distance(SharedPositionA, SharedPositionB);
-			const float PerimeterAverageLength = (
-				FVector::Distance(SharedPositionA, OppositePositionA)
-				+ FVector::Distance(OppositePositionA, SharedPositionB)
-				+ FVector::Distance(SharedPositionB, OppositePositionB)
-				+ FVector::Distance(OppositePositionB, SharedPositionA)) * 0.25f;
-
-			if (PerimeterAverageLength <= KINDA_SMALL_NUMBER || SharedLength < PerimeterAverageLength * 1.12f)
-			{
-				continue;
-			}
-
-			FSRSurfaceGridSourceQuad SourceQuad;
-			if (!TryOrderSurfaceGridQuadVertices(PositionVertexBuffer, OppositeVertexA, SharedVertexA, OppositeVertexB, SharedVertexB, SourceQuad))
-			{
-				continue;
-			}
-
-			SourceTriangles[TriangleIndexA].bPaired = true;
-			SourceTriangles[TriangleIndexB].bPaired = true;
-			SourceQuads.Add(SourceQuad);
-		}
-
-		return SourceQuads;
-	}
-
-	TArray<FSRRecoveredSurfaceGridQuadAddress> BuildRecoveredSurfaceGridQuadAddresses(
-		const TArray<FSRSurfaceGridSourceQuad>& SourceQuads,
-		const FPositionVertexBuffer& PositionVertexBuffer)
-	{
-		TArray<FSRRecoveredSurfaceGridQuadAddress> Addresses;
-		Addresses.SetNum(SourceQuads.Num());
-
-		TMap<ESRCubeSphereFace, TArray<int32>> QuadIndicesByFace;
-		for (int32 QuadIndex = 0; QuadIndex < SourceQuads.Num(); ++QuadIndex)
-		{
-			const FSRSurfaceGridSourceQuad& SourceQuad = SourceQuads[QuadIndex];
-			FVector CellCenter = FVector::ZeroVector;
-			bool bHasValidVertices = true;
-			for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
-			{
-				const int32 SourceVertexIndex = SourceQuad.Vertices[CornerIndex];
-				if (SourceVertexIndex < 0 || SourceVertexIndex >= static_cast<int32>(PositionVertexBuffer.GetNumVertices()))
-				{
-					bHasValidVertices = false;
-					break;
-				}
-				CellCenter += FVector(PositionVertexBuffer.VertexPosition(SourceVertexIndex));
-			}
-
-			FSRRecoveredSurfaceGridQuadAddress& Address = Addresses[QuadIndex];
-			if (!bHasValidVertices)
-			{
-				continue;
-			}
-
-			CellCenter /= 4.0f;
-			if (!USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(
-				CellCenter.GetSafeNormal(),
-				1,
-				Address.CellId,
-				Address.FaceCoordinates))
-			{
-				continue;
-			}
-			QuadIndicesByFace.FindOrAdd(Address.CellId.Face).Add(QuadIndex);
-		}
-
-		for (TPair<ESRCubeSphereFace, TArray<int32>>& FaceQuadIndexPair : QuadIndicesByFace)
-		{
-			TArray<int32>& FaceQuadIndices = FaceQuadIndexPair.Value;
-			const int32 FaceQuadCount = FaceQuadIndices.Num();
-			int32 FaceResolution = FMath::Max(1, FMath::RoundToInt(FMath::Sqrt(static_cast<float>(FaceQuadCount))));
-			while (FaceResolution * FaceResolution < FaceQuadCount)
-			{
-				++FaceResolution;
-			}
-
-			TMap<uint64, TArray<FSRRecoveredSurfaceGridQuadEdge>> EdgesByKey;
-			TMap<int32, TArray<FSRRecoveredSurfaceGridQuadEdge>> EdgesByQuadIndex;
-			EdgesByKey.Reserve(FaceQuadIndices.Num() * 4);
-			EdgesByQuadIndex.Reserve(FaceQuadIndices.Num());
-			for (const int32 QuadIndex : FaceQuadIndices)
-			{
-				const FSRSurfaceGridSourceQuad& SourceQuad = SourceQuads[QuadIndex];
-				const FVector2D QuadFaceCoordinates = Addresses[QuadIndex].FaceCoordinates;
-				for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
-				{
-					const int32 SourceVertexIndexA = SourceQuad.Vertices[EdgeIndex];
-					const int32 SourceVertexIndexB = SourceQuad.Vertices[(EdgeIndex + 1) % 4];
-					if (SourceVertexIndexA < 0
-						|| SourceVertexIndexA >= static_cast<int32>(PositionVertexBuffer.GetNumVertices())
-						|| SourceVertexIndexB < 0
-						|| SourceVertexIndexB >= static_cast<int32>(PositionVertexBuffer.GetNumVertices()))
-					{
-						continue;
-					}
-
-					const FVector SourcePositionA(PositionVertexBuffer.VertexPosition(SourceVertexIndexA));
-					const FVector SourcePositionB(PositionVertexBuffer.VertexPosition(SourceVertexIndexB));
-					FVector2D EdgeFaceCoordinatesA = FVector2D::ZeroVector;
-					FVector2D EdgeFaceCoordinatesB = FVector2D::ZeroVector;
-					if (!ProjectPointToCubeFaceCoordinates(SourcePositionA, FaceQuadIndexPair.Key, EdgeFaceCoordinatesA)
-						|| !ProjectPointToCubeFaceCoordinates(SourcePositionB, FaceQuadIndexPair.Key, EdgeFaceCoordinatesB))
-					{
-						continue;
-					}
-
-					const FVector2D EdgeFaceCoordinates = (EdgeFaceCoordinatesA + EdgeFaceCoordinatesB) * 0.5f;
-					const FVector2D EdgeDelta = EdgeFaceCoordinates - QuadFaceCoordinates;
-					FSRRecoveredSurfaceGridQuadEdge Edge;
-					Edge.QuadIndex = QuadIndex;
-					Edge.EdgeKey = BuildGridEdgeKey(SourcePositionA, SourcePositionB);
-					if (FMath::Abs(EdgeDelta.X) > FMath::Abs(EdgeDelta.Y))
-					{
-						Edge.DeltaX = EdgeDelta.X < 0.0f ? -1 : 1;
-					}
-					else
-					{
-						Edge.DeltaY = EdgeDelta.Y < 0.0f ? -1 : 1;
-					}
-					EdgesByKey.FindOrAdd(Edge.EdgeKey).Add(Edge);
-					EdgesByQuadIndex.FindOrAdd(QuadIndex).Add(Edge);
-				}
-			}
-
-			TMap<int32, FIntPoint> GridCoordinatesByQuadIndex;
-			GridCoordinatesByQuadIndex.Reserve(FaceQuadIndices.Num());
-			bool bHasGridCoordinateConflict = false;
-			for (const int32 SeedQuadIndex : FaceQuadIndices)
-			{
-				if (GridCoordinatesByQuadIndex.Contains(SeedQuadIndex))
-				{
-					continue;
-				}
-
-				GridCoordinatesByQuadIndex.Add(SeedQuadIndex, FIntPoint(0, 0));
-				TArray<int32> Queue;
-				Queue.Add(SeedQuadIndex);
-				for (int32 QueueIndex = 0; QueueIndex < Queue.Num(); ++QueueIndex)
-				{
-					const int32 CurrentQuadIndex = Queue[QueueIndex];
-					const FIntPoint CurrentCoordinates = GridCoordinatesByQuadIndex.FindChecked(CurrentQuadIndex);
-					const TArray<FSRRecoveredSurfaceGridQuadEdge>* CurrentEdges = EdgesByQuadIndex.Find(CurrentQuadIndex);
-					if (!CurrentEdges)
-					{
-						continue;
-					}
-
-					for (const FSRRecoveredSurfaceGridQuadEdge& CurrentEdge : *CurrentEdges)
-					{
-						const TArray<FSRRecoveredSurfaceGridQuadEdge>* SharedEdges = EdgesByKey.Find(CurrentEdge.EdgeKey);
-						if (!SharedEdges)
-						{
-							continue;
-						}
-
-						for (const FSRRecoveredSurfaceGridQuadEdge& SharedEdge : *SharedEdges)
-						{
-							if (SharedEdge.QuadIndex == CurrentQuadIndex || !FaceQuadIndices.Contains(SharedEdge.QuadIndex))
-							{
-								continue;
-							}
-
-							const FIntPoint NeighborCoordinates(
-								CurrentCoordinates.X + CurrentEdge.DeltaX,
-								CurrentCoordinates.Y + CurrentEdge.DeltaY);
-							if (const FIntPoint* ExistingCoordinates = GridCoordinatesByQuadIndex.Find(SharedEdge.QuadIndex))
-							{
-								if (*ExistingCoordinates != NeighborCoordinates)
-								{
-									bHasGridCoordinateConflict = true;
-								}
-								continue;
-							}
-
-							GridCoordinatesByQuadIndex.Add(SharedEdge.QuadIndex, NeighborCoordinates);
-							Queue.Add(SharedEdge.QuadIndex);
-						}
-					}
-				}
-			}
-
-			bool bAssignedBySharedEdges = !bHasGridCoordinateConflict && GridCoordinatesByQuadIndex.Num() == FaceQuadIndices.Num();
-			if (bAssignedBySharedEdges)
-			{
-				FIntPoint MinCoordinates(TNumericLimits<int32>::Max(), TNumericLimits<int32>::Max());
-				FIntPoint MaxCoordinates(TNumericLimits<int32>::Min(), TNumericLimits<int32>::Min());
-				TSet<FIntPoint> UniqueCoordinates;
-				UniqueCoordinates.Reserve(GridCoordinatesByQuadIndex.Num());
-				for (const TPair<int32, FIntPoint>& CoordinatePair : GridCoordinatesByQuadIndex)
-				{
-					MinCoordinates.X = FMath::Min(MinCoordinates.X, CoordinatePair.Value.X);
-					MinCoordinates.Y = FMath::Min(MinCoordinates.Y, CoordinatePair.Value.Y);
-					MaxCoordinates.X = FMath::Max(MaxCoordinates.X, CoordinatePair.Value.X);
-					MaxCoordinates.Y = FMath::Max(MaxCoordinates.Y, CoordinatePair.Value.Y);
-					UniqueCoordinates.Add(CoordinatePair.Value);
-				}
-
-				const int32 GridWidth = MaxCoordinates.X - MinCoordinates.X + 1;
-				const int32 GridHeight = MaxCoordinates.Y - MinCoordinates.Y + 1;
-				bAssignedBySharedEdges =
-					GridWidth == FaceResolution
-					&& GridHeight == FaceResolution
-					&& UniqueCoordinates.Num() == FaceQuadIndices.Num();
-
-				if (bAssignedBySharedEdges)
-				{
-					for (const int32 QuadIndex : FaceQuadIndices)
-					{
-						const FIntPoint Coordinates(
-							GridCoordinatesByQuadIndex.FindChecked(QuadIndex).X - MinCoordinates.X,
-							GridCoordinatesByQuadIndex.FindChecked(QuadIndex).Y - MinCoordinates.Y);
-						FSRRecoveredSurfaceGridQuadAddress& Address = Addresses[QuadIndex];
-						Address.FaceResolution = FaceResolution;
-						Address.CellId.Face = FaceQuadIndexPair.Key;
-						Address.CellId.CellX = Coordinates.X;
-						Address.CellId.CellY = Coordinates.Y;
-					}
-				}
-			}
-
-			if (bAssignedBySharedEdges)
-			{
-				continue;
-			}
-
-			FaceQuadIndices.Sort([&Addresses](const int32 QuadIndexA, const int32 QuadIndexB)
-			{
-				const FVector2D& FaceCoordinatesA = Addresses[QuadIndexA].FaceCoordinates;
-				const FVector2D& FaceCoordinatesB = Addresses[QuadIndexB].FaceCoordinates;
-				if (!FMath::IsNearlyEqual(FaceCoordinatesA.Y, FaceCoordinatesB.Y))
-				{
-					return FaceCoordinatesA.Y < FaceCoordinatesB.Y;
-				}
-				return FaceCoordinatesA.X < FaceCoordinatesB.X;
-			});
-
-			for (int32 RowStart = 0; RowStart < FaceQuadIndices.Num(); RowStart += FaceResolution)
-			{
-				const int32 RowEnd = FMath::Min(RowStart + FaceResolution, FaceQuadIndices.Num());
-				TArray<int32> RowQuadIndices;
-				RowQuadIndices.Reserve(RowEnd - RowStart);
-				for (int32 RowIndex = RowStart; RowIndex < RowEnd; ++RowIndex)
-				{
-					RowQuadIndices.Add(FaceQuadIndices[RowIndex]);
-				}
-				RowQuadIndices.Sort([&Addresses](const int32 QuadIndexA, const int32 QuadIndexB)
-				{
-					return Addresses[QuadIndexA].FaceCoordinates.X < Addresses[QuadIndexB].FaceCoordinates.X;
-				});
-
-				const int32 CellY = RowStart / FaceResolution;
-				for (int32 ColumnIndex = 0; ColumnIndex < RowQuadIndices.Num(); ++ColumnIndex)
-				{
-					FSRRecoveredSurfaceGridQuadAddress& Address = Addresses[RowQuadIndices[ColumnIndex]];
-					Address.FaceResolution = FaceResolution;
-					Address.CellId.Face = FaceQuadIndexPair.Key;
-					Address.CellId.CellX = ColumnIndex;
-					Address.CellId.CellY = CellY;
-				}
-			}
-		}
-
-		return Addresses;
 	}
 
 	bool IntersectRayTriangle(
@@ -966,7 +445,7 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 	DynamicMeshGeneration.DynamicMeshHeight = 0.0f;
 	bHasHoveredCell = false;
 	bHasSelectedCell = false;
-	bUsingRecoveredQuadCells = false;
+	bUsingGeneratedGridCells = false;
 	bGridMeshDirty = true;
 	bCellsDirty = true;
 	InteractionHighlightBatchDepth = 0;
@@ -1009,9 +488,9 @@ void USRPlanetSurfaceGrid::TickComponent(float DeltaTime, enum ELevelTick TickTy
 
 void USRPlanetSurfaceGrid::RebuildGrid()
 {
-	if (!RebuildCellsFromOwnerStaticMeshQuads())
+	if (!RebuildCellsFromOwnerGeneratedGrid())
 	{
-		bUsingRecoveredQuadCells = false;
+		bUsingGeneratedGridCells = false;
 		Cells = USRPlanetSurfaceGridLibrary::GenerateCubeSphereCells(FMath::Max(1, FaceResolution), FMath::Max(1.0f, PlanetRadius));
 		for (FSRPlanetSurfaceGridCell& Cell : Cells)
 		{
@@ -1214,17 +693,17 @@ bool USRPlanetSurfaceGrid::GetCellWorldTransform(const FSRPlanetSurfaceGridCellI
 		}
 	}
 
-	const FVector LocalPosition = bUsingRecoveredQuadCells
+	const FVector LocalPosition = bUsingGeneratedGridCells
 		? Cell.LocalCenter + (Cell.LocalNormal.GetSafeNormal() * HeightOffset)
 		: ResolveLocalSurfacePoint(Cell.LocalNormal, HeightOffset);
 	const FVector WorldPosition = GetComponentTransform().TransformPosition(LocalPosition);
-	const FVector WorldCorner00 = bUsingRecoveredQuadCells
+	const FVector WorldCorner00 = bUsingGeneratedGridCells
 		? GetComponentTransform().TransformPosition(Cell.Corner00 + (Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset))
 		: ResolveWorldSurfacePoint(Cell.Corner00.GetSafeNormal(), GridSurfaceOffset);
-	const FVector WorldCorner10 = bUsingRecoveredQuadCells
+	const FVector WorldCorner10 = bUsingGeneratedGridCells
 		? GetComponentTransform().TransformPosition(Cell.Corner10 + (Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset))
 		: ResolveWorldSurfacePoint(Cell.Corner10.GetSafeNormal(), GridSurfaceOffset);
-	const FVector WorldCorner01 = bUsingRecoveredQuadCells
+	const FVector WorldCorner01 = bUsingGeneratedGridCells
 		? GetComponentTransform().TransformPosition(Cell.Corner01 + (Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset))
 		: ResolveWorldSurfacePoint(Cell.Corner01.GetSafeNormal(), GridSurfaceOffset);
 	const FVector DerivedWorldNormal = FVector::CrossProduct(WorldCorner10 - WorldCorner00, WorldCorner01 - WorldCorner00).GetSafeNormal();
@@ -1254,7 +733,7 @@ bool USRPlanetSurfaceGrid::GetCellWorldCorners(const FSRPlanetSurfaceGridCellId&
 		return false;
 	}
 
-	if (bUsingRecoveredQuadCells)
+	if (bUsingGeneratedGridCells)
 	{
 		const FVector LocalOffset = Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset;
 		OutCorner00 = GetComponentTransform().TransformPosition(Cell.Corner00 + LocalOffset);
@@ -1302,7 +781,7 @@ bool USRPlanetSurfaceGrid::RaycastCell(const FVector& RayOrigin, const FVector& 
 	OutHitLocation = FVector::ZeroVector;
 	const double RaycastStartSeconds = SRSurfaceGridNowSeconds();
 	FSRSurfaceGridRaycastStats RaycastStats;
-	auto LogRaycastStats = [this, RaycastStartSeconds, &RaycastStats](bool bHit, bool bRecoveredPath, float BestHitDistance)
+	auto LogRaycastStats = [this, RaycastStartSeconds, &RaycastStats](bool bHit, bool bGeneratedGridPath, float BestHitDistance)
 	{
 		static uint64 RaycastSampleCounter = 0;
 		++RaycastSampleCounter;
@@ -1316,11 +795,11 @@ bool USRPlanetSurfaceGrid::RaycastCell(const FVector& RayOrigin, const FVector& 
 		}
 
 		FSRTimingLog::AddLine(FString::Printf(
-			TEXT("SurfaceGrid.RaycastCell Body=%s Total=%.3fms Hit=%s Recovered=%s Buckets=%d/%d SkipBuckets=%d Cells=%d DupSkips=%d TopTris=%d SideTris=%d TriHits=%d BestUpdates=%d BestDist=%.2f"),
+			TEXT("SurfaceGrid.RaycastCell Body=%s Total=%.3fms Hit=%s GeneratedGrid=%s Buckets=%d/%d SkipBuckets=%d Cells=%d DupSkips=%d TopTris=%d SideTris=%d TriHits=%d BestUpdates=%d BestDist=%.2f"),
 			*GetNameSafe(GetOwner()),
 			ElapsedMs,
 			bHit ? TEXT("true") : TEXT("false"),
-			bRecoveredPath ? TEXT("true") : TEXT("false"),
+			bGeneratedGridPath ? TEXT("true") : TEXT("false"),
 			RaycastStats.BucketHits,
 			RaycastStats.BucketTests,
 			RaycastStats.BucketSkippedByBestHit,
@@ -1333,7 +812,7 @@ bool USRPlanetSurfaceGrid::RaycastCell(const FVector& RayOrigin, const FVector& 
 			BestHitDistance));
 	};
 
-	if (bUsingRecoveredQuadCells && !Cells.IsEmpty())
+	if (bUsingGeneratedGridCells && !Cells.IsEmpty())
 	{
 		const FTransform ComponentTransform = GetComponentTransform();
 		const FVector LocalRayOrigin = ComponentTransform.InverseTransformPosition(RayOrigin);
@@ -1439,7 +918,7 @@ bool USRPlanetSurfaceGrid::RaycastCell(const FVector& RayOrigin, const FVector& 
 		return false;
 	}
 
-	OutHitLocation = bUsingRecoveredQuadCells
+	OutHitLocation = bUsingGeneratedGridCells
 		? GetComponentTransform().TransformPosition(OutCell.LocalCenter)
 		: ResolveWorldSurfacePoint(OutCell.LocalNormal, 0.0f);
 	LogRaycastStats(true, false, 0.0f);
@@ -1607,89 +1086,6 @@ bool USRPlanetSurfaceGrid::GetInteractionGridPatchCellIds(
 	}
 
 	constexpr int32 PatchRadius = 2;
-	if (bUsingRecoveredQuadCells)
-	{
-		TSet<FSRPlanetSurfaceGridCellId> PatchCellIds;
-		PatchCellIds.Reserve((PatchRadius * 2 + 1) * (PatchRadius * 2 + 1));
-		OutCellIds.Reserve((PatchRadius * 2 + 1) * (PatchRadius * 2 + 1));
-
-		auto AddPatchCellId = [this, &PatchCellIds, &OutCellIds](const FSRPlanetSurfaceGridCellId& PatchCellId)
-		{
-			FSRPlanetSurfaceGridCell PatchCell;
-			if (!GetCellById(PatchCellId, PatchCell) || PatchCellIds.Contains(PatchCellId))
-			{
-				return;
-			}
-
-			PatchCellIds.Add(PatchCellId);
-			OutCellIds.Add(PatchCellId);
-		};
-
-		auto TryStepNeighbor = [this](const FSRPlanetSurfaceGridCellId& FromCellId, bool bStepU, int32 StepSign, FSRPlanetSurfaceGridCellId& OutCellId)
-		{
-			FSRPlanetSurfaceGridCell FromCell;
-			if (!GetCellById(FromCellId, FromCell))
-			{
-				return false;
-			}
-
-			OutCellId = bStepU
-				? (StepSign < 0 ? FromCell.Neighbors.NegativeU : FromCell.Neighbors.PositiveU)
-				: (StepSign < 0 ? FromCell.Neighbors.NegativeV : FromCell.Neighbors.PositiveV);
-
-			FSRPlanetSurfaceGridCell NeighborCell;
-			return GetCellById(OutCellId, NeighborCell);
-		};
-
-		auto TryWalkOffset = [&TryStepNeighbor, CenterCellId](int32 OffsetU, int32 OffsetV, FSRPlanetSurfaceGridCellId& OutCellId)
-		{
-			FSRPlanetSurfaceGridCellId CurrentCellId = CenterCellId;
-			auto WalkAxis = [&TryStepNeighbor, &CurrentCellId](int32 Offset, bool bStepU)
-			{
-				if (Offset == 0)
-				{
-					return true;
-				}
-
-				const int32 StepSign = Offset < 0 ? -1 : 1;
-				for (int32 StepIndex = 0; StepIndex < FMath::Abs(Offset); ++StepIndex)
-				{
-					FSRPlanetSurfaceGridCellId NextCellId;
-					if (!TryStepNeighbor(CurrentCellId, bStepU, StepSign, NextCellId))
-					{
-						return false;
-					}
-
-					CurrentCellId = NextCellId;
-				}
-
-				return true;
-			};
-
-			if (!WalkAxis(OffsetU, true) || !WalkAxis(OffsetV, false))
-			{
-				return false;
-			}
-
-			OutCellId = CurrentCellId;
-			return true;
-		};
-
-		for (int32 OffsetV = -PatchRadius; OffsetV <= PatchRadius; ++OffsetV)
-		{
-			for (int32 OffsetU = -PatchRadius; OffsetU <= PatchRadius; ++OffsetU)
-			{
-				FSRPlanetSurfaceGridCellId PatchCellId;
-				if (TryWalkOffset(OffsetU, OffsetV, PatchCellId))
-				{
-					AddPatchCellId(PatchCellId);
-				}
-			}
-		}
-
-		return !OutCellIds.IsEmpty();
-	}
-
 	const int32 SafeFaceResolution = FMath::Max(1, FaceResolution);
 
 	enum class ESRGridDisplayEdge : uint8
@@ -2525,16 +1921,16 @@ void USRPlanetSurfaceGrid::AppendGeneratedGridCell(
 		if (GetGridCellEdgePoints(Cell, EdgeIndex, EdgePointA, EdgePointB))
 		{
 			AppendDedupedSegment(
-				OffsetRecoveredGridWirePoint(EdgePointA, GridSurfaceOffset),
-				OffsetRecoveredGridWirePoint(EdgePointB, GridSurfaceOffset));
+				OffsetGeneratedGridWirePoint(EdgePointA, GridSurfaceOffset),
+				OffsetGeneratedGridWirePoint(EdgePointB, GridSurfaceOffset));
 		}
 	}
 
 	for (const FSRPlanetSurfaceGridLineSegment& SideLineSegment : Cell.SideLineSegments)
 	{
 		AppendDedupedSegment(
-			OffsetRecoveredGridWirePoint(SideLineSegment.LocalPointA, GridSurfaceOffset),
-			OffsetRecoveredGridWirePoint(SideLineSegment.LocalPointB, GridSurfaceOffset));
+			OffsetGeneratedGridWirePoint(SideLineSegment.LocalPointA, GridSurfaceOffset),
+			OffsetGeneratedGridWirePoint(SideLineSegment.LocalPointB, GridSurfaceOffset));
 	}
 }
 
@@ -2563,7 +1959,7 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 
 	StageStart = SRSurfaceGridNowSeconds();
 	Cells = MoveTemp(NewCells);
-	bUsingRecoveredQuadCells = true;
+	bUsingGeneratedGridCells = true;
 	TMap<ESRCubeSphereFace, int32> CellCountByFace;
 	for (const FSRPlanetSurfaceGridCell& Cell : Cells)
 	{
@@ -2721,7 +2117,7 @@ void USRPlanetSurfaceGrid::RebuildCellInfoIndex()
 void USRPlanetSurfaceGrid::RebuildRaycastIndex()
 {
 	RaycastBuckets.Reset();
-	if (!bUsingRecoveredQuadCells || Cells.IsEmpty())
+	if (!bUsingGeneratedGridCells || Cells.IsEmpty())
 	{
 		return;
 	}
@@ -2811,7 +2207,7 @@ void USRPlanetSurfaceGrid::RebuildRaycastIndex()
 	}
 }
 
-bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerStaticMeshQuads()
+bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerGeneratedGrid()
 {
 	const ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner());
 	if (!IsValid(OwnerBody))
@@ -2819,231 +2215,13 @@ bool USRPlanetSurfaceGrid::RebuildCellsFromOwnerStaticMeshQuads()
 		return false;
 	}
 
-	if (OwnerBody->GetCachedSurfaceGridCells(Cells))
-	{
-		bUsingRecoveredQuadCells = true;
-		return true;
-	}
-
-	const FSRCelestialBodyData OwnerData = OwnerBody->GetData();
-	UStaticMesh* OwnerStaticMesh = OwnerData.StaticMesh.Get();
-	if (!IsValid(OwnerStaticMesh))
+	if (!OwnerBody->GetCachedSurfaceGridCells(Cells))
 	{
 		return false;
 	}
 
-	const FStaticMeshRenderData* RenderData = OwnerStaticMesh->GetRenderData();
-	if (!RenderData || RenderData->LODResources.IsEmpty())
-	{
-		return false;
-	}
-
-	const FStaticMeshLODResources& LODResource = RenderData->LODResources[0];
-	const FPositionVertexBuffer& PositionVertexBuffer = LODResource.VertexBuffers.PositionVertexBuffer;
-	const FRawStaticIndexBuffer& IndexBuffer = LODResource.IndexBuffer;
-	const int32 VertexCount = static_cast<int32>(PositionVertexBuffer.GetNumVertices());
-	const int32 IndexCount = static_cast<int32>(IndexBuffer.GetNumIndices());
-	if (VertexCount <= 0 || IndexCount < 3)
-	{
-		return false;
-	}
-
-	const TArray<FSRSurfaceGridSourceQuad> SourceQuads = RecoverSurfaceGridSourceQuads(PositionVertexBuffer, IndexBuffer, IndexCount);
-	if (SourceQuads.IsEmpty())
-	{
-		return false;
-	}
-
-	Cells.Reset(SourceQuads.Num());
-	Cells.Reserve(SourceQuads.Num());
-	const float OwnerScale = FMath::Max(0.0f, OwnerData.Scale);
-	if (OwnerScale <= KINDA_SMALL_NUMBER)
-	{
-		return false;
-	}
-
-	TMap<uint64, FIntPoint> CellEdgeBySourceEdge;
-	CellEdgeBySourceEdge.Reserve(SourceQuads.Num() * 4);
-	TMap<uint64, FIntPoint> CellEdgeBySourcePositionEdge;
-	CellEdgeBySourcePositionEdge.Reserve(SourceQuads.Num() * 4);
-	const TArray<FSRRecoveredSurfaceGridQuadAddress> QuadGridAddresses = BuildRecoveredSurfaceGridQuadAddresses(SourceQuads, PositionVertexBuffer);
-
-	auto AssignNeighbor = [this](int32 CellIndex, int32 EdgeIndex, const FSRPlanetSurfaceGridCellId& NeighborId)
-	{
-		if (!Cells.IsValidIndex(CellIndex))
-		{
-			return;
-		}
-
-		switch (EdgeIndex)
-		{
-		case 0:
-			Cells[CellIndex].Neighbors.NegativeV = NeighborId;
-			break;
-		case 1:
-			Cells[CellIndex].Neighbors.PositiveU = NeighborId;
-			break;
-		case 2:
-			Cells[CellIndex].Neighbors.PositiveV = NeighborId;
-			break;
-		case 3:
-			Cells[CellIndex].Neighbors.NegativeU = NeighborId;
-			break;
-		default:
-			break;
-		}
-	};
-
-	auto AssignNeighborPair = [this, &AssignNeighbor](int32 CellIndex, int32 EdgeIndex, const FIntPoint& ExistingCellEdge)
-	{
-		if (!Cells.IsValidIndex(ExistingCellEdge.X))
-		{
-			return;
-		}
-
-		AssignNeighbor(CellIndex, EdgeIndex, Cells[ExistingCellEdge.X].CellId);
-		AssignNeighbor(ExistingCellEdge.X, ExistingCellEdge.Y, Cells[CellIndex].CellId);
-	};
-
-	for (int32 QuadIndex = 0; QuadIndex < SourceQuads.Num(); ++QuadIndex)
-	{
-		const FSRSurfaceGridSourceQuad& SourceQuad = SourceQuads[QuadIndex];
-
-		FVector SourcePositions[4];
-		FVector SourceCenter = FVector::ZeroVector;
-		bool bHasValidVertices = true;
-		for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
-		{
-			const int32 SourceVertexIndex = SourceQuad.Vertices[CornerIndex];
-			if (SourceVertexIndex < 0 || SourceVertexIndex >= VertexCount)
-			{
-				bHasValidVertices = false;
-				break;
-			}
-
-			SourcePositions[CornerIndex] = FVector(PositionVertexBuffer.VertexPosition(SourceVertexIndex));
-			SourceCenter += SourcePositions[CornerIndex];
-		}
-
-		if (!bHasValidVertices)
-		{
-			continue;
-		}
-
-		SourceCenter /= 4.0f;
-		const FVector CellDirection = SourceCenter.GetSafeNormal();
-		if (CellDirection.IsNearlyZero())
-		{
-			continue;
-		}
-
-		FSRPlanetTerrainSample TerrainSample;
-		float CellScale = 1.0f;
-		if (DynamicMeshGeneration.bDynamicMeshGeneration && DynamicMeshGeneration.DynamicMeshHeight > KINDA_SMALL_NUMBER)
-		{
-			TerrainSample = GetTerrainSampleAtDirection(CellDirection);
-			const float SourceCellRadius = FMath::Max(SourceCenter.Length(), 1.0f);
-			CellScale = FMath::Max(0.01f, (SourceCellRadius + TerrainSample.HeightOffset) / SourceCellRadius);
-		}
-
-		FVector TargetPositions[4];
-		for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
-		{
-			TargetPositions[CornerIndex] = SourcePositions[CornerIndex] * CellScale * OwnerScale;
-		}
-		const FVector TargetCenter = CellDirection * (SourceCenter.Length() * CellScale * OwnerScale);
-
-		FVector CellNormal = FVector::CrossProduct(
-			TargetPositions[1] - TargetPositions[0],
-			TargetPositions[2] - TargetPositions[0]).GetSafeNormal();
-		if (FVector::DotProduct(CellNormal, CellDirection) < 0.0f)
-		{
-			Swap(TargetPositions[1], TargetPositions[3]);
-			Swap(SourcePositions[1], SourcePositions[3]);
-			CellNormal *= -1.0f;
-		}
-		if (CellNormal.IsNearlyZero())
-		{
-			CellNormal = CellDirection;
-		}
-
-		FSRPlanetSurfaceGridCell Cell;
-		const FSRRecoveredSurfaceGridQuadAddress QuadGridAddress = QuadGridAddresses.IsValidIndex(QuadIndex)
-			? QuadGridAddresses[QuadIndex]
-			: FSRRecoveredSurfaceGridQuadAddress();
-		Cell.CellId = QuadGridAddress.CellId;
-		Cell.LocalCenter = TargetCenter;
-		Cell.LocalNormal = CellNormal;
-		Cell.Corner00 = TargetPositions[0];
-		Cell.Corner10 = TargetPositions[1];
-		Cell.Corner11 = TargetPositions[2];
-		Cell.Corner01 = TargetPositions[3];
-		const float FaceCellStep = 2.0f / static_cast<float>(FMath::Max(1, QuadGridAddress.FaceResolution));
-		Cell.FaceUVMin = FVector2D(
-			-1.0f + FaceCellStep * static_cast<float>(Cell.CellId.CellX),
-			-1.0f + FaceCellStep * static_cast<float>(Cell.CellId.CellY));
-		Cell.FaceUVMax = Cell.FaceUVMin + FVector2D(FaceCellStep, FaceCellStep);
-		Cell.ApproxSurfaceArea =
-			(FVector::CrossProduct(Cell.Corner10 - Cell.Corner00, Cell.Corner11 - Cell.Corner00).Size() * 0.5f)
-			+ (FVector::CrossProduct(Cell.Corner11 - Cell.Corner00, Cell.Corner01 - Cell.Corner00).Size() * 0.5f);
-		Cell.Biome = TerrainSample.Biome;
-		Cell.BiomeId = TerrainSample.BiomeId;
-		Cell.WaterRole = TerrainSample.WaterRole;
-		Cell.Neighbors = USRPlanetSurfaceGridLibrary::GetCubeSphereNeighborIds(Cell.CellId, FMath::Max(1, QuadGridAddress.FaceResolution));
-
-		const int32 CellIndex = Cells.Num();
-		Cells.Add(Cell);
-
-		const uint64 EdgeKeys[4] =
-		{
-			BuildSurfaceGridSourceEdgeKey(SourceQuad.Vertices[0], SourceQuad.Vertices[1]),
-			BuildSurfaceGridSourceEdgeKey(SourceQuad.Vertices[1], SourceQuad.Vertices[2]),
-			BuildSurfaceGridSourceEdgeKey(SourceQuad.Vertices[2], SourceQuad.Vertices[3]),
-			BuildSurfaceGridSourceEdgeKey(SourceQuad.Vertices[3], SourceQuad.Vertices[0]),
-		};
-		const uint64 PositionEdgeKeys[4] =
-		{
-			BuildGridEdgeKey(SourcePositions[0], SourcePositions[1]),
-			BuildGridEdgeKey(SourcePositions[1], SourcePositions[2]),
-			BuildGridEdgeKey(SourcePositions[2], SourcePositions[3]),
-			BuildGridEdgeKey(SourcePositions[3], SourcePositions[0]),
-		};
-
-		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
-		{
-			if (const FIntPoint* ExistingCellEdge = CellEdgeBySourceEdge.Find(EdgeKeys[EdgeIndex]))
-			{
-				AssignNeighborPair(CellIndex, EdgeIndex, *ExistingCellEdge);
-				CellEdgeBySourcePositionEdge.Remove(PositionEdgeKeys[EdgeIndex]);
-				continue;
-			}
-
-			if (const FIntPoint* ExistingCellEdge = CellEdgeBySourcePositionEdge.Find(PositionEdgeKeys[EdgeIndex]))
-			{
-				AssignNeighborPair(CellIndex, EdgeIndex, *ExistingCellEdge);
-				continue;
-			}
-
-			CellEdgeBySourceEdge.Add(EdgeKeys[EdgeIndex], FIntPoint(CellIndex, EdgeIndex));
-			CellEdgeBySourcePositionEdge.Add(PositionEdgeKeys[EdgeIndex], FIntPoint(CellIndex, EdgeIndex));
-		}
-	}
-
-	bUsingRecoveredQuadCells = !Cells.IsEmpty();
-	if (bUsingRecoveredQuadCells)
-	{
-		TMap<ESRCubeSphereFace, int32> CellCountByFace;
-		for (const FSRPlanetSurfaceGridCell& Cell : Cells)
-		{
-			CellCountByFace.FindOrAdd(Cell.CellId.Face)++;
-		}
-		for (const TPair<ESRCubeSphereFace, int32>& CellCountPair : CellCountByFace)
-		{
-			FaceResolution = FMath::Max(1, FMath::RoundToInt(FMath::Sqrt(static_cast<float>(CellCountPair.Value))));
-			break;
-		}
-	}
-	return bUsingRecoveredQuadCells;
+	bUsingGeneratedGridCells = true;
+	return true;
 }
 
 void USRPlanetSurfaceGrid::UpdateDebugTickState()
@@ -3302,12 +2480,12 @@ void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
 		}
 
 		DrawnEdges.Add(EdgeKey);
-		if (bUsingRecoveredQuadCells)
+		if (bUsingGeneratedGridCells)
 		{
 			AppendGridWireVolumeSegment(
 				OverlayMesh,
-				OffsetRecoveredGridWirePoint(PointA, GridSurfaceOffset),
-				OffsetRecoveredGridWirePoint(PointB, GridSurfaceOffset),
+				OffsetGeneratedGridWirePoint(PointA, GridSurfaceOffset),
+				OffsetGeneratedGridWirePoint(PointB, GridSurfaceOffset),
 				PatchLineColor,
 				LineThickness);
 			return;
@@ -3411,7 +2589,7 @@ void USRPlanetSurfaceGrid::AppendInteractionCell(
 		}
 	};
 
-	if (bUsingRecoveredQuadCells)
+	if (bUsingGeneratedGridCells)
 	{
 		const FVector Offset = Cell.LocalNormal.GetSafeNormal() * HighlightOffset;
 		AppendFilledQuad(Cell.Corner00 + Offset, Cell.Corner10 + Offset, Cell.Corner11 + Offset, Cell.Corner01 + Offset, LineColor);
@@ -3440,7 +2618,7 @@ void USRPlanetSurfaceGrid::RebuildGridMesh()
 	{
 		const FLinearColor DefaultLineColor(DebugLineColor.R, DebugLineColor.G, DebugLineColor.B, DebugLineOpacity);
 
-		const bool bAppendedOwnerWire = !bUsingRecoveredQuadCells
+		const bool bAppendedOwnerWire = !bUsingGeneratedGridCells
 			&& AppendOwnerDynamicMeshWire(GridMesh, DefaultLineColor, DebugLineThickness);
 		if (!bAppendedOwnerWire)
 		{
@@ -3527,7 +2705,7 @@ void USRPlanetSurfaceGrid::AppendGridWireCell(
 		AppendGridWireSegment(GridMesh, PointA, PointB, LineColor, LineThickness);
 	};
 
-	if (bUsingRecoveredQuadCells)
+	if (bUsingGeneratedGridCells)
 	{
 		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
 		{
@@ -3536,16 +2714,16 @@ void USRPlanetSurfaceGrid::AppendGridWireCell(
 			if (GetGridCellEdgePoints(Cell, EdgeIndex, EdgePointA, EdgePointB))
 			{
 				AppendDedupedSegment(
-					OffsetRecoveredGridWirePoint(EdgePointA, GridSurfaceOffset),
-					OffsetRecoveredGridWirePoint(EdgePointB, GridSurfaceOffset));
+					OffsetGeneratedGridWirePoint(EdgePointA, GridSurfaceOffset),
+					OffsetGeneratedGridWirePoint(EdgePointB, GridSurfaceOffset));
 			}
 		}
 
 		for (const FSRPlanetSurfaceGridLineSegment& SideLineSegment : Cell.SideLineSegments)
 		{
 			AppendDedupedSegment(
-				OffsetRecoveredGridWirePoint(SideLineSegment.LocalPointA, GridSurfaceOffset),
-				OffsetRecoveredGridWirePoint(SideLineSegment.LocalPointB, GridSurfaceOffset));
+				OffsetGeneratedGridWirePoint(SideLineSegment.LocalPointA, GridSurfaceOffset),
+				OffsetGeneratedGridWirePoint(SideLineSegment.LocalPointB, GridSurfaceOffset));
 		}
 
 		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
@@ -3574,14 +2752,14 @@ void USRPlanetSurfaceGrid::AppendGridWireCell(
 			if (FVector::DistSquared(CellPointA, NeighborPointA) > KINDA_SMALL_NUMBER)
 			{
 				AppendDedupedSegment(
-					OffsetRecoveredGridWirePoint(CellPointA, GridSurfaceOffset),
-					OffsetRecoveredGridWirePoint(NeighborPointA, GridSurfaceOffset));
+					OffsetGeneratedGridWirePoint(CellPointA, GridSurfaceOffset),
+					OffsetGeneratedGridWirePoint(NeighborPointA, GridSurfaceOffset));
 			}
 			if (FVector::DistSquared(CellPointB, NeighborPointB) > KINDA_SMALL_NUMBER)
 			{
 				AppendDedupedSegment(
-					OffsetRecoveredGridWirePoint(CellPointB, GridSurfaceOffset),
-					OffsetRecoveredGridWirePoint(NeighborPointB, GridSurfaceOffset));
+					OffsetGeneratedGridWirePoint(CellPointB, GridSurfaceOffset),
+					OffsetGeneratedGridWirePoint(NeighborPointB, GridSurfaceOffset));
 			}
 		}
 		return;
