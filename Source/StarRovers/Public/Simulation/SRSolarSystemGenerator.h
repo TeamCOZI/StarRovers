@@ -24,6 +24,13 @@ struct FSRCelestialBodyGenerateRequest
 	TSubclassOf<ASRCelestialBody> BodyClass;
 };
 
+struct FSRPreparedBodyTimingDetail
+{
+	FString BodyName;
+	double Milliseconds = 0.0;
+	TArray<FString> DetailLines;
+};
+
 UCLASS(Blueprintable)
 class STARROVERS_API ASRSolarSystemGenerator : public AActor
 {
@@ -102,6 +109,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Diagnostics", meta = (DisplayName = "bEnableMemoryDiagnostics"))
 	bool bEnableMemoryDiagnostics;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Performance", meta = (DisplayName = "bParallelDynamicMeshPreparation", ToolTip = "Prepare planet and moon dynamic mesh build data in parallel batches during runtime system generation. The final component and surface grid apply step still runs on the game thread."))
+	bool bParallelDynamicMeshPreparation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Performance", meta = (DisplayName = "DynamicMeshPreparationMaxConcurrency", ClampMin = "1", EditCondition = "bParallelDynamicMeshPreparation", ToolTip = "Maximum number of celestial body dynamic mesh build-data tasks to run at once. Values above the number of prepared bodies have no extra effect."))
+	int32 DynamicMeshPreparationMaxConcurrency;
+
 private:
 	struct FSRAsyncGenerationStageTiming
 	{
@@ -176,6 +189,7 @@ private:
 	double AsyncPrepareSlowestBodyMs = 0.0;
 	FString AsyncPrepareSlowestBodyName;
 	TArray<FString> AsyncPrepareSlowestBodyDetailLines;
+	TArray<FSRPreparedBodyTimingDetail> AsyncPrepareBodyTimingDetails;
 	int32 AsyncNaturalPlanetIndex = 0;
 	int32 AsyncNaturalPlanetCount = 0;
 	double AsyncNaturalPlanetTotalMs = 0.0;

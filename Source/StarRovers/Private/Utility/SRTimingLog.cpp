@@ -1,21 +1,28 @@
 #include "Utility/SRTimingLog.h"
 
+#include "HAL/CriticalSection.h"
+#include "Misc/ScopeLock.h"
+
 namespace
 {
 	bool bSRTimingLogActive = false;
-	int32 SRTimingLogSuppressDepth = 0;
 	FString SRTimingLogTitle;
 	TArray<FString> SRTimingLogLines;
-	TArray<TArray<FString>*> SRTimingLogCaptureStack;
+	FCriticalSection SRTimingLogCriticalSection;
+
+	thread_local int32 SRTimingLogSuppressDepth = 0;
+	thread_local TArray<TArray<FString>*> SRTimingLogCaptureStack;
 }
 
 bool FSRTimingLog::IsActive()
 {
+	FScopeLock Lock(&SRTimingLogCriticalSection);
 	return bSRTimingLogActive;
 }
 
 void FSRTimingLog::BeginSession(const FString& Title)
 {
+	FScopeLock Lock(&SRTimingLogCriticalSection);
 	bSRTimingLogActive = true;
 	SRTimingLogTitle = Title;
 	SRTimingLogLines.Reset();
@@ -32,6 +39,7 @@ void FSRTimingLog::AddLine(const FString& Line)
 		return;
 	}
 
+	FScopeLock Lock(&SRTimingLogCriticalSection);
 	if (!bSRTimingLogActive)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[SR Timing] %s"), *Line);
@@ -43,6 +51,7 @@ void FSRTimingLog::AddLine(const FString& Line)
 
 void FSRTimingLog::EndSessionAndLog()
 {
+	FScopeLock Lock(&SRTimingLogCriticalSection);
 	if (!bSRTimingLogActive)
 	{
 		return;

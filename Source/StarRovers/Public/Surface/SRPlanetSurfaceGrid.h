@@ -163,6 +163,7 @@ public:
     void AppendGeneratedGridCell(UE::Geometry::FDynamicMesh3& GridMesh, const FSRPlanetSurfaceGridCell& Cell, TSet<uint64>& DrawnEdges) const;
     void ApplyGeneratedGridBuild(TArray<FSRPlanetSurfaceGridCell>&& NewCells, UE::Geometry::FDynamicMesh3&& NewGridMesh);
     void ApplyGeneratedGridBuild(TArray<FSRPlanetSurfaceGridCell>&& NewCells, UE::Geometry::FDynamicMesh3&& NewGridMesh, TMap<FSRPlanetSurfaceGridCellId, int32>&& NewCellIndexById);
+    void ApplyGeneratedGridBuild(TArray<FSRPlanetSurfaceGridCell>&& NewCells, UE::Geometry::FDynamicMesh3&& NewGridMesh, TArray<int32>&& NewCellIndexByFlatId);
 
 protected:
     UPROPERTY()
@@ -249,6 +250,7 @@ private:
     void SetInteractionOverlayVisible(bool bNewVisible);
     void AppendInteractionGridPatch(UE::Geometry::FDynamicMesh3& OverlayMesh, const FSRPlanetSurfaceGridCellId& CenterCellId, const FLinearColor& BaseLineColor, float LineThickness, TSet<uint64>& DrawnEdges) const;
     bool GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const;
+    int32 GetFlatCellIndex(const FSRPlanetSurfaceGridCellId& CellId) const;
     void RebuildCellIndex();
     void RebuildRaycastIndex();
     void UpdateDebugTickState();
@@ -257,6 +259,8 @@ private:
     FSRPlanetSurfaceGridCellInfo BuildCellInfo(const FSRPlanetSurfaceGridCell& Cell) const;
     FSRPlanetSurfaceGridCellInfo ResolveRuntimeCellInfo(const FSRPlanetSurfaceGridCellInfo& CellInfo) const;
     void RebuildCellInfoIndex();
+    bool GetStoredCellInfoById(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCellInfo& OutCellInfo) const;
+    void StoreCellInfo(const FSRPlanetSurfaceGridCellInfo& CellInfo);
     bool AppendOwnerDynamicMeshWire(UE::Geometry::FDynamicMesh3& GridMesh, const FLinearColor& LineColor, float LineThickness) const;
     void AppendGridWireCell(UE::Geometry::FDynamicMesh3& GridMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness, bool bIncludeInEdgeSet, TSet<uint64>* DrawnEdges) const;
     void AppendGridWireEdge(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FLinearColor& LineColor, float LineThickness) const;
@@ -271,6 +275,8 @@ private:
 
     TMap<FSRPlanetSurfaceGridCellId, int32> CellIndexById;
     TMap<FSRPlanetSurfaceGridCellId, FSRPlanetSurfaceGridCellInfo> CellInfoById;
+    TArray<int32> CellIndexByFlatId;
+    TArray<FSRPlanetSurfaceGridCellInfo> CellInfoByFlatId;
     TArray<FSRSurfaceGridRaycastBucket> RaycastBuckets;
 
     UPROPERTY(Transient)

@@ -1,7 +1,302 @@
 #include "Surface/SRPlanetTerrainTypes.h"
 
 #include "Materials/MaterialInterface.h"
+#include "Misc/Crc.h"
 #include "Surface/SRPlanetBiomeDataAsset.h"
+
+namespace
+{
+	uint32 HashBiomeValue(FName BiomeId, int32 Salt)
+	{
+		const FString HashInput = FString::Printf(TEXT("%s:%d"), *BiomeId.ToString(), Salt);
+		return FCrc::StrCrc32(*HashInput);
+	}
+
+	float HashBiomeUnit(FName BiomeId, int32 Salt)
+	{
+		return static_cast<float>(HashBiomeValue(BiomeId, Salt) & 0x00ffffff) / static_cast<float>(0x00ffffff);
+	}
+
+	FVector BuildBiomeAnchorDirection(FName BiomeId, int32 Salt)
+	{
+		const float Z = (HashBiomeUnit(BiomeId, Salt) * 2.0f) - 1.0f;
+		const float Angle = HashBiomeUnit(BiomeId, Salt + 97) * 2.0f * PI;
+		const float Radius = FMath::Sqrt(FMath::Max(0.0f, 1.0f - (Z * Z)));
+		return FVector(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius, Z).GetSafeNormal();
+	}
+
+	FVector BuildNoiseSeedOffset(int32 Seed)
+	{
+		const int64 Seed64 = static_cast<int64>(Seed);
+		return FVector(
+			static_cast<float>((Seed64 * 15731LL) % 10007LL),
+			static_cast<float>((Seed64 * 789221LL) % 10009LL),
+			static_cast<float>((Seed64 * 1376312589LL) % 10037LL));
+	}
+
+	FSRCompiledTerrainNoiseDescriptor MakeNoiseDescriptor(int32 Seed, float Frequency, int32 Octaves, float Persistence)
+	{
+		FSRCompiledTerrainNoiseDescriptor Descriptor;
+		Descriptor.SeedOffset = BuildNoiseSeedOffset(Seed);
+		Descriptor.Frequency = FMath::Max(0.01f, Frequency);
+		Descriptor.Octaves = FMath::Clamp(Octaves, 1, 8);
+		Descriptor.Persistence = FMath::Clamp(Persistence, 0.0f, 1.0f);
+		return Descriptor;
+	}
+
+	void GetPlacementMetricRange(ESRBiomePlacementMetric Metric, float& OutMinValue, float& OutMaxValue)
+	{
+		switch (Metric)
+		{
+		case ESRBiomePlacementMetric::HeightAlpha:
+		case ESRBiomePlacementMetric::Continentalness:
+			OutMinValue = -1.0f;
+			OutMaxValue = 1.0f;
+			break;
+		case ESRBiomePlacementMetric::AbsLatitudeDegrees:
+			OutMinValue = 0.0f;
+			OutMaxValue = 90.0f;
+			break;
+		default:
+			OutMinValue = 0.0f;
+			OutMaxValue = 1.0f;
+			break;
+		}
+	}
+
+	float NormalizePlacementMetricValue(ESRBiomePlacementMetric Metric, float Value)
+	{
+		float MinValue = 0.0f;
+		float MaxValue = 1.0f;
+		GetPlacementMetricRange(Metric, MinValue, MaxValue);
+		return FMath::GetMappedRangeValueClamped(FVector2D(MinValue, MaxValue), FVector2D(0.0f, 1.0f), Value);
+	}
+
+	bool HasMetricRule(const TArray<FSRBiomePlacementRule>& PlacementRules, ESRBiomePlacementMetric Metric)
+	{
+		for (const FSRBiomePlacementRule& Rule : PlacementRules)
+		{
+			if (Rule.Metric == Metric)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	float GetRuleTargetForMetric(
+		FName BiomeId,
+		const TArray<FSRBiomePlacementRule>& PlacementRules,
+		ESRBiomePlacementMetric Metric,
+		float FallbackTarget)
+	{
+		float MinValue = 0.0f;
+		float MaxValue = 1.0f;
+		GetPlacementMetricRange(Metric, MinValue, MaxValue);
+
+		float TargetSum = 0.0f;
+		int32 TargetCount = 0;
+		for (const FSRBiomePlacementRule& Rule : PlacementRules)
+		{
+			if (Rule.Metric != Metric)
+			{
+				continue;
+			}
+
+			const float LowerThreshold = FMath::Clamp(FMath::Min(Rule.Threshold, Rule.MaxThreshold), MinValue, MaxValue);
+			const float UpperThreshold = FMath::Clamp(FMath::Max(Rule.Threshold, Rule.MaxThreshold), MinValue, MaxValue);
+			float TargetValue = FallbackTarget;
+			bool bHasTarget = true;
+
+			switch (Rule.Comparison)
+			{
+			case ESRBiomePlacementComparison::GreaterThan:
+			case ESRBiomePlacementComparison::GreaterOrEqual:
+				TargetValue = (FMath::Clamp(Rule.Threshold, MinValue, MaxValue) + MaxValue) * 0.5f;
+				break;
+			case ESRBiomePlacementComparison::LessThan:
+			case ESRBiomePlacementComparison::LessOrEqual:
+				TargetValue = (MinValue + FMath::Clamp(Rule.Threshold, MinValue, MaxValue)) * 0.5f;
+				break;
+			case ESRBiomePlacementComparison::BetweenInclusive:
+				TargetValue = (LowerThreshold + UpperThreshold) * 0.5f;
+				break;
+			case ESRBiomePlacementComparison::OutsideInclusive:
+				TargetValue = HashBiomeUnit(BiomeId, static_cast<int32>(Metric) + 211) < 0.5f
+					? (MinValue + LowerThreshold) * 0.5f
+					: (UpperThreshold + MaxValue) * 0.5f;
+				break;
+			default:
+				bHasTarget = false;
+				break;
+			}
+
+			if (bHasTarget)
+			{
+				TargetSum += NormalizePlacementMetricValue(Metric, TargetValue);
+				++TargetCount;
+			}
+		}
+
+		return TargetCount > 0 ? TargetSum / static_cast<float>(TargetCount) : FallbackTarget;
+	}
+
+	float GetRuleBasedTargetTemperature(FName BiomeId, const TArray<FSRBiomePlacementRule>& PlacementRules)
+	{
+		const float FallbackTarget = HashBiomeUnit(BiomeId, 17);
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::Temperature))
+		{
+			return GetRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::Temperature, FallbackTarget);
+		}
+
+		const float LatitudeTarget = GetRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::AbsLatitudeDegrees, -1.0f);
+		return LatitudeTarget >= 0.0f ? 1.0f - LatitudeTarget : FallbackTarget;
+	}
+
+	float GetRuleBasedTargetMoisture(FName BiomeId, const TArray<FSRBiomePlacementRule>& PlacementRules)
+	{
+		const float FallbackTarget = HashBiomeUnit(BiomeId, 23);
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::Moisture))
+		{
+			return GetRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::Moisture, FallbackTarget);
+		}
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::RiverMask)
+			|| HasMetricRule(PlacementRules, ESRBiomePlacementMetric::LakeMask))
+		{
+			return 0.82f;
+		}
+
+		return FallbackTarget;
+	}
+
+	float GetRuleBasedTargetHeight(FName BiomeId, const TArray<FSRBiomePlacementRule>& PlacementRules)
+	{
+		const float FallbackTarget = HashBiomeUnit(BiomeId, 31);
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::HeightAlpha))
+		{
+			return GetRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::HeightAlpha, FallbackTarget);
+		}
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::OceanDepthMask))
+		{
+			return 0.08f;
+		}
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::CoastMask))
+		{
+			return 0.38f;
+		}
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::MountainMask))
+		{
+			return 0.82f;
+		}
+
+		return FallbackTarget;
+	}
+
+	float GetRuleBasedTargetContinentalness(FName BiomeId, const TArray<FSRBiomePlacementRule>& PlacementRules)
+	{
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::Continentalness))
+		{
+			return GetRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::Continentalness, HashBiomeUnit(BiomeId, 43));
+		}
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::OceanDepthMask))
+		{
+			return 0.08f;
+		}
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::CoastMask))
+		{
+			return 0.46f;
+		}
+		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::LandMask)
+			|| HasMetricRule(PlacementRules, ESRBiomePlacementMetric::InlandMask))
+		{
+			return 0.76f;
+		}
+
+		return HashBiomeUnit(BiomeId, 43);
+	}
+
+	ESRPlanetBiome GetRuntimeBiomeForWaterRole(ESRBiomeWaterRole WaterRole)
+	{
+		if (WaterRole == ESRBiomeWaterRole::Ocean
+			|| WaterRole == ESRBiomeWaterRole::River
+			|| WaterRole == ESRBiomeWaterRole::Lake)
+		{
+			return ESRPlanetBiome::Ocean;
+		}
+		if (WaterRole == ESRBiomeWaterRole::Coast)
+		{
+			return ESRPlanetBiome::Coast;
+		}
+		return ESRPlanetBiome::Plains;
+	}
+
+	FSRCompiledPlanetBiomeGenerationSnapshot CompileBiomeGenerationSnapshot(
+		const FSRPlanetBiomeGenerationSnapshot& BiomeSnapshot,
+		int32 GenerationSeed)
+	{
+		FSRCompiledPlanetBiomeGenerationSnapshot CompiledBiome;
+		CompiledBiome.BiomeId = BiomeSnapshot.BiomeId;
+		CompiledBiome.WaterRole = BiomeSnapshot.WaterRole;
+		CompiledBiome.PlacementRules = BiomeSnapshot.PlacementRules;
+		CompiledBiome.Weight = FMath::Max(0.01f, BiomeSnapshot.SpawnWeight);
+		CompiledBiome.Priority = BiomeSnapshot.Priority;
+		CompiledBiome.bCanOverrideLowerPriorityBiomes = BiomeSnapshot.bCanOverrideLowerPriorityBiomes;
+		CompiledBiome.OverrideMinScore = BiomeSnapshot.OverrideMinScore;
+		CompiledBiome.TargetTemperature = GetRuleBasedTargetTemperature(BiomeSnapshot.BiomeId, BiomeSnapshot.PlacementRules);
+		CompiledBiome.TargetMoisture = GetRuleBasedTargetMoisture(BiomeSnapshot.BiomeId, BiomeSnapshot.PlacementRules);
+		CompiledBiome.TargetHeight = GetRuleBasedTargetHeight(BiomeSnapshot.BiomeId, BiomeSnapshot.PlacementRules);
+		CompiledBiome.TargetContinentalness = GetRuleBasedTargetContinentalness(BiomeSnapshot.BiomeId, BiomeSnapshot.PlacementRules);
+
+		const float SafeRegionSize = FMath::Clamp(BiomeSnapshot.RegionSize, 0.01f, 1.0f);
+		CompiledBiome.AnchorThreshold = FMath::Lerp(0.98f, -0.12f, SafeRegionSize);
+		CompiledBiome.AnchorDirections[0] = BuildBiomeAnchorDirection(BiomeSnapshot.BiomeId, GenerationSeed);
+		CompiledBiome.AnchorDirections[1] = BuildBiomeAnchorDirection(BiomeSnapshot.BiomeId, GenerationSeed + 131);
+		CompiledBiome.PatchFrequency = FMath::Lerp(1.5f, 8.5f, HashBiomeUnit(BiomeSnapshot.BiomeId, 59));
+		CompiledBiome.PatchSeed = GenerationSeed + static_cast<int32>(HashBiomeValue(BiomeSnapshot.BiomeId, 67) % 100000);
+		CompiledBiome.PatchSeedOffset = BuildNoiseSeedOffset(CompiledBiome.PatchSeed);
+		const uint8 Hue = static_cast<uint8>(HashBiomeValue(BiomeSnapshot.BiomeId, 701) % 255);
+		CompiledBiome.BaseLandColor = FLinearColor::MakeFromHSV8(Hue, 112, 158);
+		CompiledBiome.BaseLandColor.A = 1.0f;
+		CompiledBiome.RuntimeBiome = GetRuntimeBiomeForWaterRole(BiomeSnapshot.WaterRole);
+		return CompiledBiome;
+	}
+
+	void CompileTerrainNoiseSnapshot(FSRDynamicMeshGenerationSnapshot& Snapshot)
+	{
+		Snapshot.SafeNoiseOctaves = FMath::Clamp(Snapshot.NoiseOctaves, 1, 8);
+		Snapshot.SafeNoisePersistence = FMath::Clamp(Snapshot.NoisePersistence, 0.0f, 1.0f);
+		Snapshot.SafeDynamicMeshHeight = FMath::Max(0.0f, Snapshot.DynamicMeshHeight);
+		Snapshot.InvSafeDynamicMeshHeight = Snapshot.SafeDynamicMeshHeight > KINDA_SMALL_NUMBER ? 1.0f / Snapshot.SafeDynamicMeshHeight : 0.0f;
+		Snapshot.ClimateWarpStrength = FMath::Clamp(Snapshot.NoiseStrength * 0.55f, 0.0f, 1.0f);
+		Snapshot.TerrainWarpStrength = FMath::Clamp(Snapshot.NoiseStrength, 0.0f, 1.0f);
+		Snapshot.MountainHeightStrengthScale = FMath::Pow(FMath::Clamp(Snapshot.MountainStrength / 2.0f, 0.25f, 2.0f), 0.45f);
+		Snapshot.ClampedValleyStrength = FMath::Clamp(Snapshot.ValleyStrength, 0.0f, 1.0f);
+		Snapshot.ClampedDetailStrength = FMath::Clamp(Snapshot.DetailStrength, 0.0f, 1.0f);
+		Snapshot.ClampedRiverStrength = FMath::Clamp(Snapshot.RiverStrength, 0.0f, 1.0f);
+		Snapshot.ClampedLakeStrength = FMath::Clamp(Snapshot.LakeStrength, 0.0f, 1.0f);
+
+		const float WarpFrequency = Snapshot.ContinentFrequency * 2.0f;
+		Snapshot.ClimateWarpNoise[0] = MakeNoiseDescriptor(Snapshot.GenerationSeed + 211, WarpFrequency, 3, 0.5f);
+		Snapshot.ClimateWarpNoise[1] = MakeNoiseDescriptor(Snapshot.GenerationSeed + 223, WarpFrequency, 3, 0.5f);
+		Snapshot.ClimateWarpNoise[2] = MakeNoiseDescriptor(Snapshot.GenerationSeed + 227, WarpFrequency, 3, 0.5f);
+		Snapshot.TerrainWarpNoise[0] = Snapshot.ClimateWarpNoise[0];
+		Snapshot.TerrainWarpNoise[1] = Snapshot.ClimateWarpNoise[1];
+		Snapshot.TerrainWarpNoise[2] = Snapshot.ClimateWarpNoise[2];
+
+		Snapshot.ContinentalnessNoise = MakeNoiseDescriptor(Snapshot.GenerationSeed + 10001, Snapshot.ContinentFrequency * 0.58f, FMath::Max(3, Snapshot.SafeNoiseOctaves), 0.56f);
+		Snapshot.ErosionNoise = MakeNoiseDescriptor(Snapshot.GenerationSeed + 10037, Snapshot.ContinentFrequency * 1.18f, FMath::Max(3, Snapshot.SafeNoiseOctaves - 1), 0.52f);
+		Snapshot.WeirdnessNoise = MakeNoiseDescriptor(Snapshot.GenerationSeed + 10061, Snapshot.MountainFrequency * 0.42f, FMath::Max(3, Snapshot.SafeNoiseOctaves), 0.50f);
+		Snapshot.RidgesNoise = MakeNoiseDescriptor(Snapshot.GenerationSeed + 10091, Snapshot.MountainFrequency * 0.72f, FMath::Max(3, Snapshot.SafeNoiseOctaves - 1), 0.5f);
+		Snapshot.DetailNoise = MakeNoiseDescriptor(Snapshot.GenerationSeed + 10111, Snapshot.DetailFrequency, FMath::Max(2, Snapshot.SafeNoiseOctaves - 2), Snapshot.SafeNoisePersistence);
+		Snapshot.TemperatureNoise = MakeNoiseDescriptor(Snapshot.GenerationSeed + 10141, Snapshot.TemperatureFrequency, 3, 0.5f);
+		Snapshot.HumidityNoise = MakeNoiseDescriptor(Snapshot.GenerationSeed + 10163, Snapshot.MoistureFrequency, 3, 0.5f);
+		Snapshot.RiverNoise[0] = MakeNoiseDescriptor(Snapshot.GenerationSeed + 263, Snapshot.ContinentFrequency * 5.5f, 4, 0.55f);
+		Snapshot.RiverNoise[1] = MakeNoiseDescriptor(Snapshot.GenerationSeed + 269, Snapshot.ContinentFrequency * 9.0f, 3, 0.48f);
+		Snapshot.LakeNoise[0] = MakeNoiseDescriptor(Snapshot.GenerationSeed + 277, Snapshot.ContinentFrequency * 5.2f, 3, 0.42f);
+		Snapshot.LakeNoise[1] = MakeNoiseDescriptor(Snapshot.GenerationSeed + 283, Snapshot.ContinentFrequency * 8.5f, 2, 0.36f);
+		Snapshot.RareRegionNoise = MakeNoiseDescriptor(Snapshot.GenerationSeed + 503, Snapshot.ContinentFrequency * 3.75f, 3, 0.54f);
+	}
+}
 
 FSRDynamicMeshGeneration::FSRDynamicMeshGeneration()
 {
@@ -110,7 +405,9 @@ FSRDynamicMeshGenerationSnapshot FSRDynamicMeshGeneration::MakeThreadSafeSnapsho
 	Snapshot.NoiseStrength = NoiseStrength;
 	Snapshot.NoiseOctaves = NoiseOctaves;
 	Snapshot.NoisePersistence = NoisePersistence;
+	CompileTerrainNoiseSnapshot(Snapshot);
 	Snapshot.Biomes.Reserve(BiomeDataAssets.Num());
+	Snapshot.CompiledBiomes.Reserve(BiomeDataAssets.Num());
 
 	for (const TObjectPtr<USRPlanetBiomeDataAsset>& BiomeDataAsset : BiomeDataAssets)
 	{
@@ -128,6 +425,15 @@ FSRDynamicMeshGenerationSnapshot FSRDynamicMeshGeneration::MakeThreadSafeSnapsho
 		BiomeSnapshot.Priority = BiomeDataAsset->Priority;
 		BiomeSnapshot.bCanOverrideLowerPriorityBiomes = BiomeDataAsset->bCanOverrideLowerPriorityBiomes;
 		BiomeSnapshot.OverrideMinScore = BiomeDataAsset->OverrideMinScore;
+		for (const FSRBiomePlacementRule& PlacementRule : BiomeSnapshot.PlacementRules)
+		{
+			if (PlacementRule.Metric == ESRBiomePlacementMetric::RareRegionNoise)
+			{
+				Snapshot.bUsesRareRegionPlacementMetric = true;
+				break;
+			}
+		}
+		Snapshot.CompiledBiomes.Add(CompileBiomeGenerationSnapshot(BiomeSnapshot, Snapshot.GenerationSeed));
 		Snapshot.Biomes.Add(MoveTemp(BiomeSnapshot));
 	}
 

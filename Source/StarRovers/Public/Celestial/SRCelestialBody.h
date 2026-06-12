@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/DynamicMeshComponent.h"
+#include "DynamicMesh/DynamicMesh3.h"
 #include "GameFramework/Actor.h"
 #include "Celestial/SRCelestialBodyCategory.h"
 #include "Simulation/SRNaturalStructureSpawnTypes.h"
@@ -43,6 +44,19 @@ struct FSRCelestialBodyDynamicMeshCellColorData
 {
 	TArray<FSRCelestialBodyDynamicMeshColorElement, TInlineAllocator<4>> SurfaceColorElements;
 	TArray<FSRCelestialBodyDynamicMeshColorElement, TInlineAllocator<8>> SideColorElements;
+};
+
+struct FSRCelestialBodyPreparedDynamicMesh
+{
+	bool bValid = false;
+	uint32 BuildHash = 0;
+	TArray<UE::Geometry::FDynamicMesh3> FaceDynamicMeshes;
+	TArray<FSRPlanetSurfaceGridCell> SurfaceGridCells;
+	TMap<FSRPlanetSurfaceGridCellId, int32> CellIndexById;
+	TArray<int32> CellIndexByFlatId;
+	TArray<FSRCelestialBodyDynamicMeshCellColorData> ColorDataByFlatId;
+	TArray<FString> DetailLines;
+	double BuildMilliseconds = 0.0;
 };
 
 USTRUCT(BlueprintType)
@@ -269,6 +283,8 @@ public:
 	bool HasSurfaceCellRenderData(const FSRPlanetSurfaceGridCellId& CellId) const;
 	bool GetCachedSurfaceGridCells(TArray<FSRPlanetSurfaceGridCell>& OutCells) const;
 	bool PrepareCelestialBodyDynamicMesh();
+	bool BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPreparedDynamicMesh& OutPreparedMesh);
+	bool ApplyPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPreparedDynamicMesh&& PreparedMesh, double TotalStart);
 	bool HasCelestialBodyDynamicMeshBuild() const;
 	static void AppendRuntimeMemoryDiagnostics(TArray<FString>& OutLines);
 
@@ -358,6 +374,7 @@ private:
 	void SyncDynamicMeshFaceComponentSettings();
 	uint32 ComputeDynamicMeshBuildHash() const;
 	void ResetDynamicMeshCellColorData();
+	const FSRCelestialBodyDynamicMeshCellColorData* FindDynamicMeshCellColorData(const FSRPlanetSurfaceGridCellId& CellId) const;
 	USRCelestialBodyRegistrySubsystem* FindCelestialRegistry() const;
 	bool IsStellarBody() const;
 	void LogMissingDataErrorOnce(const TCHAR* Context) const;
@@ -366,7 +383,7 @@ private:
 
 	mutable bool bHasLoggedMissingDataError = false;
 
-	TMap<FSRPlanetSurfaceGridCellId, FSRCelestialBodyDynamicMeshCellColorData> DynamicMeshColorDataByCell;
+	TArray<FSRCelestialBodyDynamicMeshCellColorData> DynamicMeshColorDataByFlatId;
 	TSet<uint64> HighlightedDynamicMeshColorElements;
 	TMap<uint64, FLinearColor> HighlightedDynamicMeshBaseColorByElement;
 	TArray<FSRPlanetSurfaceGridCell> CachedSurfaceGridCells;

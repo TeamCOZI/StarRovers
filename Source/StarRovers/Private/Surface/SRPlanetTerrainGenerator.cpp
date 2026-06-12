@@ -122,6 +122,122 @@ namespace
 		return FVector(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius, Z).GetSafeNormal();
 	}
 
+	FVector BuildNoiseSeedOffset(int32 Seed)
+	{
+		const int64 Seed64 = static_cast<int64>(Seed);
+		return FVector(
+			static_cast<float>((Seed64 * 15731LL) % 10007LL),
+			static_cast<float>((Seed64 * 789221LL) % 10009LL),
+			static_cast<float>((Seed64 * 1376312589LL) % 10037LL));
+	}
+
+	float SampleFractalNoiseUnitDirection(const FVector& UnitDirection, int32 Seed, float Frequency, int32 Octaves, float Persistence)
+	{
+		float CurrentFrequency = FMath::Max(0.01f, Frequency);
+		float CurrentAmplitude = 1.0f;
+		float NoiseSum = 0.0f;
+		float AmplitudeSum = 0.0f;
+		const FVector SeedOffset = BuildNoiseSeedOffset(Seed);
+		const int32 SafeOctaves = FMath::Clamp(Octaves, 1, 8);
+		const float SafePersistence = FMath::Clamp(Persistence, 0.0f, 1.0f);
+
+		for (int32 OctaveIndex = 0; OctaveIndex < SafeOctaves; ++OctaveIndex)
+		{
+			const float NoiseValue = FMath::PerlinNoise3D((UnitDirection * CurrentFrequency) + SeedOffset);
+			NoiseSum += NoiseValue * CurrentAmplitude;
+			AmplitudeSum += CurrentAmplitude;
+			CurrentFrequency *= 2.0f;
+			CurrentAmplitude *= SafePersistence;
+		}
+
+		return AmplitudeSum > KINDA_SMALL_NUMBER ? NoiseSum / AmplitudeSum : 0.0f;
+	}
+
+	float SampleFractalNoiseUnitDirection(const FVector& UnitDirection, const FSRCompiledTerrainNoiseDescriptor& Noise)
+	{
+		float CurrentFrequency = Noise.Frequency;
+		float CurrentAmplitude = 1.0f;
+		float NoiseSum = 0.0f;
+		float AmplitudeSum = 0.0f;
+
+		for (int32 OctaveIndex = 0; OctaveIndex < Noise.Octaves; ++OctaveIndex)
+		{
+			const float NoiseValue = FMath::PerlinNoise3D((UnitDirection * CurrentFrequency) + Noise.SeedOffset);
+			NoiseSum += NoiseValue * CurrentAmplitude;
+			AmplitudeSum += CurrentAmplitude;
+			CurrentFrequency *= 2.0f;
+			CurrentAmplitude *= Noise.Persistence;
+		}
+
+		return AmplitudeSum > KINDA_SMALL_NUMBER ? NoiseSum / AmplitudeSum : 0.0f;
+	}
+
+	float SampleFractalNoiseUnitDirection(
+		const FVector& UnitDirection,
+		const FVector& SeedOffset,
+		float Frequency,
+		int32 Octaves,
+		float Persistence)
+	{
+		float CurrentFrequency = Frequency;
+		float CurrentAmplitude = 1.0f;
+		float NoiseSum = 0.0f;
+		float AmplitudeSum = 0.0f;
+
+		for (int32 OctaveIndex = 0; OctaveIndex < Octaves; ++OctaveIndex)
+		{
+			const float NoiseValue = FMath::PerlinNoise3D((UnitDirection * CurrentFrequency) + SeedOffset);
+			NoiseSum += NoiseValue * CurrentAmplitude;
+			AmplitudeSum += CurrentAmplitude;
+			CurrentFrequency *= 2.0f;
+			CurrentAmplitude *= Persistence;
+		}
+
+		return AmplitudeSum > KINDA_SMALL_NUMBER ? NoiseSum / AmplitudeSum : 0.0f;
+	}
+
+	float SampleRidgedNoiseUnitDirection(const FVector& UnitDirection, int32 Seed, float Frequency, int32 Octaves)
+	{
+		float CurrentFrequency = FMath::Max(0.01f, Frequency);
+		float CurrentAmplitude = 1.0f;
+		float NoiseSum = 0.0f;
+		float AmplitudeSum = 0.0f;
+		const FVector SeedOffset = BuildNoiseSeedOffset(Seed);
+		const int32 SafeOctaves = FMath::Clamp(Octaves, 1, 8);
+
+		for (int32 OctaveIndex = 0; OctaveIndex < SafeOctaves; ++OctaveIndex)
+		{
+			const float NoiseValue = FMath::PerlinNoise3D((UnitDirection * CurrentFrequency) + SeedOffset);
+			const float RidgedValue = 1.0f - FMath::Abs(NoiseValue);
+			NoiseSum += FMath::Clamp(RidgedValue, 0.0f, 1.0f) * CurrentAmplitude;
+			AmplitudeSum += CurrentAmplitude;
+			CurrentFrequency *= 2.0f;
+			CurrentAmplitude *= 0.5f;
+		}
+
+		return AmplitudeSum > KINDA_SMALL_NUMBER ? NoiseSum / AmplitudeSum : 0.0f;
+	}
+
+	float SampleRidgedNoiseUnitDirection(const FVector& UnitDirection, const FSRCompiledTerrainNoiseDescriptor& Noise)
+	{
+		float CurrentFrequency = Noise.Frequency;
+		float CurrentAmplitude = 1.0f;
+		float NoiseSum = 0.0f;
+		float AmplitudeSum = 0.0f;
+
+		for (int32 OctaveIndex = 0; OctaveIndex < Noise.Octaves; ++OctaveIndex)
+		{
+			const float NoiseValue = FMath::PerlinNoise3D((UnitDirection * CurrentFrequency) + Noise.SeedOffset);
+			const float RidgedValue = 1.0f - FMath::Abs(NoiseValue);
+			NoiseSum += FMath::Clamp(RidgedValue, 0.0f, 1.0f) * CurrentAmplitude;
+			AmplitudeSum += CurrentAmplitude;
+			CurrentFrequency *= 2.0f;
+			CurrentAmplitude *= 0.5f;
+		}
+
+		return AmplitudeSum > KINDA_SMALL_NUMBER ? NoiseSum / AmplitudeSum : 0.0f;
+	}
+
 	float GetPlacementMetricValue(ESRBiomePlacementMetric Metric, const FSRDefaultBiomeMetrics& Metrics)
 	{
 		switch (Metric)
@@ -380,8 +496,11 @@ namespace
 		const TBiomeData& BiomeDataAsset,
 		const FSRBiomeSampleContext& Context,
 		const TSettings& Settings,
-		const FSRDefaultBiomeMetrics& Metrics)
+		const FSRDefaultBiomeMetrics& Metrics,
+		const FVector& UnitDirection)
 	{
+		(void)Context;
+
 		if (BiomeDataAsset.BiomeId.IsNone())
 		{
 			return -FLT_MAX;
@@ -392,7 +511,6 @@ namespace
 			return -FLT_MAX;
 		}
 
-		const FVector Direction = Context.LocalUnitDirection.GetSafeNormal();
 		const float TemperatureScore = 1.0f - FMath::Abs(Metrics.Temperature - GetRuleBasedTargetTemperature(BiomeDataAsset));
 		const float MoistureScore = 1.0f - FMath::Abs(Metrics.Moisture - GetRuleBasedTargetMoisture(BiomeDataAsset));
 		const float HeightScore = 1.0f - FMath::Abs(((Metrics.HeightAlpha + 1.0f) * 0.5f) - GetRuleBasedTargetHeight(BiomeDataAsset));
@@ -405,13 +523,13 @@ namespace
 		for (int32 AnchorIndex = 0; AnchorIndex < 2; ++AnchorIndex)
 		{
 			const FVector AnchorDirection = BuildBiomeAnchorDirection(BiomeDataAsset.BiomeId, Settings.GenerationSeed + (AnchorIndex * 131));
-			const float AnchorDot = FVector::DotProduct(Direction, AnchorDirection);
+			const float AnchorDot = FVector::DotProduct(UnitDirection, AnchorDirection);
 			AnchorScore = FMath::Max(AnchorScore, FSRPlanetTerrainGenerator::SmoothStep(AnchorThreshold, 1.0f, AnchorDot));
 		}
 
 		const float PatchFrequency = FMath::Lerp(1.5f, 8.5f, HashBiomeUnit(BiomeDataAsset.BiomeId, 59));
 		const float PatchNoise = FMath::Clamp(
-			(FSRPlanetTerrainGenerator::SampleFractalNoise(Direction, Settings.GenerationSeed + static_cast<int32>(HashBiomeValue(BiomeDataAsset.BiomeId, 67) % 100000), PatchFrequency, 3, 0.52f) + 1.0f) * 0.5f,
+			(SampleFractalNoiseUnitDirection(UnitDirection, Settings.GenerationSeed + static_cast<int32>(HashBiomeValue(BiomeDataAsset.BiomeId, 67) % 100000), PatchFrequency, 3, 0.52f) + 1.0f) * 0.5f,
 			0.0f,
 			1.0f);
 		const float Weight = FMath::Max(0.01f, BiomeDataAsset.SpawnWeight);
@@ -419,10 +537,52 @@ namespace
 		return Weight * ((ClimateScore * 0.42f) + (AnchorScore * 0.48f) + (PatchNoise * 0.10f));
 	}
 
+	float ScoreBiomeCandidate(
+		const FSRCompiledPlanetBiomeGenerationSnapshot& BiomeData,
+		const FSRBiomeSampleContext& Context,
+		const FSRDynamicMeshGenerationSnapshot& Settings,
+		const FSRDefaultBiomeMetrics& Metrics,
+		const FVector& UnitDirection)
+	{
+		(void)Settings;
+		(void)Context;
+
+		if (BiomeData.BiomeId.IsNone())
+		{
+			return -FLT_MAX;
+		}
+
+		if (!PassesAllPlacementRules(BiomeData, Metrics))
+		{
+			return -FLT_MAX;
+		}
+
+		const float TemperatureScore = 1.0f - FMath::Abs(Metrics.Temperature - BiomeData.TargetTemperature);
+		const float MoistureScore = 1.0f - FMath::Abs(Metrics.Moisture - BiomeData.TargetMoisture);
+		const float HeightScore = 1.0f - FMath::Abs(((Metrics.HeightAlpha + 1.0f) * 0.5f) - BiomeData.TargetHeight);
+		const float ContinentScore = 1.0f - FMath::Abs(((Metrics.Continentalness + 1.0f) * 0.5f) - BiomeData.TargetContinentalness);
+		const float ClimateScore = FMath::Clamp((TemperatureScore + MoistureScore + HeightScore + ContinentScore) * 0.25f, 0.0f, 1.0f);
+
+		float AnchorScore = 0.0f;
+		for (const FVector& AnchorDirection : BiomeData.AnchorDirections)
+		{
+			const float AnchorDot = FVector::DotProduct(UnitDirection, AnchorDirection);
+			AnchorScore = FMath::Max(AnchorScore, FSRPlanetTerrainGenerator::SmoothStep(BiomeData.AnchorThreshold, 1.0f, AnchorDot));
+		}
+
+		const float PatchNoise = FMath::Clamp(
+			(SampleFractalNoiseUnitDirection(UnitDirection, BiomeData.PatchSeedOffset, BiomeData.PatchFrequency, 3, 0.52f) + 1.0f) * 0.5f,
+			0.0f,
+			1.0f);
+
+		return BiomeData.Weight * ((ClimateScore * 0.42f) + (AnchorScore * 0.48f) + (PatchNoise * 0.10f));
+	}
+
 	const USRPlanetBiomeDataAsset* SelectBiomeDataAsset(
 		const FSRBiomeSampleContext& Context,
 		const FSRDynamicMeshGeneration& Settings,
-		const FSRDefaultBiomeMetrics& Metrics)
+		const FSRDefaultBiomeMetrics& Metrics,
+		const FVector& UnitDirection)
 	{
 		const USRPlanetBiomeDataAsset* BestBiome = nullptr;
 		float BestScore = -FLT_MAX;
@@ -436,7 +596,7 @@ namespace
 			}
 
 			const USRPlanetBiomeDataAsset& CandidateBiome = *BiomeDataAsset;
-			const float Score = ScoreBiomeCandidate(CandidateBiome, Context, Settings, Metrics);
+			const float Score = ScoreBiomeCandidate(CandidateBiome, Context, Settings, Metrics, UnitDirection);
 			if (Score > BestScore)
 			{
 				BestScore = Score;
@@ -463,18 +623,19 @@ namespace
 		return BestBiome;
 	}
 
-	const FSRPlanetBiomeGenerationSnapshot* SelectBiomeDataSnapshot(
+	const FSRCompiledPlanetBiomeGenerationSnapshot* SelectBiomeDataSnapshot(
 		const FSRBiomeSampleContext& Context,
 		const FSRDynamicMeshGenerationSnapshot& Settings,
-		const FSRDefaultBiomeMetrics& Metrics)
+		const FSRDefaultBiomeMetrics& Metrics,
+		const FVector& UnitDirection)
 	{
-		const FSRPlanetBiomeGenerationSnapshot* BestBiome = nullptr;
+		const FSRCompiledPlanetBiomeGenerationSnapshot* BestBiome = nullptr;
 		float BestScore = -FLT_MAX;
-		const FSRPlanetBiomeGenerationSnapshot* BestPriorityOverrideBiome = nullptr;
+		const FSRCompiledPlanetBiomeGenerationSnapshot* BestPriorityOverrideBiome = nullptr;
 		float BestPriorityOverrideScore = -FLT_MAX;
-		for (const FSRPlanetBiomeGenerationSnapshot& CandidateBiome : Settings.Biomes)
+		for (const FSRCompiledPlanetBiomeGenerationSnapshot& CandidateBiome : Settings.CompiledBiomes)
 		{
-			const float Score = ScoreBiomeCandidate(CandidateBiome, Context, Settings, Metrics);
+			const float Score = ScoreBiomeCandidate(CandidateBiome, Context, Settings, Metrics, UnitDirection);
 			if (Score > BestScore)
 			{
 				BestScore = Score;
@@ -536,6 +697,98 @@ namespace
 		return BaseColor;
 	}
 
+	FLinearColor GetBiomeDataAssetColor(const FSRCompiledPlanetBiomeGenerationSnapshot& BiomeData, float HeightAlpha, float Moisture, float Temperature)
+	{
+		const ESRBiomeWaterRole WaterRole = GetWaterRoleForBiomeDataAsset(BiomeData);
+		if (IsOpenWaterRole(WaterRole))
+		{
+			return FSRPlanetTerrainGenerator::GetBiomeColor(ESRPlanetBiome::Ocean, HeightAlpha, Moisture, Temperature);
+		}
+		if (WaterRole == ESRBiomeWaterRole::Coast)
+		{
+			return FSRPlanetTerrainGenerator::GetBiomeColor(ESRPlanetBiome::Coast, HeightAlpha, Moisture, Temperature);
+		}
+
+		FLinearColor BaseColor = BiomeData.BaseLandColor;
+		const float HeightShade = FMath::Lerp(0.92f, 1.08f, FMath::Clamp((HeightAlpha + 1.0f) * 0.5f, 0.0f, 1.0f));
+		const float MoistureShade = FMath::Lerp(0.96f, 1.06f, FMath::Clamp(Moisture, 0.0f, 1.0f));
+		const float TemperatureShade = FMath::Lerp(0.97f, 1.03f, FMath::Clamp(Temperature, 0.0f, 1.0f));
+		BaseColor *= HeightShade * MoistureShade * TemperatureShade;
+		BaseColor.A = 1.0f;
+		return BaseColor;
+	}
+
+	int32 GetSafeNoiseOctavesForSettings(const FSRDynamicMeshGeneration& Settings)
+	{
+		return FMath::Clamp(Settings.NoiseOctaves, 1, 8);
+	}
+
+	int32 GetSafeNoiseOctavesForSettings(const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return Settings.SafeNoiseOctaves;
+	}
+
+	float GetSafeNoisePersistenceForSettings(const FSRDynamicMeshGeneration& Settings)
+	{
+		return FMath::Clamp(Settings.NoisePersistence, 0.0f, 1.0f);
+	}
+
+	float GetSafeNoisePersistenceForSettings(const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return Settings.SafeNoisePersistence;
+	}
+
+	float GetSafeDynamicMeshHeightForSettings(const FSRDynamicMeshGeneration& Settings)
+	{
+		return FMath::Max(0.0f, Settings.DynamicMeshHeight);
+	}
+
+	float GetSafeDynamicMeshHeightForSettings(const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return Settings.SafeDynamicMeshHeight;
+	}
+
+	float GetInvSafeDynamicMeshHeightForSettings(const FSRDynamicMeshGeneration& Settings)
+	{
+		const float SafeDynamicMeshHeight = GetSafeDynamicMeshHeightForSettings(Settings);
+		return SafeDynamicMeshHeight > KINDA_SMALL_NUMBER ? 1.0f / SafeDynamicMeshHeight : 0.0f;
+	}
+
+	float GetInvSafeDynamicMeshHeightForSettings(const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return Settings.InvSafeDynamicMeshHeight;
+	}
+
+	float GetMountainHeightStrengthScaleForSettings(const FSRDynamicMeshGeneration& Settings)
+	{
+		return FMath::Pow(FMath::Clamp(Settings.MountainStrength / 2.0f, 0.25f, 2.0f), 0.45f);
+	}
+
+	float GetMountainHeightStrengthScaleForSettings(const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return Settings.MountainHeightStrengthScale;
+	}
+
+	float GetClampedValleyStrengthForSettings(const FSRDynamicMeshGeneration& Settings)
+	{
+		return FMath::Clamp(Settings.ValleyStrength, 0.0f, 1.0f);
+	}
+
+	float GetClampedValleyStrengthForSettings(const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return Settings.ClampedValleyStrength;
+	}
+
+	float GetClampedDetailStrengthForSettings(const FSRDynamicMeshGeneration& Settings)
+	{
+		return FMath::Clamp(Settings.DetailStrength, 0.0f, 1.0f);
+	}
+
+	float GetClampedDetailStrengthForSettings(const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return Settings.ClampedDetailStrength;
+	}
+
 	template <typename TBiomeData>
 	ESRPlanetBiome GetRuntimeBiomeForBiomeDataAsset(const TBiomeData& BiomeDataAsset)
 	{
@@ -554,25 +807,59 @@ namespace
 	template <typename TSettings>
 	FVector ApplyDomainWarpForSettings(const FVector& LocalUnitDirection, const TSettings& Settings, float Strength)
 	{
-		const FVector Direction = LocalUnitDirection.GetSafeNormal();
-		if (Direction.IsNearlyZero())
-		{
-			return FVector::ForwardVector;
-		}
-
 		const float SafeStrength = FMath::Clamp(Strength, 0.0f, 1.0f);
 		if (SafeStrength <= KINDA_SMALL_NUMBER)
 		{
-			return Direction;
+			return LocalUnitDirection;
 		}
 
 		const float WarpFrequency = FMath::Max(0.01f, Settings.ContinentFrequency * 2.0f);
 		const FVector Warp(
-			FSRPlanetTerrainGenerator::SampleFractalNoise(Direction, Settings.GenerationSeed + 211, WarpFrequency, 3, 0.5f),
-			FSRPlanetTerrainGenerator::SampleFractalNoise(Direction, Settings.GenerationSeed + 223, WarpFrequency, 3, 0.5f),
-			FSRPlanetTerrainGenerator::SampleFractalNoise(Direction, Settings.GenerationSeed + 227, WarpFrequency, 3, 0.5f));
+			SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.GenerationSeed + 211, WarpFrequency, 3, 0.5f),
+			SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.GenerationSeed + 223, WarpFrequency, 3, 0.5f),
+			SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.GenerationSeed + 227, WarpFrequency, 3, 0.5f));
 
-		return (Direction + (Warp * SafeStrength * 0.42f)).GetSafeNormal();
+		return (LocalUnitDirection + (Warp * SafeStrength * 0.42f)).GetSafeNormal();
+	}
+
+	FVector ApplyCompiledDomainWarpForSettings(
+		const FVector& LocalUnitDirection,
+		const FSRCompiledTerrainNoiseDescriptor (&WarpNoise)[3],
+		float SafeStrength)
+	{
+		if (SafeStrength <= KINDA_SMALL_NUMBER)
+		{
+			return LocalUnitDirection;
+		}
+
+		const FVector Warp(
+			SampleFractalNoiseUnitDirection(LocalUnitDirection, WarpNoise[0]),
+			SampleFractalNoiseUnitDirection(LocalUnitDirection, WarpNoise[1]),
+			SampleFractalNoiseUnitDirection(LocalUnitDirection, WarpNoise[2]));
+
+		return (LocalUnitDirection + (Warp * SafeStrength * 0.42f)).GetSafeNormal();
+	}
+
+	template <typename TSettings>
+	FVector ApplyClimateDomainWarpForSettings(const FVector& LocalUnitDirection, const TSettings& Settings)
+	{
+		return ApplyDomainWarpForSettings(LocalUnitDirection, Settings, Settings.NoiseStrength * 0.55f);
+	}
+
+	FVector ApplyClimateDomainWarpForSettings(const FVector& LocalUnitDirection, const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return ApplyCompiledDomainWarpForSettings(LocalUnitDirection, Settings.ClimateWarpNoise, Settings.ClimateWarpStrength);
+	}
+
+	template <typename TSettings>
+	FVector ApplyTerrainDomainWarpForSettings(const FVector& LocalUnitDirection, const TSettings& Settings)
+	{
+		return ApplyDomainWarpForSettings(LocalUnitDirection, Settings, Settings.NoiseStrength);
+	}
+
+	FVector ApplyTerrainDomainWarpForSettings(const FVector& LocalUnitDirection, const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return ApplyCompiledDomainWarpForSettings(LocalUnitDirection, Settings.TerrainWarpNoise, Settings.TerrainWarpStrength);
 	}
 
 	template <typename TSettings>
@@ -584,19 +871,29 @@ namespace
 			return 0.0f;
 		}
 
-		const FVector Direction = LocalUnitDirection.GetSafeNormal();
-		if (Direction.IsNearlyZero())
-		{
-			return 0.0f;
-		}
-
-		const float ChannelA = FMath::Abs(FSRPlanetTerrainGenerator::SampleFractalNoise(Direction, Settings.GenerationSeed + 263, Settings.ContinentFrequency * 5.5f, 4, 0.55f));
-		const float ChannelB = FMath::Abs(FSRPlanetTerrainGenerator::SampleFractalNoise(Direction, Settings.GenerationSeed + 269, Settings.ContinentFrequency * 9.0f, 3, 0.48f));
+		const float ChannelA = FMath::Abs(SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.GenerationSeed + 263, Settings.ContinentFrequency * 5.5f, 4, 0.55f));
+		const float ChannelB = FMath::Abs(SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.GenerationSeed + 269, Settings.ContinentFrequency * 9.0f, 3, 0.48f));
 		const float LargeChannel = 1.0f - FSRPlanetTerrainGenerator::SmoothStep(0.018f, 0.082f, ChannelA);
 		const float Tributary = 1.0f - FSRPlanetTerrainGenerator::SmoothStep(0.012f, 0.052f, ChannelB);
 		const float SourceMask = FSRPlanetTerrainGenerator::SmoothStep(0.18f, 0.75f, MountainMask);
 		const float RiverMask = FMath::Max(LargeChannel, Tributary * 0.55f) * FMath::Lerp(0.45f, 1.0f, SourceMask) * LandMask;
 		return FMath::Clamp(RiverMask * Strength, 0.0f, 1.0f);
+	}
+
+	float SampleRiverMaskForSettings(const FVector& LocalUnitDirection, const FSRDynamicMeshGenerationSnapshot& Settings, float LandMask, float MountainMask)
+	{
+		if (Settings.ClampedRiverStrength <= KINDA_SMALL_NUMBER || LandMask <= KINDA_SMALL_NUMBER)
+		{
+			return 0.0f;
+		}
+
+		const float ChannelA = FMath::Abs(SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.RiverNoise[0]));
+		const float ChannelB = FMath::Abs(SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.RiverNoise[1]));
+		const float LargeChannel = 1.0f - FSRPlanetTerrainGenerator::SmoothStep(0.018f, 0.082f, ChannelA);
+		const float Tributary = 1.0f - FSRPlanetTerrainGenerator::SmoothStep(0.012f, 0.052f, ChannelB);
+		const float SourceMask = FSRPlanetTerrainGenerator::SmoothStep(0.18f, 0.75f, MountainMask);
+		const float RiverMask = FMath::Max(LargeChannel, Tributary * 0.55f) * FMath::Lerp(0.45f, 1.0f, SourceMask) * LandMask;
+		return FMath::Clamp(RiverMask * Settings.ClampedRiverStrength, 0.0f, 1.0f);
 	}
 
 	template <typename TSettings>
@@ -608,24 +905,130 @@ namespace
 			return 0.0f;
 		}
 
-		const FVector Direction = LocalUnitDirection.GetSafeNormal();
-		if (Direction.IsNearlyZero())
-		{
-			return 0.0f;
-		}
-
-		const float BasinNoiseA = (FSRPlanetTerrainGenerator::SampleFractalNoise(Direction, Settings.GenerationSeed + 277, Settings.ContinentFrequency * 5.2f, 3, 0.42f) + 1.0f) * 0.5f;
-		const float BasinNoiseB = FMath::Abs(FSRPlanetTerrainGenerator::SampleFractalNoise(Direction, Settings.GenerationSeed + 283, Settings.ContinentFrequency * 8.5f, 2, 0.36f));
+		const float BasinNoiseA = (SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.GenerationSeed + 277, Settings.ContinentFrequency * 5.2f, 3, 0.42f) + 1.0f) * 0.5f;
+		const float BasinNoiseB = FMath::Abs(SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.GenerationSeed + 283, Settings.ContinentFrequency * 8.5f, 2, 0.36f));
 		const float BasinMask = FSRPlanetTerrainGenerator::SmoothStep(0.84f, 0.98f, BasinNoiseA) * FSRPlanetTerrainGenerator::SmoothStep(0.08f, 0.28f, BasinNoiseB);
 		const float LowlandMask = 1.0f - FSRPlanetTerrainGenerator::SmoothStep(0.04f, 0.30f, HeightAlpha);
 		const float InlandMask = FSRPlanetTerrainGenerator::SmoothStep(0.72f, 0.94f, LandMask);
 		return FMath::Clamp(BasinMask * LowlandMask * InlandMask * Strength * 0.45f, 0.0f, 1.0f);
 	}
 
+	float SampleLakeMaskForSettings(const FVector& LocalUnitDirection, const FSRDynamicMeshGenerationSnapshot& Settings, float LandMask, float HeightAlpha)
+	{
+		if (Settings.ClampedLakeStrength <= KINDA_SMALL_NUMBER || LandMask <= KINDA_SMALL_NUMBER)
+		{
+			return 0.0f;
+		}
+
+		const float BasinNoiseA = (SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.LakeNoise[0]) + 1.0f) * 0.5f;
+		const float BasinNoiseB = FMath::Abs(SampleFractalNoiseUnitDirection(LocalUnitDirection, Settings.LakeNoise[1]));
+		const float BasinMask = FSRPlanetTerrainGenerator::SmoothStep(0.84f, 0.98f, BasinNoiseA) * FSRPlanetTerrainGenerator::SmoothStep(0.08f, 0.28f, BasinNoiseB);
+		const float LowlandMask = 1.0f - FSRPlanetTerrainGenerator::SmoothStep(0.04f, 0.30f, HeightAlpha);
+		const float InlandMask = FSRPlanetTerrainGenerator::SmoothStep(0.72f, 0.94f, LandMask);
+		return FMath::Clamp(BasinMask * LowlandMask * InlandMask * Settings.ClampedLakeStrength * 0.45f, 0.0f, 1.0f);
+	}
+
 	float ComputeMinecraftPeaksAndValleysForSettings(float Weirdness)
 	{
 		const float AbsWeirdness = FMath::Abs(FMath::Clamp(Weirdness, -1.0f, 1.0f));
 		return -(FMath::Abs(AbsWeirdness - (2.0f / 3.0f)) - (1.0f / 3.0f)) * 3.0f;
+	}
+
+	bool ShouldSampleRareRegionNoise(const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return Settings.bUsesRareRegionPlacementMetric;
+	}
+
+	bool ShouldSampleRareRegionNoise(const FSRDynamicMeshGeneration& Settings)
+	{
+		(void)Settings;
+		return true;
+	}
+
+	float SampleContinentalnessForSettings(const FVector& Direction, const FSRDynamicMeshGeneration& Settings, int32 SafeOctaves)
+	{
+		return SampleFractalNoiseUnitDirection(Direction, Settings.GenerationSeed + 10001, Settings.ContinentFrequency * 0.58f, FMath::Max(3, SafeOctaves), 0.56f);
+	}
+
+	float SampleContinentalnessForSettings(const FVector& Direction, const FSRDynamicMeshGenerationSnapshot& Settings, int32 SafeOctaves)
+	{
+		(void)SafeOctaves;
+		return SampleFractalNoiseUnitDirection(Direction, Settings.ContinentalnessNoise);
+	}
+
+	float SampleErosionForSettings(const FVector& Direction, const FSRDynamicMeshGeneration& Settings, int32 SafeOctaves)
+	{
+		return SampleFractalNoiseUnitDirection(Direction, Settings.GenerationSeed + 10037, Settings.ContinentFrequency * 1.18f, FMath::Max(3, SafeOctaves - 1), 0.52f);
+	}
+
+	float SampleErosionForSettings(const FVector& Direction, const FSRDynamicMeshGenerationSnapshot& Settings, int32 SafeOctaves)
+	{
+		(void)SafeOctaves;
+		return SampleFractalNoiseUnitDirection(Direction, Settings.ErosionNoise);
+	}
+
+	float SampleWeirdnessForSettings(const FVector& Direction, const FSRDynamicMeshGeneration& Settings, int32 SafeOctaves)
+	{
+		return SampleFractalNoiseUnitDirection(Direction, Settings.GenerationSeed + 10061, Settings.MountainFrequency * 0.42f, FMath::Max(3, SafeOctaves), 0.50f);
+	}
+
+	float SampleWeirdnessForSettings(const FVector& Direction, const FSRDynamicMeshGenerationSnapshot& Settings, int32 SafeOctaves)
+	{
+		(void)SafeOctaves;
+		return SampleFractalNoiseUnitDirection(Direction, Settings.WeirdnessNoise);
+	}
+
+	float SampleRidgesForSettings(const FVector& Direction, const FSRDynamicMeshGeneration& Settings, int32 SafeOctaves)
+	{
+		return SampleRidgedNoiseUnitDirection(Direction, Settings.GenerationSeed + 10091, Settings.MountainFrequency * 0.72f, FMath::Max(3, SafeOctaves - 1));
+	}
+
+	float SampleRidgesForSettings(const FVector& Direction, const FSRDynamicMeshGenerationSnapshot& Settings, int32 SafeOctaves)
+	{
+		(void)SafeOctaves;
+		return SampleRidgedNoiseUnitDirection(Direction, Settings.RidgesNoise);
+	}
+
+	float SampleDetailForSettings(const FVector& Direction, const FSRDynamicMeshGeneration& Settings, int32 SafeOctaves, float SafePersistence)
+	{
+		return SampleFractalNoiseUnitDirection(Direction, Settings.GenerationSeed + 10111, Settings.DetailFrequency, FMath::Max(2, SafeOctaves - 2), SafePersistence);
+	}
+
+	float SampleDetailForSettings(const FVector& Direction, const FSRDynamicMeshGenerationSnapshot& Settings, int32 SafeOctaves, float SafePersistence)
+	{
+		(void)SafeOctaves;
+		(void)SafePersistence;
+		return SampleFractalNoiseUnitDirection(Direction, Settings.DetailNoise);
+	}
+
+	float SampleTemperatureForSettings(const FVector& Direction, const FSRDynamicMeshGeneration& Settings)
+	{
+		return SampleFractalNoiseUnitDirection(Direction, Settings.GenerationSeed + 10141, Settings.TemperatureFrequency, 3, 0.5f);
+	}
+
+	float SampleTemperatureForSettings(const FVector& Direction, const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return SampleFractalNoiseUnitDirection(Direction, Settings.TemperatureNoise);
+	}
+
+	float SampleHumidityForSettings(const FVector& Direction, const FSRDynamicMeshGeneration& Settings)
+	{
+		return SampleFractalNoiseUnitDirection(Direction, Settings.GenerationSeed + 10163, Settings.MoistureFrequency, 3, 0.5f);
+	}
+
+	float SampleHumidityForSettings(const FVector& Direction, const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return SampleFractalNoiseUnitDirection(Direction, Settings.HumidityNoise);
+	}
+
+	float SampleRareRegionForSettings(const FVector& Direction, const FSRDynamicMeshGeneration& Settings)
+	{
+		return SampleFractalNoiseUnitDirection(Direction, Settings.GenerationSeed + 503, Settings.ContinentFrequency * 3.75f, 3, 0.54f);
+	}
+
+	float SampleRareRegionForSettings(const FVector& Direction, const FSRDynamicMeshGenerationSnapshot& Settings)
+	{
+		return SampleFractalNoiseUnitDirection(Direction, Settings.RareRegionNoise);
 	}
 
 	template <typename TSettings, typename TSelectBiome>
@@ -642,54 +1045,20 @@ namespace
 			return Sample;
 		}
 
-		const int32 SafeOctaves = FMath::Clamp(Settings.NoiseOctaves, 1, 8);
-		const float SafePersistence = FMath::Clamp(Settings.NoisePersistence, 0.0f, 1.0f);
-		const float SafeDynamicMeshHeight = FMath::Max(0.0f, Settings.DynamicMeshHeight);
-		const FVector ClimateDirection = ApplyDomainWarpForSettings(Direction, Settings, Settings.NoiseStrength * 0.55f);
-		const FVector TerrainDirection = ApplyDomainWarpForSettings(Direction, Settings, Settings.NoiseStrength);
+		const int32 SafeOctaves = GetSafeNoiseOctavesForSettings(Settings);
+		const float SafePersistence = GetSafeNoisePersistenceForSettings(Settings);
+		const float SafeDynamicMeshHeight = GetSafeDynamicMeshHeightForSettings(Settings);
+		const float InvSafeDynamicMeshHeight = GetInvSafeDynamicMeshHeightForSettings(Settings);
+		const FVector ClimateDirection = ApplyClimateDomainWarpForSettings(Direction, Settings);
+		const FVector TerrainDirection = ApplyTerrainDomainWarpForSettings(Direction, Settings);
 
-		const float Continentalness = FSRPlanetTerrainGenerator::SampleFractalNoise(
-			ClimateDirection,
-			Settings.GenerationSeed + 10001,
-			FMath::Max(0.01f, Settings.ContinentFrequency * 0.58f),
-			FMath::Max(3, SafeOctaves),
-			0.56f);
-		const float ErosionNoise = FSRPlanetTerrainGenerator::SampleFractalNoise(
-			ClimateDirection,
-			Settings.GenerationSeed + 10037,
-			FMath::Max(0.01f, Settings.ContinentFrequency * 1.18f),
-			FMath::Max(3, SafeOctaves - 1),
-			0.52f);
-		const float Weirdness = FSRPlanetTerrainGenerator::SampleFractalNoise(
-			TerrainDirection,
-			Settings.GenerationSeed + 10061,
-			FMath::Max(0.01f, Settings.MountainFrequency * 0.42f),
-			FMath::Max(3, SafeOctaves),
-			0.50f);
-		const float Ridges = FSRPlanetTerrainGenerator::SampleRidgedNoise(
-			TerrainDirection,
-			Settings.GenerationSeed + 10091,
-			FMath::Max(0.01f, Settings.MountainFrequency * 0.72f),
-			FMath::Max(3, SafeOctaves - 1));
-		const float Detail = FSRPlanetTerrainGenerator::SampleFractalNoise(
-			TerrainDirection,
-			Settings.GenerationSeed + 10111,
-			FMath::Max(0.01f, Settings.DetailFrequency),
-			FMath::Max(2, SafeOctaves - 2),
-			SafePersistence);
-
-		const float TemperatureNoise = FSRPlanetTerrainGenerator::SampleFractalNoise(
-			ClimateDirection,
-			Settings.GenerationSeed + 10141,
-			FMath::Max(0.01f, Settings.TemperatureFrequency),
-			3,
-			0.5f);
-		const float HumidityNoise = FSRPlanetTerrainGenerator::SampleFractalNoise(
-			ClimateDirection,
-			Settings.GenerationSeed + 10163,
-			FMath::Max(0.01f, Settings.MoistureFrequency),
-			3,
-			0.5f);
+		const float Continentalness = SampleContinentalnessForSettings(ClimateDirection, Settings, SafeOctaves);
+		const float ErosionNoise = SampleErosionForSettings(ClimateDirection, Settings, SafeOctaves);
+		const float Weirdness = SampleWeirdnessForSettings(TerrainDirection, Settings, SafeOctaves);
+		const float Ridges = SampleRidgesForSettings(TerrainDirection, Settings, SafeOctaves);
+		const float Detail = SampleDetailForSettings(TerrainDirection, Settings, SafeOctaves, SafePersistence);
+		const float TemperatureNoise = SampleTemperatureForSettings(ClimateDirection, Settings);
+		const float HumidityNoise = SampleHumidityForSettings(ClimateDirection, Settings);
 
 		const float ContinentalnessBias = 0.18f;
 		const float EffectiveContinentalness = FMath::Clamp(Continentalness + ContinentalnessBias - (Settings.OceanThreshold * 0.62f), -1.0f, 1.0f);
@@ -717,13 +1086,13 @@ namespace
 		const float MountainHeight = MountainPotential
 			* SafeDynamicMeshHeight
 			* FMath::Lerp(0.48f, 0.92f, FMath::Clamp(PeaksAndValleys, 0.0f, 1.0f))
-			* FMath::Pow(FMath::Clamp(Settings.MountainStrength / 2.0f, 0.25f, 2.0f), 0.45f);
-		const float ValleyCarve = ValleyMask * SafeDynamicMeshHeight * FMath::Lerp(0.10f, 0.31f, 1.0f - Erosion) * FMath::Clamp(Settings.ValleyStrength, 0.0f, 1.0f);
-		const float DetailHeight = Detail * SafeDynamicMeshHeight * 0.035f * FMath::Clamp(Settings.DetailStrength, 0.0f, 1.0f) * FMath::Lerp(0.35f, 1.0f, LandMask);
+			* GetMountainHeightStrengthScaleForSettings(Settings);
+		const float ValleyCarve = ValleyMask * SafeDynamicMeshHeight * FMath::Lerp(0.10f, 0.31f, 1.0f - Erosion) * GetClampedValleyStrengthForSettings(Settings);
+		const float DetailHeight = Detail * SafeDynamicMeshHeight * 0.035f * GetClampedDetailStrengthForSettings(Settings) * FMath::Lerp(0.35f, 1.0f, LandMask);
 		const float RidgeBonus = FMath::Square(Ridges) * MountainPotential * SafeDynamicMeshHeight * 0.16f;
 
 		const float HeightBeforeSurfaceRules = OceanFloorHeight + LandLift + CoastalShelfHeight + PlainsHeight + PlateauHeight + MountainHeight + RidgeBonus + DetailHeight - ValleyCarve;
-		const float HeightAlphaBeforeRules = FMath::Clamp(HeightBeforeSurfaceRules / FMath::Max(SafeDynamicMeshHeight, KINDA_SMALL_NUMBER), -1.0f, 1.0f);
+		const float HeightAlphaBeforeRules = FMath::Clamp(HeightBeforeSurfaceRules * InvSafeDynamicMeshHeight, -1.0f, 1.0f);
 		const float RiverMask = SampleRiverMaskForSettings(TerrainDirection, Settings, LandMask, MountainPotential);
 		const float LakeMask = SampleLakeMaskForSettings(TerrainDirection, Settings, LandMask, HeightAlphaBeforeRules);
 		const float SurfaceRuleCarve = ((RiverMask * 0.13f) + (LakeMask * 0.08f)) * SafeDynamicMeshHeight;
@@ -736,11 +1105,11 @@ namespace
 		Sample.PlateBeltMask = Ridges * MountainPotential;
 
 		const float LatitudeTemperature = 1.0f - FMath::Abs(Direction.Z);
-		const float HeightTemperaturePenalty = FMath::Max(0.0f, Sample.HeightOffset / FMath::Max(SafeDynamicMeshHeight, KINDA_SMALL_NUMBER)) * 0.28f;
+		const float HeightTemperaturePenalty = FMath::Max(0.0f, Sample.HeightOffset * InvSafeDynamicMeshHeight) * 0.28f;
 		Sample.Temperature = FMath::Clamp((LatitudeTemperature * 0.78f) + (TemperatureNoise * 0.18f) + 0.11f - HeightTemperaturePenalty, 0.0f, 1.0f);
 		Sample.Moisture = FMath::Clamp((HumidityNoise + 1.0f) * 0.5f, 0.0f, 1.0f);
 
-		const float HeightAlpha = FMath::Clamp(Sample.HeightOffset / FMath::Max(SafeDynamicMeshHeight, KINDA_SMALL_NUMBER), -1.0f, 1.0f);
+		const float HeightAlpha = FMath::Clamp(Sample.HeightOffset * InvSafeDynamicMeshHeight, -1.0f, 1.0f);
 		const float AbsLatitudeSin = static_cast<float>(FMath::Clamp(FMath::Abs(Direction.Z), 0.0, 1.0));
 		FSRDefaultBiomeMetrics Metrics;
 		Metrics.HeightAlpha = HeightAlpha;
@@ -757,9 +1126,11 @@ namespace
 		Metrics.Temperature = Sample.Temperature;
 		Metrics.Moisture = Sample.Moisture;
 		Metrics.AbsLatitudeDegrees = FMath::RadiansToDegrees(FMath::Asin(AbsLatitudeSin));
-		Metrics.RareRegionNoise = FMath::Clamp((FSRPlanetTerrainGenerator::SampleFractalNoise(Direction, Settings.GenerationSeed + 503, Settings.ContinentFrequency * 3.75f, 3, 0.54f) + 1.0f) * 0.5f, 0.0f, 1.0f);
+		Metrics.RareRegionNoise = ShouldSampleRareRegionNoise(Settings)
+			? FMath::Clamp((SampleRareRegionForSettings(Direction, Settings) + 1.0f) * 0.5f, 0.0f, 1.0f)
+			: 0.0f;
 
-		if (const auto* BiomeDataAsset = SelectBiome(Context, Settings, Metrics))
+		if (const auto* BiomeDataAsset = SelectBiome(Context, Settings, Metrics, Direction))
 		{
 			Sample.Biome = GetRuntimeBiomeForBiomeDataAsset(*BiomeDataAsset);
 			Sample.BiomeId = BiomeDataAsset->BiomeId;

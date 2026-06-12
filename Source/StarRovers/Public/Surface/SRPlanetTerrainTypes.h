@@ -20,6 +20,36 @@ struct STARROVERS_API FSRPlanetBiomeGenerationSnapshot
 	float OverrideMinScore = 0.65f;
 };
 
+struct STARROVERS_API FSRCompiledPlanetBiomeGenerationSnapshot
+{
+	FName BiomeId = FName(TEXT("Plains"));
+	ESRBiomeWaterRole WaterRole = ESRBiomeWaterRole::None;
+	TArray<FSRBiomePlacementRule> PlacementRules;
+	float Weight = 1.0f;
+	int32 Priority = 0;
+	bool bCanOverrideLowerPriorityBiomes = false;
+	float OverrideMinScore = 0.65f;
+	float TargetTemperature = 0.5f;
+	float TargetMoisture = 0.5f;
+	float TargetHeight = 0.5f;
+	float TargetContinentalness = 0.5f;
+	float AnchorThreshold = 0.0f;
+	FVector AnchorDirections[2] = { FVector::UpVector, FVector::ForwardVector };
+	float PatchFrequency = 1.5f;
+	int32 PatchSeed = 0;
+	FVector PatchSeedOffset = FVector::ZeroVector;
+	FLinearColor BaseLandColor = FLinearColor(0.28f, 0.46f, 0.23f, 1.0f);
+	ESRPlanetBiome RuntimeBiome = ESRPlanetBiome::Plains;
+};
+
+struct STARROVERS_API FSRCompiledTerrainNoiseDescriptor
+{
+	FVector SeedOffset = FVector::ZeroVector;
+	float Frequency = 1.0f;
+	int32 Octaves = 1;
+	float Persistence = 0.5f;
+};
+
 struct STARROVERS_API FSRDynamicMeshGenerationSnapshot
 {
 	bool bDynamicMeshGeneration = true;
@@ -42,6 +72,31 @@ struct STARROVERS_API FSRDynamicMeshGenerationSnapshot
 	int32 NoiseOctaves = 5;
 	float NoisePersistence = 0.5f;
 	TArray<FSRPlanetBiomeGenerationSnapshot> Biomes;
+	TArray<FSRCompiledPlanetBiomeGenerationSnapshot> CompiledBiomes;
+	bool bUsesRareRegionPlacementMetric = false;
+	int32 SafeNoiseOctaves = 5;
+	float SafeNoisePersistence = 0.5f;
+	float SafeDynamicMeshHeight = 120.0f;
+	float InvSafeDynamicMeshHeight = 1.0f / 120.0f;
+	float ClimateWarpStrength = 0.099f;
+	float TerrainWarpStrength = 0.18f;
+	float MountainHeightStrengthScale = 1.0f;
+	float ClampedValleyStrength = 0.35f;
+	float ClampedDetailStrength = 0.45f;
+	float ClampedRiverStrength = 0.28f;
+	float ClampedLakeStrength = 0.18f;
+	FSRCompiledTerrainNoiseDescriptor ClimateWarpNoise[3];
+	FSRCompiledTerrainNoiseDescriptor TerrainWarpNoise[3];
+	FSRCompiledTerrainNoiseDescriptor ContinentalnessNoise;
+	FSRCompiledTerrainNoiseDescriptor ErosionNoise;
+	FSRCompiledTerrainNoiseDescriptor WeirdnessNoise;
+	FSRCompiledTerrainNoiseDescriptor RidgesNoise;
+	FSRCompiledTerrainNoiseDescriptor DetailNoise;
+	FSRCompiledTerrainNoiseDescriptor TemperatureNoise;
+	FSRCompiledTerrainNoiseDescriptor HumidityNoise;
+	FSRCompiledTerrainNoiseDescriptor RiverNoise[2];
+	FSRCompiledTerrainNoiseDescriptor LakeNoise[2];
+	FSRCompiledTerrainNoiseDescriptor RareRegionNoise;
 };
 
 USTRUCT(BlueprintType)

@@ -549,11 +549,12 @@ void USRPlanetSurfaceGrid::ClearOccupancy()
 		Cell.bOccupied = false;
 		Cell.OccupantId = NAME_None;
 		FSRPlanetSurfaceGridCellInfo UpdatedCellInfo = BuildCellInfo(Cell);
-		if (const FSRPlanetSurfaceGridCellInfo* ExistingCellInfo = CellInfoById.Find(Cell.CellId))
+		FSRPlanetSurfaceGridCellInfo ExistingCellInfo;
+		if (GetStoredCellInfoById(Cell.CellId, ExistingCellInfo))
 		{
-			UpdatedCellInfo.FaceCellIndex = ExistingCellInfo->FaceCellIndex;
+			UpdatedCellInfo.FaceCellIndex = ExistingCellInfo.FaceCellIndex;
 		}
-		CellInfoById.Add(Cell.CellId, UpdatedCellInfo);
+		StoreCellInfo(UpdatedCellInfo);
 	}
 	bGridMeshDirty = true;
 	if (bGridVisible)
@@ -602,14 +603,14 @@ bool USRPlanetSurfaceGrid::GetCellById(const FSRPlanetSurfaceGridCellId& CellId,
 
 bool USRPlanetSurfaceGrid::GetCellInfoById(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCellInfo& OutCellInfo) const
 {
-	const FSRPlanetSurfaceGridCellInfo* FoundCellInfo = CellInfoById.Find(CellId);
-	if (!FoundCellInfo)
+	FSRPlanetSurfaceGridCellInfo FoundCellInfo;
+	if (!GetStoredCellInfoById(CellId, FoundCellInfo))
 	{
 		OutCellInfo = FSRPlanetSurfaceGridCellInfo();
 		return false;
 	}
 
-	OutCellInfo = ResolveRuntimeCellInfo(*FoundCellInfo);
+	OutCellInfo = ResolveRuntimeCellInfo(FoundCellInfo);
 	return true;
 }
 
@@ -937,11 +938,12 @@ bool USRPlanetSurfaceGrid::SetCellOccupied(const FSRPlanetSurfaceGridCellId& Cel
 	Cell.bOccupied = bOccupied;
 	Cell.OccupantId = bOccupied ? OccupantId : NAME_None;
 	FSRPlanetSurfaceGridCellInfo UpdatedCellInfo = BuildCellInfo(Cell);
-	if (const FSRPlanetSurfaceGridCellInfo* ExistingCellInfo = CellInfoById.Find(CellId))
+	FSRPlanetSurfaceGridCellInfo ExistingCellInfo;
+	if (GetStoredCellInfoById(CellId, ExistingCellInfo))
 	{
-		UpdatedCellInfo.FaceCellIndex = ExistingCellInfo->FaceCellIndex;
+		UpdatedCellInfo.FaceCellIndex = ExistingCellInfo.FaceCellIndex;
 	}
-	CellInfoById.Add(CellId, UpdatedCellInfo);
+	StoreCellInfo(UpdatedCellInfo);
 	bGridMeshDirty = true;
 	if (bGridVisible)
 	{
@@ -995,11 +997,12 @@ bool USRPlanetSurfaceGrid::SetCellsOccupied(const TArray<FSRPlanetSurfaceGridCel
 		Cell.bOccupied = bOccupied;
 		Cell.OccupantId = bOccupied ? OccupantId : NAME_None;
 		FSRPlanetSurfaceGridCellInfo UpdatedCellInfo = BuildCellInfo(Cell);
-		if (const FSRPlanetSurfaceGridCellInfo* ExistingCellInfo = CellInfoById.Find(Cell.CellId))
+		FSRPlanetSurfaceGridCellInfo ExistingCellInfo;
+		if (GetStoredCellInfoById(Cell.CellId, ExistingCellInfo))
 		{
-			UpdatedCellInfo.FaceCellIndex = ExistingCellInfo->FaceCellIndex;
+			UpdatedCellInfo.FaceCellIndex = ExistingCellInfo.FaceCellIndex;
 		}
-		CellInfoById.Add(Cell.CellId, UpdatedCellInfo);
+		StoreCellInfo(UpdatedCellInfo);
 	}
 
 	bGridMeshDirty = true;
@@ -1938,14 +1941,35 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	TArray<FSRPlanetSurfaceGridCell>&& NewCells,
 	UE::Geometry::FDynamicMesh3&& NewGridMesh)
 {
-	TMap<FSRPlanetSurfaceGridCellId, int32> EmptyCellIndexById;
-	ApplyGeneratedGridBuild(MoveTemp(NewCells), MoveTemp(NewGridMesh), MoveTemp(EmptyCellIndexById));
+	TArray<int32> EmptyCellIndexByFlatId;
+	ApplyGeneratedGridBuild(MoveTemp(NewCells), MoveTemp(NewGridMesh), MoveTemp(EmptyCellIndexByFlatId));
 }
 
 void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	TArray<FSRPlanetSurfaceGridCell>&& NewCells,
 	UE::Geometry::FDynamicMesh3&& NewGridMesh,
 	TMap<FSRPlanetSurfaceGridCellId, int32>&& NewCellIndexById)
+{
+	TArray<int32> NewCellIndexByFlatId;
+	const int32 ExpectedFlatCellCount = 6 * FMath::Max(1, FaceResolution) * FMath::Max(1, FaceResolution);
+	NewCellIndexByFlatId.Init(INDEX_NONE, ExpectedFlatCellCount);
+	for (const TPair<FSRPlanetSurfaceGridCellId, int32>& CellIndexPair : NewCellIndexById)
+	{
+		const int32 FlatIndex = CellIndexPair.Key.IsValid(FaceResolution)
+			? ((static_cast<int32>(CellIndexPair.Key.Face) * FaceResolution + CellIndexPair.Key.CellY) * FaceResolution + CellIndexPair.Key.CellX)
+			: INDEX_NONE;
+		if (NewCellIndexByFlatId.IsValidIndex(FlatIndex))
+		{
+			NewCellIndexByFlatId[FlatIndex] = CellIndexPair.Value;
+		}
+	}
+	ApplyGeneratedGridBuild(MoveTemp(NewCells), MoveTemp(NewGridMesh), MoveTemp(NewCellIndexByFlatId));
+}
+
+void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
+	TArray<FSRPlanetSurfaceGridCell>&& NewCells,
+	UE::Geometry::FDynamicMesh3&& NewGridMesh,
+	TArray<int32>&& NewCellIndexByFlatId)
 {
 	FSRTimingLogSession TimingLogSession(FString::Printf(TEXT("SurfaceGrid.ApplyGeneratedGridBuild Body=%s"), *GetNameSafe(GetOwner())));
 	const double TotalStart = SRSurfaceGridNowSeconds();
@@ -1978,9 +2002,11 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	const double AssignCellsMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 
 	StageStart = SRSurfaceGridNowSeconds();
-	if (NewCellIndexById.Num() == Cells.Num())
+	const int32 ExpectedFlatCellCount = 6 * FaceResolution * FaceResolution;
+	if (NewCellIndexByFlatId.Num() == ExpectedFlatCellCount)
 	{
-		CellIndexById = MoveTemp(NewCellIndexById);
+		CellIndexById.Reset();
+		CellIndexByFlatId = MoveTemp(NewCellIndexByFlatId);
 	}
 	else
 	{
@@ -2023,6 +2049,13 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 
 bool USRPlanetSurfaceGrid::GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const
 {
+	const int32 FlatIndex = GetFlatCellIndex(CellId);
+	if (CellIndexByFlatId.IsValidIndex(FlatIndex))
+	{
+		OutIndex = CellIndexByFlatId[FlatIndex];
+		return Cells.IsValidIndex(OutIndex);
+	}
+
 	if (const int32* FoundIndex = CellIndexById.Find(CellId))
 	{
 		OutIndex = *FoundIndex;
@@ -2033,14 +2066,32 @@ bool USRPlanetSurfaceGrid::GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId
 	return false;
 }
 
+int32 USRPlanetSurfaceGrid::GetFlatCellIndex(const FSRPlanetSurfaceGridCellId& CellId) const
+{
+	if (!CellId.IsValid(FaceResolution))
+	{
+		return INDEX_NONE;
+	}
+
+	return ((static_cast<int32>(CellId.Face) * FaceResolution) + CellId.CellY) * FaceResolution + CellId.CellX;
+}
+
 void USRPlanetSurfaceGrid::RebuildCellIndex()
 {
 	CellIndexById.Reset();
-	CellIndexById.Reserve(Cells.Num());
+	CellIndexByFlatId.Init(INDEX_NONE, 6 * FaceResolution * FaceResolution);
 
 	for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
 	{
-		CellIndexById.Add(Cells[CellIndex].CellId, CellIndex);
+		const int32 FlatIndex = GetFlatCellIndex(Cells[CellIndex].CellId);
+		if (CellIndexByFlatId.IsValidIndex(FlatIndex))
+		{
+			CellIndexByFlatId[FlatIndex] = CellIndex;
+		}
+		else
+		{
+			CellIndexById.Add(Cells[CellIndex].CellId, CellIndex);
+		}
 	}
 }
 
@@ -2101,16 +2152,51 @@ FSRPlanetSurfaceGridCellInfo USRPlanetSurfaceGrid::ResolveRuntimeCellInfo(const 
 void USRPlanetSurfaceGrid::RebuildCellInfoIndex()
 {
 	CellInfoById.Reset();
-	CellInfoById.Reserve(Cells.Num());
+	CellInfoByFlatId.Reset();
+	CellInfoByFlatId.SetNum(6 * FaceResolution * FaceResolution);
 
-	TMap<ESRCubeSphereFace, int32> FaceCellCounts;
+	int32 FaceCellCounts[6] = {};
 	for (const FSRPlanetSurfaceGridCell& Cell : Cells)
 	{
 		FSRPlanetSurfaceGridCellInfo CellInfo = BuildCellInfo(Cell);
-		int32& FaceCellCount = FaceCellCounts.FindOrAdd(Cell.CellId.Face);
+		int32& FaceCellCount = FaceCellCounts[static_cast<int32>(Cell.CellId.Face)];
 		CellInfo.FaceCellIndex = FaceCellCount;
 		++FaceCellCount;
-		CellInfoById.Add(Cell.CellId, CellInfo);
+		StoreCellInfo(CellInfo);
+	}
+}
+
+bool USRPlanetSurfaceGrid::GetStoredCellInfoById(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCellInfo& OutCellInfo) const
+{
+	const int32 FlatIndex = GetFlatCellIndex(CellId);
+	if (CellInfoByFlatId.IsValidIndex(FlatIndex)
+		&& CellIndexByFlatId.IsValidIndex(FlatIndex)
+		&& Cells.IsValidIndex(CellIndexByFlatId[FlatIndex])
+		&& CellInfoByFlatId[FlatIndex].CellId == CellId)
+	{
+		OutCellInfo = CellInfoByFlatId[FlatIndex];
+		return true;
+	}
+
+	if (const FSRPlanetSurfaceGridCellInfo* FoundCellInfo = CellInfoById.Find(CellId))
+	{
+		OutCellInfo = *FoundCellInfo;
+		return true;
+	}
+
+	return false;
+}
+
+void USRPlanetSurfaceGrid::StoreCellInfo(const FSRPlanetSurfaceGridCellInfo& CellInfo)
+{
+	const int32 FlatIndex = GetFlatCellIndex(CellInfo.CellId);
+	if (CellInfoByFlatId.IsValidIndex(FlatIndex))
+	{
+		CellInfoByFlatId[FlatIndex] = CellInfo;
+	}
+	else
+	{
+		CellInfoById.Add(CellInfo.CellId, CellInfo);
 	}
 }
 

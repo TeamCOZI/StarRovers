@@ -17,9 +17,11 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
 #include "Engine/StaticMesh.h"
+#include "HAL/CriticalSection.h"
 #include "HAL/IConsoleManager.h"
 #include "Rendering/PositionVertexBuffer.h"
 #include "Rendering/StaticMeshVertexBuffer.h"
+#include "Misc/ScopeLock.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
 #include "Surface/SRPlanetBiomeDataAsset.h"
@@ -42,6 +44,11 @@ namespace
 		TEXT("sr.DynamicMesh.MinecraftSideWallMinHeightStepRatio"),
 		0.25f,
 		TEXT("Minimum Minecraft height-step ratio required to generate an internal terrain side wall. Set 0 to only skip exact same-height edges."));
+
+	TAutoConsoleVariable<int32> CVarSRDynamicMeshBuildBreakdownTimings(
+		TEXT("sr.DynamicMesh.BuildBreakdownTimings"),
+		1,
+		TEXT("Log detailed dynamic mesh build stage timings. Set 0 to disable per-cell timing probes."));
 
 	double SRCelestialNowSeconds()
 	{
@@ -141,7 +148,13 @@ namespace
 	{
 		TArray<UE::Geometry::FDynamicMesh3> FaceDynamicMeshes;
 		TArray<FSRPlanetSurfaceGridCell> SurfaceGridCells;
-		TMap<FSRPlanetSurfaceGridCellId, FSRCelestialBodyDynamicMeshCellColorData> ColorDataByCell;
+		TArray<FSRCelestialBodyDynamicMeshCellColorData> ColorDataByFlatId;
+	};
+
+	struct FSRCelestialBodyBaseSourceMetadataCacheEntry
+	{
+		int32 FaceResolution = 0;
+		TArray<FSRDynamicMeshBaseSourceMetadataCell> Cells;
 	};
 
 	TMap<uint32, FSRCelestialBodyDynamicMeshRuntimeCacheEntry> GCelestialBodyDynamicMeshRuntimeCache;
@@ -196,9 +209,66 @@ namespace
 		return (static_cast<uint64>(MinEndpoint) << 32) | static_cast<uint64>(MaxEndpoint);
 	}
 
-	uint64 BuildSourcePositionEdgeKey(const FVector& PositionA, const FVector& PositionB)
+	TSharedRef<const FSRCelestialBodyBaseSourceMetadataCacheEntry> BuildBaseSourceMetadataCacheEntry(
+		int32 FaceResolution,
+		const TArray<FSRPlanetSurfaceGridCell>& BaseCells)
 	{
-		return BuildSourcePositionEdgeKey(HashSourcePosition(PositionA), HashSourcePosition(PositionB));
+		TSharedRef<FSRCelestialBodyBaseSourceMetadataCacheEntry> CacheEntry = MakeShared<FSRCelestialBodyBaseSourceMetadataCacheEntry>();
+		CacheEntry->FaceResolution = FaceResolution;
+		CacheEntry->Cells.Reserve(BaseCells.Num());
+
+		for (const FSRPlanetSurfaceGridCell& BaseCell : BaseCells)
+		{
+			FSRDynamicMeshBaseSourceMetadataCell& CellMetadata = CacheEntry->Cells.AddDefaulted_GetRef();
+			CellMetadata.CornerHash00 = HashSourcePosition(BaseCell.Corner00);
+			CellMetadata.CornerHash10 = HashSourcePosition(BaseCell.Corner10);
+			CellMetadata.CornerHash11 = HashSourcePosition(BaseCell.Corner11);
+			CellMetadata.CornerHash01 = HashSourcePosition(BaseCell.Corner01);
+		}
+
+		return CacheEntry;
+	}
+
+	const FSRCelestialBodyBaseSourceMetadataCacheEntry& GetBaseSourceMetadataCacheEntry(
+		int32 FaceResolution,
+		const TArray<FSRPlanetSurfaceGridCell>& BaseCells)
+	{
+		static TMap<int32, TSharedPtr<const FSRCelestialBodyBaseSourceMetadataCacheEntry>> CacheByResolution;
+		static FCriticalSection CacheCriticalSection;
+
+		const double LockStart = SRCelestialNowSeconds();
+		CacheCriticalSection.Lock();
+		const double LockWaitMs = SRCelestialElapsedMilliseconds(LockStart);
+		if (const TSharedPtr<const FSRCelestialBodyBaseSourceMetadataCacheEntry>* CachedEntry = CacheByResolution.Find(FaceResolution))
+		{
+			if (CachedEntry->IsValid())
+			{
+				const FSRCelestialBodyBaseSourceMetadataCacheEntry* Result = CachedEntry->Get();
+				CacheCriticalSection.Unlock();
+				if (LockWaitMs > 1.0)
+				{
+					FSRTimingLog::AddLine(FString::Printf(
+						TEXT("BaseSourceMetadata CacheHit Resolution=%d LockWait=%.2f ms"),
+						FaceResolution,
+						LockWaitMs));
+				}
+				return *Result;
+			}
+		}
+
+		const double BuildStart = SRCelestialNowSeconds();
+		const TSharedRef<const FSRCelestialBodyBaseSourceMetadataCacheEntry> NewEntry =
+			BuildBaseSourceMetadataCacheEntry(FaceResolution, BaseCells);
+		const double BuildMs = SRCelestialElapsedMilliseconds(BuildStart);
+		CacheByResolution.Add(FaceResolution, NewEntry);
+		CacheCriticalSection.Unlock();
+		FSRTimingLog::AddLine(FString::Printf(
+			TEXT("BaseSourceMetadata CacheMissBuild Resolution=%d LockWait=%.2f ms Build=%.2f ms Cells=%d"),
+			FaceResolution,
+			LockWaitMs,
+			BuildMs,
+			NewEntry->Cells.Num()));
+		return NewEntry.Get();
 	}
 
 	struct FSRTerrainVertexKey
@@ -670,7 +740,24 @@ USRPlanetSurfaceGrid* ASRCelestialBody::GetSurfaceGrid() const
 
 bool ASRCelestialBody::HasSurfaceCellRenderData(const FSRPlanetSurfaceGridCellId& CellId) const
 {
-	return DynamicMeshColorDataByCell.Contains(CellId);
+	return FindDynamicMeshCellColorData(CellId) != nullptr;
+}
+
+const FSRCelestialBodyDynamicMeshCellColorData* ASRCelestialBody::FindDynamicMeshCellColorData(const FSRPlanetSurfaceGridCellId& CellId) const
+{
+	if (!IsValid(DynamicMeshBaseDataAsset.Get()))
+	{
+		return nullptr;
+	}
+
+	const int32 FaceResolution = DynamicMeshBaseDataAsset->GetClampedFaceResolution();
+	if (!CellId.IsValid(FaceResolution))
+	{
+		return nullptr;
+	}
+
+	const int32 FlatIndex = ((static_cast<int32>(CellId.Face) * FaceResolution) + CellId.CellY) * FaceResolution + CellId.CellX;
+	return DynamicMeshColorDataByFlatId.IsValidIndex(FlatIndex) ? &DynamicMeshColorDataByFlatId[FlatIndex] : nullptr;
 }
 
 bool ASRCelestialBody::GetCachedSurfaceGridCells(TArray<FSRPlanetSurfaceGridCell>& OutCells) const
@@ -717,7 +804,7 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 	const FLinearColor& HoveredCellColor,
 	const FLinearColor& SelectedCellColor)
 {
-	if (!IsValid(CelestialBodyDynamicMesh.Get()) || DynamicMeshColorDataByCell.IsEmpty())
+	if (!IsValid(CelestialBodyDynamicMesh.Get()) || DynamicMeshColorDataByFlatId.IsEmpty())
 	{
 		return false;
 	}
@@ -735,7 +822,7 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 	};
 	auto AddCellHighlight = [this, &TargetColorsByElement, &NextHighlightedBaseColorByElement, &BlendHighlightColor](const FSRPlanetSurfaceGridCellId& CellId, const FLinearColor& HighlightColor)
 	{
-		const FSRCelestialBodyDynamicMeshCellColorData* CellColorData = DynamicMeshColorDataByCell.Find(CellId);
+		const FSRCelestialBodyDynamicMeshCellColorData* CellColorData = FindDynamicMeshCellColorData(CellId);
 		if (!CellColorData)
 		{
 			return;
@@ -1061,8 +1148,18 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicM
 	RefreshMaterialParameters();
 }
 
-bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildHash, double TotalStart)
+bool ASRCelestialBody::BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPreparedDynamicMesh& OutPreparedMesh)
 {
+	OutPreparedMesh = FSRCelestialBodyPreparedDynamicMesh();
+	const double TotalStart = SRCelestialNowSeconds();
+	double PreBuildValidationMs = 0.0;
+	double PreBuildMeshSetupMs = 0.0;
+	double PreBuildContainerReserveMs = 0.0;
+	double PreBuildEdgeReserveMs = 0.0;
+	double PreBuildSetupTotalMs = 0.0;
+	double PreBuildStageStart = SRCelestialNowSeconds();
+	const uint32 DynamicMeshBuildHash = ComputeDynamicMeshBuildHash();
+
 	if (!IsValid(DynamicMeshBaseDataAsset.Get()))
 	{
 		return false;
@@ -1078,6 +1175,7 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 	const float SourceBodyRadius = DynamicMeshBaseDataAsset->GetSafeBaseRadius(IsValid(StaticMesh.Get()) ? StaticMesh->GetBounds().SphereRadius : 1.0f);
 	const int32 CellCount = CubeSphereFaceComponentCount * FaceResolution * FaceResolution;
 	const float TerrainHeightStep = ComputeRegularCubeFaceCellEdgeLength(SourceBodyRadius, FaceResolution);
+	PreBuildValidationMs = SRCelestialElapsedMilliseconds(PreBuildStageStart);
 	FSRTimingLog::AddLine(FString::Printf(
 		TEXT("DynamicMesh '%s' BaseMetadata Begin Source='%s' Shape=CubeSphere Resolution=%d Cells=%d Radius=%.3f"),
 		*GetName(),
@@ -1086,6 +1184,7 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		CellCount,
 		SourceBodyRadius));
 
+	PreBuildStageStart = SRCelestialNowSeconds();
 	TArray<UE::Geometry::FDynamicMesh3> FaceDynamicMeshes;
 	FaceDynamicMeshes.SetNum(CubeSphereFaceComponentCount);
 	for (UE::Geometry::FDynamicMesh3& FaceDynamicMesh : FaceDynamicMeshes)
@@ -1094,14 +1193,19 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		FaceDynamicMesh.Attributes()->EnablePrimaryColors();
 		FaceDynamicMesh.Attributes()->EnableMaterialID();
 	}
+	PreBuildMeshSetupMs = SRCelestialElapsedMilliseconds(PreBuildStageStart);
 
+	PreBuildStageStart = SRCelestialNowSeconds();
 	TMap<FSRTerrainVertexKey, int32> WeldedVertexIds;
 	WeldedVertexIds.Reserve((FaceResolution + 1) * (FaceResolution + 1) * CubeSphereFaceComponentCount);
-	TMap<FSRPlanetSurfaceGridCellId, int32> CachedCellIndexById;
-	CachedCellIndexById.Reserve(CellCount);
-	DynamicMeshColorDataByCell.Reserve(CellCount);
-	CachedSurfaceGridCells.Reset(CellCount);
-	CachedSurfaceGridCells.Reserve(CellCount);
+	TArray<int32> CachedCellIndexByFlatId;
+	CachedCellIndexByFlatId.Init(INDEX_NONE, CellCount);
+	TArray<FSRCelestialBodyDynamicMeshCellColorData> PreparedColorDataByFlatId;
+	PreparedColorDataByFlatId.SetNum(CellCount);
+	TArray<FSRPlanetSurfaceGridCell> PreparedSurfaceGridCells;
+	PreparedSurfaceGridCells.Reserve(CellCount);
+	int32 PreparedSurfaceGridCellCount = 0;
+	PreBuildContainerReserveMs = SRCelestialElapsedMilliseconds(PreBuildStageStart);
 
 	auto AppendFlatColoredQuad = [this, &FaceDynamicMeshes, &WeldedVertexIds](
 		int32 MeshComponentIndex,
@@ -1262,15 +1366,26 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		return RenderData;
 	};
 
-	auto AddCachedSideLineSegment = [this, &CachedCellIndexById](
+	auto GetPreparedSurfaceGridCellIndex = [&CachedCellIndexByFlatId, FaceResolution](const FSRPlanetSurfaceGridCellId& CellId) -> int32
+	{
+		if (!CellId.IsValid(FaceResolution))
+		{
+			return INDEX_NONE;
+		}
+
+		const int32 FlatIndex = ((static_cast<int32>(CellId.Face) * FaceResolution) + CellId.CellY) * FaceResolution + CellId.CellX;
+		return CachedCellIndexByFlatId.IsValidIndex(FlatIndex) ? CachedCellIndexByFlatId[FlatIndex] : INDEX_NONE;
+	};
+
+	auto AddCachedSideLineSegment = [this, &GetPreparedSurfaceGridCellIndex, &PreparedSurfaceGridCells](
 		const FSRPlanetSurfaceGridCellId& CellId,
 		const FSRPlanetSurfaceGridCellId& AdjacentCellId,
 		bool bHasAdjacentCell,
 		const FVector& PointA,
 		const FVector& PointB)
 	{
-		const int32* CellIndex = CachedCellIndexById.Find(CellId);
-		if (!CellIndex || !CachedSurfaceGridCells.IsValidIndex(*CellIndex) || FVector::DistSquared(PointA, PointB) <= KINDA_SMALL_NUMBER)
+		const int32 CellIndex = GetPreparedSurfaceGridCellIndex(CellId);
+		if (!PreparedSurfaceGridCells.IsValidIndex(CellIndex) || FVector::DistSquared(PointA, PointB) <= KINDA_SMALL_NUMBER)
 		{
 			return;
 		}
@@ -1280,10 +1395,10 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		SideLineSegment.LocalPointB = PointB * Scale;
 		SideLineSegment.bHasAdjacentCell = bHasAdjacentCell;
 		SideLineSegment.AdjacentCellId = AdjacentCellId;
-		CachedSurfaceGridCells[*CellIndex].SideLineSegments.Add(SideLineSegment);
+		PreparedSurfaceGridCells[CellIndex].SideLineSegments.Add(SideLineSegment);
 	};
 
-	auto AddCachedSideFace = [this, &CachedCellIndexById](
+	auto AddCachedSideFace = [this, &GetPreparedSurfaceGridCellIndex, &PreparedSurfaceGridCells](
 		const FSRPlanetSurfaceGridCellId& CellId,
 		const FSRPlanetSurfaceGridCellId& AdjacentCellId,
 		bool bHasAdjacentCell,
@@ -1292,8 +1407,8 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		const FVector& Point2,
 		const FVector& Point3)
 	{
-		const int32* CellIndex = CachedCellIndexById.Find(CellId);
-		if (!CellIndex || !CachedSurfaceGridCells.IsValidIndex(*CellIndex))
+		const int32 CellIndex = GetPreparedSurfaceGridCellIndex(CellId);
+		if (!PreparedSurfaceGridCells.IsValidIndex(CellIndex))
 		{
 			return;
 		}
@@ -1305,7 +1420,7 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		SideFace.LocalPoint3 = Point3 * Scale;
 		SideFace.bHasAdjacentCell = bHasAdjacentCell;
 		SideFace.AdjacentCellId = AdjacentCellId;
-		CachedSurfaceGridCells[*CellIndex].SideFaces.Add(SideFace);
+		PreparedSurfaceGridCells[CellIndex].SideFaces.Add(SideFace);
 	};
 
 	auto AddCachedSideWallOutline = [&AddCachedSideLineSegment](
@@ -1325,8 +1440,6 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 
 	struct FSRGeneratedBaseTerrainEdge
 	{
-		FVector SourcePointA = FVector::ZeroVector;
-		FVector SourcePointB = FVector::ZeroVector;
 		FVector PointA = FVector::ZeroVector;
 		FVector PointB = FVector::ZeroVector;
 		FVector CellCenter = FVector::ZeroVector;
@@ -1339,10 +1452,14 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 	};
 
 	TMap<uint64, FSRGeneratedBaseTerrainEdge> PendingTerrainEdges;
-	PendingTerrainEdges.Reserve(CellCount * 2);
+	const int32 PendingTerrainEdgeReserveCount = FMath::Min(CellCount * 2, 8192);
+	PreBuildStageStart = SRCelestialNowSeconds();
+	PendingTerrainEdges.Reserve(PendingTerrainEdgeReserveCount);
+	PreBuildEdgeReserveMs = SRCelestialElapsedMilliseconds(PreBuildStageStart);
 	int32 TerrainEdgeRegisterCount = 0;
 	int32 TerrainEdgeMatchCount = 0;
 	int32 TerrainSideWallCount = 0;
+	int32 MaxPendingTerrainEdgeCount = 0;
 
 	auto RegisterTerrainEdge = [
 		this,
@@ -1350,12 +1467,13 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		&AppendFlatColoredQuad,
 		&AddCachedSideWallOutline,
 		&AddCachedSideFace,
+		&PreparedColorDataByFlatId,
+		FaceResolution,
 		TerrainHeightStep,
 		&TerrainEdgeRegisterCount,
 		&TerrainEdgeMatchCount,
-		&TerrainSideWallCount](
-		const FVector& SourcePointA,
-		const FVector& SourcePointB,
+		&TerrainSideWallCount,
+		&MaxPendingTerrainEdgeCount](
 		uint32 EndpointHashA,
 		uint32 EndpointHashB,
 		const FVector& PointA,
@@ -1372,15 +1490,12 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 			return;
 		}
 
-		FVector OrderedSourcePointA = SourcePointA;
-		FVector OrderedSourcePointB = SourcePointB;
 		FVector OrderedPointA = PointA;
 		FVector OrderedPointB = PointB;
 		uint32 OrderedHashA = EndpointHashA;
 		uint32 OrderedHashB = EndpointHashB;
 		if (EndpointHashA > EndpointHashB)
 		{
-			Swap(OrderedSourcePointA, OrderedSourcePointB);
 			Swap(OrderedPointA, OrderedPointB);
 			Swap(OrderedHashA, OrderedHashB);
 		}
@@ -1445,17 +1560,19 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 				if (bExistingCellIsHigher)
 				{
 					AddCachedSideFace(ExistingEdge->CellId, CellId, true, ExistingEdge->PointA, ExistingEdge->PointB, OrderedPointB, OrderedPointA);
-					if (FSRCelestialBodyDynamicMeshCellColorData* CellColorData = DynamicMeshColorDataByCell.Find(ExistingEdge->CellId))
+					const int32 ExistingCellFlatIndex = ((static_cast<int32>(ExistingEdge->CellId.Face) * FaceResolution) + ExistingEdge->CellId.CellY) * FaceResolution + ExistingEdge->CellId.CellX;
+					if (PreparedColorDataByFlatId.IsValidIndex(ExistingCellFlatIndex))
 					{
-						CellColorData->SideColorElements.Append(SideRenderData.ColorElements);
+						PreparedColorDataByFlatId[ExistingCellFlatIndex].SideColorElements.Append(SideRenderData.ColorElements);
 					}
 				}
 				else if (bCurrentCellIsHigher)
 				{
 					AddCachedSideFace(CellId, ExistingEdge->CellId, true, ExistingEdge->PointA, ExistingEdge->PointB, OrderedPointB, OrderedPointA);
-					if (FSRCelestialBodyDynamicMeshCellColorData* CellColorData = DynamicMeshColorDataByCell.Find(CellId))
+					const int32 CellFlatIndex = ((static_cast<int32>(CellId.Face) * FaceResolution) + CellId.CellY) * FaceResolution + CellId.CellX;
+					if (PreparedColorDataByFlatId.IsValidIndex(CellFlatIndex))
 					{
-						CellColorData->SideColorElements.Append(SideRenderData.ColorElements);
+						PreparedColorDataByFlatId[CellFlatIndex].SideColorElements.Append(SideRenderData.ColorElements);
 					}
 				}
 			}
@@ -1464,8 +1581,6 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		}
 
 		FSRGeneratedBaseTerrainEdge& NewEdge = PendingTerrainEdges.Add(EdgeKey);
-		NewEdge.SourcePointA = OrderedSourcePointA;
-		NewEdge.SourcePointB = OrderedSourcePointB;
 		NewEdge.PointA = OrderedPointA;
 		NewEdge.PointB = OrderedPointB;
 		NewEdge.CellCenter = CellCenter;
@@ -1475,8 +1590,10 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		NewEdge.SurfaceColor = SurfaceColor;
 		NewEdge.MaterialId = MaterialId;
 		NewEdge.CellId = CellId;
+		MaxPendingTerrainEdgeCount = FMath::Max(MaxPendingTerrainEdgeCount, PendingTerrainEdges.Num());
 	};
 
+	double StageStart = SRCelestialNowSeconds();
 	TMap<FName, int32> BiomeMaterialSlotIndexById;
 	BiomeMaterialSlotIndexById.Reserve(DynamicMeshGeneration.BiomeMaterials.Num());
 	for (int32 MaterialIndex = 0; MaterialIndex < DynamicMeshGeneration.BiomeMaterials.Num(); ++MaterialIndex)
@@ -1487,21 +1604,73 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 			BiomeMaterialSlotIndexById.Add(BiomeMaterialEntry.BiomeId, MaterialIndex + 1);
 		}
 	}
+	const double BiomeMaterialMapMs = SRCelestialElapsedMilliseconds(StageStart);
 
+	StageStart = SRCelestialNowSeconds();
 	const FSRDynamicMeshGenerationSnapshot DynamicMeshGenerationSnapshot = DynamicMeshGeneration.MakeThreadSafeSnapshot();
+	const double SnapshotMs = SRCelestialElapsedMilliseconds(StageStart);
 
-	double StageStart = SRCelestialNowSeconds();
-	const TArray<FSRPlanetSurfaceGridCell> GeneratedBaseCells =
-		USRPlanetSurfaceGridLibrary::GenerateCubeSphereCells(FaceResolution, SourceBodyRadius);
+	StageStart = SRCelestialNowSeconds();
+	TArray<FSRPlanetSurfaceGridCell> GeneratedBaseCells;
+	const TArray<FSRDynamicMeshBasePrecomputedCell>* PrecomputedBaseCells =
+		DynamicMeshBaseDataAsset->GetValidPrecomputedCells();
+	const bool bUsingPrecomputedBaseCells = PrecomputedBaseCells != nullptr;
+	const float PrecomputedBaseCellScale =
+		bUsingPrecomputedBaseCells ? DynamicMeshBaseDataAsset->GetPrecomputedCellScale(SourceBodyRadius) : 1.0f;
+	if (!bUsingPrecomputedBaseCells)
+	{
+		GeneratedBaseCells = USRPlanetSurfaceGridLibrary::GenerateCubeSphereCells(FaceResolution, SourceBodyRadius);
+	}
+	const double BaseCellsMs = SRCelestialElapsedMilliseconds(StageStart);
+
+	StageStart = SRCelestialNowSeconds();
+	const TArray<FSRDynamicMeshBaseSourceMetadataCell>* BaseSourceMetadataCells =
+		bUsingPrecomputedBaseCells ? DynamicMeshBaseDataAsset->GetValidPrecomputedSourceMetadata() : nullptr;
+	const bool bUsingPrecomputedSourceMetadata = BaseSourceMetadataCells != nullptr;
+	if (!BaseSourceMetadataCells && !bUsingPrecomputedBaseCells)
+	{
+		BaseSourceMetadataCells = &GetBaseSourceMetadataCacheEntry(FaceResolution, GeneratedBaseCells).Cells;
+	}
+	const double BaseSourceMetadataMs = SRCelestialElapsedMilliseconds(StageStart);
+
+	const bool bProfileBuildBreakdown = CVarSRDynamicMeshBuildBreakdownTimings.GetValueOnGameThread() != 0;
+	double DistortionMs = 0.0;
+	double TerrainSampleMs = 0.0;
+	double CellTransformMs = 0.0;
+	double SourceHashMs = 0.0;
+	double SurfaceAppendMs = 0.0;
+	double ColorDataMs = 0.0;
+	double CacheCellMs = 0.0;
+	double TerrainEdgeRegisterMs = 0.0;
+
+	PreBuildSetupTotalMs = SRCelestialElapsedMilliseconds(TotalStart);
+	FSRTimingLog::AddLine(FString::Printf(
+		TEXT("DynamicMesh '%s' BaseMetadata.PreBuildBreakdown Validation=%.2f ms MeshSetup=%.2f ms ContainerReserve=%.2f ms EdgeReserve=%.2f ms BiomeMap=%.2f ms Snapshot=%.2f ms BaseGrid=%.2f ms BaseSourceMeta=%.2f ms PreBuildTotal=%.2f ms"),
+		*GetName(),
+		PreBuildValidationMs,
+		PreBuildMeshSetupMs,
+		PreBuildContainerReserveMs,
+		PreBuildEdgeReserveMs,
+		BiomeMaterialMapMs,
+		SnapshotMs,
+		BaseCellsMs,
+		BaseSourceMetadataMs,
+		PreBuildSetupTotalMs));
+
+	const double BuildCellsStart = SRCelestialNowSeconds();
 	int32 ValidCellCount = 0;
 	int32 DistortionSampleCount = 0;
 	double AspectErrorSum = 0.0;
 	double MaxAspectError = 0.0;
 	double AngleErrorSum = 0.0;
 	double MaxAngleError = 0.0;
-	auto AccumulateCellDistortion = [&DistortionSampleCount, &AspectErrorSum, &MaxAspectError, &AngleErrorSum, &MaxAngleError](const FSRPlanetSurfaceGridCell& Cell)
+	auto AccumulateCellDistortion = [&DistortionSampleCount, &AspectErrorSum, &MaxAspectError, &AngleErrorSum, &MaxAngleError](
+		const FVector& Corner00,
+		const FVector& Corner10,
+		const FVector& Corner11,
+		const FVector& Corner01)
 	{
-		const FVector Corners[4] = { Cell.Corner00, Cell.Corner10, Cell.Corner11, Cell.Corner01 };
+		const FVector Corners[4] = { Corner00, Corner10, Corner11, Corner01 };
 		float MinEdgeLength = TNumericLimits<float>::Max();
 		float MaxEdgeLength = 0.0f;
 		for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
@@ -1534,14 +1703,81 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		AngleErrorSum += CellMaxAngleError;
 		MaxAngleError = FMath::Max(MaxAngleError, CellMaxAngleError);
 	};
-	for (const FSRPlanetSurfaceGridCell& BaseCell : GeneratedBaseCells)
+
+	struct FSRDynamicMeshBaseCellView
 	{
+		FSRPlanetSurfaceGridCellId CellId;
+		FVector LocalCenter = FVector::ZeroVector;
+		FVector LocalNormal = FVector::UpVector;
+		FVector Corner00 = FVector::ZeroVector;
+		FVector Corner10 = FVector::ZeroVector;
+		FVector Corner11 = FVector::ZeroVector;
+		FVector Corner01 = FVector::ZeroVector;
+		FVector2D FaceUVMin = FVector2D::ZeroVector;
+		FVector2D FaceUVMax = FVector2D::ZeroVector;
+		float ApproxSurfaceArea = 0.0f;
+		FSRPlanetSurfaceGridCellNeighbors Neighbors;
+	};
+
+	auto MakeBaseCellView = [
+		bUsingPrecomputedBaseCells,
+		PrecomputedBaseCells,
+		PrecomputedBaseCellScale,
+		&GeneratedBaseCells](int32 BaseCellIndex)
+	{
+		FSRDynamicMeshBaseCellView CellView;
+		if (bUsingPrecomputedBaseCells)
+		{
+			const FSRDynamicMeshBasePrecomputedCell& PrecomputedCell = (*PrecomputedBaseCells)[BaseCellIndex];
+			CellView.CellId = PrecomputedCell.CellId;
+			CellView.LocalCenter = PrecomputedCell.LocalCenter * PrecomputedBaseCellScale;
+			CellView.LocalNormal = PrecomputedCell.LocalNormal;
+			CellView.Corner00 = PrecomputedCell.Corner00 * PrecomputedBaseCellScale;
+			CellView.Corner10 = PrecomputedCell.Corner10 * PrecomputedBaseCellScale;
+			CellView.Corner11 = PrecomputedCell.Corner11 * PrecomputedBaseCellScale;
+			CellView.Corner01 = PrecomputedCell.Corner01 * PrecomputedBaseCellScale;
+			CellView.FaceUVMin = PrecomputedCell.FaceUVMin;
+			CellView.FaceUVMax = PrecomputedCell.FaceUVMax;
+			CellView.ApproxSurfaceArea = PrecomputedCell.ApproxSurfaceArea * PrecomputedBaseCellScale * PrecomputedBaseCellScale;
+			CellView.Neighbors = PrecomputedCell.Neighbors;
+			return CellView;
+		}
+
+		const FSRPlanetSurfaceGridCell& GeneratedCell = GeneratedBaseCells[BaseCellIndex];
+		CellView.CellId = GeneratedCell.CellId;
+		CellView.LocalCenter = GeneratedCell.LocalCenter;
+		CellView.LocalNormal = GeneratedCell.LocalNormal;
+		CellView.Corner00 = GeneratedCell.Corner00;
+		CellView.Corner10 = GeneratedCell.Corner10;
+		CellView.Corner11 = GeneratedCell.Corner11;
+		CellView.Corner01 = GeneratedCell.Corner01;
+		CellView.FaceUVMin = GeneratedCell.FaceUVMin;
+		CellView.FaceUVMax = GeneratedCell.FaceUVMax;
+		CellView.ApproxSurfaceArea = GeneratedCell.ApproxSurfaceArea;
+		CellView.Neighbors = GeneratedCell.Neighbors;
+		return CellView;
+	};
+
+	const int32 BaseCellCount = bUsingPrecomputedBaseCells ? PrecomputedBaseCells->Num() : GeneratedBaseCells.Num();
+	for (int32 BaseCellIndex = 0; BaseCellIndex < BaseCellCount; ++BaseCellIndex)
+	{
+		const FSRDynamicMeshBaseCellView BaseCell = MakeBaseCellView(BaseCellIndex);
 		const FSRPlanetSurfaceGridCellId CellId = BaseCell.CellId;
 		if (!CellId.IsValid(FaceResolution))
 		{
 			continue;
 		}
-		AccumulateCellDistortion(BaseCell);
+		const int32 CellFlatIndex = ((static_cast<int32>(CellId.Face) * FaceResolution) + CellId.CellY) * FaceResolution + CellId.CellX;
+		if (bProfileBuildBreakdown)
+		{
+			const double InnerStart = SRCelestialNowSeconds();
+			AccumulateCellDistortion(BaseCell.Corner00, BaseCell.Corner10, BaseCell.Corner11, BaseCell.Corner01);
+			DistortionMs += SRCelestialElapsedMilliseconds(InnerStart);
+		}
+		else
+		{
+			AccumulateCellDistortion(BaseCell.Corner00, BaseCell.Corner10, BaseCell.Corner11, BaseCell.Corner01);
+		}
 
 		const FVector CellDirection = BaseCell.LocalCenter.GetSafeNormal();
 		if (CellDirection.IsNearlyZero())
@@ -1557,43 +1793,93 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		TerrainSampleContext.FaceResolution = FaceResolution;
 		TerrainSampleContext.FaceUV = (BaseCell.FaceUVMin + BaseCell.FaceUVMax) * 0.5f;
 
-		const FSRPlanetTerrainSample TerrainSample = SampleTerrainForDynamicMesh(TerrainSampleContext, DynamicMeshGenerationSnapshot, TerrainHeightStep);
-		const float SourceCellRadius = FMath::Max(BaseCell.LocalCenter.Length(), 1.0f);
-		const float CellScale = FMath::Max(0.01f, (SourceCellRadius + TerrainSample.HeightOffset) / SourceCellRadius);
-		const FVector TargetCellCenter = CellDirection * (SourceCellRadius + TerrainSample.HeightOffset);
-		FVector TargetPositions[4] =
+		FSRPlanetTerrainSample TerrainSample;
+		if (bProfileBuildBreakdown)
 		{
-			BaseCell.Corner00 * CellScale,
-			BaseCell.Corner10 * CellScale,
-			BaseCell.Corner11 * CellScale,
-			BaseCell.Corner01 * CellScale,
-		};
-		FVector SourcePositions[4] =
-		{
-			BaseCell.Corner00,
-			BaseCell.Corner10,
-			BaseCell.Corner11,
-			BaseCell.Corner01,
-		};
-		uint32 SourcePositionHashes[4] =
-		{
-			HashSourcePosition(SourcePositions[0]),
-			HashSourcePosition(SourcePositions[1]),
-			HashSourcePosition(SourcePositions[2]),
-			HashSourcePosition(SourcePositions[3]),
-		};
-
-		FVector CellNormal = FVector::CrossProduct(TargetPositions[1] - TargetPositions[0], TargetPositions[2] - TargetPositions[0]).GetSafeNormal();
-		if (FVector::DotProduct(CellNormal, CellDirection) < 0.0f)
-		{
-			Swap(TargetPositions[1], TargetPositions[3]);
-			Swap(SourcePositions[1], SourcePositions[3]);
-			Swap(SourcePositionHashes[1], SourcePositionHashes[3]);
-			CellNormal *= -1.0f;
+			const double InnerStart = SRCelestialNowSeconds();
+			TerrainSample = SampleTerrainForDynamicMesh(TerrainSampleContext, DynamicMeshGenerationSnapshot, TerrainHeightStep);
+			TerrainSampleMs += SRCelestialElapsedMilliseconds(InnerStart);
 		}
-		if (CellNormal.IsNearlyZero())
+		else
 		{
-			CellNormal = CellDirection;
+			TerrainSample = SampleTerrainForDynamicMesh(TerrainSampleContext, DynamicMeshGenerationSnapshot, TerrainHeightStep);
+		}
+
+		FVector TargetPositions[4];
+		uint32 SourcePositionHashes[4];
+		FVector CellNormal;
+		float SourceCellRadius = 0.0f;
+		float CellScale = 1.0f;
+		FVector TargetCellCenter = FVector::ZeroVector;
+		bool bSwappedCellWinding = false;
+		{
+			const double InnerStart = bProfileBuildBreakdown ? SRCelestialNowSeconds() : 0.0;
+			SourceCellRadius = FMath::Max(BaseCell.LocalCenter.Length(), 1.0f);
+			CellScale = FMath::Max(0.01f, (SourceCellRadius + TerrainSample.HeightOffset) / SourceCellRadius);
+			TargetCellCenter = CellDirection * (SourceCellRadius + TerrainSample.HeightOffset);
+			TargetPositions[0] = BaseCell.Corner00 * CellScale;
+			TargetPositions[1] = BaseCell.Corner10 * CellScale;
+			TargetPositions[2] = BaseCell.Corner11 * CellScale;
+			TargetPositions[3] = BaseCell.Corner01 * CellScale;
+
+			CellNormal = FVector::CrossProduct(TargetPositions[1] - TargetPositions[0], TargetPositions[2] - TargetPositions[0]).GetSafeNormal();
+			if (FVector::DotProduct(CellNormal, CellDirection) < 0.0f)
+			{
+				Swap(TargetPositions[1], TargetPositions[3]);
+				CellNormal *= -1.0f;
+				bSwappedCellWinding = true;
+			}
+			if (CellNormal.IsNearlyZero())
+			{
+				CellNormal = CellDirection;
+			}
+			if (bProfileBuildBreakdown)
+			{
+				CellTransformMs += SRCelestialElapsedMilliseconds(InnerStart);
+			}
+		}
+
+		if (bProfileBuildBreakdown)
+		{
+			const double InnerStart = SRCelestialNowSeconds();
+			if (BaseSourceMetadataCells && BaseSourceMetadataCells->IsValidIndex(BaseCellIndex))
+			{
+				const FSRDynamicMeshBaseSourceMetadataCell& SourceMetadata = (*BaseSourceMetadataCells)[BaseCellIndex];
+				SourcePositionHashes[0] = SourceMetadata.CornerHash00;
+				SourcePositionHashes[1] = SourceMetadata.CornerHash10;
+				SourcePositionHashes[2] = SourceMetadata.CornerHash11;
+				SourcePositionHashes[3] = SourceMetadata.CornerHash01;
+			}
+			else
+			{
+				SourcePositionHashes[0] = HashSourcePosition(BaseCell.Corner00);
+				SourcePositionHashes[1] = HashSourcePosition(BaseCell.Corner10);
+				SourcePositionHashes[2] = HashSourcePosition(BaseCell.Corner11);
+				SourcePositionHashes[3] = HashSourcePosition(BaseCell.Corner01);
+			}
+			SourceHashMs += SRCelestialElapsedMilliseconds(InnerStart);
+		}
+		else
+		{
+			if (BaseSourceMetadataCells && BaseSourceMetadataCells->IsValidIndex(BaseCellIndex))
+			{
+				const FSRDynamicMeshBaseSourceMetadataCell& SourceMetadata = (*BaseSourceMetadataCells)[BaseCellIndex];
+				SourcePositionHashes[0] = SourceMetadata.CornerHash00;
+				SourcePositionHashes[1] = SourceMetadata.CornerHash10;
+				SourcePositionHashes[2] = SourceMetadata.CornerHash11;
+				SourcePositionHashes[3] = SourceMetadata.CornerHash01;
+			}
+			else
+			{
+				SourcePositionHashes[0] = HashSourcePosition(BaseCell.Corner00);
+				SourcePositionHashes[1] = HashSourcePosition(BaseCell.Corner10);
+				SourcePositionHashes[2] = HashSourcePosition(BaseCell.Corner11);
+				SourcePositionHashes[3] = HashSourcePosition(BaseCell.Corner01);
+			}
+		}
+		if (bSwappedCellWinding)
+		{
+			Swap(SourcePositionHashes[1], SourcePositionHashes[3]);
 		}
 
 		FSRTerrainVertexKey SurfaceVertexKeys[4];
@@ -1603,53 +1889,129 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		}
 
 		const int32 MaterialId = BiomeMaterialSlotIndexById.FindRef(TerrainSample.BiomeId);
-		const FSRCelestialBodyDynamicMeshQuadRenderData SurfaceRenderData =
-			AppendFlatColoredQuad(GetCubeSphereFaceComponentIndex(CellId.Face), TargetPositions[0], TargetPositions[1], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor, MaterialId, false, SurfaceVertexKeys);
-		FSRCelestialBodyDynamicMeshCellColorData& CellColorData = DynamicMeshColorDataByCell.FindOrAdd(CellId);
-		CellColorData.SurfaceColorElements.Append(SurfaceRenderData.ColorElements);
+		FSRCelestialBodyDynamicMeshQuadRenderData SurfaceRenderData;
+		if (bProfileBuildBreakdown)
+		{
+			const double InnerStart = SRCelestialNowSeconds();
+			SurfaceRenderData = AppendFlatColoredQuad(GetCubeSphereFaceComponentIndex(CellId.Face), TargetPositions[0], TargetPositions[1], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor, MaterialId, false, SurfaceVertexKeys);
+			SurfaceAppendMs += SRCelestialElapsedMilliseconds(InnerStart);
+		}
+		else
+		{
+			SurfaceRenderData = AppendFlatColoredQuad(GetCubeSphereFaceComponentIndex(CellId.Face), TargetPositions[0], TargetPositions[1], TargetPositions[2], TargetPositions[3], TerrainSample.SurfaceColor, MaterialId, false, SurfaceVertexKeys);
+		}
 
-		FSRPlanetSurfaceGridCell CachedCell = BaseCell;
-		CachedCell.LocalCenter = TargetCellCenter * Scale;
-		CachedCell.LocalNormal = CellNormal;
-		CachedCell.Corner00 = TargetPositions[0] * Scale;
-		CachedCell.Corner10 = TargetPositions[1] * Scale;
-		CachedCell.Corner11 = TargetPositions[2] * Scale;
-		CachedCell.Corner01 = TargetPositions[3] * Scale;
-		CachedCell.ApproxSurfaceArea =
-			(FVector::CrossProduct(CachedCell.Corner10 - CachedCell.Corner00, CachedCell.Corner11 - CachedCell.Corner00).Size() * 0.5f)
-			+ (FVector::CrossProduct(CachedCell.Corner11 - CachedCell.Corner00, CachedCell.Corner01 - CachedCell.Corner00).Size() * 0.5f);
-		CachedCell.Biome = TerrainSample.Biome;
-		CachedCell.BiomeId = TerrainSample.BiomeId;
-		CachedCell.WaterRole = TerrainSample.WaterRole;
-		CachedCell.Neighbors = BaseCell.Neighbors;
+		if (bProfileBuildBreakdown)
+		{
+			const double InnerStart = SRCelestialNowSeconds();
+			if (PreparedColorDataByFlatId.IsValidIndex(CellFlatIndex))
+			{
+				PreparedColorDataByFlatId[CellFlatIndex].SurfaceColorElements.Append(SurfaceRenderData.ColorElements);
+			}
+			ColorDataMs += SRCelestialElapsedMilliseconds(InnerStart);
+		}
+		else
+		{
+			if (PreparedColorDataByFlatId.IsValidIndex(CellFlatIndex))
+			{
+				PreparedColorDataByFlatId[CellFlatIndex].SurfaceColorElements.Append(SurfaceRenderData.ColorElements);
+			}
+		}
 
-		const int32 CachedCellIndex = CachedSurfaceGridCells.Num();
-		CachedSurfaceGridCells.Add(CachedCell);
-		CachedCellIndexById.Add(CellId, CachedCellIndex);
+		{
+			const double InnerStart = bProfileBuildBreakdown ? SRCelestialNowSeconds() : 0.0;
+			const int32 CachedCellIndex = PreparedSurfaceGridCellCount++;
+			FSRPlanetSurfaceGridCell& CachedCell = PreparedSurfaceGridCells.AddDefaulted_GetRef();
+			CachedCell.CellId = CellId;
+			CachedCell.FaceUVMin = BaseCell.FaceUVMin;
+			CachedCell.FaceUVMax = BaseCell.FaceUVMax;
+			CachedCell.LocalCenter = TargetCellCenter * Scale;
+			CachedCell.LocalNormal = CellNormal;
+			CachedCell.Corner00 = TargetPositions[0] * Scale;
+			CachedCell.Corner10 = TargetPositions[1] * Scale;
+			CachedCell.Corner11 = TargetPositions[2] * Scale;
+			CachedCell.Corner01 = TargetPositions[3] * Scale;
+			CachedCell.ApproxSurfaceArea =
+				(FVector::CrossProduct(CachedCell.Corner10 - CachedCell.Corner00, CachedCell.Corner11 - CachedCell.Corner00).Size() * 0.5f)
+				+ (FVector::CrossProduct(CachedCell.Corner11 - CachedCell.Corner00, CachedCell.Corner01 - CachedCell.Corner00).Size() * 0.5f);
+			CachedCell.Biome = TerrainSample.Biome;
+			CachedCell.BiomeId = TerrainSample.BiomeId;
+			CachedCell.WaterRole = TerrainSample.WaterRole;
+			CachedCell.Neighbors = BaseCell.Neighbors;
 
-		RegisterTerrainEdge(SourcePositions[0], SourcePositions[1], SourcePositionHashes[0], SourcePositionHashes[1], TargetPositions[0], TargetPositions[1], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
-		RegisterTerrainEdge(SourcePositions[1], SourcePositions[2], SourcePositionHashes[1], SourcePositionHashes[2], TargetPositions[1], TargetPositions[2], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
-		RegisterTerrainEdge(SourcePositions[2], SourcePositions[3], SourcePositionHashes[2], SourcePositionHashes[3], TargetPositions[2], TargetPositions[3], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
-		RegisterTerrainEdge(SourcePositions[3], SourcePositions[0], SourcePositionHashes[3], SourcePositionHashes[0], TargetPositions[3], TargetPositions[0], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
+			if (CachedCellIndexByFlatId.IsValidIndex(CellFlatIndex))
+			{
+				CachedCellIndexByFlatId[CellFlatIndex] = CachedCellIndex;
+			}
+			if (bProfileBuildBreakdown)
+			{
+				CacheCellMs += SRCelestialElapsedMilliseconds(InnerStart);
+			}
+		}
+
+		if (bProfileBuildBreakdown)
+		{
+			const double InnerStart = SRCelestialNowSeconds();
+			RegisterTerrainEdge(SourcePositionHashes[0], SourcePositionHashes[1], TargetPositions[0], TargetPositions[1], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
+			RegisterTerrainEdge(SourcePositionHashes[1], SourcePositionHashes[2], TargetPositions[1], TargetPositions[2], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
+			RegisterTerrainEdge(SourcePositionHashes[2], SourcePositionHashes[3], TargetPositions[2], TargetPositions[3], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
+			RegisterTerrainEdge(SourcePositionHashes[3], SourcePositionHashes[0], TargetPositions[3], TargetPositions[0], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
+			TerrainEdgeRegisterMs += SRCelestialElapsedMilliseconds(InnerStart);
+		}
+		else
+		{
+			RegisterTerrainEdge(SourcePositionHashes[0], SourcePositionHashes[1], TargetPositions[0], TargetPositions[1], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
+			RegisterTerrainEdge(SourcePositionHashes[1], SourcePositionHashes[2], TargetPositions[1], TargetPositions[2], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
+			RegisterTerrainEdge(SourcePositionHashes[2], SourcePositionHashes[3], TargetPositions[2], TargetPositions[3], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
+			RegisterTerrainEdge(SourcePositionHashes[3], SourcePositionHashes[0], TargetPositions[3], TargetPositions[0], TargetCellCenter, TerrainSample.HeightOffset, TerrainSample.SurfaceColor, MaterialId, CellId);
+		}
 		++ValidCellCount;
 	}
+	const double CellLoopMs = SRCelestialElapsedMilliseconds(BuildCellsStart);
 
 	FSRTimingLog::AddLine(FString::Printf(
-		TEXT("DynamicMesh '%s' BaseMetadata.BuildCells %.2f ms BaseCells=%d Cells=%d EdgeRegisters=%d EdgeMatches=%d SideWalls=%d PendingEdges=%d DistortionSamples=%d AvgAspectError=%.6f MaxAspectError=%.6f AvgAngleErrorDeg=%.4f MaxAngleErrorDeg=%.4f"),
+		TEXT("DynamicMesh '%s' BaseMetadata.BuildCells %.2f ms BaseCells=%d Cells=%d EdgeRegisters=%d EdgeMatches=%d SideWalls=%d PendingEdges=%d MaxPendingEdges=%d PendingReserve=%d DistortionSamples=%d AvgAspectError=%.6f MaxAspectError=%.6f AvgAngleErrorDeg=%.4f MaxAngleErrorDeg=%.4f"),
 		*GetName(),
-		SRCelestialElapsedMilliseconds(StageStart),
+		BaseCellsMs + BaseSourceMetadataMs + CellLoopMs,
 		GeneratedBaseCells.Num(),
 		ValidCellCount,
 		TerrainEdgeRegisterCount,
 		TerrainEdgeMatchCount,
 		TerrainSideWallCount,
 		PendingTerrainEdges.Num(),
+		MaxPendingTerrainEdgeCount,
+		PendingTerrainEdgeReserveCount,
 		DistortionSampleCount,
 		DistortionSampleCount > 0 ? AspectErrorSum / static_cast<double>(DistortionSampleCount) : 0.0,
 		MaxAspectError,
 		DistortionSampleCount > 0 ? AngleErrorSum / static_cast<double>(DistortionSampleCount) : 0.0,
 		MaxAngleError));
+	FSRTimingLog::AddLine(FString::Printf(
+		TEXT("DynamicMesh '%s' BaseMetadata.BuildBreakdown Profile=%s BaseGridSource=%s BaseSourceMetaSource=%s BiomeMap=%.2f ms Snapshot=%.2f ms BaseGrid=%.2f ms BaseSourceMeta=%.2f ms CellLoop=%.2f ms Distortion=%.2f ms TerrainSample=%.2f ms Transform=%.2f ms SourceHash=%.2f ms SurfaceAppend=%.2f ms ColorData=%.2f ms CacheCell=%.2f ms EdgeRegister=%.2f ms"),
+		*GetName(),
+		bProfileBuildBreakdown ? TEXT("true") : TEXT("false"),
+		bUsingPrecomputedBaseCells ? TEXT("Precomputed") : TEXT("Generated"),
+		bUsingPrecomputedSourceMetadata ? TEXT("Precomputed") : TEXT("Generated"),
+		BiomeMaterialMapMs,
+		SnapshotMs,
+		BaseCellsMs,
+		BaseSourceMetadataMs,
+		CellLoopMs,
+		DistortionMs,
+		TerrainSampleMs,
+		CellTransformMs,
+		SourceHashMs,
+		SurfaceAppendMs,
+		ColorDataMs,
+		CacheCellMs,
+		TerrainEdgeRegisterMs));
 
+	const double PostBuildStart = SRCelestialNowSeconds();
+	double PendingEdgesCheckMs = 0.0;
+	double WeldedMeshCheckMs = 0.0;
+	double PreparedMoveMs = 0.0;
+
+	double PostBuildStageStart = SRCelestialNowSeconds();
 	if (!PendingTerrainEdges.IsEmpty())
 	{
 		UE_LOG(
@@ -1659,7 +2021,9 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 			*GetName(),
 			PendingTerrainEdges.Num());
 	}
+	PendingEdgesCheckMs = SRCelestialElapsedMilliseconds(PostBuildStageStart);
 
+	PostBuildStageStart = SRCelestialNowSeconds();
 	int32 WeldedBoundaryEdgeCount = 0;
 	int32 NonEmptyDynamicMeshCount = 0;
 	for (const UE::Geometry::FDynamicMesh3& FaceDynamicMesh : FaceDynamicMeshes)
@@ -1688,25 +2052,48 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		NonEmptyDynamicMeshCount,
 		FaceDynamicMeshes[0].VertexCount(),
 		FaceDynamicMeshes[0].TriangleCount()));
+	WeldedMeshCheckMs = SRCelestialElapsedMilliseconds(PostBuildStageStart);
 
-	double RuntimeCacheStoreMs = 0.0;
-	if (bEnableGlobalDynamicMeshRuntimeCache)
+	PostBuildStageStart = SRCelestialNowSeconds();
+	OutPreparedMesh.bValid = true;
+	OutPreparedMesh.BuildHash = DynamicMeshBuildHash;
+	OutPreparedMesh.FaceDynamicMeshes = MoveTemp(FaceDynamicMeshes);
+	OutPreparedMesh.SurfaceGridCells = MoveTemp(PreparedSurfaceGridCells);
+	OutPreparedMesh.CellIndexByFlatId = MoveTemp(CachedCellIndexByFlatId);
+	OutPreparedMesh.ColorDataByFlatId = MoveTemp(PreparedColorDataByFlatId);
+	PreparedMoveMs = SRCelestialElapsedMilliseconds(PostBuildStageStart);
+	OutPreparedMesh.BuildMilliseconds = SRCelestialElapsedMilliseconds(TotalStart);
+	FSRTimingLog::AddLine(FString::Printf(
+		TEXT("DynamicMesh '%s' BaseMetadata.PostBuildBreakdown PendingEdges=%.2f ms WeldedMeshCheck=%.2f ms PreparedMove=%.2f ms PostBuildTotal=%.2f ms"),
+		*GetName(),
+		PendingEdgesCheckMs,
+		WeldedMeshCheckMs,
+		PreparedMoveMs,
+		SRCelestialElapsedMilliseconds(PostBuildStart)));
+	FSRTimingLog::AddLine(FString::Printf(
+		TEXT("DynamicMesh '%s' BaseMetadata.Prepared %.2f ms"),
+		*GetName(),
+		OutPreparedMesh.BuildMilliseconds));
+	return true;
+}
+
+bool ASRCelestialBody::ApplyPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPreparedDynamicMesh&& PreparedMesh, double TotalStart)
+{
+	if (!PreparedMesh.bValid)
 	{
-		FSRCelestialBodyDynamicMeshRuntimeCacheEntry GeneratedCacheEntry;
-		GeneratedCacheEntry.FaceDynamicMeshes = FaceDynamicMeshes;
-		GeneratedCacheEntry.SurfaceGridCells = CachedSurfaceGridCells;
-		GeneratedCacheEntry.ColorDataByCell = DynamicMeshColorDataByCell;
-		StageStart = SRCelestialNowSeconds();
-		StoreCelestialBodyDynamicMeshRuntimeCache(DynamicMeshBuildHash, MoveTemp(GeneratedCacheEntry));
-		RuntimeCacheStoreMs = SRCelestialElapsedMilliseconds(StageStart);
+		return false;
 	}
 
-	StageStart = SRCelestialNowSeconds();
-	for (int32 FaceIndex = 0; FaceIndex < FaceDynamicMeshes.Num(); ++FaceIndex)
+	ResetDynamicMeshCellColorData();
+	DynamicMeshColorDataByFlatId = MoveTemp(PreparedMesh.ColorDataByFlatId);
+	CachedSurfaceGridCells = MoveTemp(PreparedMesh.SurfaceGridCells);
+
+	double StageStart = SRCelestialNowSeconds();
+	for (int32 FaceIndex = 0; FaceIndex < PreparedMesh.FaceDynamicMeshes.Num(); ++FaceIndex)
 	{
 		if (UDynamicMeshComponent* FaceDynamicMeshComponent = GetDynamicMeshFaceComponent(FaceIndex))
 		{
-			FaceDynamicMeshComponent->SetMesh(MoveTemp(FaceDynamicMeshes[FaceIndex]));
+			FaceDynamicMeshComponent->SetMesh(MoveTemp(PreparedMesh.FaceDynamicMeshes[FaceIndex]));
 		}
 	}
 	const double SetMeshMs = SRCelestialElapsedMilliseconds(StageStart);
@@ -1719,20 +2106,31 @@ bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildH
 		UE::Geometry::FDynamicMesh3 GeneratedGridMesh;
 		GeneratedGridMesh.EnableAttributes();
 		GeneratedGridMesh.Attributes()->EnablePrimaryColors();
-		SurfaceGrid->ApplyGeneratedGridBuild(MoveTemp(GeneratedGridCells), MoveTemp(GeneratedGridMesh), MoveTemp(CachedCellIndexById));
+		SurfaceGrid->ApplyGeneratedGridBuild(MoveTemp(GeneratedGridCells), MoveTemp(GeneratedGridMesh), MoveTemp(PreparedMesh.CellIndexByFlatId));
 		SurfaceGridApplyMs = SRCelestialElapsedMilliseconds(StageStart);
 	}
 
-	CachedDynamicMeshBuildHash = DynamicMeshBuildHash;
+	CachedDynamicMeshBuildHash = PreparedMesh.BuildHash;
 	bHasCachedDynamicMeshBuildHash = true;
 	FSRTimingLog::AddLine(FString::Printf(
-		TEXT("DynamicMesh '%s' BaseMetadata.Total %.2f ms RuntimeCache=%.2f ms SetMesh=%.2f ms SurfaceGrid=%.2f ms"),
+		TEXT("DynamicMesh '%s' BaseMetadata.Total %.2f ms Build=%.2f ms RuntimeCache=0.00 ms SetMesh=%.2f ms SurfaceGrid=%.2f ms"),
 		*GetName(),
 		SRCelestialElapsedMilliseconds(TotalStart),
-		RuntimeCacheStoreMs,
+		PreparedMesh.BuildMilliseconds,
 		SetMeshMs,
 		SurfaceGridApplyMs));
 	return true;
+}
+
+bool ASRCelestialBody::BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildHash, double TotalStart)
+{
+	(void)DynamicMeshBuildHash;
+	FSRCelestialBodyPreparedDynamicMesh PreparedMesh;
+	if (!BuildPreparedCelestialBodyDynamicMesh(PreparedMesh))
+	{
+		return false;
+	}
+	return ApplyPreparedCelestialBodyDynamicMesh(MoveTemp(PreparedMesh), TotalStart);
 }
 
 bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
@@ -1757,7 +2155,7 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 		const double ApplyStart = SRCelestialNowSeconds();
 		ResetDynamicMeshCellColorData();
 
-		DynamicMeshColorDataByCell = CacheEntry.ColorDataByCell;
+		DynamicMeshColorDataByFlatId = CacheEntry.ColorDataByFlatId;
 		CachedSurfaceGridCells = CacheEntry.SurfaceGridCells;
 
 		for (int32 FaceIndex = 0; FaceIndex < CubeSphereFaceComponentCount; ++FaceIndex)
@@ -1944,7 +2342,7 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 		FSRCelestialBodyDynamicMeshRuntimeCacheEntry GeneratedCacheEntry;
 		GeneratedCacheEntry.FaceDynamicMeshes = CachedFaceDynamicMeshes;
 		GeneratedCacheEntry.SurfaceGridCells = CachedSurfaceGridCells;
-		GeneratedCacheEntry.ColorDataByCell = DynamicMeshColorDataByCell;
+		GeneratedCacheEntry.ColorDataByFlatId = DynamicMeshColorDataByFlatId;
 		StageStart = SRCelestialNowSeconds();
 		StoreCelestialBodyDynamicMeshRuntimeCache(DynamicMeshBuildHash, MoveTemp(GeneratedCacheEntry));
 		RuntimeCacheStoreMs = SRCelestialElapsedMilliseconds(StageStart);
@@ -2076,7 +2474,7 @@ uint32 ASRCelestialBody::ComputeDynamicMeshBuildHash() const
 
 void ASRCelestialBody::ResetDynamicMeshCellColorData()
 {
-	DynamicMeshColorDataByCell.Reset();
+	DynamicMeshColorDataByFlatId.Reset();
 	HighlightedDynamicMeshColorElements.Reset();
 	HighlightedDynamicMeshBaseColorByElement.Reset();
 	CachedSurfaceGridCells.Reset();

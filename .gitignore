@@ -76,3 +76,4 @@ DerivedDataCache/*
 
 # StarRovers generated/precomputed runtime caches
 Content/**/DA_Cache_*.uasset
+Content/BlueprintClasses/CelestialBody/DataAssets/Planets/DA_DynamicMeshBase_Cube256.uasset
