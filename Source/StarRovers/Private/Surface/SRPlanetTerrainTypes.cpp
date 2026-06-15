@@ -6,26 +6,26 @@
 
 namespace
 {
-	uint32 HashBiomeValue(FName BiomeId, int32 Salt)
+	uint32 HashCompiledBiomeValue(FName BiomeId, int32 Salt)
 	{
 		const FString HashInput = FString::Printf(TEXT("%s:%d"), *BiomeId.ToString(), Salt);
 		return FCrc::StrCrc32(*HashInput);
 	}
 
-	float HashBiomeUnit(FName BiomeId, int32 Salt)
+	float HashCompiledBiomeUnit(FName BiomeId, int32 Salt)
 	{
-		return static_cast<float>(HashBiomeValue(BiomeId, Salt) & 0x00ffffff) / static_cast<float>(0x00ffffff);
+		return static_cast<float>(HashCompiledBiomeValue(BiomeId, Salt) & 0x00ffffff) / static_cast<float>(0x00ffffff);
 	}
 
-	FVector BuildBiomeAnchorDirection(FName BiomeId, int32 Salt)
+	FVector BuildCompiledBiomeAnchorDirection(FName BiomeId, int32 Salt)
 	{
-		const float Z = (HashBiomeUnit(BiomeId, Salt) * 2.0f) - 1.0f;
-		const float Angle = HashBiomeUnit(BiomeId, Salt + 97) * 2.0f * PI;
+		const float Z = (HashCompiledBiomeUnit(BiomeId, Salt) * 2.0f) - 1.0f;
+		const float Angle = HashCompiledBiomeUnit(BiomeId, Salt + 97) * 2.0f * PI;
 		const float Radius = FMath::Sqrt(FMath::Max(0.0f, 1.0f - (Z * Z)));
 		return FVector(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius, Z).GetSafeNormal();
 	}
 
-	FVector BuildNoiseSeedOffset(int32 Seed)
+	FVector BuildCompiledNoiseSeedOffset(int32 Seed)
 	{
 		const int64 Seed64 = static_cast<int64>(Seed);
 		return FVector(
@@ -37,14 +37,14 @@ namespace
 	FSRCompiledTerrainNoiseDescriptor MakeNoiseDescriptor(int32 Seed, float Frequency, int32 Octaves, float Persistence)
 	{
 		FSRCompiledTerrainNoiseDescriptor Descriptor;
-		Descriptor.SeedOffset = BuildNoiseSeedOffset(Seed);
+		Descriptor.SeedOffset = BuildCompiledNoiseSeedOffset(Seed);
 		Descriptor.Frequency = FMath::Max(0.01f, Frequency);
 		Descriptor.Octaves = FMath::Clamp(Octaves, 1, 8);
 		Descriptor.Persistence = FMath::Clamp(Persistence, 0.0f, 1.0f);
 		return Descriptor;
 	}
 
-	void GetPlacementMetricRange(ESRBiomePlacementMetric Metric, float& OutMinValue, float& OutMaxValue)
+	void GetCompiledPlacementMetricRange(ESRBiomePlacementMetric Metric, float& OutMinValue, float& OutMaxValue)
 	{
 		switch (Metric)
 		{
@@ -64,11 +64,11 @@ namespace
 		}
 	}
 
-	float NormalizePlacementMetricValue(ESRBiomePlacementMetric Metric, float Value)
+	float NormalizeCompiledPlacementMetricValue(ESRBiomePlacementMetric Metric, float Value)
 	{
 		float MinValue = 0.0f;
 		float MaxValue = 1.0f;
-		GetPlacementMetricRange(Metric, MinValue, MaxValue);
+		GetCompiledPlacementMetricRange(Metric, MinValue, MaxValue);
 		return FMath::GetMappedRangeValueClamped(FVector2D(MinValue, MaxValue), FVector2D(0.0f, 1.0f), Value);
 	}
 
@@ -84,7 +84,7 @@ namespace
 		return false;
 	}
 
-	float GetRuleTargetForMetric(
+	float GetCompiledRuleTargetForMetric(
 		FName BiomeId,
 		const TArray<FSRBiomePlacementRule>& PlacementRules,
 		ESRBiomePlacementMetric Metric,
@@ -92,7 +92,7 @@ namespace
 	{
 		float MinValue = 0.0f;
 		float MaxValue = 1.0f;
-		GetPlacementMetricRange(Metric, MinValue, MaxValue);
+		GetCompiledPlacementMetricRange(Metric, MinValue, MaxValue);
 
 		float TargetSum = 0.0f;
 		int32 TargetCount = 0;
@@ -122,7 +122,7 @@ namespace
 				TargetValue = (LowerThreshold + UpperThreshold) * 0.5f;
 				break;
 			case ESRBiomePlacementComparison::OutsideInclusive:
-				TargetValue = HashBiomeUnit(BiomeId, static_cast<int32>(Metric) + 211) < 0.5f
+				TargetValue = HashCompiledBiomeUnit(BiomeId, static_cast<int32>(Metric) + 211) < 0.5f
 					? (MinValue + LowerThreshold) * 0.5f
 					: (UpperThreshold + MaxValue) * 0.5f;
 				break;
@@ -133,7 +133,7 @@ namespace
 
 			if (bHasTarget)
 			{
-				TargetSum += NormalizePlacementMetricValue(Metric, TargetValue);
+				TargetSum += NormalizeCompiledPlacementMetricValue(Metric, TargetValue);
 				++TargetCount;
 			}
 		}
@@ -143,22 +143,22 @@ namespace
 
 	float GetRuleBasedTargetTemperature(FName BiomeId, const TArray<FSRBiomePlacementRule>& PlacementRules)
 	{
-		const float FallbackTarget = HashBiomeUnit(BiomeId, 17);
+		const float FallbackTarget = HashCompiledBiomeUnit(BiomeId, 17);
 		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::Temperature))
 		{
-			return GetRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::Temperature, FallbackTarget);
+			return GetCompiledRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::Temperature, FallbackTarget);
 		}
 
-		const float LatitudeTarget = GetRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::AbsLatitudeDegrees, -1.0f);
+		const float LatitudeTarget = GetCompiledRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::AbsLatitudeDegrees, -1.0f);
 		return LatitudeTarget >= 0.0f ? 1.0f - LatitudeTarget : FallbackTarget;
 	}
 
 	float GetRuleBasedTargetMoisture(FName BiomeId, const TArray<FSRBiomePlacementRule>& PlacementRules)
 	{
-		const float FallbackTarget = HashBiomeUnit(BiomeId, 23);
+		const float FallbackTarget = HashCompiledBiomeUnit(BiomeId, 23);
 		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::Moisture))
 		{
-			return GetRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::Moisture, FallbackTarget);
+			return GetCompiledRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::Moisture, FallbackTarget);
 		}
 		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::RiverMask)
 			|| HasMetricRule(PlacementRules, ESRBiomePlacementMetric::LakeMask))
@@ -171,10 +171,10 @@ namespace
 
 	float GetRuleBasedTargetHeight(FName BiomeId, const TArray<FSRBiomePlacementRule>& PlacementRules)
 	{
-		const float FallbackTarget = HashBiomeUnit(BiomeId, 31);
+		const float FallbackTarget = HashCompiledBiomeUnit(BiomeId, 31);
 		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::HeightAlpha))
 		{
-			return GetRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::HeightAlpha, FallbackTarget);
+			return GetCompiledRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::HeightAlpha, FallbackTarget);
 		}
 		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::OceanDepthMask))
 		{
@@ -196,7 +196,7 @@ namespace
 	{
 		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::Continentalness))
 		{
-			return GetRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::Continentalness, HashBiomeUnit(BiomeId, 43));
+			return GetCompiledRuleTargetForMetric(BiomeId, PlacementRules, ESRBiomePlacementMetric::Continentalness, HashCompiledBiomeUnit(BiomeId, 43));
 		}
 		if (HasMetricRule(PlacementRules, ESRBiomePlacementMetric::OceanDepthMask))
 		{
@@ -212,7 +212,7 @@ namespace
 			return 0.76f;
 		}
 
-		return HashBiomeUnit(BiomeId, 43);
+		return HashCompiledBiomeUnit(BiomeId, 43);
 	}
 
 	ESRPlanetBiome GetRuntimeBiomeForWaterRole(ESRBiomeWaterRole WaterRole)
@@ -249,12 +249,12 @@ namespace
 
 		const float SafeRegionSize = FMath::Clamp(BiomeSnapshot.RegionSize, 0.01f, 1.0f);
 		CompiledBiome.AnchorThreshold = FMath::Lerp(0.98f, -0.12f, SafeRegionSize);
-		CompiledBiome.AnchorDirections[0] = BuildBiomeAnchorDirection(BiomeSnapshot.BiomeId, GenerationSeed);
-		CompiledBiome.AnchorDirections[1] = BuildBiomeAnchorDirection(BiomeSnapshot.BiomeId, GenerationSeed + 131);
-		CompiledBiome.PatchFrequency = FMath::Lerp(1.5f, 8.5f, HashBiomeUnit(BiomeSnapshot.BiomeId, 59));
-		CompiledBiome.PatchSeed = GenerationSeed + static_cast<int32>(HashBiomeValue(BiomeSnapshot.BiomeId, 67) % 100000);
-		CompiledBiome.PatchSeedOffset = BuildNoiseSeedOffset(CompiledBiome.PatchSeed);
-		const uint8 Hue = static_cast<uint8>(HashBiomeValue(BiomeSnapshot.BiomeId, 701) % 255);
+		CompiledBiome.AnchorDirections[0] = BuildCompiledBiomeAnchorDirection(BiomeSnapshot.BiomeId, GenerationSeed);
+		CompiledBiome.AnchorDirections[1] = BuildCompiledBiomeAnchorDirection(BiomeSnapshot.BiomeId, GenerationSeed + 131);
+		CompiledBiome.PatchFrequency = FMath::Lerp(1.5f, 8.5f, HashCompiledBiomeUnit(BiomeSnapshot.BiomeId, 59));
+		CompiledBiome.PatchSeed = GenerationSeed + static_cast<int32>(HashCompiledBiomeValue(BiomeSnapshot.BiomeId, 67) % 100000);
+		CompiledBiome.PatchSeedOffset = BuildCompiledNoiseSeedOffset(CompiledBiome.PatchSeed);
+		const uint8 Hue = static_cast<uint8>(HashCompiledBiomeValue(BiomeSnapshot.BiomeId, 701) % 255);
 		CompiledBiome.BaseLandColor = FLinearColor::MakeFromHSV8(Hue, 112, 158);
 		CompiledBiome.BaseLandColor.A = 1.0f;
 		CompiledBiome.RuntimeBiome = GetRuntimeBiomeForWaterRole(BiomeSnapshot.WaterRole);

@@ -33,7 +33,8 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 	const FSRPlanetSurfaceGridCellId& TargetCellId,
 	USRStructureDataAsset* StructureDataAsset,
 	FName& OutOccupantId,
-	bool bNaturalStructure)
+	bool bNaturalStructure,
+	bool bUseStaticMeshMaterials)
 {
 	OutOccupantId = NAME_None;
 	if (!IsValid(SurfaceGrid) || !IsValid(StructureDataAsset))
@@ -62,8 +63,8 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 		return false;
 	}
 
-	const FName VisualKey = MakeVisualKey(StructureDataAsset);
-	FSRStructureVisualGroup& VisualGroup = FindOrCreateVisualGroup(StructureDataAsset, VisualKey);
+	const FName VisualKey = MakeVisualKey(StructureDataAsset, bUseStaticMeshMaterials);
+	FSRStructureVisualGroup& VisualGroup = FindOrCreateVisualGroup(StructureDataAsset, VisualKey, bUseStaticMeshMaterials);
 	if (!IsValid(VisualGroup.Component))
 	{
 		return false;
@@ -158,7 +159,7 @@ bool USRStructureInstanceManagerComponent::GetPlacedStructure(FName OccupantId, 
 	return false;
 }
 
-FName USRStructureInstanceManagerComponent::MakeVisualKey(USRStructureDataAsset* StructureDataAsset)
+FName USRStructureInstanceManagerComponent::MakeVisualKey(USRStructureDataAsset* StructureDataAsset, bool bUseStaticMeshMaterials)
 {
 	if (!IsValid(StructureDataAsset))
 	{
@@ -167,7 +168,9 @@ FName USRStructureInstanceManagerComponent::MakeVisualKey(USRStructureDataAsset*
 
 	const FSRStructureData StructureData = StructureDataAsset->BuildData();
 	const FString MeshPath = IsValid(StructureData.StaticMesh.Get()) ? StructureData.StaticMesh->GetPathName() : FString(TEXT("None"));
-	const FString MaterialPath = IsValid(StructureData.Material.Get()) ? StructureData.Material->GetPathName() : FString(TEXT("None"));
+	const FString MaterialPath = bUseStaticMeshMaterials
+		? FString(TEXT("StaticMeshMaterials"))
+		: (IsValid(StructureData.Material.Get()) ? StructureData.Material->GetPathName() : FString(TEXT("None")));
 	return FName(*FString::Printf(TEXT("%s|%s"), *MeshPath, *MaterialPath));
 }
 
@@ -218,7 +221,8 @@ FTransform USRStructureInstanceManagerComponent::BuildInstanceWorldTransform(con
 
 USRStructureInstanceManagerComponent::FSRStructureVisualGroup& USRStructureInstanceManagerComponent::FindOrCreateVisualGroup(
 	USRStructureDataAsset* StructureDataAsset,
-	FName VisualKey)
+	FName VisualKey,
+	bool bUseStaticMeshMaterials)
 {
 	FSRStructureVisualGroup& VisualGroup = VisualGroupsByKey.FindOrAdd(VisualKey);
 	if (IsValid(VisualGroup.Component) || !IsValid(StructureDataAsset))
@@ -251,7 +255,7 @@ USRStructureInstanceManagerComponent::FSRStructureVisualGroup& USRStructureInsta
 	HISMComponent->SetGenerateOverlapEvents(false);
 	HISMComponent->SetCastShadow(true);
 	HISMComponent->SetStaticMesh(StructureData.StaticMesh);
-	if (IsValid(StructureData.Material.Get()))
+	if (!bUseStaticMeshMaterials && IsValid(StructureData.Material.Get()))
 	{
 		HISMComponent->SetMaterial(0, StructureData.Material);
 	}

@@ -54,7 +54,8 @@ public:
 		const FSRPlanetSurfaceGridCellId& TargetCellId,
 		USRStructureDataAsset* StructureDataAsset,
 		FName& OutOccupantId,
-		bool bNaturalStructure = false);
+		bool bNaturalStructure = false,
+		bool bUseStaticMeshMaterials = false);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Structure")
 	bool TryRemoveStructureAtCell(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId);
@@ -75,11 +76,11 @@ private:
 		TArray<FName> OccupantIds;
 	};
 
-	static FName MakeVisualKey(USRStructureDataAsset* StructureDataAsset);
+	static FName MakeVisualKey(USRStructureDataAsset* StructureDataAsset, bool bUseStaticMeshMaterials);
 	static FName MakeOccupantId(const FSRPlanetSurfaceGridCellId& CellId, FName StructureId, int32 SequenceNumber);
 	static FTransform BuildInstanceWorldTransform(const FTransform& PlacementTransform, const FSRStructureData& StructureData);
 
-	FSRStructureVisualGroup& FindOrCreateVisualGroup(USRStructureDataAsset* StructureDataAsset, FName VisualKey);
+	FSRStructureVisualGroup& FindOrCreateVisualGroup(USRStructureDataAsset* StructureDataAsset, FName VisualKey, bool bUseStaticMeshMaterials);
 	void RemoveStructureByOccupantId(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId);
 	void RemoveStructuresByOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FName>& OccupantIds);
 	void RemoveVisualInstances(FName VisualKey, const TArray<int32>& RemovedInstanceIndices);

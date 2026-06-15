@@ -24,5 +24,6 @@ public:
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlanetSurfaceGridCellId& TargetCellId,
 		USRStructureDataAsset* StructureDataAsset,
-		AActor*& OutPlacedStructureActor);
+		AActor*& OutPlacedStructureActor,
+		bool bUseStaticMeshMaterials = false);
 };

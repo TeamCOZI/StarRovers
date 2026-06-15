@@ -60,6 +60,8 @@ namespace
 		double Milliseconds = 0.0;
 	};
 
+	constexpr int32 StableDynamicMeshPreparationMaxConcurrency = 8;
+
 	TAutoConsoleVariable<int32> CVarSRDynamicMeshPrepareDetailBodyLimit(
 		TEXT("sr.DynamicMesh.PrepareDetailBodyLimit"),
 		0,
@@ -89,7 +91,7 @@ namespace
 	{
 		const int32 OverrideValue = CVarSRDynamicMeshParallelBodyPrepareMaxConcurrency.GetValueOnGameThread();
 		const int32 RequestedMaxConcurrency = OverrideValue > 0 ? OverrideValue : ConfiguredMaxConcurrency;
-		return FMath::Max(RequestedMaxConcurrency, 1);
+		return FMath::Clamp(RequestedMaxConcurrency, 1, StableDynamicMeshPreparationMaxConcurrency);
 	}
 
 	void LogPreparedBodyTimingDetails(
@@ -681,6 +683,21 @@ void ASRSolarSystemGenerator::BeginRuntimeSystemGenerationDeferred()
 	AsyncCurrentStageStart = SRSolarNowSeconds();
 	ClearRuntimeGeneratedBodies();
 	LogAsyncGenerationStageTiming(TEXT("ClearRuntimeGeneratedBodies"), SRSolarElapsedMilliseconds(AsyncCurrentStageStart));
+
+	UpdateLoadingProgress(0.05f, NSLOCTEXT("StarRoversLoadingScreen", "WaitingForCleanup", "Finalizing cleanup..."));
+	AsyncCurrentStageStart = SRSolarNowSeconds();
+	ScheduleLoadingGenerationStep(&ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear);
+}
+
+void ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear()
+{
+	if (!GetWorld())
+	{
+		FinishRuntimeSystemGeneration();
+		return;
+	}
+
+	LogAsyncGenerationStageTiming(TEXT("WaitAfterClearForGC"), SRSolarElapsedMilliseconds(AsyncCurrentStageStart));
 
 	AsyncRuntimeGenerationSeed = bRandomizeGenerationSeedEachRun
 		? CreateRuntimeRandomGenerationSeed()
@@ -1796,13 +1813,13 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 			if (USRStructureInstanceManagerComponent* StructureInstanceManager = Body->FindComponentByClass<USRStructureInstanceManagerComponent>())
 			{
 				FName OccupantId = NAME_None;
-				bPlacedStructure = StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(SurfaceGrid, CandidateCell.CellId, StructureDataAsset, OccupantId, true);
+				bPlacedStructure = StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(SurfaceGrid, CandidateCell.CellId, StructureDataAsset, OccupantId, true, true);
 			}
 
 			if (!bPlacedStructure)
 			{
 				AActor* PlacedStructureActor = nullptr;
-				bPlacedStructure = USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(SurfaceGrid, CandidateCell.CellId, StructureDataAsset, PlacedStructureActor);
+				bPlacedStructure = USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(SurfaceGrid, CandidateCell.CellId, StructureDataAsset, PlacedStructureActor, true);
 				if (bPlacedStructure)
 				{
 					RuntimeNaturalStructureActors.Add(PlacedStructureActor);

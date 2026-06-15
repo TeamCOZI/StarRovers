@@ -125,6 +125,7 @@ private:
 	void StartRuntimeSystemGenerationWithLoadingScreen();
 	void GenerateRuntimeSystemDeferred();
 	void BeginRuntimeSystemGenerationDeferred();
+	void ContinueRuntimeSystemGenerationAfterClear();
 	void ContinueRuntimeDynamicMeshPreparation();
 	void ContinueRuntimeNaturalStructureGeneration();
 	void FinishRuntimeSystemGeneration();

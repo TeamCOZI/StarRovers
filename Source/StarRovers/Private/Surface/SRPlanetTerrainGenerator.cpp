@@ -629,13 +629,57 @@ namespace
 		const FSRDefaultBiomeMetrics& Metrics,
 		const FVector& UnitDirection)
 	{
+		(void)Context;
+		(void)Settings;
+
 		const FSRCompiledPlanetBiomeGenerationSnapshot* BestBiome = nullptr;
 		float BestScore = -FLT_MAX;
 		const FSRCompiledPlanetBiomeGenerationSnapshot* BestPriorityOverrideBiome = nullptr;
 		float BestPriorityOverrideScore = -FLT_MAX;
 		for (const FSRCompiledPlanetBiomeGenerationSnapshot& CandidateBiome : Settings.CompiledBiomes)
 		{
-			const float Score = ScoreBiomeCandidate(CandidateBiome, Context, Settings, Metrics, UnitDirection);
+			if (CandidateBiome.BiomeId.IsNone())
+			{
+				continue;
+			}
+
+			if (!PassesAllPlacementRules(CandidateBiome, Metrics))
+			{
+				continue;
+			}
+
+			const float TemperatureScore = 1.0f - FMath::Abs(Metrics.Temperature - CandidateBiome.TargetTemperature);
+			const float MoistureScore = 1.0f - FMath::Abs(Metrics.Moisture - CandidateBiome.TargetMoisture);
+			const float HeightScore = 1.0f - FMath::Abs(((Metrics.HeightAlpha + 1.0f) * 0.5f) - CandidateBiome.TargetHeight);
+			const float ContinentScore = 1.0f - FMath::Abs(((Metrics.Continentalness + 1.0f) * 0.5f) - CandidateBiome.TargetContinentalness);
+			const float ClimateScore = FMath::Clamp((TemperatureScore + MoistureScore + HeightScore + ContinentScore) * 0.25f, 0.0f, 1.0f);
+
+			float AnchorScore = 0.0f;
+			for (const FVector& AnchorDirection : CandidateBiome.AnchorDirections)
+			{
+				const float AnchorDot = FVector::DotProduct(UnitDirection, AnchorDirection);
+				AnchorScore = FMath::Max(AnchorScore, FSRPlanetTerrainGenerator::SmoothStep(CandidateBiome.AnchorThreshold, 1.0f, AnchorDot));
+			}
+
+			const float ScoreWithoutPatchNoise = CandidateBiome.Weight * ((ClimateScore * 0.42f) + (AnchorScore * 0.48f));
+			const float MaxPossibleScore = ScoreWithoutPatchNoise + (CandidateBiome.Weight * 0.10f);
+			const bool bCanBeatCurrentBest = MaxPossibleScore > BestScore;
+			const bool bCanBeatPriorityOverride =
+				CandidateBiome.bCanOverrideLowerPriorityBiomes
+				&& MaxPossibleScore >= FMath::Max(0.0f, CandidateBiome.OverrideMinScore)
+				&& (!BestPriorityOverrideBiome
+					|| CandidateBiome.Priority > BestPriorityOverrideBiome->Priority
+					|| (CandidateBiome.Priority == BestPriorityOverrideBiome->Priority && MaxPossibleScore > BestPriorityOverrideScore));
+			if (!bCanBeatCurrentBest && !bCanBeatPriorityOverride)
+			{
+				continue;
+			}
+
+			const float PatchNoise = FMath::Clamp(
+				(SampleFractalNoiseUnitDirection(UnitDirection, CandidateBiome.PatchSeedOffset, CandidateBiome.PatchFrequency, 3, 0.52f) + 1.0f) * 0.5f,
+				0.0f,
+				1.0f);
+			const float Score = ScoreWithoutPatchNoise + (CandidateBiome.Weight * PatchNoise * 0.10f);
 			if (Score > BestScore)
 			{
 				BestScore = Score;

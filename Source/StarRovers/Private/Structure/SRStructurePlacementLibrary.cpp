@@ -1,9 +1,38 @@
 #include "Structure/SRStructurePlacementLibrary.h"
 
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Structure/SRBuildableStructureInterface.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
+
+namespace
+{
+	void RestoreStaticMeshDefaultMaterials(AActor* StructureActor, UStaticMesh* ExpectedStaticMesh)
+	{
+		if (!IsValid(StructureActor) || !IsValid(ExpectedStaticMesh))
+		{
+			return;
+		}
+
+		TArray<UStaticMeshComponent*> StaticMeshComponents;
+		StructureActor->GetComponents(StaticMeshComponents);
+		for (UStaticMeshComponent* StaticMeshComponent : StaticMeshComponents)
+		{
+			if (!IsValid(StaticMeshComponent) || StaticMeshComponent->GetStaticMesh() != ExpectedStaticMesh)
+			{
+				continue;
+			}
+
+			const int32 MaterialSlotCount = ExpectedStaticMesh->GetStaticMaterials().Num();
+			for (int32 MaterialIndex = 0; MaterialIndex < MaterialSlotCount; ++MaterialIndex)
+			{
+				StaticMeshComponent->SetMaterial(MaterialIndex, ExpectedStaticMesh->GetMaterial(MaterialIndex));
+			}
+		}
+	}
+}
 
 bool USRStructurePlacementLibrary::BuildStructurePlacementTransform(
 	USRPlanetSurfaceGrid* SurfaceGrid,
@@ -44,7 +73,8 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 	USRPlanetSurfaceGrid* SurfaceGrid,
 	const FSRPlanetSurfaceGridCellId& TargetCellId,
 	USRStructureDataAsset* StructureDataAsset,
-	AActor*& OutPlacedStructureActor)
+	AActor*& OutPlacedStructureActor,
+	bool bUseStaticMeshMaterials)
 {
 	OutPlacedStructureActor = nullptr;
 	if (!IsValid(SurfaceGrid) || !IsValid(StructureDataAsset))
@@ -120,6 +150,10 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 
 	ISRBuildableStructureInterface::Execute_ApplyStructureDataAsset(PlacedStructureActor, StructureDataAsset);
 	ISRBuildableStructureInterface::Execute_SetStructureGhostMode(PlacedStructureActor, false);
+	if (bUseStaticMeshMaterials)
+	{
+		RestoreStaticMeshDefaultMaterials(PlacedStructureActor, StructureData.StaticMesh.Get());
+	}
 	if (!ISRBuildableStructureInterface::Execute_CanPlaceOnSurfaceCell(PlacedStructureActor, TargetCellInfo))
 	{
 		RollbackPlacedStructureActor(PlacedStructureActor);
