@@ -1,5 +1,6 @@
 #include "Camera/SRCameraPawn.h"
 
+#include "SRCameraPawnInternal.h"
 #include "Camera/CameraComponent.h"
 #include "Celestial/SRCelestialBody.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
@@ -29,23 +30,6 @@ namespace
 			|| CandidateClassName.Contains(TEXT("SpaceSphere"), ESearchCase::IgnoreCase)
 			|| CandidateClassName.Contains(TEXT("SpaceSkySphere"), ESearchCase::IgnoreCase)
 			|| CandidateClassName.Equals(TEXT("BP_Space_C"), ESearchCase::IgnoreCase);
-	}
-
-	float ComputeScaledBodyRadius(const AActor* Actor)
-	{
-		if (const ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(Actor))
-		{
-			const FSRCelestialBodyData BodyData = CelestialBody->GetData();
-			if (IsValid(BodyData.StaticMesh.Get()))
-			{
-				return BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale);
-			}
-			return IsValid(BodyData.DynamicMeshBaseDataAsset.Get())
-				? BodyData.DynamicMeshBaseDataAsset->GetSafeBaseRadius() * FMath::Max(0.0f, BodyData.Scale)
-				: 0.0f;
-		}
-
-		return 0.0f;
 	}
 }
 float ASRCameraPawn::GetMaxZoomDistance() const
@@ -254,7 +238,7 @@ bool ASRCameraPawn::ResolveCelestialCameraAvoidanceSphere(const AActor* Actor, F
 		return false;
 	}
 
-	OutRadius = ComputeScaledBodyRadius(Actor);
+	OutRadius = StarRovers::Camera::ComputeScaledBodyRadius(Actor);
 	if (OutRadius <= KINDA_SMALL_NUMBER)
 	{
 		return false;

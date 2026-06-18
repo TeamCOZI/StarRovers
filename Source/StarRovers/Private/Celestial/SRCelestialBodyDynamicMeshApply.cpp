@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "SRCelestialBodyLog.h"
 #include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/DynamicMeshComponent.h"
@@ -12,8 +13,6 @@
 #include "Utility/SRTimingLog.h"
 
 using namespace StarRovers::Celestial::DynamicMesh;
-
-DEFINE_LOG_CATEGORY_STATIC(LogStarRoversCelestial, Log, All);
 
 bool ASRCelestialBody::ApplyPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPreparedDynamicMesh&& PreparedMesh, double TotalStart)
 {

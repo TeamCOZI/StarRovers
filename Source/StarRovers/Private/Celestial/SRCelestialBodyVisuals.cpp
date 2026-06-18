@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "SRCelestialBodyLog.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/DynamicMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -12,8 +13,6 @@ namespace
 {
 	const FName PlanetCenterMaterialParameterName(TEXT("PlanetCenterWS"));
 }
-
-DEFINE_LOG_CATEGORY_STATIC(LogStarRoversCelestial, Log, All);
 
 void ASRCelestialBody::RefreshMaterialParameters()
 {

@@ -1,16 +1,7 @@
 #include "Conveyor/SRConveyorNetworkComponent.h"
 
-#include "HAL/IConsoleManager.h"
+#include "SRConveyorNetworkComponentInternal.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
-
-namespace
-{
-	bool ShouldForceGCOnConveyorDelete()
-	{
-		const IConsoleVariable* ForceGCCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("sr.MemoryDiagnostics.ForceGCOnConveyorDelete"));
-		return ForceGCCVar && ForceGCCVar->GetInt() != 0;
-	}
-}
 
 bool USRConveyorNetworkComponent::TryPlaceConveyorPath(
 	USRPlanetSurfaceGrid* SurfaceGrid,
@@ -232,7 +223,7 @@ bool USRConveyorNetworkComponent::TryRemoveConveyorAtCell(
 	else
 	{
 		DestroyPlacedConveyorActors();
-		LogConveyorMutationMemoryDiagnostics(TEXT("ConveyorDelete.DestroyPlacedActors"), MakeActorGroupKey(RemovedStructureDataAsset, SafeLayer), ShouldForceGCOnConveyorDelete());
+		LogConveyorMutationMemoryDiagnostics(TEXT("ConveyorDelete.DestroyPlacedActors"), MakeActorGroupKey(RemovedStructureDataAsset, SafeLayer), StarRovers::Conveyor::ShouldForceGCOnConveyorDelete());
 	}
 	RefreshConveyorVisuals(SurfaceGrid);
 	RefreshPCGSplineInputs(SurfaceGrid);

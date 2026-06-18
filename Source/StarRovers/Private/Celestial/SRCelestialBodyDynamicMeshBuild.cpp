@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "SRCelestialBodyLog.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -26,8 +27,6 @@ namespace
 }
 
 using namespace StarRovers::Celestial::DynamicMesh;
-
-DEFINE_LOG_CATEGORY_STATIC(LogStarRoversCelestial, Log, All);
 
 bool ASRCelestialBody::BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPreparedDynamicMesh& OutPreparedMesh)
 {

@@ -22,6 +22,7 @@ Workflow:
 Code work:
 
 - After modifying C++ files, always run a build and confirm there are no compile errors.
+- Unreal unity builds can include multiple split `.cpp` files in one generated translation unit. Do not duplicate same-named anonymous-namespace helpers, constants, or `DEFINE_LOG_CATEGORY_STATIC` entries across split `.cpp` files for the same owner. Put shared private helpers in a `Private/*Internal.h` header as `inline` functions inside a named `StarRovers::<Feature>` namespace, and use `DECLARE_LOG_CATEGORY_EXTERN` plus one `DEFINE_LOG_CATEGORY` for log categories shared across split files.
 - Do not implement everything in C++. Split responsibilities across C++ classes, Blueprint classes, and Data Assets using the criteria below.
 - Do not edit `.uasset` or `.umap` files as text. For BP/DA work that cannot be done in code, explain the required editor steps to the user in detail.
 - Only update README.md when the user explicitly asks for it.

@@ -1,5 +1,7 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "SRCelestialBodyLog.h"
+#include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/DynamicMeshComponent.h"
 #include "Components/LineBatchComponent.h"
@@ -15,12 +17,7 @@
 #include "UObject/UnrealType.h"
 #endif
 
-namespace
-{
-	constexpr int32 CubeSphereFaceComponentCount = 6;
-}
-
-DEFINE_LOG_CATEGORY_STATIC(LogStarRoversCelestial, Log, All);
+DEFINE_LOG_CATEGORY(LogStarRoversCelestial);
 
 FSRCelestialBodyData::FSRCelestialBodyData()
 {
@@ -51,7 +48,7 @@ ASRCelestialBody::ASRCelestialBody()
 	CelestialBodyDynamicMesh->SetVisibility(false);
 	CelestialBodyDynamicMesh->SetHiddenInGame(true);
 	CelestialBodyDynamicMeshFaces.Add(CelestialBodyDynamicMesh);
-	for (int32 FaceIndex = 1; FaceIndex < CubeSphereFaceComponentCount; ++FaceIndex)
+	for (int32 FaceIndex = 1; FaceIndex < StarRovers::Celestial::DynamicMesh::CubeSphereFaceComponentCount; ++FaceIndex)
 	{
 		UDynamicMeshComponent* FaceDynamicMesh = CreateDefaultSubobject<UDynamicMeshComponent>(
 			*FString::Printf(TEXT("CelestialBodyDynamicMeshFace%d"), FaceIndex));

@@ -1,18 +1,7 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
+#include "SRFacilityNetworkComponentInternal.h"
 #include "Structure/SRStructureDataAsset.h"
-
-namespace
-{
-	FString BuildFacilityCellDebugString(const FSRPlanetSurfaceGridCellId& CellId)
-	{
-		return FString::Printf(
-			TEXT("Face=%d X=%d Y=%d"),
-			static_cast<int32>(CellId.Face),
-			CellId.CellX,
-			CellId.CellY);
-	}
-}
 
 USRFacilityNetworkComponent::USRFacilityNetworkComponent()
 {
@@ -84,7 +73,7 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 			*GetNameSafe(StructureDataAsset),
 			*GetNameSafe(StructureData.FacilityDataAsset.Get()),
 			*GetNameSafe(GetOwner()),
-			*BuildFacilityCellDebugString(OriginCellId),
+			*StarRovers::FacilityNetwork::BuildFacilityCellDebugString(OriginCellId),
 			FootprintCellIds.Num());
 	}
 	return true;

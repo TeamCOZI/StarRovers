@@ -1,5 +1,6 @@
 #include "Camera/SRCameraPawn.h"
 
+#include "SRCameraPawnInternal.h"
 #include "Camera/CameraComponent.h"
 #include "Celestial/SRCelestialBody.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
@@ -13,25 +14,6 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 
-namespace
-{
-	float ComputeScaledBodyRadius(const AActor* Actor)
-	{
-		if (const ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(Actor))
-		{
-			const FSRCelestialBodyData BodyData = CelestialBody->GetData();
-			if (IsValid(BodyData.StaticMesh.Get()))
-			{
-				return BodyData.StaticMesh->GetBounds().SphereRadius * FMath::Max(0.0f, BodyData.Scale);
-			}
-			return IsValid(BodyData.DynamicMeshBaseDataAsset.Get())
-				? BodyData.DynamicMeshBaseDataAsset->GetSafeBaseRadius() * FMath::Max(0.0f, BodyData.Scale)
-				: 0.0f;
-		}
-
-		return 0.0f;
-	}
-}
 float ASRCameraPawn::GetScreenSpaceThicknessReferenceZoomDistance() const
 {
 	if (ScreenSpaceThicknessReferenceZoomDistance > KINDA_SMALL_NUMBER)
@@ -215,7 +197,7 @@ bool ASRCameraPawn::ShouldUseDynamicMesh(const AActor* BodyActor, float& OutScre
 		return false;
 	}
 
-	const float BodyRadius = ComputeScaledBodyRadius(BodyActor);
+	const float BodyRadius = StarRovers::Camera::ComputeScaledBodyRadius(BodyActor);
 	if (BodyRadius <= KINDA_SMALL_NUMBER)
 	{
 		return false;

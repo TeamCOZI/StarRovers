@@ -1,30 +1,7 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
+#include "SRFacilityNetworkComponentInternal.h"
 #include "Structure/SRStructureDataAsset.h"
-
-namespace
-{
-	FString BuildFacilityCellDebugString(const FSRPlanetSurfaceGridCellId& CellId)
-	{
-		return FString::Printf(
-			TEXT("Face=%d X=%d Y=%d"),
-			static_cast<int32>(CellId.Face),
-			CellId.CellX,
-			CellId.CellY);
-	}
-
-	FString BuildResourceDebugString(const FSRResourceInstance& ResourceInstance)
-	{
-		return FString::Printf(
-			TEXT("ResourceId=%s Energy=%.3f RemainingProcessLimit=%d ProcessCount=%d StackCount=%d Tags=%d"),
-			*ResourceInstance.ResourceId.ToString(),
-			ResourceInstance.EnergyValue,
-			ResourceInstance.RemainingProcessLimit,
-			ResourceInstance.ProcessCount,
-			ResourceInstance.StackCount,
-			ResourceInstance.Tags.Num());
-	}
-}
 
 void USRFacilityNetworkComponent::SetFacilityDebugLoggingEnabled(bool bEnabled)
 {
@@ -72,7 +49,7 @@ bool USRFacilityNetworkComponent::DebugAddInputResourceFromDataAsset(
 			Display,
 			TEXT("[FacilityNetwork][Debug] Added input from DA: OccupantId=%s %s Owner=%s"),
 			*OccupantId.ToString(),
-			*BuildResourceDebugString(ResourceInstance),
+			*StarRovers::FacilityNetwork::BuildResourceDebugString(ResourceInstance),
 			*GetNameSafe(GetOwner()));
 	}
 	return bAdded;
@@ -114,7 +91,7 @@ bool USRFacilityNetworkComponent::DebugAddRawEnergyInputResource(
 			Display,
 			TEXT("[FacilityNetwork][Debug] Added raw energy input: OccupantId=%s %s Owner=%s"),
 			*OccupantId.ToString(),
-			*BuildResourceDebugString(ResourceInstance),
+			*StarRovers::FacilityNetwork::BuildResourceDebugString(ResourceInstance),
 			*GetNameSafe(GetOwner()));
 	}
 	return bAdded;
@@ -170,19 +147,19 @@ bool USRFacilityNetworkComponent::DebugDumpFacilityState(FName OccupantId) const
 		FacilityInstance->bProcessing ? TEXT("true") : TEXT("false"),
 		FacilityInstance->ProcessProgressSeconds,
 		static_cast<int32>(FacilityInstance->TemperatureState),
-		*BuildFacilityCellDebugString(FacilityInstance->OriginCellId));
+		*StarRovers::FacilityNetwork::BuildFacilityCellDebugString(FacilityInstance->OriginCellId));
 
 	if (!FacilityInstance->InputInventory.IsEmpty())
 	{
-		UE_LOG(LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstInput: %s"), *BuildResourceDebugString(FacilityInstance->InputInventory[0]));
+		UE_LOG(LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstInput: %s"), *StarRovers::FacilityNetwork::BuildResourceDebugString(FacilityInstance->InputInventory[0]));
 	}
 	if (!FacilityInstance->ProcessingInventory.IsEmpty())
 	{
-		UE_LOG(LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstProcessing: %s"), *BuildResourceDebugString(FacilityInstance->ProcessingInventory[0]));
+		UE_LOG(LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstProcessing: %s"), *StarRovers::FacilityNetwork::BuildResourceDebugString(FacilityInstance->ProcessingInventory[0]));
 	}
 	if (!FacilityInstance->OutputInventory.IsEmpty())
 	{
-		UE_LOG(LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstOutput: %s"), *BuildResourceDebugString(FacilityInstance->OutputInventory[0]));
+		UE_LOG(LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstOutput: %s"), *StarRovers::FacilityNetwork::BuildResourceDebugString(FacilityInstance->OutputInventory[0]));
 	}
 	return true;
 }
@@ -197,7 +174,7 @@ bool USRFacilityNetworkComponent::DebugExtractAndLogOutputResource(FName Occupan
 			Display,
 			TEXT("[FacilityNetwork][Debug] Extracted output: OccupantId=%s %s Owner=%s"),
 			*OccupantId.ToString(),
-			*BuildResourceDebugString(OutResourceInstance),
+			*StarRovers::FacilityNetwork::BuildResourceDebugString(OutResourceInstance),
 			*GetNameSafe(GetOwner()));
 	}
 	return bExtracted;

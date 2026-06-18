@@ -1,20 +1,11 @@
 #include "Conveyor/SRConveyorNetworkComponent.h"
 
+#include "SRConveyorNetworkComponentInternal.h"
 #include "Conveyor/SRConveyorBeltActor.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include "HAL/IConsoleManager.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
-
-namespace
-{
-	bool ShouldForceGCOnConveyorDelete()
-	{
-		const IConsoleVariable* ForceGCCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("sr.MemoryDiagnostics.ForceGCOnConveyorDelete"));
-		return ForceGCCVar && ForceGCCVar->GetInt() != 0;
-	}
-}
 
 FName USRConveyorNetworkComponent::MakeActorGroupKey(USRStructureDataAsset* StructureDataAsset, int32 Layer)
 {
@@ -180,7 +171,7 @@ bool USRConveyorNetworkComponent::RefreshConveyorActorGroup(USRPlanetSurfaceGrid
 		ConveyorActorGroupsByKey.Remove(ActorGroupKey);
 		if (bLogDeletionDiagnostics)
 		{
-			LogConveyorMutationMemoryDiagnostics(TEXT("ConveyorDelete.ActorGroupRemoved"), ActorGroupKey, ShouldForceGCOnConveyorDelete());
+			LogConveyorMutationMemoryDiagnostics(TEXT("ConveyorDelete.ActorGroupRemoved"), ActorGroupKey, StarRovers::Conveyor::ShouldForceGCOnConveyorDelete());
 		}
 		return true;
 	}
@@ -210,7 +201,7 @@ bool USRConveyorNetworkComponent::RefreshConveyorActorGroup(USRPlanetSurfaceGrid
 	}
 	if (bLogDeletionDiagnostics)
 	{
-		LogConveyorMutationMemoryDiagnostics(TEXT("ConveyorDelete.ActorGroupRefreshed"), ActorGroupKey, ShouldForceGCOnConveyorDelete());
+		LogConveyorMutationMemoryDiagnostics(TEXT("ConveyorDelete.ActorGroupRefreshed"), ActorGroupKey, StarRovers::Conveyor::ShouldForceGCOnConveyorDelete());
 	}
 	return IsValid(ActorGroup.Actor);
 }
