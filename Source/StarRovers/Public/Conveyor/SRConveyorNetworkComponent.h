@@ -12,6 +12,7 @@ class ULineBatchComponent;
 class UMaterialInterface;
 class UPCGComponent;
 class USplineComponent;
+class USRFacilityNetworkComponent;
 class USRPlanetSurfaceGrid;
 class USRStructureDataAsset;
 namespace UE::Geometry
@@ -48,6 +49,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor|Debug")
 	bool IsPathDebugLineVisible() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor|Transport")
+	int32 GetConveyorItemCount() const;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
 	bool FindConveyorPath(
@@ -114,6 +118,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Debug", meta = (DisplayName = "PathDebugLineThickness", ClampMin = "0.0"))
 	float PathDebugLineThickness;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport", meta = (DisplayName = "bAutoTransportItems"))
+	bool bAutoTransportItems;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport", meta = (DisplayName = "ItemSpeedCellsPerSecond", ClampMin = "0.01"))
+	float ItemSpeedCellsPerSecond;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport", meta = (DisplayName = "MaxItemTransfersPerTick", ClampMin = "1"))
+	int32 MaxItemTransfersPerTick;
 
 	TMap<FSRConveyorLaneKey, FSRConveyorSegment> Segments;
 	TArray<FSRConveyorVisualPath> VisualPaths;
@@ -187,6 +200,14 @@ private:
 	void RefreshConveyorVisuals(USRPlanetSurfaceGrid* SurfaceGrid);
 	void RefreshPCGSplineInputs(USRPlanetSurfaceGrid* SurfaceGrid);
 	void RefreshPathDebugLines(USRPlanetSurfaceGrid* SurfaceGrid);
+	void ProcessConveyorTransport(USRPlanetSurfaceGrid* SurfaceGrid, float DeltaTime);
+	bool TryResolveNextLane(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorSegment& Segment, FSRConveyorLaneKey& OutNextLane) const;
+	bool TryPullFacilityOutputToConveyor(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		USRFacilityNetworkComponent* FacilityNetwork,
+		const FSRConveyorLaneKey& LaneKey,
+		TMap<FSRConveyorLaneKey, FSRConveyorItem>& OutNextItems) const;
+	bool ShouldKeepTransportTickEnabled() const;
 	void RequestPCGGeneration();
 	void BindPCGGenerationDelegates();
 	void HandlePCGGraphGenerated(UPCGComponent* PCGComponent);
@@ -195,4 +216,7 @@ private:
 	TMap<FName, FSRConveyorActorGroupState> ConveyorActorGroupsByKey;
 	TSet<FName> PendingPlacementDiagnosticActorGroupKeys;
 	TSet<FName> PendingDeletionDiagnosticActorGroupKeys;
+
+	UPROPERTY(Transient)
+	TMap<FSRConveyorLaneKey, FSRConveyorItem> ConveyorItemsByLane;
 };

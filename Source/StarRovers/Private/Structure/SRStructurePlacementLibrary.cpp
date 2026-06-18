@@ -1,5 +1,7 @@
 #include "Structure/SRStructurePlacementLibrary.h"
 
+#include "Automation/SRFacilityNetworkComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -29,6 +31,24 @@ namespace
 			for (int32 MaterialIndex = 0; MaterialIndex < MaterialSlotCount; ++MaterialIndex)
 			{
 				StaticMeshComponent->SetMaterial(MaterialIndex, ExpectedStaticMesh->GetMaterial(MaterialIndex));
+			}
+		}
+	}
+
+	void EnableRenderCustomDepth(AActor* StructureActor)
+	{
+		if (!IsValid(StructureActor))
+		{
+			return;
+		}
+
+		TArray<UPrimitiveComponent*> PrimitiveComponents;
+		StructureActor->GetComponents(PrimitiveComponents);
+		for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+		{
+			if (IsValid(PrimitiveComponent))
+			{
+				PrimitiveComponent->SetRenderCustomDepth(true);
 			}
 		}
 	}
@@ -150,6 +170,7 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 
 	ISRBuildableStructureInterface::Execute_ApplyStructureDataAsset(PlacedStructureActor, StructureDataAsset);
 	ISRBuildableStructureInterface::Execute_SetStructureGhostMode(PlacedStructureActor, false);
+	EnableRenderCustomDepth(PlacedStructureActor);
 	if (bUseStaticMeshMaterials)
 	{
 		RestoreStaticMeshDefaultMaterials(PlacedStructureActor, StructureData.StaticMesh.Get());
@@ -175,6 +196,10 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 	{
 		RollbackPlacedStructureActor(PlacedStructureActor);
 		return false;
+	}
+	if (USRFacilityNetworkComponent* FacilityNetwork = SurfaceOwner->FindComponentByClass<USRFacilityNetworkComponent>())
+	{
+		FacilityNetwork->RegisterFacility(OccupantId, StructureDataAsset, TargetCellId, FootprintCellIds);
 	}
 
 	OutPlacedStructureActor = PlacedStructureActor;

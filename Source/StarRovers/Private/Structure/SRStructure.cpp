@@ -15,6 +15,7 @@ ASRStructure::ASRStructure()
 	StructureStaticMesh->SetupAttachment(SceneRoot);
 	StructureStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	StructureStaticMesh->SetGenerateOverlapEvents(false);
+	StructureStaticMesh->SetRenderCustomDepth(true);
 }
 
 void ASRStructure::OnConstruction(const FTransform& Transform)
@@ -109,6 +110,7 @@ void ASRStructure::ApplyStructureVisuals()
 
 	StructureStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	StructureStaticMesh->SetGenerateOverlapEvents(false);
+	StructureStaticMesh->SetRenderCustomDepth(true);
 	SetActorEnableCollision(false);
 }
 

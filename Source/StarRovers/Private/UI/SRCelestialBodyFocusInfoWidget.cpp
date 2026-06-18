@@ -30,6 +30,88 @@ namespace
 		}
 		return DisplayCoord;
 	}
+
+	const TCHAR* GetStructureBuildKindLabel(ESRStructureBuildKind BuildKind)
+	{
+		switch (BuildKind)
+		{
+		case ESRStructureBuildKind::Structure:
+			return TEXT("Structure");
+		case ESRStructureBuildKind::Conveyor:
+			return TEXT("Conveyor");
+		default:
+			return TEXT("Unknown");
+		}
+	}
+
+	FString BuildPortDirectionLabel(bool bHasInput, bool bHasOutput)
+	{
+		if (bHasInput && bHasOutput)
+		{
+			return TEXT("Input, Output");
+		}
+		if (bHasInput)
+		{
+			return TEXT("Input");
+		}
+		if (bHasOutput)
+		{
+			return TEXT("Output");
+		}
+		return TEXT("None");
+	}
+
+	FString BuildFacilityPortDirectionSummary(const TArray<FSRFocusedFacilityPortInfo>& FacilityPorts)
+	{
+		bool bTopInput = false;
+		bool bTopOutput = false;
+		bool bBottomInput = false;
+		bool bBottomOutput = false;
+		bool bLeftInput = false;
+		bool bLeftOutput = false;
+		bool bRightInput = false;
+		bool bRightOutput = false;
+
+		auto MarkDirection = [](ESRStructurePortKind PortKind, bool& bHasInput, bool& bHasOutput)
+		{
+			if (PortKind == ESRStructurePortKind::Output)
+			{
+				bHasOutput = true;
+			}
+			else
+			{
+				bHasInput = true;
+			}
+		};
+
+		for (const FSRFocusedFacilityPortInfo& PortInfo : FacilityPorts)
+		{
+			switch (PortInfo.Direction)
+			{
+			case ESRStructurePortDirection::Left:
+				MarkDirection(PortInfo.PortKind, bLeftInput, bLeftOutput);
+				break;
+			case ESRStructurePortDirection::Right:
+				MarkDirection(PortInfo.PortKind, bRightInput, bRightOutput);
+				break;
+			case ESRStructurePortDirection::Top:
+				MarkDirection(PortInfo.PortKind, bTopInput, bTopOutput);
+				break;
+			case ESRStructurePortDirection::Bottom:
+				MarkDirection(PortInfo.PortKind, bBottomInput, bBottomOutput);
+				break;
+			default:
+				break;
+			}
+		}
+
+		return FString::Printf(
+			TEXT("Ports\nTop: %s\nBottom: %s\nLeft: %s\nRight: %s"),
+			*BuildPortDirectionLabel(bTopInput, bTopOutput),
+			*BuildPortDirectionLabel(bBottomInput, bBottomOutput),
+			*BuildPortDirectionLabel(bLeftInput, bLeftOutput),
+			*BuildPortDirectionLabel(bRightInput, bRightOutput));
+	}
 }
 
 TSharedRef<SWidget> USRCelestialBodyFocusInfoWidget::RebuildWidget()
@@ -324,28 +406,65 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 
 	if (HoveredCellTextBlock)
 	{
-		if (bHasFocusInfo && bAssemblyModeActive && FocusInfo.bHasHoveredSurfaceCell)
+		if (bHasFocusInfo && bAssemblyModeActive && (FocusInfo.bHasHoveredSurfaceCell || FocusInfo.bHasSelectedSurfaceStructure))
 		{
-			const FSRPlanetSurfaceGridCellInfo& CellInfo = FocusInfo.HoveredSurfaceCellInfo;
-			FString CellText = FString::Printf(
-				TEXT("Face: %d\nCell: %d,%d\nDisplay: %d,%d\nLatitude: %.1f deg"),
-				GetCubeSphereFaceNumber(CellInfo.CellId.Face),
-				CellInfo.CellId.CellX,
-				CellInfo.CellId.CellY,
-				CellInfo.DisplayCellX,
-				CellInfo.DisplayCellY,
-				CellInfo.LatitudeDegrees);
-			CellText += FString::Printf(TEXT("\nPatchDisplayCells: %d"), FocusInfo.HoveredSurfaceGridPatchCellIds.Num());
-			for (int32 CellIndex = 0; CellIndex < FocusInfo.HoveredSurfaceGridPatchCellIds.Num(); ++CellIndex)
+			FString CellText;
+			if (FocusInfo.bHasHoveredSurfaceCell)
 			{
-				const FSRPlanetSurfaceGridCellId& PatchCellId = FocusInfo.HoveredSurfaceGridPatchCellIds[CellIndex];
-				const FIntPoint PatchDisplayCoord = GetSurfaceGridDisplayCellCoord(PatchCellId, CellInfo.FaceResolution);
-				CellText += (CellIndex % 5 == 0) ? TEXT("\n") : TEXT(" ");
+				const FSRPlanetSurfaceGridCellInfo& CellInfo = FocusInfo.HoveredSurfaceCellInfo;
+				CellText = FString::Printf(
+					TEXT("Face: %d\nCell: %d,%d\nDisplay: %d,%d\nLatitude: %.1f deg"),
+					GetCubeSphereFaceNumber(CellInfo.CellId.Face),
+					CellInfo.CellId.CellX,
+					CellInfo.CellId.CellY,
+					CellInfo.DisplayCellX,
+					CellInfo.DisplayCellY,
+					CellInfo.LatitudeDegrees);
+				CellText += FString::Printf(TEXT("\nPatchDisplayCells: %d"), FocusInfo.HoveredSurfaceGridPatchCellIds.Num());
+				for (int32 CellIndex = 0; CellIndex < FocusInfo.HoveredSurfaceGridPatchCellIds.Num(); ++CellIndex)
+				{
+					const FSRPlanetSurfaceGridCellId& PatchCellId = FocusInfo.HoveredSurfaceGridPatchCellIds[CellIndex];
+					const FIntPoint PatchDisplayCoord = GetSurfaceGridDisplayCellCoord(PatchCellId, CellInfo.FaceResolution);
+					CellText += (CellIndex % 5 == 0) ? TEXT("\n") : TEXT(" ");
+					CellText += FString::Printf(
+						TEXT("F%d(%d,%d)"),
+						GetCubeSphereFaceNumber(PatchCellId.Face),
+						PatchDisplayCoord.X,
+						PatchDisplayCoord.Y);
+				}
+			}
+
+			if (FocusInfo.bHasSelectedSurfaceStructure)
+			{
+				const FSRFocusedSurfaceStructureInfo& StructureInfo = FocusInfo.SelectedSurfaceStructureInfo;
+				const FSRPlanetSurfaceGridCellInfo& ClickedCellInfo = StructureInfo.ClickedCellInfo;
+				if (!CellText.IsEmpty())
+				{
+					CellText += TEXT("\n\n");
+				}
 				CellText += FString::Printf(
-					TEXT("F%d(%d,%d)"),
-					GetCubeSphereFaceNumber(PatchCellId.Face),
-					PatchDisplayCoord.X,
-					PatchDisplayCoord.Y);
+					TEXT("Selected Structure\nName: %s\nStructureId: %s\nOccupantId: %s\nKind: %s\nOrigin: F%d(%d,%d)\nClicked: F%d(%d,%d)\nFootprintCells: %d\nFacility: %s\nNatural: %s"),
+					*StructureInfo.DisplayName.ToString(),
+					*StructureInfo.StructureId.ToString(),
+					*StructureInfo.OccupantId.ToString(),
+					GetStructureBuildKindLabel(StructureInfo.BuildKind),
+					GetCubeSphereFaceNumber(StructureInfo.OriginCellId.Face),
+					StructureInfo.OriginCellId.CellX,
+					StructureInfo.OriginCellId.CellY,
+					GetCubeSphereFaceNumber(ClickedCellInfo.CellId.Face),
+					ClickedCellInfo.CellId.CellX,
+					ClickedCellInfo.CellId.CellY,
+					StructureInfo.FootprintCellIds.Num(),
+					StructureInfo.bHasFacilityDataAsset ? TEXT("Yes") : TEXT("No"),
+					StructureInfo.bNaturalStructure ? TEXT("Yes") : TEXT("No"));
+				if (!StructureInfo.Description.IsEmpty())
+				{
+					CellText += FString::Printf(TEXT("\n%s"), *StructureInfo.Description.ToString());
+				}
+				if (!StructureInfo.FacilityPorts.IsEmpty())
+				{
+					CellText += FString::Printf(TEXT("\n%s"), *BuildFacilityPortDirectionSummary(StructureInfo.FacilityPorts));
+				}
 			}
 			HoveredCellTextBlock->SetText(FText::FromString(CellText));
 			HoveredCellTextBlock->SetVisibility(ESlateVisibility::Visible);

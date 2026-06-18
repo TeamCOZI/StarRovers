@@ -37,6 +37,9 @@ FSRStructureData USRStructureDataAsset::BuildData() const
 	Result.bAlignToSurfaceNormal = bAlignToSurfaceNormal;
 	Result.bAvailableForConstruction = bAvailableForConstruction;
 	Result.BuildKind = BuildKind;
+	Result.FacilityDataAsset = FacilityDataAsset;
+	Result.InputPorts = InputPorts;
+	Result.OutputPorts = OutputPorts;
 	Result.ConveyorLayer = FMath::Max(0, ConveyorLayer);
 	Result.ConveyorLayerHeight = FMath::Max(0.0f, ConveyorLayerHeight);
 	return Result;

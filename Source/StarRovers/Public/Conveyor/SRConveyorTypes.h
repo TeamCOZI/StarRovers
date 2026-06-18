@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Automation/SRResourceDataAsset.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "SRConveyorTypes.generated.h"
@@ -70,6 +71,24 @@ struct STARROVERS_API FSRConveyorSegment
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "StructureDataAsset"))
 	TObjectPtr<USRStructureDataAsset> StructureDataAsset = nullptr;
+};
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRConveyorItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ResourceInstance"))
+	FSRResourceInstance ResourceInstance;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "CurrentLane"))
+	FSRConveyorLaneKey CurrentLane;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "Progress"))
+	float Progress = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "SourceFacilityOccupantId"))
+	FName SourceFacilityOccupantId = NAME_None;
 };
 
 USTRUCT(BlueprintType)

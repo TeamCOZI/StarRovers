@@ -1,5 +1,6 @@
 #include "Structure/SRStructureInstanceManagerComponent.h"
 
+#include "Automation/SRFacilityNetworkComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -97,6 +98,10 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 	PlacedStructuresByOccupantId.Add(OccupantId, PlacedStructure);
 	VisualGroup.OccupantIds.Add(OccupantId);
 	OutOccupantId = OccupantId;
+	if (USRFacilityNetworkComponent* FacilityNetwork = GetOwner() ? GetOwner()->FindComponentByClass<USRFacilityNetworkComponent>() : nullptr)
+	{
+		FacilityNetwork->RegisterFacility(OccupantId, StructureDataAsset, TargetCellId, FootprintCellIds);
+	}
 	if (!bNaturalStructure)
 	{
 		LogStructureMemoryDiagnostics(TEXT("StructurePlace.User"), false, 1, FootprintCellIds.Num());
@@ -117,7 +122,8 @@ bool USRStructureInstanceManagerComponent::TryRemoveStructureAtCell(USRPlanetSur
 		return false;
 	}
 
-	if (!PlacedStructuresByOccupantId.Contains(CellInfo.OccupantId))
+	const FSRPlacedStructureInstance* PlacedStructure = PlacedStructuresByOccupantId.Find(CellInfo.OccupantId);
+	if (!PlacedStructure || PlacedStructure->bNaturalStructure)
 	{
 		return false;
 	}
@@ -254,6 +260,7 @@ USRStructureInstanceManagerComponent::FSRStructureVisualGroup& USRStructureInsta
 	HISMComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	HISMComponent->SetGenerateOverlapEvents(false);
 	HISMComponent->SetCastShadow(true);
+	HISMComponent->SetRenderCustomDepth(true);
 	HISMComponent->SetStaticMesh(StructureData.StaticMesh);
 	if (!bUseStaticMeshMaterials && IsValid(StructureData.Material.Get()))
 	{
@@ -282,7 +289,7 @@ void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlan
 	}
 
 	TArray<FSRPlanetSurfaceGridCellId> ClearedCellIds;
-	TMap<FName, TArray<int32>> RemovedInstanceIndicesByVisualKey;
+	TMap<FName, TArray<FName>> RemovedOccupantIdsByVisualKey;
 	int32 RemovedUserStructureCount = 0;
 	int32 RemovedNaturalStructureCount = 0;
 	for (const FName OccupantId : OccupantIds)
@@ -294,7 +301,11 @@ void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlan
 		}
 
 		ClearedCellIds.Append(RemovedStructure.FootprintCellIds);
-		RemovedInstanceIndicesByVisualKey.FindOrAdd(RemovedStructure.VisualKey).Add(RemovedStructure.InstanceIndex);
+		RemovedOccupantIdsByVisualKey.FindOrAdd(RemovedStructure.VisualKey).Add(OccupantId);
+		if (USRFacilityNetworkComponent* FacilityNetwork = GetOwner() ? GetOwner()->FindComponentByClass<USRFacilityNetworkComponent>() : nullptr)
+		{
+			FacilityNetwork->UnregisterFacility(OccupantId);
+		}
 		if (RemovedStructure.bNaturalStructure)
 		{
 			++RemovedNaturalStructureCount;
@@ -305,11 +316,6 @@ void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlan
 		}
 	}
 
-	if (RemovedInstanceIndicesByVisualKey.IsEmpty())
-	{
-		return;
-	}
-
 	if (IsValid(SurfaceGrid) && !ClearedCellIds.IsEmpty())
 	{
 		SurfaceGrid->BeginInteractionHighlightBatch();
@@ -317,7 +323,7 @@ void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlan
 		SurfaceGrid->EndInteractionHighlightBatch();
 	}
 
-	for (const TPair<FName, TArray<int32>>& RemovedGroupPair : RemovedInstanceIndicesByVisualKey)
+	for (const TPair<FName, TArray<FName>>& RemovedGroupPair : RemovedOccupantIdsByVisualKey)
 	{
 		RemoveVisualInstances(RemovedGroupPair.Key, RemovedGroupPair.Value);
 	}
@@ -333,44 +339,32 @@ void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlan
 	}
 }
 
-void USRStructureInstanceManagerComponent::RemoveVisualInstances(FName VisualKey, const TArray<int32>& RemovedInstanceIndices)
+void USRStructureInstanceManagerComponent::RemoveVisualInstances(FName VisualKey, const TArray<FName>& RemovedOccupantIds)
 {
 	FSRStructureVisualGroup* VisualGroup = VisualGroupsByKey.Find(VisualKey);
-	if (!VisualGroup || !IsValid(VisualGroup->Component) || RemovedInstanceIndices.IsEmpty())
+	if (!VisualGroup || !IsValid(VisualGroup->Component) || RemovedOccupantIds.IsEmpty())
 	{
 		return;
 	}
 
-	if (RemovedInstanceIndices.Num() >= VisualGroup->OccupantIds.Num())
+	VisualGroup->OccupantIds.RemoveAll([&RemovedOccupantIds](const FName OccupantId)
+	{
+		return RemovedOccupantIds.Contains(OccupantId);
+	});
+
+	VisualGroup->OccupantIds.RemoveAll([this](const FName OccupantId)
+	{
+		return OccupantId.IsNone() || !PlacedStructuresByOccupantId.Contains(OccupantId);
+	});
+
+	if (VisualGroup->OccupantIds.IsEmpty())
 	{
 		VisualGroup->Component->ClearInstances();
-		VisualGroup->OccupantIds.Reset();
 		return;
 	}
 
-	TArray<int32> SortedRemovedInstanceIndices = RemovedInstanceIndices;
-	SortedRemovedInstanceIndices.Sort([](int32 LeftIndex, int32 RightIndex)
-	{
-		return LeftIndex > RightIndex;
-	});
-	for (const int32 RemovedInstanceIndex : SortedRemovedInstanceIndices)
-	{
-		if (!VisualGroup->OccupantIds.IsValidIndex(RemovedInstanceIndex)
-			|| !VisualGroup->Component->RemoveInstance(RemovedInstanceIndex))
-		{
-			RebuildVisualGroup(VisualKey);
-			return;
-		}
-
-		VisualGroup->OccupantIds.RemoveAt(RemovedInstanceIndex, 1, EAllowShrinking::No);
-		for (int32 InstanceIndex = RemovedInstanceIndex; InstanceIndex < VisualGroup->OccupantIds.Num(); ++InstanceIndex)
-		{
-			if (FSRPlacedStructureInstance* ShiftedStructure = PlacedStructuresByOccupantId.Find(VisualGroup->OccupantIds[InstanceIndex]))
-			{
-				ShiftedStructure->InstanceIndex = InstanceIndex;
-			}
-		}
-	}
+	// HISM removal can invalidate cached instance indices; rebuild from occupant ownership to keep mesh and occupancy in sync.
+	RebuildVisualGroup(VisualKey);
 }
 
 void USRStructureInstanceManagerComponent::RebuildVisualGroup(FName VisualKey)

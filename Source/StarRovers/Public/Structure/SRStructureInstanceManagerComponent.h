@@ -83,7 +83,7 @@ private:
 	FSRStructureVisualGroup& FindOrCreateVisualGroup(USRStructureDataAsset* StructureDataAsset, FName VisualKey, bool bUseStaticMeshMaterials);
 	void RemoveStructureByOccupantId(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId);
 	void RemoveStructuresByOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FName>& OccupantIds);
-	void RemoveVisualInstances(FName VisualKey, const TArray<int32>& RemovedInstanceIndices);
+	void RemoveVisualInstances(FName VisualKey, const TArray<FName>& RemovedOccupantIds);
 	void RebuildVisualGroup(FName VisualKey);
 	void LogStructureMemoryDiagnostics(const TCHAR* Label, bool bRequestGarbageCollection, int32 AffectedStructures, int32 AffectedCells) const;
 

@@ -374,6 +374,9 @@ private:
 	void SyncDynamicMeshFaceComponentSettings();
 	uint32 ComputeDynamicMeshBuildHash() const;
 	void ResetDynamicMeshCellColorData();
+	static void ClearDynamicMeshRuntimeCaches(const TCHAR* Reason);
+	static UWorld* GetDynamicMeshRuntimeCacheWorld();
+	static void SetDynamicMeshRuntimeCacheWorld(UWorld* World);
 	const FSRCelestialBodyDynamicMeshCellColorData* FindDynamicMeshCellColorData(const FSRPlanetSurfaceGridCellId& CellId) const;
 	USRCelestialBodyRegistrySubsystem* FindCelestialRegistry() const;
 	bool IsStellarBody() const;

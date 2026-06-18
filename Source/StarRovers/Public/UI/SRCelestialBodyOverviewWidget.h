@@ -168,6 +168,8 @@ private:
 	void AddStarSystemScrollBoxButton(AActor* CelestialBodyActor, int32 Depth, const TMap<AActor*, TArray<AActor*>>& ChildrenByParent);
 	FText GetStarSystemNameplateText(const AActor* CelestialBodyActor) const;
 	FText GetStarSystemNameplatePrefixText(AActor* CelestialBodyActor) const;
+	FText GetStarSystemTreePrefixText(AActor* CelestialBodyActor) const;
+	int32 GetStarSystemSiblingSortIndex(AActor* CelestialBodyActor) const;
 	void SortStarSystemBodies(TArray<TObjectPtr<AActor>>& StarSystemBodiesToSort) const;
 
 	FSRStarRoversCelestialBodyRequestedSignature CelestialBodyRequestedEvent;

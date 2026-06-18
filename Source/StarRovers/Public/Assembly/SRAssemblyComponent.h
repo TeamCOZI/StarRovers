@@ -104,6 +104,8 @@ private:
 	void ResetHoverSampleCache();
 	void PublishHoveredCellInfo(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& HoveredCell);
 	void ClearPublishedHoveredCellInfo();
+	bool TryPublishSelectedStructureInfo(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& ClickedCell);
+	void ClearSelectedStructureInfo();
 	void UpdateStructureGhostPreview();
 	void DestroyStructureGhostPreview();
 	bool BuildStructureGhostTransform(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& CellId, USRStructureDataAsset* StructureDataAsset, FTransform& OutTransform) const;

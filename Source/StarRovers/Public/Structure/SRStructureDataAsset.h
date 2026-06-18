@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Automation/SRFacilityDataAsset.h"
 #include "Engine/DataAsset.h"
 #include "GameFramework/Actor.h"
 #include "SRStructureDataAsset.generated.h"
@@ -13,6 +14,37 @@ enum class ESRStructureBuildKind : uint8
 {
 	Structure UMETA(DisplayName = "Structure"),
 	Conveyor UMETA(DisplayName = "Conveyor"),
+};
+
+UENUM(BlueprintType)
+enum class ESRStructurePortKind : uint8
+{
+	Input UMETA(DisplayName = "Input"),
+	Output UMETA(DisplayName = "Output"),
+};
+
+UENUM(BlueprintType)
+enum class ESRStructurePortDirection : uint8
+{
+	Left UMETA(DisplayName = "Left"),
+	Right UMETA(DisplayName = "Right"),
+	Top UMETA(DisplayName = "Top"),
+	Bottom UMETA(DisplayName = "Bottom"),
+};
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRStructurePortSpec
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Structure|Port", meta = (DisplayName = "CellOffsetX", ClampMin = "0"))
+	int32 CellOffsetX = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Structure|Port", meta = (DisplayName = "CellOffsetY", ClampMin = "0"))
+	int32 CellOffsetY = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Structure|Port", meta = (DisplayName = "Direction"))
+	ESRStructurePortDirection Direction = ESRStructurePortDirection::Left;
 };
 
 USTRUCT(BlueprintType)
@@ -70,6 +102,15 @@ struct STARROVERS_API FSRStructureData
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Build", meta = (DisplayName = "BuildKind"))
 	ESRStructureBuildKind BuildKind = ESRStructureBuildKind::Structure;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Automation", meta = (DisplayName = "FacilityDataAsset"))
+	TObjectPtr<USRFacilityDataAsset> FacilityDataAsset = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Automation|Ports", meta = (DisplayName = "InputPorts"))
+	TArray<FSRStructurePortSpec> InputPorts;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Automation|Ports", meta = (DisplayName = "OutputPorts"))
+	TArray<FSRStructurePortSpec> OutputPorts;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorLayer"))
 	int32 ConveyorLayer = 0;
@@ -139,6 +180,15 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Build", meta = (DisplayName = "BuildKind"))
 	ESRStructureBuildKind BuildKind = ESRStructureBuildKind::Structure;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Automation", meta = (DisplayName = "FacilityDataAsset"))
+	TObjectPtr<USRFacilityDataAsset> FacilityDataAsset = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Automation|Ports", meta = (DisplayName = "InputPorts"))
+	TArray<FSRStructurePortSpec> InputPorts;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Automation|Ports", meta = (DisplayName = "OutputPorts"))
+	TArray<FSRStructurePortSpec> OutputPorts;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorLayer", ClampMin = "0"))
 	int32 ConveyorLayer = 0;

@@ -47,6 +47,9 @@ public:
 
     void SetHoveredSurfaceCellInfo(bool bHasHoveredSurfaceCell, const FSRPlanetSurfaceGridCellInfo& HoveredSurfaceCellInfo);
 
+    void SetSelectedSurfaceStructureInfo(bool bHasSelectedSurfaceStructure, const FSRFocusedSurfaceStructureInfo& SelectedSurfaceStructureInfo);
+    void SetSelectedActorSurfaceStructureInfo(AActor* NewSelectedActor, const FSRFocusedSurfaceStructureInfo& SelectedSurfaceStructureInfo);
+
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     USRTimeControlWidget* GetTimeControlWidget() const;
 
