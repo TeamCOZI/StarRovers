@@ -29,6 +29,13 @@ USRConveyorNetworkComponent::USRConveyorNetworkComponent()
 	bAutoTransportItems = true;
 	ItemSpeedCellsPerSecond = 1.0f;
 	MaxItemTransfersPerTick = 128;
+	bShowTransportItemVisuals = true;
+	ItemVisualHeightOffset = 180.0f;
+	ItemEnergyLabelWorldSize = 120.0f;
+	ItemEnergyLabelMaxScale = 2.5f;
+	ItemEnergyLowColor = FLinearColor(0.1f, 0.75f, 1.0f, 1.0f);
+	ItemEnergyHighColor = FLinearColor(1.0f, 0.55f, 0.05f, 1.0f);
+	ItemEnergyNegativeColor = FLinearColor(0.85f, 0.1f, 1.0f, 1.0f);
 	BeltMeshComponent = nullptr;
 	PathDebugLineBatchComponent = nullptr;
 }
@@ -72,6 +79,15 @@ void USRConveyorNetworkComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	if (bAutoTransportItems && IsValid(SurfaceGrid))
 	{
 		ProcessConveyorTransport(SurfaceGrid, DeltaTime);
+	}
+
+	if (bShowTransportItemVisuals && IsValid(SurfaceGrid))
+	{
+		RefreshConveyorItemVisuals(SurfaceGrid, DeltaTime);
+	}
+	else
+	{
+		DestroyConveyorItemVisuals();
 	}
 
 	RefreshDirtyConveyorActorGroups(SurfaceGrid, FMath::Max(1, MaxConveyorActorGroupsRefreshedPerFrame));
@@ -121,6 +137,18 @@ bool USRConveyorNetworkComponent::GetConveyorSegment(const FSRConveyorLaneKey& L
 	return false;
 }
 
+bool USRConveyorNetworkComponent::HasConveyorSegmentAtCell(const FSRPlanetSurfaceGridCellId& CellId) const
+{
+	for (const TPair<FSRConveyorLaneKey, FSRConveyorSegment>& SegmentPair : Segments)
+	{
+		if (SegmentPair.Key.CellId == CellId)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 void USRConveyorNetworkComponent::ClearConveyors()
 {
 	if (AActor* OwnerActor = GetOwner())
@@ -145,6 +173,7 @@ void USRConveyorNetworkComponent::ClearConveyors()
 	Segments.Reset();
 	VisualPaths.Reset();
 	ConveyorItemsByLane.Reset();
+	DestroyConveyorItemVisuals();
 	DestroyPlacedConveyorActors();
 	PendingConveyorActorRefreshSurfaceGrid.Reset();
 	SetComponentTickEnabled(false);

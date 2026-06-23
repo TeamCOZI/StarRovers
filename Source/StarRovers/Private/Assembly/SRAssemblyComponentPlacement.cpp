@@ -91,7 +91,7 @@ void USRAssemblyComponent::ProcessQueuedStructurePlacements()
 		FSRPlanetSurfaceGridCell TargetCell;
 		if (SurfaceGrid->GetCellById(QueuedPlacement.CellId, TargetCell))
 		{
-			bPlacedAnyStructure |= TryPlaceSelectedStructure(SurfaceGrid, TargetCell, false);
+			bPlacedAnyStructure |= TryPlaceSelectedStructure(SurfaceGrid, TargetCell, false, QueuedPlacement.PlacementRotationSteps);
 		}
 	}
 
@@ -130,7 +130,10 @@ bool USRAssemblyComponent::TryResolveStructurePlacementDragTarget(
 	OutTargetCell = FSRPlanetSurfaceGridCell();
 
 	const ASRPlayerController* PlayerController = GetOwnerController();
-	if (!PlayerController || !bAssemblyModeActive || !IsValid(PlayerController->GetSelectedStructureDataAsset()))
+	if (!PlayerController
+		|| PlayerController->IsPointerOverBlockingUi()
+		|| !bAssemblyModeActive
+		|| !IsValid(PlayerController->GetSelectedStructureDataAsset()))
 	{
 		return false;
 	}
@@ -179,6 +182,7 @@ void USRAssemblyComponent::EnqueueStructurePlacement(USRPlanetSurfaceGrid* Surfa
 	FSRQueuedStructurePlacement QueuedPlacement;
 	QueuedPlacement.SurfaceGrid = SurfaceGrid;
 	QueuedPlacement.CellId = CellId;
+	QueuedPlacement.PlacementRotationSteps = GetStructurePlacementRotationSteps();
 	PendingStructurePlacementQueue.Add(QueuedPlacement);
 }
 
@@ -288,7 +292,7 @@ bool USRAssemblyComponent::TryPlaceConveyorDragPath(USRPlanetSurfaceGrid* Surfac
 	return true;
 }
 
-bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, bool bRefreshPreviewAndUI)
+bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, bool bRefreshPreviewAndUI, int32 PlacementRotationStepsOverride)
 {
 	ASRPlayerController* PlayerController = GetOwnerController();
 	USRStructureDataAsset* SelectedStructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
@@ -302,9 +306,16 @@ bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* Surfa
 	{
 		return TryPlaceSelectedConveyor(SurfaceGrid, TargetCell, SelectedStructureDataAsset, bRefreshPreviewAndUI);
 	}
+	const int32 PlacementRotationSteps = PlacementRotationStepsOverride == INDEX_NONE
+		? GetStructurePlacementRotationSteps()
+		: StarRovers::Structure::NormalizePlacementRotationSteps(PlacementRotationStepsOverride);
 
 	TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
-	if (!SurfaceGrid->GetFootprintCellIds(TargetCell.CellId, StructureData.FootprintCellsX, StructureData.FootprintCellsY, FootprintCellIds)
+	if (!SurfaceGrid->GetFootprintCellIds(
+		TargetCell.CellId,
+		StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacementRotationSteps),
+		StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, PlacementRotationSteps),
+		FootprintCellIds)
 		|| !SurfaceGrid->CanOccupyCells(FootprintCellIds))
 	{
 		if (bRefreshPreviewAndUI)
@@ -319,7 +330,14 @@ bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* Surfa
 		if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
 		{
 			FName OccupantId = NAME_None;
-			if (StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(SurfaceGrid, TargetCell.CellId, SelectedStructureDataAsset, OccupantId, false))
+			if (StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(
+				SurfaceGrid,
+				TargetCell.CellId,
+				SelectedStructureDataAsset,
+				OccupantId,
+				false,
+				false,
+				PlacementRotationSteps))
 			{
 				if (bRefreshPreviewAndUI)
 				{
@@ -336,7 +354,13 @@ bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* Surfa
 	}
 
 	AActor* PlacedStructureActor = nullptr;
-	if (!USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(SurfaceGrid, TargetCell.CellId, SelectedStructureDataAsset, PlacedStructureActor))
+	if (!USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
+		SurfaceGrid,
+		TargetCell.CellId,
+		SelectedStructureDataAsset,
+		PlacedStructureActor,
+		false,
+		PlacementRotationSteps))
 	{
 		return false;
 	}

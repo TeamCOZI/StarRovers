@@ -1,5 +1,263 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
+#include "Conveyor/SRConveyorNetworkComponent.h"
+#include "SRFacilityNetworkComponentInternal.h"
+#include "GameFramework/Actor.h"
+#include "Surface/SRPlanetSurfaceGrid.h"
+
+namespace
+{
+	constexpr double HeatResponsiveEnergyBonus = 5.0;
+	constexpr double VolatileEnergyPenalty = 5.0;
+
+	bool IsEnergyResource(const FSRResourceInstance& ResourceInstance)
+	{
+		return ResourceInstance.ResourceKind == ESRResourceKind::Energy;
+	}
+
+	bool IsCatalystResource(const FSRResourceInstance& ResourceInstance)
+	{
+		return ResourceInstance.ResourceKind == ESRResourceKind::Catalyst;
+	}
+
+	bool HasTag(const TArray<FSRResourceTagStack>& Tags, ESRResourceProcessTag Tag)
+	{
+		return Tags.ContainsByPredicate([Tag](const FSRResourceTagStack& TagStack)
+		{
+			return TagStack.Tag == Tag && TagStack.StackCount > 0;
+		});
+	}
+
+	bool HasTag(const FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag)
+	{
+		return HasTag(ResourceInstance.Tags, Tag);
+	}
+
+	bool CanEnergyResourceEnterFacility(const FSRResourceInstance& ResourceInstance)
+	{
+		return IsEnergyResource(ResourceInstance)
+			&& ResourceInstance.RemainingProcessLimit > 0
+			&& !HasTag(ResourceInstance, ESRResourceProcessTag::Singularity);
+	}
+
+	void MergeTagStacks(TArray<FSRResourceTagStack>& InOutTags, const TArray<FSRResourceTagStack>& TagsToMerge)
+	{
+		for (const FSRResourceTagStack& TagToMerge : TagsToMerge)
+		{
+			if (TagToMerge.StackCount <= 0)
+			{
+				continue;
+			}
+
+			FSRResourceTagStack* ExistingTag = InOutTags.FindByPredicate([&TagToMerge](const FSRResourceTagStack& ExistingTagStack)
+			{
+				return ExistingTagStack.Tag == TagToMerge.Tag;
+			});
+			if (ExistingTag)
+			{
+				ExistingTag->StackCount += TagToMerge.StackCount;
+				if (TagToMerge.RemainingCycles > 0)
+				{
+					ExistingTag->RemainingCycles = ExistingTag->RemainingCycles > 0
+						? FMath::Min(ExistingTag->RemainingCycles, TagToMerge.RemainingCycles)
+						: TagToMerge.RemainingCycles;
+				}
+				else if (TagToMerge.Tag == ESRResourceProcessTag::HalfLife && ExistingTag->RemainingCycles <= 0)
+				{
+					ExistingTag->RemainingCycles = StarRovers::FacilityNetwork::HalfLifeDefaultCycles;
+				}
+				continue;
+			}
+
+			FSRResourceTagStack NewTagStack = TagToMerge;
+			if (NewTagStack.Tag == ESRResourceProcessTag::HalfLife && NewTagStack.RemainingCycles <= 0)
+			{
+				NewTagStack.RemainingCycles = StarRovers::FacilityNetwork::HalfLifeDefaultCycles;
+			}
+			InOutTags.Add(NewTagStack);
+		}
+	}
+
+	void CountInputResourceKinds(const TArray<FSRResourceInstance>& InputResources, int32& OutEnergyCount, int32& OutCatalystCount)
+	{
+		OutEnergyCount = 0;
+		OutCatalystCount = 0;
+		for (const FSRResourceInstance& ResourceInstance : InputResources)
+		{
+			if (IsEnergyResource(ResourceInstance))
+			{
+				++OutEnergyCount;
+			}
+			else if (IsCatalystResource(ResourceInstance))
+			{
+				++OutCatalystCount;
+			}
+		}
+	}
+
+	bool DoesInputSetMatchOperation(const USRFacilityDataAsset* FacilityDataAsset, const TArray<FSRResourceInstance>& InputResources)
+	{
+		if (!IsValid(FacilityDataAsset))
+		{
+			return false;
+		}
+
+		if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine)
+		{
+			return InputResources.IsEmpty();
+		}
+
+		if (InputResources.IsEmpty())
+		{
+			return false;
+		}
+
+		for (const FSRResourceInstance& ResourceInstance : InputResources)
+		{
+			if (IsEnergyResource(ResourceInstance) && !CanEnergyResourceEnterFacility(ResourceInstance))
+			{
+				return false;
+			}
+		}
+
+		int32 EnergyCount = 0;
+		int32 CatalystCount = 0;
+		CountInputResourceKinds(InputResources, EnergyCount, CatalystCount);
+
+		switch (FacilityDataAsset->OperationKind)
+		{
+		case ESRFacilityOperationKind::Process:
+			return EnergyCount >= 1 && CatalystCount == 0;
+		case ESRFacilityOperationKind::Synthesize:
+			return EnergyCount == 2 && CatalystCount == 1;
+		case ESRFacilityOperationKind::Split:
+			return EnergyCount == 1 && CatalystCount == 0;
+		case ESRFacilityOperationKind::Mine:
+			return InputResources.IsEmpty();
+		default:
+			return false;
+		}
+	}
+
+	void ConsumeEnergyForFacilityPass(FSRResourceInstance& ResourceInstance, ESRFacilityTemperatureState TemperatureState)
+	{
+		if (!IsEnergyResource(ResourceInstance))
+		{
+			return;
+		}
+
+		ResourceInstance.RemainingProcessLimit = FMath::Max(0, ResourceInstance.RemainingProcessLimit - 1);
+		++ResourceInstance.ProcessCount;
+		if (TemperatureState == ESRFacilityTemperatureState::Hot)
+		{
+			ResourceInstance.RemainingProcessLimit = FMath::Max(0, ResourceInstance.RemainingProcessLimit - 1);
+		}
+	}
+
+	void ConsumeEnergyInputsForFacilityPass(TArray<FSRResourceInstance>& InOutResources, ESRFacilityTemperatureState TemperatureState)
+	{
+		for (FSRResourceInstance& ResourceInstance : InOutResources)
+		{
+			ConsumeEnergyForFacilityPass(ResourceInstance, TemperatureState);
+		}
+	}
+
+	const FSRResourceInstance* FindFirstEnergyResource(const TArray<FSRResourceInstance>& ResourceInstances)
+	{
+		return ResourceInstances.FindByPredicate([](const FSRResourceInstance& ResourceInstance)
+		{
+			return IsEnergyResource(ResourceInstance);
+		});
+	}
+
+	bool FindSynthesisInputs(
+		const TArray<FSRResourceInstance>& ResourceInstances,
+		const FSRResourceInstance*& OutFirstEnergy,
+		const FSRResourceInstance*& OutSecondEnergy,
+		const FSRResourceInstance*& OutCatalyst)
+	{
+		OutFirstEnergy = nullptr;
+		OutSecondEnergy = nullptr;
+		OutCatalyst = nullptr;
+
+		for (const FSRResourceInstance& ResourceInstance : ResourceInstances)
+		{
+			if (IsEnergyResource(ResourceInstance))
+			{
+				if (!OutFirstEnergy)
+				{
+					OutFirstEnergy = &ResourceInstance;
+				}
+				else if (!OutSecondEnergy)
+				{
+					OutSecondEnergy = &ResourceInstance;
+				}
+			}
+			else if (IsCatalystResource(ResourceInstance) && !OutCatalyst)
+			{
+				OutCatalyst = &ResourceInstance;
+			}
+		}
+
+		return OutFirstEnergy && OutSecondEnergy && OutCatalyst;
+	}
+
+	double ApplyCatalystOperator(double FirstEnergyValue, double SecondEnergyValue, ESRResourceCatalystOperator CatalystOperator)
+	{
+		switch (CatalystOperator)
+		{
+		case ESRResourceCatalystOperator::Multiply:
+			return FirstEnergyValue * SecondEnergyValue;
+		case ESRResourceCatalystOperator::Subtract:
+			return FirstEnergyValue - SecondEnergyValue;
+		case ESRResourceCatalystOperator::Divide:
+			return FMath::Abs(SecondEnergyValue) > UE_DOUBLE_SMALL_NUMBER
+				? FirstEnergyValue / SecondEnergyValue
+				: FirstEnergyValue;
+		case ESRResourceCatalystOperator::Add:
+		case ESRResourceCatalystOperator::None:
+		default:
+			return FirstEnergyValue + SecondEnergyValue;
+		}
+	}
+
+	FSRResourceInstance BuildDefaultOutputResource(
+		const USRFacilityDataAsset* FacilityDataAsset,
+		const FSRResourceInstance& FallbackResource)
+	{
+		USRResourceDataAsset* OutputResourceDataAsset = IsValid(FacilityDataAsset)
+			? FacilityDataAsset->DefaultOutputResource.Get()
+			: nullptr;
+		return IsValid(OutputResourceDataAsset)
+			? OutputResourceDataAsset->BuildDefaultInstance()
+			: FallbackResource;
+	}
+
+	void ApplyExistingTagEffects(
+		ESRFacilityTemperatureState TemperatureState,
+		const TArray<FSRResourceTagStack>& TagsBeforeFacilityEffects,
+		FSRResourceInstance& ResourceInstance)
+	{
+		if (!IsEnergyResource(ResourceInstance))
+		{
+			return;
+		}
+
+		if (TemperatureState == ESRFacilityTemperatureState::Hot
+			&& HasTag(TagsBeforeFacilityEffects, ESRResourceProcessTag::Responsive)
+			&& HasTag(ResourceInstance, ESRResourceProcessTag::Responsive))
+		{
+			ResourceInstance.EnergyValue += HeatResponsiveEnergyBonus;
+		}
+
+		if (HasTag(TagsBeforeFacilityEffects, ESRResourceProcessTag::Volatile)
+			&& HasTag(ResourceInstance, ESRResourceProcessTag::Volatile))
+		{
+			ResourceInstance.EnergyValue -= VolatileEnergyPenalty;
+		}
+	}
+}
+
 bool USRFacilityNetworkComponent::SetFacilityTemperatureState(FName OccupantId, ESRFacilityTemperatureState TemperatureState)
 {
 	FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
@@ -31,6 +289,44 @@ bool USRFacilityNetworkComponent::SetFacilityTemperatureState(FName OccupantId, 
 	return true;
 }
 
+bool USRFacilityNetworkComponent::SetFacilityProcessEnabled(FName OccupantId, bool bEnabled)
+{
+	FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance)
+	{
+		return false;
+	}
+
+	FacilityInstance->bProcessEnabled = bEnabled;
+	if (bEnabled)
+	{
+		SetComponentTickEnabled(bAutoProcessFacilities);
+	}
+	return true;
+}
+
+bool USRFacilityNetworkComponent::SetFacilityDeliverEnabled(FName OccupantId, bool bEnabled)
+{
+	FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance)
+	{
+		return false;
+	}
+
+	FacilityInstance->bDeliverEnabled = bEnabled;
+	if (bEnabled)
+	{
+		if (AActor* Owner = GetOwner())
+		{
+			if (USRConveyorNetworkComponent* ConveyorNetwork = Owner->FindComponentByClass<USRConveyorNetworkComponent>())
+			{
+				ConveyorNetwork->SetComponentTickEnabled(true);
+			}
+		}
+	}
+	return true;
+}
+
 int32 USRFacilityNetworkComponent::ProcessFacilities(float DeltaTime)
 {
 	if (FacilityInstancesByOccupantId.IsEmpty())
@@ -52,7 +348,7 @@ int32 USRFacilityNetworkComponent::ProcessFacilities(float DeltaTime)
 			TryStartProcessing(FacilityInstance);
 		}
 
-		if (FacilityInstance.bProcessing)
+		if (FacilityInstance.bProcessing && CanFacilityAdvanceProcessing(FacilityInstance))
 		{
 			FacilityInstance.ProcessProgressSeconds += FMath::Max(0.0f, DeltaTime);
 			if (FacilityInstance.ProcessProgressSeconds >= ResolveProcessSeconds(FacilityInstance))
@@ -66,10 +362,15 @@ int32 USRFacilityNetworkComponent::ProcessFacilities(float DeltaTime)
 	return ProcessedCount;
 }
 
-bool USRFacilityNetworkComponent::CanFacilityRun(const FSRFacilityInstance& FacilityInstance) const
+bool USRFacilityNetworkComponent::CanFacilityAdvanceProcessing(const FSRFacilityInstance& FacilityInstance) const
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	if (!IsValid(FacilityDataAsset))
+	{
+		return false;
+	}
+
+	if (!FacilityInstance.bProcessEnabled)
 	{
 		return false;
 	}
@@ -90,50 +391,203 @@ bool USRFacilityNetworkComponent::CanFacilityRun(const FSRFacilityInstance& Faci
 		return false;
 	}
 
-	const int32 InputCount = FMath::Max(1, FacilityDataAsset->InputResourceCount);
-	const int32 OutputCapacity = FMath::Max(1, FacilityDataAsset->OutputCapacity);
-	if (FacilityInstance.InputInventory.Num() < InputCount)
+	return true;
+}
+
+bool USRFacilityNetworkComponent::CanFacilityRun(const FSRFacilityInstance& FacilityInstance) const
+{
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+	if (!CanFacilityAdvanceProcessing(FacilityInstance) || !IsValid(FacilityDataAsset))
 	{
 		return false;
 	}
 
-	int32 ExpiredInputOutputSlots = 0;
-	int32 ProcessableInputCount = 0;
-	for (int32 InputIndex = 0; InputIndex < InputCount; ++InputIndex)
+	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine)
 	{
-		if (FacilityInstance.InputInventory[InputIndex].RemainingProcessLimit <= 0)
-		{
-			++ExpiredInputOutputSlots;
-		}
-		else
-		{
-			++ProcessableInputCount;
-		}
+		return CanMiningFacilityRun(FacilityInstance);
 	}
 
-	const int32 RequiredOutputSlots = ExpiredInputOutputSlots
-		+ (ProcessableInputCount > 0 ? ResolveRequiredOutputSlots(FacilityDataAsset) : 0);
-	return FacilityInstance.OutputInventory.Num() + RequiredOutputSlots <= OutputCapacity;
+	TArray<FSRResourceInstance> InputResources;
+	if (!GatherPendingInputResources(FacilityInstance, InputResources))
+	{
+		return false;
+	}
+
+	if (!DoesInputSetMatchOperation(FacilityDataAsset, InputResources))
+	{
+		return false;
+	}
+
+	const int32 RequiredOutputSlots = ResolveRequiredOutputSlots(FacilityInstance);
+	return CanStoreOutputResources(FacilityInstance, RequiredOutputSlots);
 }
 
-int32 USRFacilityNetworkComponent::ResolveRequiredOutputSlots(const USRFacilityDataAsset* FacilityDataAsset) const
+bool USRFacilityNetworkComponent::CanMiningFacilityRun(const FSRFacilityInstance& FacilityInstance) const
+{
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+	if (!CanFacilityAdvanceProcessing(FacilityInstance)
+		|| !IsValid(FacilityDataAsset)
+		|| FacilityDataAsset->OperationKind != ESRFacilityOperationKind::Mine)
+	{
+		return false;
+	}
+
+	FSRResourceDepositInstance ResourceDeposit;
+	if (!FindMiningTargetDeposit(FacilityInstance, ResourceDeposit))
+	{
+		return false;
+	}
+
+	return CanStoreOutputResources(FacilityInstance, ResolveRequiredOutputSlots(FacilityInstance));
+}
+
+bool USRFacilityNetworkComponent::FindMiningTargetDeposit(
+	const FSRFacilityInstance& FacilityInstance,
+	FSRResourceDepositInstance& OutResourceDeposit) const
+{
+	OutResourceDeposit = FSRResourceDepositInstance();
+
+	const AActor* Owner = GetOwner();
+	const USRPlanetSurfaceGrid* SurfaceGrid = IsValid(Owner) ? Owner->FindComponentByClass<USRPlanetSurfaceGrid>() : nullptr;
+	const USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(Owner)
+		? Owner->FindComponentByClass<USRStructureInstanceManagerComponent>()
+		: nullptr;
+	if (!IsValid(SurfaceGrid) || !IsValid(StructureInstanceManager))
+	{
+		return false;
+	}
+
+	if (!FacilityInstance.MiningTargetDepositOccupantId.IsNone()
+		&& StructureInstanceManager->GetResourceDepositInstance(FacilityInstance.MiningTargetDepositOccupantId, OutResourceDeposit)
+		&& OutResourceDeposit.RemainingAmount > 0
+		&& IsValid(OutResourceDeposit.ResourceDataAsset.Get()))
+	{
+		return true;
+	}
+
+	return StructureInstanceManager->FindAdjacentResourceDeposit(
+		const_cast<USRPlanetSurfaceGrid*>(SurfaceGrid),
+		FacilityInstance.FootprintCellIds,
+		OutResourceDeposit);
+}
+
+int32 USRFacilityNetworkComponent::CountProducedOutputResources(const USRFacilityDataAsset* FacilityDataAsset) const
 {
 	if (!IsValid(FacilityDataAsset))
 	{
-		return 1;
+		return 0;
 	}
 
-	int32 RequiredOutputSlots = FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Split
-		? FMath::Max(2, FacilityDataAsset->SplitOutputCount)
-		: 1;
+	int32 ProducedOutputCount = 0;
 	for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
 	{
 		if (EffectSpec.EffectKind == ESRFacilityEffectKind::ProduceResource && IsValid(EffectSpec.ProducedResource.Get()))
 		{
-			RequiredOutputSlots += FMath::Max(1, EffectSpec.Count);
+			ProducedOutputCount += FMath::Max(1, EffectSpec.Count);
 		}
 	}
-	return FMath::Max(1, RequiredOutputSlots);
+	return ProducedOutputCount;
+}
+
+int32 USRFacilityNetworkComponent::ResolvePrimaryOutputCount(const FSRFacilityInstance& FacilityInstance) const
+{
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+	if (!IsValid(FacilityDataAsset))
+	{
+		return 0;
+	}
+
+	const int32 OutputPortCount = FacilityInstance.OutputPortInventories.Num();
+	const int32 ProducedOutputCount = CountProducedOutputResources(FacilityDataAsset);
+	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Split)
+	{
+		const int32 PrimaryOutputCount = OutputPortCount - ProducedOutputCount;
+		return PrimaryOutputCount >= 2 ? PrimaryOutputCount : 0;
+	}
+
+	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine)
+	{
+		return OutputPortCount > 0 ? 1 : 0;
+	}
+
+	return OutputPortCount > 0 ? 1 : 0;
+}
+
+int32 USRFacilityNetworkComponent::ResolveRequiredOutputSlots(const FSRFacilityInstance& FacilityInstance) const
+{
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+	if (!IsValid(FacilityDataAsset))
+	{
+		return 0;
+	}
+
+	return ResolvePrimaryOutputCount(FacilityInstance) + CountProducedOutputResources(FacilityDataAsset);
+}
+
+bool USRFacilityNetworkComponent::GatherPendingInputResources(const FSRFacilityInstance& FacilityInstance, TArray<FSRResourceInstance>& OutInputResources) const
+{
+	OutInputResources.Reset();
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+	if (!IsValid(FacilityDataAsset))
+	{
+		return false;
+	}
+
+	const int32 InputCount = FacilityInstance.InputPortInventories.Num();
+	if (InputCount <= 0)
+	{
+		return false;
+	}
+
+	OutInputResources.Reserve(InputCount);
+	for (int32 InputIndex = 0; InputIndex < InputCount; ++InputIndex)
+	{
+		const FSRFacilityPortInventory& InputPortInventory = FacilityInstance.InputPortInventories[InputIndex];
+		if (InputPortInventory.Inventory.IsEmpty())
+		{
+			OutInputResources.Reset();
+			return false;
+		}
+
+		OutInputResources.Add(InputPortInventory.Inventory[0]);
+	}
+
+	return !OutInputResources.IsEmpty();
+}
+
+bool USRFacilityNetworkComponent::CanStoreOutputResources(const FSRFacilityInstance& FacilityInstance, int32 OutputResourceCount) const
+{
+	if (OutputResourceCount <= 0)
+	{
+		return false;
+	}
+
+	const int32 SafeOutputResourceCount = OutputResourceCount;
+	if (FacilityInstance.OutputPortInventories.Num() < SafeOutputResourceCount)
+	{
+		return false;
+	}
+
+	for (int32 OutputIndex = 0; OutputIndex < SafeOutputResourceCount; ++OutputIndex)
+	{
+		const FSRFacilityPortInventory& OutputPortInventory = FacilityInstance.OutputPortInventories[OutputIndex];
+		if (OutputPortInventory.Inventory.Num() + 1 > FMath::Max(1, OutputPortInventory.Capacity))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void USRFacilityNetworkComponent::StoreOutputResources(FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& OutputResources)
+{
+	for (int32 OutputIndex = 0; OutputIndex < OutputResources.Num() && FacilityInstance.OutputPortInventories.IsValidIndex(OutputIndex); ++OutputIndex)
+	{
+		FacilityInstance.OutputPortInventories[OutputIndex].Inventory.Add(OutputResources[OutputIndex]);
+	}
+
+	RefreshFacilityAggregateInventories(FacilityInstance);
 }
 
 float USRFacilityNetworkComponent::ResolveProcessSeconds(const FSRFacilityInstance& FacilityInstance) const
@@ -154,27 +608,59 @@ bool USRFacilityNetworkComponent::TryStartProcessing(FSRFacilityInstance& Facili
 		return false;
 	}
 
-	const int32 InputCount = FMath::Max(1, FacilityInstance.FacilityDataAsset->InputResourceCount);
+	if (const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		IsValid(FacilityDataAsset) && FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine)
+	{
+		FSRResourceDepositInstance ResourceDeposit;
+		if (!FindMiningTargetDeposit(FacilityInstance, ResourceDeposit))
+		{
+			return false;
+		}
+
+		FacilityInstance.MiningTargetDepositOccupantId = ResourceDeposit.OccupantId;
+		FacilityInstance.ProcessingInventory.Reset();
+		FacilityInstance.bProcessing = true;
+		FacilityInstance.ProcessProgressSeconds = 0.0f;
+		if (bLogFacilityNetworkEvents)
+		{
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("[FacilityNetwork] Mining started: OccupantId=%s Facility=%s Deposit=%s ResourceId=%s Remaining=%d/%d Owner=%s"),
+				*FacilityInstance.OccupantId.ToString(),
+				*GetNameSafe(FacilityInstance.FacilityDataAsset.Get()),
+				*ResourceDeposit.OccupantId.ToString(),
+				*ResourceDeposit.ResourceId.ToString(),
+				ResourceDeposit.RemainingAmount,
+				ResourceDeposit.TotalAmount,
+				*GetNameSafe(GetOwner()));
+		}
+		return true;
+	}
+
+	const int32 InputCount = FacilityInstance.InputPortInventories.Num();
+	if (InputCount <= 0)
+	{
+		return false;
+	}
+
 	FacilityInstance.ProcessingInventory.Reset();
 	for (int32 InputIndex = 0; InputIndex < InputCount; ++InputIndex)
 	{
-		FSRResourceInstance ResourceInstance = FacilityInstance.InputInventory[0];
-		FacilityInstance.InputInventory.RemoveAt(0);
-
-		if (ResourceInstance.RemainingProcessLimit <= 0)
+		if (!FacilityInstance.InputPortInventories.IsValidIndex(InputIndex)
+			|| FacilityInstance.InputPortInventories[InputIndex].Inventory.IsEmpty())
 		{
-			FacilityInstance.OutputInventory.Add(ResourceInstance);
-			continue;
+			FacilityInstance.ProcessingInventory.Reset();
+			FacilityInstance.bProcessing = false;
+			FacilityInstance.ProcessProgressSeconds = 0.0f;
+			return false;
 		}
 
-		--ResourceInstance.RemainingProcessLimit;
-		++ResourceInstance.ProcessCount;
-		if (FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Hot)
-		{
-			ResourceInstance.RemainingProcessLimit = FMath::Max(0, ResourceInstance.RemainingProcessLimit - 1);
-		}
+		FSRResourceInstance ResourceInstance = FacilityInstance.InputPortInventories[InputIndex].Inventory[0];
+		FacilityInstance.InputPortInventories[InputIndex].Inventory.RemoveAt(0);
 		FacilityInstance.ProcessingInventory.Add(ResourceInstance);
 	}
+	RefreshFacilityAggregateInventories(FacilityInstance);
 
 	if (FacilityInstance.ProcessingInventory.IsEmpty())
 	{
@@ -202,6 +688,12 @@ bool USRFacilityNetworkComponent::TryStartProcessing(FSRFacilityInstance& Facili
 
 bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& FacilityInstance)
 {
+	if (const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		IsValid(FacilityDataAsset) && FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine)
+	{
+		return TryCompleteMining(FacilityInstance);
+	}
+
 	if (!IsValid(FacilityInstance.FacilityDataAsset.Get()) || FacilityInstance.ProcessingInventory.IsEmpty())
 	{
 		FacilityInstance.ProcessingInventory.Reset();
@@ -213,23 +705,30 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 	TArray<FSRResourceInstance> ConsumedResources = FacilityInstance.ProcessingInventory;
 	FSRResourceInstance OutputResource = BuildBaseOutputResource(FacilityInstance, ConsumedResources);
 	TArray<FSRResourceInstance> AdditionalOutputs;
+	const TArray<FSRResourceTagStack> TagsBeforeFacilityEffects = OutputResource.Tags;
 	ApplyFacilityEffects(FacilityInstance.FacilityDataAsset.Get(), OutputResource, AdditionalOutputs);
+	ApplyExistingTagEffects(FacilityInstance.TemperatureState, TagsBeforeFacilityEffects, OutputResource);
 
-	const int32 OutputCount = FacilityInstance.FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Split
-		? FMath::Max(2, FacilityInstance.FacilityDataAsset->SplitOutputCount)
-		: 1;
-	const int32 OutputCapacity = FMath::Max(1, FacilityInstance.FacilityDataAsset->OutputCapacity);
-	if (FacilityInstance.OutputInventory.Num() + OutputCount + AdditionalOutputs.Num() > OutputCapacity)
+	const int32 OutputCount = ResolvePrimaryOutputCount(FacilityInstance);
+	TArray<FSRResourceInstance> OutputResources;
+	OutputResources.Reserve(OutputCount + AdditionalOutputs.Num());
+	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
+	{
+		OutputResources.Add(OutputResource);
+	}
+	OutputResources.Append(AdditionalOutputs);
+	if (!CanStoreOutputResources(FacilityInstance, OutputResources.Num()))
 	{
 		FacilityInstance.ProcessProgressSeconds = ResolveProcessSeconds(FacilityInstance);
 		return false;
 	}
 
-	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
+	StoreOutputResources(FacilityInstance, OutputResources);
+	const int32 CellTemperatureEffects = ApplyFacilityCellTemperatureEffects(FacilityInstance);
+	if (CellTemperatureEffects > 0)
 	{
-		FacilityInstance.OutputInventory.Add(OutputResource);
+		RefreshFacilityTemperatureFromSurface(FacilityInstance.OccupantId);
 	}
-	FacilityInstance.OutputInventory.Append(AdditionalOutputs);
 	FacilityInstance.ProcessingInventory.Reset();
 	FacilityInstance.bProcessing = false;
 	FacilityInstance.ProcessProgressSeconds = 0.0f;
@@ -238,61 +737,228 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 		UE_LOG(
 			LogTemp,
 			Display,
-			TEXT("[FacilityNetwork] Processing completed: OccupantId=%s Facility=%s OutputResourceId=%s OutputCount=%d AdditionalOutputs=%d Owner=%s"),
+			TEXT("[FacilityNetwork] Processing completed: OccupantId=%s Facility=%s OutputResourceId=%s OutputCount=%d AdditionalOutputs=%d CellTemperatureEffects=%d Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
 			*GetNameSafe(FacilityInstance.FacilityDataAsset.Get()),
 			*OutputResource.ResourceId.ToString(),
 			OutputCount,
 			AdditionalOutputs.Num(),
+			CellTemperatureEffects,
 			*GetNameSafe(GetOwner()));
 	}
 	return true;
 }
 
-FSRResourceInstance USRFacilityNetworkComponent::BuildBaseOutputResource(const FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& ConsumedResources) const
+bool USRFacilityNetworkComponent::TryCompleteMining(FSRFacilityInstance& FacilityInstance)
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-	USRResourceDataAsset* OutputResourceDataAsset = IsValid(FacilityDataAsset) ? FacilityDataAsset->DefaultOutputResource.Get() : nullptr;
-	if (!IsValid(OutputResourceDataAsset) && !ConsumedResources.IsEmpty())
+	if (!IsValid(FacilityDataAsset) || FacilityDataAsset->OperationKind != ESRFacilityOperationKind::Mine)
 	{
-		OutputResourceDataAsset = ConsumedResources[0].ResourceDataAsset.Get();
+		FacilityInstance.MiningTargetDepositOccupantId = NAME_None;
+		FacilityInstance.bProcessing = false;
+		FacilityInstance.ProcessProgressSeconds = 0.0f;
+		return false;
 	}
 
-	FSRResourceInstance OutputResource = IsValid(OutputResourceDataAsset)
-		? OutputResourceDataAsset->BuildDefaultInstance()
-		: (!ConsumedResources.IsEmpty() ? ConsumedResources[0] : FSRResourceInstance());
-
-	if (!IsValid(FacilityDataAsset) || ConsumedResources.IsEmpty())
+	FSRResourceDepositInstance ResourceDeposit;
+	if (!FindMiningTargetDeposit(FacilityInstance, ResourceDeposit))
 	{
-		return OutputResource;
+		FacilityInstance.MiningTargetDepositOccupantId = NAME_None;
+		FacilityInstance.bProcessing = false;
+		FacilityInstance.ProcessProgressSeconds = 0.0f;
+		return false;
 	}
 
-	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Synthesize)
+	const int32 OutputCount = ResolvePrimaryOutputCount(FacilityInstance);
+	if (!CanStoreOutputResources(FacilityInstance, OutputCount))
 	{
-		double EnergySum = 0.0;
-		int32 RemainingProcessLimitSum = 0;
-		TArray<FSRResourceTagStack> MergedTags;
-		for (const FSRResourceInstance& ResourceInstance : ConsumedResources)
+		FacilityInstance.ProcessProgressSeconds = ResolveProcessSeconds(FacilityInstance);
+		return false;
+	}
+
+	AActor* Owner = GetOwner();
+	USRPlanetSurfaceGrid* SurfaceGrid = IsValid(Owner) ? Owner->FindComponentByClass<USRPlanetSurfaceGrid>() : nullptr;
+	USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(Owner)
+		? Owner->FindComponentByClass<USRStructureInstanceManagerComponent>()
+		: nullptr;
+	if (!IsValid(SurfaceGrid) || !IsValid(StructureInstanceManager))
+	{
+		FacilityInstance.MiningTargetDepositOccupantId = NAME_None;
+		FacilityInstance.bProcessing = false;
+		FacilityInstance.ProcessProgressSeconds = 0.0f;
+		return false;
+	}
+
+	FSRResourceInstance MinedResource;
+	FSRResourceDepositInstance UpdatedResourceDeposit;
+	if (!StructureInstanceManager->TryHarvestResourceDeposit(
+		SurfaceGrid,
+		ResourceDeposit.OccupantId,
+		MinedResource,
+		UpdatedResourceDeposit))
+	{
+		FacilityInstance.MiningTargetDepositOccupantId = NAME_None;
+		FacilityInstance.bProcessing = false;
+		FacilityInstance.ProcessProgressSeconds = 0.0f;
+		return false;
+	}
+
+	TArray<FSRResourceInstance> OutputResources;
+	OutputResources.Reserve(OutputCount);
+	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
+	{
+		OutputResources.Add(MinedResource);
+	}
+
+	StoreOutputResources(FacilityInstance, OutputResources);
+	FacilityInstance.MiningTargetDepositOccupantId = UpdatedResourceDeposit.RemainingAmount > 0
+		? UpdatedResourceDeposit.OccupantId
+		: NAME_None;
+	FacilityInstance.ProcessingInventory.Reset();
+	FacilityInstance.bProcessing = false;
+	FacilityInstance.ProcessProgressSeconds = 0.0f;
+	if (bLogFacilityNetworkEvents)
+	{
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("[FacilityNetwork] Mining completed: OccupantId=%s Facility=%s Deposit=%s ResourceId=%s Remaining=%d/%d Owner=%s"),
+			*FacilityInstance.OccupantId.ToString(),
+			*GetNameSafe(FacilityDataAsset),
+			*ResourceDeposit.OccupantId.ToString(),
+			*MinedResource.ResourceId.ToString(),
+			UpdatedResourceDeposit.RemainingAmount,
+			UpdatedResourceDeposit.TotalAmount,
+			*GetNameSafe(GetOwner()));
+	}
+	return true;
+}
+
+bool USRFacilityNetworkComponent::GetFacilityOutputPreview(
+	FName OccupantId,
+	FSRResourceInstance& OutPrimaryOutput,
+	TArray<FSRResourceInstance>& OutAdditionalOutputs,
+	int32& OutOutputCount) const
+{
+	OutPrimaryOutput = FSRResourceInstance();
+	OutAdditionalOutputs.Reset();
+	OutOutputCount = 0;
+
+	const FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance || !IsValid(FacilityInstance->FacilityDataAsset.Get()))
+	{
+		return false;
+	}
+
+	if (FacilityInstance->FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine)
+	{
+		FSRResourceDepositInstance ResourceDeposit;
+		if (!FindMiningTargetDeposit(*FacilityInstance, ResourceDeposit)
+			|| !IsValid(ResourceDeposit.ResourceDataAsset.Get()))
 		{
-			EnergySum += ResourceInstance.EnergyValue;
-			RemainingProcessLimitSum += ResourceInstance.RemainingProcessLimit;
-			MergedTags.Append(ResourceInstance.Tags);
+			return false;
 		}
-		OutputResource.EnergyValue = EnergySum;
-		OutputResource.RemainingProcessLimit = RemainingProcessLimitSum;
-		OutputResource.Tags = MergedTags;
+
+		OutPrimaryOutput = ResourceDeposit.ResourceDataAsset->BuildDefaultInstance();
+		OutAdditionalOutputs.Reset();
+		OutOutputCount = ResolvePrimaryOutputCount(*FacilityInstance);
+		return OutOutputCount > 0 && !OutPrimaryOutput.ResourceId.IsNone();
 	}
-	else if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Split)
+
+	TArray<FSRResourceInstance> PreviewInputs;
+	if (!FacilityInstance->ProcessingInventory.IsEmpty())
 	{
-		const int32 SplitOutputCount = FMath::Max(2, FacilityDataAsset->SplitOutputCount);
-		OutputResource.EnergyValue = ConsumedResources[0].EnergyValue / static_cast<double>(SplitOutputCount);
-		OutputResource.Tags = ConsumedResources[0].Tags;
+		PreviewInputs = FacilityInstance->ProcessingInventory;
 	}
 	else
 	{
-		OutputResource = ConsumedResources[0];
+		if (!GatherPendingInputResources(*FacilityInstance, PreviewInputs))
+		{
+			return false;
+		}
 	}
 
+	if (!DoesInputSetMatchOperation(FacilityInstance->FacilityDataAsset.Get(), PreviewInputs))
+	{
+		return false;
+	}
+
+	OutPrimaryOutput = BuildBaseOutputResource(*FacilityInstance, PreviewInputs);
+	const TArray<FSRResourceTagStack> TagsBeforeFacilityEffects = OutPrimaryOutput.Tags;
+	ApplyFacilityEffects(FacilityInstance->FacilityDataAsset.Get(), OutPrimaryOutput, OutAdditionalOutputs);
+	ApplyExistingTagEffects(FacilityInstance->TemperatureState, TagsBeforeFacilityEffects, OutPrimaryOutput);
+	OutOutputCount = ResolvePrimaryOutputCount(*FacilityInstance);
+	return true;
+}
+
+bool USRFacilityNetworkComponent::GetFacilityMiningTarget(
+	FName OccupantId,
+	FSRResourceDepositInstance& OutResourceDeposit) const
+{
+	OutResourceDeposit = FSRResourceDepositInstance();
+	const FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance
+		|| !IsValid(FacilityInstance->FacilityDataAsset.Get())
+		|| FacilityInstance->FacilityDataAsset->OperationKind != ESRFacilityOperationKind::Mine)
+	{
+		return false;
+	}
+
+	return FindMiningTargetDeposit(*FacilityInstance, OutResourceDeposit);
+}
+
+FSRResourceInstance USRFacilityNetworkComponent::BuildBaseOutputResource(const FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& ConsumedResources) const
+{
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+	if (!IsValid(FacilityDataAsset) || ConsumedResources.IsEmpty())
+	{
+		return !ConsumedResources.IsEmpty() ? ConsumedResources[0] : FSRResourceInstance();
+	}
+
+	TArray<FSRResourceInstance> ProcessedResources = ConsumedResources;
+	ConsumeEnergyInputsForFacilityPass(ProcessedResources, FacilityInstance.TemperatureState);
+
+	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Process)
+	{
+		if (const FSRResourceInstance* EnergyResource = FindFirstEnergyResource(ProcessedResources))
+		{
+			return *EnergyResource;
+		}
+		return ProcessedResources[0];
+	}
+
+	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Split)
+	{
+		const int32 PrimaryOutputCount = FMath::Max(1, ResolvePrimaryOutputCount(FacilityInstance));
+		if (const FSRResourceInstance* EnergyResource = FindFirstEnergyResource(ProcessedResources))
+		{
+			FSRResourceInstance OutputResource = *EnergyResource;
+			OutputResource.EnergyValue = EnergyResource->EnergyValue / static_cast<double>(PrimaryOutputCount);
+			return OutputResource;
+		}
+		return ProcessedResources[0];
+	}
+
+	const FSRResourceInstance* FirstEnergy = nullptr;
+	const FSRResourceInstance* SecondEnergy = nullptr;
+	const FSRResourceInstance* Catalyst = nullptr;
+	if (!FindSynthesisInputs(ProcessedResources, FirstEnergy, SecondEnergy, Catalyst))
+	{
+		return ProcessedResources[0];
+	}
+
+	FSRResourceInstance OutputResource = BuildDefaultOutputResource(FacilityDataAsset, *FirstEnergy);
+	OutputResource.ResourceKind = ESRResourceKind::Energy;
+	OutputResource.EnergyValue = ApplyCatalystOperator(
+		FirstEnergy->EnergyValue,
+		SecondEnergy->EnergyValue,
+		Catalyst->CatalystOperator);
+	OutputResource.CatalystOperator = ESRResourceCatalystOperator::None;
+	OutputResource.RemainingProcessLimit = FMath::Max(0, FirstEnergy->RemainingProcessLimit + SecondEnergy->RemainingProcessLimit);
+	OutputResource.ProcessCount = FirstEnergy->ProcessCount + SecondEnergy->ProcessCount;
+	OutputResource.Tags.Reset();
+	MergeTagStacks(OutputResource.Tags, FirstEnergy->Tags);
+	MergeTagStacks(OutputResource.Tags, SecondEnergy->Tags);
 	return OutputResource;
 }
 
@@ -314,8 +980,29 @@ void USRFacilityNetworkComponent::ApplyFacilityEffects(const USRFacilityDataAsse
 		case ESRFacilityEffectKind::MultiplyEnergy:
 			ResourceInstance.EnergyValue *= EffectSpec.Value;
 			break;
+		case ESRFacilityEffectKind::SubtractEnergy:
+			ResourceInstance.EnergyValue -= EffectSpec.Value;
+			break;
+		case ESRFacilityEffectKind::DivideEnergy:
+			if (FMath::Abs(EffectSpec.Value) > UE_DOUBLE_SMALL_NUMBER)
+			{
+				ResourceInstance.EnergyValue /= EffectSpec.Value;
+			}
+			break;
 		case ESRFacilityEffectKind::AddProcessLimit:
 			ResourceInstance.RemainingProcessLimit = FMath::Max(0, ResourceInstance.RemainingProcessLimit + FMath::RoundToInt(EffectSpec.Value));
+			break;
+		case ESRFacilityEffectKind::SubtractProcessLimit:
+			ResourceInstance.RemainingProcessLimit = FMath::Max(0, ResourceInstance.RemainingProcessLimit - FMath::RoundToInt(EffectSpec.Value));
+			break;
+		case ESRFacilityEffectKind::MultiplyProcessLimit:
+			ResourceInstance.RemainingProcessLimit = FMath::Max(0, FMath::RoundToInt(static_cast<double>(ResourceInstance.RemainingProcessLimit) * EffectSpec.Value));
+			break;
+		case ESRFacilityEffectKind::DivideProcessLimit:
+			if (FMath::Abs(EffectSpec.Value) > UE_DOUBLE_SMALL_NUMBER)
+			{
+				ResourceInstance.RemainingProcessLimit = FMath::Max(0, FMath::RoundToInt(static_cast<double>(ResourceInstance.RemainingProcessLimit) / EffectSpec.Value));
+			}
 			break;
 		case ESRFacilityEffectKind::AddTag:
 			AddTagStack(ResourceInstance, EffectSpec.ResourceTag, Count);
@@ -338,6 +1025,56 @@ void USRFacilityNetworkComponent::ApplyFacilityEffects(const USRFacilityDataAsse
 	}
 }
 
+int32 USRFacilityNetworkComponent::ApplyFacilityCellTemperatureEffects(const FSRFacilityInstance& FacilityInstance)
+{
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+	if (!IsValid(FacilityDataAsset))
+	{
+		return 0;
+	}
+
+	AActor* Owner = GetOwner();
+	USRPlanetSurfaceGrid* SurfaceGrid = IsValid(Owner) ? Owner->FindComponentByClass<USRPlanetSurfaceGrid>() : nullptr;
+	if (!IsValid(SurfaceGrid))
+	{
+		return 0;
+	}
+
+	int32 AppliedEffectCount = 0;
+	for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
+	{
+		double TemperatureDelta = 0.0;
+		switch (EffectSpec.EffectKind)
+		{
+		case ESRFacilityEffectKind::AddCellTemperature:
+			TemperatureDelta = EffectSpec.Value;
+			break;
+		case ESRFacilityEffectKind::SubtractCellTemperature:
+			TemperatureDelta = -EffectSpec.Value;
+			break;
+		default:
+			continue;
+		}
+
+		FSRPlanetSurfaceGridCellInfo OriginCellInfo;
+		if (!SurfaceGrid->GetCellInfoById(FacilityInstance.OriginCellId, OriginCellInfo))
+		{
+			continue;
+		}
+
+		const float NewSurfaceTemperature = FMath::Clamp(
+			OriginCellInfo.SurfaceTemperature + static_cast<float>(TemperatureDelta),
+			0.0f,
+			1.0f);
+		if (SurfaceGrid->SetCellSurfaceTemperature(FacilityInstance.OriginCellId, NewSurfaceTemperature))
+		{
+			++AppliedEffectCount;
+		}
+	}
+
+	return AppliedEffectCount;
+}
+
 void USRFacilityNetworkComponent::AddTagStack(FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag, int32 Count) const
 {
 	const int32 SafeCount = FMath::Max(1, Count);
@@ -346,6 +1083,10 @@ void USRFacilityNetworkComponent::AddTagStack(FSRResourceInstance& ResourceInsta
 		if (TagStack.Tag == Tag)
 		{
 			TagStack.StackCount += SafeCount;
+			if (Tag == ESRResourceProcessTag::HalfLife && TagStack.RemainingCycles <= 0)
+			{
+				TagStack.RemainingCycles = StarRovers::FacilityNetwork::HalfLifeDefaultCycles;
+			}
 			return;
 		}
 	}
@@ -353,6 +1094,10 @@ void USRFacilityNetworkComponent::AddTagStack(FSRResourceInstance& ResourceInsta
 	FSRResourceTagStack& NewTagStack = ResourceInstance.Tags.AddDefaulted_GetRef();
 	NewTagStack.Tag = Tag;
 	NewTagStack.StackCount = SafeCount;
+	if (Tag == ESRResourceProcessTag::HalfLife)
+	{
+		NewTagStack.RemainingCycles = StarRovers::FacilityNetwork::HalfLifeDefaultCycles;
+	}
 }
 
 void USRFacilityNetworkComponent::RemoveTagStack(FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag, int32 Count) const

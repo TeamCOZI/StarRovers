@@ -12,6 +12,7 @@ class ULineBatchComponent;
 class UMaterialInterface;
 class UPCGComponent;
 class USplineComponent;
+class UTextRenderComponent;
 class USRFacilityNetworkComponent;
 class USRPlanetSurfaceGrid;
 class USRStructureDataAsset;
@@ -40,6 +41,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor")
 	bool GetConveyorSegment(const FSRConveyorLaneKey& LaneKey, FSRConveyorSegment& OutSegment) const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor")
+	bool HasConveyorSegmentAtCell(const FSRPlanetSurfaceGridCellId& CellId) const;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
 	void ClearConveyors();
@@ -128,6 +132,27 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport", meta = (DisplayName = "MaxItemTransfersPerTick", ClampMin = "1"))
 	int32 MaxItemTransfersPerTick;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "bShowTransportItemVisuals"))
+	bool bShowTransportItemVisuals;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemVisualHeightOffset", ClampMin = "0.0"))
+	float ItemVisualHeightOffset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemEnergyLabelWorldSize", ClampMin = "1.0"))
+	float ItemEnergyLabelWorldSize;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemEnergyLabelMaxScale", ClampMin = "1.0"))
+	float ItemEnergyLabelMaxScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemEnergyLowColor"))
+	FLinearColor ItemEnergyLowColor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemEnergyHighColor"))
+	FLinearColor ItemEnergyHighColor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemEnergyNegativeColor"))
+	FLinearColor ItemEnergyNegativeColor;
+
 	TMap<FSRConveyorLaneKey, FSRConveyorSegment> Segments;
 	TArray<FSRConveyorVisualPath> VisualPaths;
 
@@ -201,6 +226,16 @@ private:
 	void RefreshPCGSplineInputs(USRPlanetSurfaceGrid* SurfaceGrid);
 	void RefreshPathDebugLines(USRPlanetSurfaceGrid* SurfaceGrid);
 	void ProcessConveyorTransport(USRPlanetSurfaceGrid* SurfaceGrid, float DeltaTime);
+	void RefreshConveyorItemVisuals(USRPlanetSurfaceGrid* SurfaceGrid, float DeltaTime);
+	void DestroyConveyorItemVisuals();
+	UTextRenderComponent* EnsureConveyorItemLabelComponent(const FSRConveyorLaneKey& LaneKey);
+	bool ResolveConveyorItemWorldLocation(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRConveyorItem& Item,
+		FVector& OutWorldLocation,
+		FVector& OutWorldNormal) const;
+	FText BuildConveyorItemLabelText(const FSRResourceInstance& ResourceInstance) const;
+	FColor ResolveConveyorItemLabelColor(const FSRResourceInstance& ResourceInstance) const;
 	bool TryResolveNextLane(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorSegment& Segment, FSRConveyorLaneKey& OutNextLane) const;
 	bool TryPullFacilityOutputToConveyor(
 		USRPlanetSurfaceGrid* SurfaceGrid,
@@ -219,4 +254,7 @@ private:
 
 	UPROPERTY(Transient)
 	TMap<FSRConveyorLaneKey, FSRConveyorItem> ConveyorItemsByLane;
+
+	UPROPERTY(Transient)
+	TMap<FSRConveyorLaneKey, TObjectPtr<UTextRenderComponent>> ConveyorItemLabelsByLane;
 };

@@ -25,8 +25,15 @@ namespace
 
 USRStructureInstanceManagerComponent::USRStructureInstanceManagerComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 	NextStructureInstanceSequence = 1;
+	bShowStructureNameLabels = true;
+	bShowNaturalStructureNameLabels = false;
+	StructureNameLabelHeightOffset = 260.0f;
+	StructureNameLabelWorldSize = 120.0f;
+	StructureNameLabelColor = FLinearColor(0.95f, 0.98f, 1.0f, 1.0f);
+	StructureNameLabelMaxDrawDistance = 0.0f;
 }
 
 bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
@@ -35,7 +42,8 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 	USRStructureDataAsset* StructureDataAsset,
 	FName& OutOccupantId,
 	bool bNaturalStructure,
-	bool bUseStaticMeshMaterials)
+	bool bUseStaticMeshMaterials,
+	int32 PlacementRotationSteps)
 {
 	OutOccupantId = NAME_None;
 	if (!IsValid(SurfaceGrid) || !IsValid(StructureDataAsset))
@@ -50,16 +58,26 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 	{
 		return false;
 	}
+	const int32 NormalizedRotationSteps = StarRovers::Structure::NormalizePlacementRotationSteps(PlacementRotationSteps);
 
 	TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
-	if (!SurfaceGrid->GetFootprintCellIds(TargetCellId, StructureData.FootprintCellsX, StructureData.FootprintCellsY, FootprintCellIds)
+	if (!SurfaceGrid->GetFootprintCellIds(
+		TargetCellId,
+		StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, NormalizedRotationSteps),
+		StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, NormalizedRotationSteps),
+		FootprintCellIds)
 		|| !SurfaceGrid->CanOccupyCells(FootprintCellIds))
 	{
 		return false;
 	}
 
 	FTransform PlacementTransform;
-	if (!USRStructurePlacementLibrary::BuildStructurePlacementTransform(SurfaceGrid, TargetCellId, StructureDataAsset, PlacementTransform))
+	if (!USRStructurePlacementLibrary::BuildStructurePlacementTransform(
+		SurfaceGrid,
+		TargetCellId,
+		StructureDataAsset,
+		PlacementTransform,
+		StarRovers::Structure::PlacementRotationStepsToYawDegrees(NormalizedRotationSteps)))
 	{
 		return false;
 	}
@@ -90,6 +108,7 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 	PlacedStructure.StructureId = StructureData.StructureId;
 	PlacedStructure.OriginCellId = TargetCellId;
 	PlacedStructure.FootprintCellIds = FootprintCellIds;
+	PlacedStructure.PlacementRotationSteps = NormalizedRotationSteps;
 	PlacedStructure.StructureDataAsset = StructureDataAsset;
 	PlacedStructure.VisualKey = VisualKey;
 	PlacedStructure.InstanceIndex = InstanceIndex;
@@ -97,15 +116,17 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 
 	PlacedStructuresByOccupantId.Add(OccupantId, PlacedStructure);
 	VisualGroup.OccupantIds.Add(OccupantId);
+	RegisterResourceDeposit(PlacedStructure, StructureData);
 	OutOccupantId = OccupantId;
 	if (USRFacilityNetworkComponent* FacilityNetwork = GetOwner() ? GetOwner()->FindComponentByClass<USRFacilityNetworkComponent>() : nullptr)
 	{
-		FacilityNetwork->RegisterFacility(OccupantId, StructureDataAsset, TargetCellId, FootprintCellIds);
+		FacilityNetwork->RegisterFacility(OccupantId, StructureDataAsset, TargetCellId, FootprintCellIds, NormalizedRotationSteps);
 	}
 	if (!bNaturalStructure)
 	{
 		LogStructureMemoryDiagnostics(TEXT("StructurePlace.User"), false, 1, FootprintCellIds.Num());
 	}
+	RefreshStructureNameLabel(SurfaceGrid, PlacedStructure);
 	return true;
 }
 
@@ -300,6 +321,8 @@ void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlan
 			continue;
 		}
 
+		DestroyStructureNameLabel(OccupantId);
+		ResourceDepositsByOccupantId.Remove(OccupantId);
 		ClearedCellIds.Append(RemovedStructure.FootprintCellIds);
 		RemovedOccupantIdsByVisualKey.FindOrAdd(RemovedStructure.VisualKey).Add(OccupantId);
 		if (USRFacilityNetworkComponent* FacilityNetwork = GetOwner() ? GetOwner()->FindComponentByClass<USRFacilityNetworkComponent>() : nullptr)
@@ -399,7 +422,8 @@ void USRStructureInstanceManagerComponent::RebuildVisualGroup(FName VisualKey)
 				SurfaceGrid,
 				PlacedStructure->OriginCellId,
 				PlacedStructure->StructureDataAsset,
-				PlacementTransform))
+				PlacementTransform,
+				StarRovers::Structure::PlacementRotationStepsToYawDegrees(PlacedStructure->PlacementRotationSteps)))
 		{
 			continue;
 		}

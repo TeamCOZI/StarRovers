@@ -4,6 +4,7 @@
 
 #include "Celestial/SRCelestialBody.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
+#include "Celestial/SRStar.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -228,6 +229,21 @@ FSRCelestialBodyFocusInfo USRCelestialBodyRuntimeLibrary::BuildCelestialBodyFocu
 	FocusInfo.Actor = const_cast<AActor*>(Actor);
 	FocusInfo.VariableName = GetCelestialVariableName(Actor);
 	FocusInfo.bCanConstruct = GetCelestialCanConstruct(Actor);
+	if (const ASRStar* Star = Cast<ASRStar>(Actor))
+	{
+		const FSRStellarFuelState FuelState = Star->GetStellarFuelState();
+		FocusInfo.bHasStarFuelInfo = true;
+		FocusInfo.StarFuelInfo.bIsValid = true;
+		FocusInfo.StarFuelInfo.StoredFuel = FuelState.StoredFuel;
+		FocusInfo.StarFuelInfo.RequiredFuelPerCycle = FuelState.RequiredFuelPerCycle;
+		FocusInfo.StarFuelInfo.RequirementGrowthPerCycle = FuelState.RequirementGrowthPerCycle;
+		FocusInfo.StarFuelInfo.RedGiantPressure = FuelState.RedGiantPressure;
+		FocusInfo.StarFuelInfo.RedGiantPressurePerMissingFuel = FuelState.RedGiantPressurePerMissingFuel;
+		FocusInfo.StarFuelInfo.LastSettledCycleIndex = FuelState.LastSettledCycleIndex;
+		FocusInfo.StarFuelInfo.LastCycleFuelConsumed = FuelState.LastCycleFuelConsumed;
+		FocusInfo.StarFuelInfo.LastCycleFuelDeficit = FuelState.LastCycleFuelDeficit;
+		FocusInfo.StarFuelInfo.bLastCycleMetRequirement = FuelState.bLastCycleMetRequirement;
+	}
 	if (USRPlanetSurfaceGrid* SurfaceGrid = FindPlanetSurfaceGrid(Actor))
 	{
 		FocusInfo.bHasSurfaceGrid = true;

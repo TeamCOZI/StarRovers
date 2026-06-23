@@ -180,5 +180,6 @@ bool USRConveyorNetworkComponent::TryPullFacilityOutputToConveyor(
 
 bool USRConveyorNetworkComponent::ShouldKeepTransportTickEnabled() const
 {
-	return bAutoTransportItems && (!Segments.IsEmpty() || !ConveyorItemsByLane.IsEmpty());
+	return (bAutoTransportItems && (!Segments.IsEmpty() || !ConveyorItemsByLane.IsEmpty()))
+		|| (bShowTransportItemVisuals && !ConveyorItemsByLane.IsEmpty());
 }

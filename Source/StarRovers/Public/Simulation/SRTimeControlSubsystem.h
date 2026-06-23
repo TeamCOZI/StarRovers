@@ -4,12 +4,20 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "SRTimeControlSubsystem.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSRGameCycleAdvancedSignature, int32, CurrentCycleIndex);
+
 UCLASS()
-class STARROVERS_API USRTimeControlSubsystem : public UWorldSubsystem
+class STARROVERS_API USRTimeControlSubsystem : public UTickableWorldSubsystem
 {
 	GENERATED_BODY()
 
 public:
+	virtual void Tick(float DeltaTime) override;
+	virtual TStatId GetStatId() const override;
+
+	UPROPERTY(BlueprintAssignable, Category = "StarRovers|Simulation")
+	FSRGameCycleAdvancedSignature OnGameCycleAdvanced;
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Simulation")
 	void PauseSimulation();
 
@@ -28,6 +36,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Simulation")
 	void SetSecondsPerPeriod(float NewSecondsPerPeriod);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Simulation")
+	void AdvanceGameCycles(int32 CycleCount = 1);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Simulation")
+	void ResetGameCycle(int32 NewCurrentCycleIndex = 0);
+
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Simulation")
 	float GetTimeScale() const;
 
@@ -40,12 +54,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Simulation")
 	bool IsSimulationPaused() const;
 
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Simulation")
+	int32 GetCurrentCycleIndex() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Simulation")
+	float GetCycleProgressSeconds() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Simulation")
+	float GetCycleProgressRatio() const;
+
 private:
 	UPROPERTY(Transient)
 	float TimeScale = 1.0f;
 
 	UPROPERTY(Transient)
 	float SecondsPerPeriod = 20.0f;
+
+	UPROPERTY(Transient)
+	float CycleProgressSeconds = 0.0f;
+
+	UPROPERTY(Transient)
+	int32 CurrentCycleIndex = 0;
 
 	UPROPERTY(Transient)
 	bool bSimulationPaused = false;

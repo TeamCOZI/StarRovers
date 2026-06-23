@@ -9,6 +9,7 @@ class UInputAction;
 class USRAssemblyComponent;
 class USRCelestialBodyFocusInfoWidget;
 class USRCelestialBodyOverviewWidget;
+class USRFacilityControlWidget;
 class USRStructureSelectionWidget;
 class USRStructureDataAsset;
 class USRTimeControlWidget;
@@ -56,6 +57,18 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     USRStructureSelectionWidget* GetStructureSelectionWidget() const;
 
+    UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
+    USRFacilityControlWidget* GetFacilityControlWidget() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
+    bool IsPointerOverFacilityControlWidget() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
+    bool IsPointerOverBlockingUi() const;
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|UI")
+    void ClearFacilityFocus();
+
     UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
     bool IsAssemblyModeActive() const;
 
@@ -79,6 +92,7 @@ public:
     bool BeginAssemblyPlacementDrag();
     bool ContinueAssemblyPlacementDrag();
     void EndAssemblyPlacementDrag();
+    bool RotateStructurePlacement(int32 StepDelta);
 
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "LeftClickAction"))
@@ -132,6 +146,15 @@ protected:
     UPROPERTY()
     TObjectPtr<USRStructureSelectionWidget> StructureSelectionWidget;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "FacilityControlWidgetClass"))
+    TSubclassOf<USRFacilityControlWidget> FacilityControlWidgetClass;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "FacilityControlWidgetZOrder"))
+    int32 FacilityControlWidgetZOrder;
+
+    UPROPERTY()
+    TObjectPtr<USRFacilityControlWidget> FacilityControlWidget;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "AvailableStructureDataAssets"))
     TArray<TObjectPtr<USRStructureDataAsset>> AvailableStructureDataAssets;
 
@@ -177,6 +200,8 @@ private:
     void CreateTimeControlWidget();
     void CreateStructureSelectionWidget();
     void RefreshStructureSelectionWidget();
+    void CreateFacilityControlWidget();
+    void RefreshFacilityControlWidget();
     void HandleStructureBuildOptionSelected(FName StructureId, USRStructureDataAsset* StructureDataAsset);
     void GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const;
     void UpdateHitResultTraceDistance();
@@ -185,7 +210,12 @@ private:
     void HandleLeftClick();
     void HandleRightClick();
     void HandleFocusParent();
+    void HandleRotatePlacementCounterClockwise();
+    void HandleRotatePlacementClockwise();
+    bool TryHandlePlacementRotationInput(int32 StepDelta);
     void UpdateSelection(AActor* NewSelectedActor);
 
     bool bPendingInitialPrimaryStarFocus;
+    uint64 LastPlacementRotationInputFrame;
+    int32 LastPlacementRotationInputStepDelta;
 };

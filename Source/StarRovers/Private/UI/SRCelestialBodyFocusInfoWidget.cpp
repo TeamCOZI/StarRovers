@@ -1,15 +1,19 @@
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Celestial/SRStar.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/PanelWidget.h"
+#include "Components/ScrollBox.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Fonts/SlateFontInfo.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Styling/SlateColor.h"
 
 namespace
@@ -112,6 +116,56 @@ namespace
 			*BuildPortDirectionLabel(bLeftInput, bLeftOutput),
 			*BuildPortDirectionLabel(bRightInput, bRightOutput));
 	}
+
+	const TCHAR* GetFocusedFacilityTemperatureLabel(ESRFacilityTemperatureState TemperatureState)
+	{
+		switch (TemperatureState)
+		{
+		case ESRFacilityTemperatureState::Frozen:
+			return TEXT("Frozen");
+		case ESRFacilityTemperatureState::Cold:
+			return TEXT("Cold");
+		case ESRFacilityTemperatureState::Normal:
+			return TEXT("Normal");
+		case ESRFacilityTemperatureState::Hot:
+			return TEXT("Hot");
+		case ESRFacilityTemperatureState::Overheated:
+			return TEXT("Overheated");
+		default:
+			return TEXT("Unknown");
+		}
+	}
+
+	FString BuildFocusedStarFuelSummary(const FSRFocusedStarFuelInfo& FuelInfo)
+	{
+		return FString::Printf(
+			TEXT("Stellar Fuel\nStored: %.2f\nRequired: %.2f\nGrowth: +%.2f / cycle\nRedGiantPressure: %.2f\nLastCycle: %s\nLastCycleIndex: %d\nConsumed: %.2f\nDeficit: %.2f"),
+			FuelInfo.StoredFuel,
+			FuelInfo.RequiredFuelPerCycle,
+			FuelInfo.RequirementGrowthPerCycle,
+			FuelInfo.RedGiantPressure,
+			FuelInfo.bLastCycleMetRequirement ? TEXT("Met") : TEXT("Short"),
+			FuelInfo.LastSettledCycleIndex,
+			FuelInfo.LastCycleFuelConsumed,
+			FuelInfo.LastCycleFuelDeficit);
+	}
+
+	bool AreFocusedStarFuelInfosEqual(const FSRFocusedStarFuelInfo& Left, const FSRFocusedStarFuelInfo& Right)
+	{
+		return Left.bIsValid == Right.bIsValid
+			&& FMath::IsNearlyEqual(Left.StoredFuel, Right.StoredFuel)
+			&& FMath::IsNearlyEqual(Left.RequiredFuelPerCycle, Right.RequiredFuelPerCycle)
+			&& FMath::IsNearlyEqual(Left.RequirementGrowthPerCycle, Right.RequirementGrowthPerCycle)
+			&& FMath::IsNearlyEqual(Left.RedGiantPressure, Right.RedGiantPressure)
+			&& FMath::IsNearlyEqual(Left.RedGiantPressurePerMissingFuel, Right.RedGiantPressurePerMissingFuel)
+			&& Left.LastSettledCycleIndex == Right.LastSettledCycleIndex
+			&& FMath::IsNearlyEqual(Left.LastCycleFuelConsumed, Right.LastCycleFuelConsumed)
+			&& FMath::IsNearlyEqual(Left.LastCycleFuelDeficit, Right.LastCycleFuelDeficit)
+			&& Left.bLastCycleMetRequirement == Right.bLastCycleMetRequirement;
+	}
+
+	constexpr float FocusDetailsBoxWidth = 360.0f;
+	constexpr float FocusDetailsBoxHeight = 260.0f;
 }
 
 TSharedRef<SWidget> USRCelestialBodyFocusInfoWidget::RebuildWidget()
@@ -141,6 +195,46 @@ void USRCelestialBodyFocusInfoWidget::NativePreConstruct()
 	BuildFocusInfoWidgetTree();
 	BindAssemblyModeButtonHandler();
 	RefreshFocusInfoText();
+}
+
+void USRCelestialBodyFocusInfoWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (RefreshStarFuelInfoFromFocusedActor())
+	{
+		RefreshFocusInfoText();
+	}
+}
+
+FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverFocusInfoUi(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverFocusInfoUi(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverFocusInfoUi(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
 }
 
 void USRCelestialBodyFocusInfoWidget::SetFocusInfo(const FSRCelestialBodyFocusInfo& NewFocusInfo)
@@ -179,6 +273,16 @@ void USRCelestialBodyFocusInfoWidget::SetAssemblyModeActive(bool bNewAssemblyMod
 bool USRCelestialBodyFocusInfoWidget::IsAssemblyModeActive() const
 {
 	return bAssemblyModeActive;
+}
+
+bool USRCelestialBodyFocusInfoWidget::IsPointerOverFocusInfoUi() const
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+
+	return IsScreenPositionOverFocusInfoUi(FSlateApplication::Get().GetCursorPos());
 }
 
 FSRStarRoversAssemblyModeRequestedSignature& USRCelestialBodyFocusInfoWidget::OnAssemblyModeRequested()
@@ -256,30 +360,75 @@ void USRCelestialBodyFocusInfoWidget::EnsureHoveredCellTextBlock(UWidget* Hovere
 		HoveredCellTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("HoveredCellTextBlock"))));
 	}
 
+	if (!HoveredCellContainer)
+	{
+		HoveredCellContainer = Cast<USizeBox>(WidgetTree->FindWidget(FName(TEXT("HoveredCellContainer"))));
+	}
+
+	if (!HoveredCellScrollBox)
+	{
+		HoveredCellScrollBox = Cast<UScrollBox>(WidgetTree->FindWidget(FName(TEXT("HoveredCellScrollBox"))));
+	}
+
+	if (!HoveredCellContainer)
+	{
+		HoveredCellContainer = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("HoveredCellContainer"));
+	}
+
+	if (!HoveredCellScrollBox)
+	{
+		HoveredCellScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("HoveredCellScrollBox"));
+	}
+
 	if (!HoveredCellTextBlock)
 	{
 		HoveredCellTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HoveredCellTextBlock"));
 	}
 
-	if (!HoveredCellTextBlock)
+	if (!HoveredCellTextBlock || !HoveredCellContainer || !HoveredCellScrollBox)
 	{
 		return;
 	}
+
+	HoveredCellContainer->SetWidthOverride(FocusDetailsBoxWidth);
+	HoveredCellContainer->SetHeightOverride(FocusDetailsBoxHeight);
+	HoveredCellScrollBox->SetOrientation(Orient_Vertical);
 
 	FSlateFontInfo HoveredCellFont = HoveredCellTextBlock->GetFont();
 	HoveredCellFont.Size = 13;
 	HoveredCellTextBlock->SetFont(HoveredCellFont);
 	HoveredCellTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor(0.78f, 0.9f, 1.0f, 1.0f)));
-	HoveredCellTextBlock->SetAutoWrapText(false);
+	HoveredCellTextBlock->SetAutoWrapText(true);
+	HoveredCellTextBlock->SetWrapTextAt(FocusDetailsBoxWidth - 28.0f);
 
-	if (HoveredCellTextBlock->GetParent())
+	if (HoveredCellTextBlock->GetParent() && HoveredCellTextBlock->GetParent() != HoveredCellScrollBox)
+	{
+		HoveredCellTextBlock->GetParent()->RemoveChild(HoveredCellTextBlock);
+	}
+
+	if (HoveredCellScrollBox->GetParent() && HoveredCellScrollBox->GetParent() != HoveredCellContainer)
+	{
+		HoveredCellScrollBox->GetParent()->RemoveChild(HoveredCellScrollBox);
+	}
+
+	if (HoveredCellContainer->GetContent() != HoveredCellScrollBox)
+	{
+		HoveredCellContainer->SetContent(HoveredCellScrollBox);
+	}
+
+	if (HoveredCellTextBlock->GetParent() != HoveredCellScrollBox)
+	{
+		HoveredCellScrollBox->AddChild(HoveredCellTextBlock);
+	}
+
+	if (HoveredCellContainer->GetParent())
 	{
 		return;
 	}
 
 	if (UVerticalBox* ParentVerticalBox = Cast<UVerticalBox>(HoveredCellTextBlockParent))
 	{
-		if (UVerticalBoxSlot* HoveredCellTextBlockSlot = ParentVerticalBox->AddChildToVerticalBox(HoveredCellTextBlock))
+		if (UVerticalBoxSlot* HoveredCellTextBlockSlot = ParentVerticalBox->AddChildToVerticalBox(HoveredCellContainer))
 		{
 			HoveredCellTextBlockSlot->SetPadding(FMargin(0.0f, 2.0f, 0.0f, 8.0f));
 		}
@@ -288,7 +437,7 @@ void USRCelestialBodyFocusInfoWidget::EnsureHoveredCellTextBlock(UWidget* Hovere
 
 	if (UCanvasPanel* ParentCanvasPanel = Cast<UCanvasPanel>(HoveredCellTextBlockParent))
 	{
-		if (UCanvasPanelSlot* HoveredCellTextBlockSlot = ParentCanvasPanel->AddChildToCanvas(HoveredCellTextBlock))
+		if (UCanvasPanelSlot* HoveredCellTextBlockSlot = ParentCanvasPanel->AddChildToCanvas(HoveredCellContainer))
 		{
 			HoveredCellTextBlockSlot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 0.0f));
 			HoveredCellTextBlockSlot->SetAlignment(FVector2D(1.0f, 0.0f));
@@ -300,7 +449,7 @@ void USRCelestialBodyFocusInfoWidget::EnsureHoveredCellTextBlock(UWidget* Hovere
 
 	if (UPanelWidget* ParentPanelWidget = Cast<UPanelWidget>(HoveredCellTextBlockParent))
 	{
-		ParentPanelWidget->AddChild(HoveredCellTextBlock);
+		ParentPanelWidget->AddChild(HoveredCellContainer);
 	}
 }
 
@@ -393,6 +542,41 @@ void USRCelestialBodyFocusInfoWidget::BindAssemblyModeButtonHandler()
 	}
 }
 
+bool USRCelestialBodyFocusInfoWidget::RefreshStarFuelInfoFromFocusedActor()
+{
+	if (!bHasFocusInfo || !FocusInfo.bHasStarFuelInfo || !IsValid(FocusInfo.Actor))
+	{
+		return false;
+	}
+
+	const ASRStar* Star = Cast<ASRStar>(FocusInfo.Actor.Get());
+	if (!IsValid(Star))
+	{
+		return false;
+	}
+
+	const FSRStellarFuelState FuelState = Star->GetStellarFuelState();
+	FSRFocusedStarFuelInfo NewFuelInfo;
+	NewFuelInfo.bIsValid = true;
+	NewFuelInfo.StoredFuel = FuelState.StoredFuel;
+	NewFuelInfo.RequiredFuelPerCycle = FuelState.RequiredFuelPerCycle;
+	NewFuelInfo.RequirementGrowthPerCycle = FuelState.RequirementGrowthPerCycle;
+	NewFuelInfo.RedGiantPressure = FuelState.RedGiantPressure;
+	NewFuelInfo.RedGiantPressurePerMissingFuel = FuelState.RedGiantPressurePerMissingFuel;
+	NewFuelInfo.LastSettledCycleIndex = FuelState.LastSettledCycleIndex;
+	NewFuelInfo.LastCycleFuelConsumed = FuelState.LastCycleFuelConsumed;
+	NewFuelInfo.LastCycleFuelDeficit = FuelState.LastCycleFuelDeficit;
+	NewFuelInfo.bLastCycleMetRequirement = FuelState.bLastCycleMetRequirement;
+
+	if (AreFocusedStarFuelInfosEqual(FocusInfo.StarFuelInfo, NewFuelInfo))
+	{
+		return false;
+	}
+
+	FocusInfo.StarFuelInfo = NewFuelInfo;
+	return true;
+}
+
 void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 {
 	if (VariableNameTextBlock)
@@ -406,20 +590,35 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 
 	if (HoveredCellTextBlock)
 	{
-		if (bHasFocusInfo && bAssemblyModeActive && (FocusInfo.bHasHoveredSurfaceCell || FocusInfo.bHasSelectedSurfaceStructure))
+		const bool bHasSelectedNonFacilityStructure = FocusInfo.bHasSelectedSurfaceStructure
+			&& !FocusInfo.SelectedSurfaceStructureInfo.bHasFacilityRuntimeInfo;
+		const bool bHasSurfaceFocusDetails = bAssemblyModeActive && (FocusInfo.bHasHoveredSurfaceCell || bHasSelectedNonFacilityStructure);
+		const bool bHasStarFuelDetails = FocusInfo.bHasStarFuelInfo && FocusInfo.StarFuelInfo.bIsValid;
+		if (bHasFocusInfo && (bHasSurfaceFocusDetails || bHasStarFuelDetails))
 		{
 			FString CellText;
-			if (FocusInfo.bHasHoveredSurfaceCell)
+			if (bHasStarFuelDetails)
+			{
+				CellText += BuildFocusedStarFuelSummary(FocusInfo.StarFuelInfo);
+			}
+
+			if (bAssemblyModeActive && FocusInfo.bHasHoveredSurfaceCell)
 			{
 				const FSRPlanetSurfaceGridCellInfo& CellInfo = FocusInfo.HoveredSurfaceCellInfo;
-				CellText = FString::Printf(
-					TEXT("Face: %d\nCell: %d,%d\nDisplay: %d,%d\nLatitude: %.1f deg"),
+				if (!CellText.IsEmpty())
+				{
+					CellText += TEXT("\n\n");
+				}
+				CellText += FString::Printf(
+					TEXT("Face: %d\nCell: %d,%d\nDisplay: %d,%d\nLatitude: %.1f deg\nTemperature: %s (%.2f)"),
 					GetCubeSphereFaceNumber(CellInfo.CellId.Face),
 					CellInfo.CellId.CellX,
 					CellInfo.CellId.CellY,
 					CellInfo.DisplayCellX,
 					CellInfo.DisplayCellY,
-					CellInfo.LatitudeDegrees);
+					CellInfo.LatitudeDegrees,
+					GetFocusedFacilityTemperatureLabel(CellInfo.TemperatureState),
+					CellInfo.SurfaceTemperature);
 				CellText += FString::Printf(TEXT("\nPatchDisplayCells: %d"), FocusInfo.HoveredSurfaceGridPatchCellIds.Num());
 				for (int32 CellIndex = 0; CellIndex < FocusInfo.HoveredSurfaceGridPatchCellIds.Num(); ++CellIndex)
 				{
@@ -434,7 +633,9 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 				}
 			}
 
-			if (FocusInfo.bHasSelectedSurfaceStructure)
+			if (bAssemblyModeActive
+				&& FocusInfo.bHasSelectedSurfaceStructure
+				&& !FocusInfo.SelectedSurfaceStructureInfo.bHasFacilityRuntimeInfo)
 			{
 				const FSRFocusedSurfaceStructureInfo& StructureInfo = FocusInfo.SelectedSurfaceStructureInfo;
 				const FSRPlanetSurfaceGridCellInfo& ClickedCellInfo = StructureInfo.ClickedCellInfo;
@@ -443,7 +644,7 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 					CellText += TEXT("\n\n");
 				}
 				CellText += FString::Printf(
-					TEXT("Selected Structure\nName: %s\nStructureId: %s\nOccupantId: %s\nKind: %s\nOrigin: F%d(%d,%d)\nClicked: F%d(%d,%d)\nFootprintCells: %d\nFacility: %s\nNatural: %s"),
+					TEXT("Selected Structure\nName: %s\nStructureId: %s\nOccupantId: %s\nKind: %s\nOrigin: F%d(%d,%d)\nClicked: F%d(%d,%d)\nClickedTemperature: %s (%.2f)\nFootprintCells: %d\nFacility: %s\nNatural: %s"),
 					*StructureInfo.DisplayName.ToString(),
 					*StructureInfo.StructureId.ToString(),
 					*StructureInfo.OccupantId.ToString(),
@@ -454,6 +655,8 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 					GetCubeSphereFaceNumber(ClickedCellInfo.CellId.Face),
 					ClickedCellInfo.CellId.CellX,
 					ClickedCellInfo.CellId.CellY,
+					GetFocusedFacilityTemperatureLabel(ClickedCellInfo.TemperatureState),
+					ClickedCellInfo.SurfaceTemperature,
 					StructureInfo.FootprintCellIds.Num(),
 					StructureInfo.bHasFacilityDataAsset ? TEXT("Yes") : TEXT("No"),
 					StructureInfo.bNaturalStructure ? TEXT("Yes") : TEXT("No"));
@@ -472,7 +675,7 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 		else
 		{
 			HoveredCellTextBlock->SetText(FText::GetEmpty());
-			HoveredCellTextBlock->SetVisibility(ESlateVisibility::Collapsed);
+			HoveredCellTextBlock->SetVisibility(ESlateVisibility::Hidden);
 		}
 	}
 
@@ -506,4 +709,21 @@ void USRCelestialBodyFocusInfoWidget::RefreshAssemblyModeButton()
 void USRCelestialBodyFocusInfoWidget::HandleAssemblyModeButtonClicked()
 {
 	AssemblyModeRequestedEvent.Broadcast();
+}
+
+bool USRCelestialBodyFocusInfoWidget::IsScreenPositionOverFocusInfoUi(const FVector2D& ScreenPosition) const
+{
+	if (!IsVisible())
+	{
+		return false;
+	}
+
+	if (FocusInfoBorder && FocusInfoBorder->GetCachedGeometry().IsUnderLocation(ScreenPosition))
+	{
+		return true;
+	}
+
+	return AssemblyModeButton
+		&& AssemblyModeButton->IsVisible()
+		&& AssemblyModeButton->GetCachedGeometry().IsUnderLocation(ScreenPosition);
 }

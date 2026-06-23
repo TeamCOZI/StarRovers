@@ -17,6 +17,7 @@ USRAssemblyComponent::USRAssemblyComponent()
 	LastPublishedHoveredSurfaceGrid = nullptr;
 	StructureGhostActor = nullptr;
 	StructureGhostDataAsset = nullptr;
+	StructureGhostPortPreviewSurfaceGrid = nullptr;
 	LastLoggedInvalidGhostDataAsset = nullptr;
 	LastHoveredSampleMousePosition = FVector2D::ZeroVector;
 	bHasLastHoveredSampleMousePosition = false;
@@ -24,7 +25,9 @@ USRAssemblyComponent::USRAssemblyComponent()
 	LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
 	StructureGhostCellId = FSRPlanetSurfaceGridCellId();
 	bHasStructureGhostCellId = false;
+	bHasStructureGhostPortPreview = false;
 	bIsStructurePlacementDragActive = false;
+	StructurePlacementRotationSteps = 0;
 	LastStructurePlacementDragSurfaceGrid = nullptr;
 	LastStructurePlacementDragCellId = FSRPlanetSurfaceGridCellId();
 	bHasLastStructurePlacementDragCellId = false;
@@ -80,6 +83,7 @@ void USRAssemblyComponent::SetAssemblyModeActive(bool bNewAssemblyModeActive)
 		EndStructurePlacementDrag();
 		ClearPendingConveyorPathStart();
 		PendingStructurePlacementQueue.Reset();
+		StructurePlacementRotationSteps = 0;
 		DestroyStructureGhostPreview();
 	}
 }
@@ -87,6 +91,46 @@ void USRAssemblyComponent::SetAssemblyModeActive(bool bNewAssemblyModeActive)
 void USRAssemblyComponent::ToggleAssemblyMode()
 {
 	SetAssemblyModeActive(!bAssemblyModeActive);
+}
+
+bool USRAssemblyComponent::RotateStructurePlacement(int32 StepDelta)
+{
+	ASRPlayerController* PlayerController = GetOwnerController();
+	USRStructureDataAsset* SelectedStructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
+	if (!bAssemblyModeActive
+		|| !IsValid(PlayerController)
+		|| PlayerController->IsPointerOverBlockingUi()
+		|| !IsValid(SelectedStructureDataAsset))
+	{
+		return false;
+	}
+
+	const FSRStructureData StructureData = SelectedStructureDataAsset->BuildData();
+	if (StructureData.BuildKind != ESRStructureBuildKind::Structure)
+	{
+		return false;
+	}
+
+	const int32 PreviousRotationSteps = StructurePlacementRotationSteps;
+	StructurePlacementRotationSteps = StarRovers::Structure::NormalizePlacementRotationSteps(StructurePlacementRotationSteps + StepDelta);
+	if (StructurePlacementRotationSteps == PreviousRotationSteps)
+	{
+		return false;
+	}
+
+	bHasStructureGhostCellId = false;
+	UpdateStructureGhostPreview();
+	return true;
+}
+
+int32 USRAssemblyComponent::GetStructurePlacementRotationSteps() const
+{
+	return StarRovers::Structure::NormalizePlacementRotationSteps(StructurePlacementRotationSteps);
+}
+
+float USRAssemblyComponent::GetStructurePlacementAdditionalYawDegrees() const
+{
+	return StarRovers::Structure::PlacementRotationStepsToYawDegrees(StructurePlacementRotationSteps);
 }
 
 void USRAssemblyComponent::ConfigurePlacementPerformance(int32 NewMaxStructurePlacementsPerFrame, int32 NewMaxQueuedStructurePlacements)

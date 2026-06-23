@@ -11,6 +11,7 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Fonts/SlateFontInfo.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Styling/SlateColor.h"
 
@@ -74,6 +75,36 @@ void USRStructureSelectionWidget::NativePreConstruct()
 	BuildStructureSelectionWidgetTree();
 	RebuildBuildOptions();
 	RefreshSelectedStructureText();
+}
+
+FReply USRStructureSelectionWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverStructureSelectionPanel(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply USRStructureSelectionWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverStructureSelectionPanel(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+FReply USRStructureSelectionWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverStructureSelectionPanel(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
 }
 
 void USRStructureSelectionWidget::SetBuildOptions(const TArray<FSRStructureBuildOption>& NewBuildOptions)
@@ -166,6 +197,16 @@ USRStructureDataAsset* USRStructureSelectionWidget::GetSelectedStructureDataAsse
 {
 	const FSRStructureBuildOption* BuildOption = bHasSelectedStructureId ? FindBuildOption(SelectedStructureId) : nullptr;
 	return BuildOption ? BuildOption->StructureDataAsset.Get() : nullptr;
+}
+
+bool USRStructureSelectionWidget::IsPointerOverStructureSelectionPanel() const
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+
+	return IsScreenPositionOverStructureSelectionPanel(FSlateApplication::Get().GetCursorPos());
 }
 
 void USRStructureSelectionWidget::DispatchBuildOptionSelected(FName StructureId)
@@ -345,4 +386,11 @@ const FSRStructureBuildOption* USRStructureSelectionWidget::FindBuildOption(FNam
 	{
 		return BuildOption.StructureId == StructureId;
 	});
+}
+
+bool USRStructureSelectionWidget::IsScreenPositionOverStructureSelectionPanel(const FVector2D& ScreenPosition) const
+{
+	return IsVisible()
+		&& StructureSelectionBorder
+		&& StructureSelectionBorder->GetCachedGeometry().IsUnderLocation(ScreenPosition);
 }

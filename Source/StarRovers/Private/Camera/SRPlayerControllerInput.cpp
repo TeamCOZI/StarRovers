@@ -4,6 +4,8 @@
 #include "Camera/SRCameraPawn.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "EnhancedInputComponent.h"
+#include "InputCoreTypes.h"
+
 void ASRPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
@@ -37,10 +39,18 @@ void ASRPlayerController::SetupInputComponent()
 			UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires DeleteStructureAction before right-click structure deletion binding."));
 		}
 	}
+
+	InputComponent->BindKey(EKeys::Q, IE_Pressed, this, &ASRPlayerController::HandleRotatePlacementCounterClockwise);
+	InputComponent->BindKey(EKeys::E, IE_Pressed, this, &ASRPlayerController::HandleRotatePlacementClockwise);
 }
 
 void ASRPlayerController::HandleLeftClick()
 {
+	if (IsPointerOverBlockingUi())
+	{
+		return;
+	}
+
 	bPendingInitialPrimaryStarFocus = false;
 
 	AActor* AssemblySelectedActor = nullptr;
@@ -77,6 +87,11 @@ void ASRPlayerController::HandleLeftClick()
 
 void ASRPlayerController::HandleRightClick()
 {
+	if (IsPointerOverBlockingUi())
+	{
+		return;
+	}
+
 	AActor* AssemblySelectedActor = nullptr;
 	if (AssemblyComponent && AssemblyComponent->TryHandleAssemblyDelete(AssemblySelectedActor))
 	{
@@ -89,6 +104,11 @@ void ASRPlayerController::HandleRightClick()
 
 void ASRPlayerController::HandleFocusParent()
 {
+	if (TryHandlePlacementRotationInput(-1))
+	{
+		return;
+	}
+
 	bPendingInitialPrimaryStarFocus = false;
 
 	ASRCameraPawn* CameraPawn = Cast<ASRCameraPawn>(GetPawn());
@@ -115,4 +135,32 @@ void ASRPlayerController::HandleFocusParent()
 	}
 	SetAssemblyModeActive(false);
 	RequestFocusActor(ParentBody);
+}
+
+void ASRPlayerController::HandleRotatePlacementCounterClockwise()
+{
+	TryHandlePlacementRotationInput(-1);
+}
+
+void ASRPlayerController::HandleRotatePlacementClockwise()
+{
+	TryHandlePlacementRotationInput(1);
+}
+
+bool ASRPlayerController::TryHandlePlacementRotationInput(int32 StepDelta)
+{
+	const uint64 CurrentFrame = GFrameCounter;
+	if (LastPlacementRotationInputFrame == CurrentFrame && LastPlacementRotationInputStepDelta == StepDelta)
+	{
+		return true;
+	}
+
+	if (!RotateStructurePlacement(StepDelta))
+	{
+		return false;
+	}
+
+	LastPlacementRotationInputFrame = CurrentFrame;
+	LastPlacementRotationInputStepDelta = StepDelta;
+	return true;
 }

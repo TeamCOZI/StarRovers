@@ -57,6 +57,9 @@ public:
 	virtual void NativeConstruct() override;
 	virtual void NativePreConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual int32 NativePaint(
 		const FPaintArgs& Args,
 		const FGeometry& AllottedGeometry,
@@ -71,6 +74,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Celestial")
 	void SetSelectedActor(AActor* NewSelectedActor);
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Input")
+	bool IsPointerOverOverviewUi() const;
 
 	void DispatchEntryClicked(AActor* CelestialBodyActor);
 	FSRStarRoversCelestialBodyRequestedSignature& OnCelestialBodyRequested();
@@ -171,6 +177,7 @@ private:
 	FText GetStarSystemTreePrefixText(AActor* CelestialBodyActor) const;
 	int32 GetStarSystemSiblingSortIndex(AActor* CelestialBodyActor) const;
 	void SortStarSystemBodies(TArray<TObjectPtr<AActor>>& StarSystemBodiesToSort) const;
+	bool IsScreenPositionOverOverviewUi(const FVector2D& ScreenPosition) const;
 
 	FSRStarRoversCelestialBodyRequestedSignature CelestialBodyRequestedEvent;
 };

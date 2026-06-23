@@ -62,11 +62,11 @@ Feature owners:
 - Orbit / Time / Gravity: [O] `USROrbit`, `USRTimeControlSubsystem`, `USRGravityParent`, `USRGravityChild`
 - Terrain / Biome: [D] `FSRDynamicMeshGeneration`, `USRPlanetBiomeDataAsset`, `USRPlanetTerrainProfileDataAsset`; [H] `FSRPlanetTerrainGenerator`
 - Surface Grid: [O] `USRPlanetSurfaceGrid`; [H] `USRPlanetSurfaceGridLibrary`
-- Assembly / Structure: [O] `USRAssemblyComponent`, `USRStructureInstanceManagerComponent`, `ASRStructure`; [D] `USRStructureDataAsset`; [H] `USRStructurePlacementLibrary`; interface `ISRBuildableStructureInterface`
-- Conveyor: [O] `USRConveyorNetworkComponent`, `ASRConveyorBeltActor`
-- Resource / Facility Automation: [O] `USRFacilityNetworkComponent`; [D] `USRResourceDataAsset`, `USRFacilityDataAsset`
+- Assembly / Structure: [O] `USRAssemblyComponent`, `USRStructureInstanceManagerComponent`, `ASRStructure`; [D] `USRStructureDataAsset`; [H] `USRStructurePlacementLibrary`; runtime structs `FSRPlacedStructureInstance`, `FSRResourceDepositInstance`; interface `ISRBuildableStructureInterface`
+- Conveyor: [O] `USRConveyorNetworkComponent`, `ASRConveyorBeltActor`; runtime item state `FSRConveyorItem`
+- Resource / Facility Automation: [O] `USRFacilityNetworkComponent`; [D] `USRResourceDataAsset`, `USRFacilityDataAsset`; runtime structs `FSRResourceInstance`, `FSRFacilityInstance`, `FSRFacilityPortInventory`
 - Natural Structures: [O] `ASRSolarSystemGenerator` with `USRStructureInstanceManagerComponent`; [D] `FSRProfileNaturalStructureSpawnRule`, `FSRNaturalStructureSpawnRuleOverride`
-- UI: [UI] `USRCelestialBodyFocusInfoWidget`, `USRCelestialBodyOverviewWidget`, `USRStructureSelectionWidget`, `USRLoadingScreenWidget`, `USRTimeControlWidget`
+- UI: [UI] `USRCelestialBodyFocusInfoWidget`, `USRCelestialBodyOverviewWidget`, `USRStructureSelectionWidget`, `USRLoadingScreenWidget`, `USRTimeControlWidget`, `USRFacilityControlWidget`
 - Diagnostics / Visual Utilities: [H] `FSRLineThicknessUtils`, `FSRMemoryDiagnostics`, `FSRTimingLog`
 
 C++ implementation structure:
@@ -79,6 +79,9 @@ C++ implementation structure:
 Runtime ownership contract:
 
 - Data Assets are config input. Runtime state must not be stored only in DA.
+- `USRStructureDataAsset` owns structure placement config, footprint, build kind, input/output port layout, optional resource deposit config, and optional `FacilityDataAsset` connection.
+- `USRFacilityDataAsset` owns facility behavior config: operation kind, process time, input/output capacity, effects, temperature requirements, and default output resource. It does not own ports.
+- `USRResourceDataAsset` owns resource defaults. `FSRResourceInstance` owns runtime values such as energy total, catalyst operator, process limit, process count, stack count, and process tags.
 - Runtime celestial actors are spawned, tracked, and cleared by `ASRSolarSystemGenerator`.
 - Active celestial body list and primary star are mirrored by `USRCelestialBodyRegistrySubsystem`.
 - `ASRCelestialBody` owns common body runtime data, Static/Dynamic Mesh switching, Dynamic Mesh build/cache, material application, gravity source setup, and surface cell highlight data.
@@ -87,11 +90,16 @@ Runtime ownership contract:
 - Surface cells, cell index maps, raycast buckets, hover/select, and occupancy belong to `USRPlanetSurfaceGrid`.
 - Cell occupancy must go through `USRPlanetSurfaceGrid::SetCellOccupied` or `SetCellsOccupied`.
 - Structure placement flow belongs to `USRAssemblyComponent`.
-- Permanent placed structure truth belongs to `USRStructureInstanceManagerComponent`; key is `OccupantId`.
+- Permanent placed structure truth belongs to `USRStructureInstanceManagerComponent`; key is `OccupantId`. Runtime structure data includes footprint cells, placement rotation steps, natural/deposit state, visual instance index, and label/deposit bookkeeping.
 - Normal placed structures are primarily HISM instances, not actor-per-structure.
-- Conveyor graph truth belongs to `USRConveyorNetworkComponent`; lane key is `CellId + Layer`.
+- Conveyor graph and moving item truth belong to `USRConveyorNetworkComponent`; lane key is `CellId + Layer`, moving item state is `FSRConveyorItem`.
 - `ASRConveyorBeltActor` is visual/PCG output, not conveyor graph source of truth.
 - Facility runtime truth belongs to `USRFacilityNetworkComponent`; facility instances are keyed by structure `OccupantId`.
+- Facility registration is driven by placed structures. `USRFacilityNetworkComponent` receives the placed structure `OccupantId`, origin cell, footprint cells, and placement rotation steps, then builds rotated per-port inventories from Structure DA ports.
+- Conveyor transfer queries `USRFacilityNetworkComponent` for output pull / input accept. Facility port connection checks use the placed structure footprint and rotated port specs.
+- Facility input and output inventories are per Structure DA port. Input Port equals Input Inventory slot, and Output Port equals Output Inventory slot.
+- Facility processing state, processing inventory, process/deliver toggles, and per-port inventories belong to `FSRFacilityInstance`.
+- Mining is facility processing over adjacent resource deposits. Resource deposit runtime amount belongs to `USRStructureInstanceManagerComponent`; mined output is produced into facility output inventory by `USRFacilityNetworkComponent`.
 - Widgets mirror state or dispatch user requests. Gameplay state belongs to Controller, Components, Subsystems, or runtime owner classes.
 
 Current C++ / BP / DA connection:
@@ -104,16 +112,23 @@ Current C++ / BP / DA connection:
 - Profile/Biome/Material mapping is normalized through `FSRDynamicMeshGeneration::NormalizeBiomeMaterials`.
 - Structure selection uses `USRStructureDataAsset` entries registered on `ASRPlayerController`.
 - Conveyor is also a `USRStructureDataAsset` with `BuildKind == Conveyor`.
+- Structure DA `InputPorts` and `OutputPorts` define facility resource slots and conveyor connection positions.
 - Facility behavior is connected through optional `USRStructureDataAsset::FacilityDataAsset`.
+- Facility DA defines processing behavior only. Port count and port direction come from Structure DA.
 - Resource and Facility runtime values use `FSRResourceInstance` and `FSRFacilityInstance`, not the DA itself.
+- `USRAssemblyComponent` uses `USRStructurePlacementLibrary` for placement transforms and sends successful placements to `USRStructureInstanceManagerComponent`.
+- `USRStructureInstanceManagerComponent` registers matching facilities with `USRFacilityNetworkComponent` and registers deposit runtime state for deposit structures.
+- `USRFacilityNetworkComponent` builds per-port facility inventories from Structure DA ports, applying placed structure rotation before conveyor connection checks.
+- `USRConveyorNetworkComponent` moves `FSRConveyorItem` resources between facility output and input ports through `USRFacilityNetworkComponent` transfer APIs.
+- `USRFacilityControlWidget` displays selected facility runtime state and dispatches process/deliver toggles plus debug input requests. It is not gameplay source of truth.
 
 Hot paths / optimization targets:
 
 - Dynamic Mesh preparation and generated grid build.
 - Surface Grid raycast, hover, highlight, and interaction overlay.
 - Structure placement/removal with HISM visual groups and Surface Grid occupancy.
-- Conveyor pathfinding, dirty-group visual refresh, PCG refresh, and item transfer tick.
-- Facility processing tick and conveyor input/output transfer.
+- Conveyor pathfinding, dirty-group visual refresh, PCG refresh, item transfer tick, and moving item visual refresh.
+- Facility processing tick, per-port inventory updates, and conveyor input/output transfer.
 - Camera Dynamic Mesh visibility switching and screen-space line thickness.
 
 ## 4. Game Structure
@@ -157,9 +172,12 @@ The player builds automation infrastructure on planet/moon surfaces.
 
 The core surface automation model is cell occupancy and item flow.
 
-- Facilities occupy Surface Grid cells.
+- Structures occupy Surface Grid cells and define physical footprint plus input/output ports.
+- Facility behavior is attached to a structure through Facility DA.
+- Facilities use Structure DA ports as resource slots: Input Port equals Input Inventory slot, and Output Port equals Output Inventory slot.
 - Conveyors build paths using cell and layer data.
-- Facility input/output connects to conveyor flow.
+- Conveyors move resources from a facility Output Port to another facility Input Port.
+- Facility UI shows process state, process/deliver toggles, per-port input/output resource slots, output preview, and port inventories.
 - The player combines limited space and resource flow to raise stellar fuel production.
 
 ### 4.3 Stellar Fuel Production
@@ -175,18 +193,47 @@ Stellar fuel is produced through multiple resource and processing stages.
 
 Resources are broadly split into:
 
-- Energy Resource: contributes the main energy value for processing or stellar fuel production.
-- Catalyst Resource: changes, amplifies, or transforms processing results.
+- Energy Resource: has an `EnergyValue` / Energy Total, Remaining Process Limit, process count, stack count, and process tags.
+- Catalyst Resource: has a catalyst operator. Aquid is `+`, and Nitain is `*`.
+
+Energy resources can pass through facilities only while their Remaining Process Limit allows it. When an Energy resource moves from input inventory into processing/output, its process limit is reduced. Hot temperature applies an additional process limit reduction. Energy has no lower bound, so negative Energy Total values are valid.
+
+Facilities are broadly split into:
+
+- Processing facility: usually consumes one Energy resource and amplifies its Energy Total.
+- Synthesis facility: usually consumes two Energy resources plus one Catalyst resource, then applies the catalyst operator to produce one Energy result.
+- Split facility: usually consumes one Energy resource and splits it into multiple Energy outputs.
+
+Facility processing result order:
+
+1. Reduce consumed Energy resource process limit.
+2. Apply facility operation: processing, synthesis, or split.
+3. Apply facility effects such as Energy/process-limit arithmetic, tag add/remove, byproduct production, or cell temperature effects.
+4. Apply existing resource tag effects.
 
 Resources can gain process tags:
 
 - Responsive
-- Waste
 - HalfLife
 - Volatile
 - Singularity
 
-These tags affect facility effects, process limits, energy values, byproducts, and risks.
+Tag effects:
+
+- Responsive: passing through a facility in Hot temperature adds extra Energy Total.
+- HalfLife: after 3 game cycles, Energy Total is halved.
+- Volatile: passing through a facility reduces Energy Total.
+- Singularity: the resource cannot enter another facility.
+
+Waste is not a tag. It is an Energy resource / byproduct with a low starting Energy Total.
+
+Facility temperature states affect processing:
+
+- Frozen: facility stops.
+- Cold: process time is doubled.
+- Normal: no special modifier.
+- Hot: consumed Energy resources lose additional Remaining Process Limit.
+- Overheated: facility stops.
 
 ### 4.4 Spaceship Routes / Interplanetary Logistics
 

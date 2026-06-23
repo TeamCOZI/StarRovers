@@ -64,6 +64,9 @@ public:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativePreConstruct() override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Assembly")
 	void SetBuildOptions(const TArray<FSRStructureBuildOption>& NewBuildOptions);
@@ -88,6 +91,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
 	USRStructureDataAsset* GetSelectedStructureDataAsset() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Input")
+	bool IsPointerOverStructureSelectionPanel() const;
 
 	void DispatchBuildOptionSelected(FName StructureId);
 	FSRStarRoversStructureBuildOptionSelectedSignature& OnBuildOptionSelected();
@@ -143,6 +149,7 @@ private:
 	void RebuildBuildOptions();
 	void RefreshSelectedStructureText();
 	const FSRStructureBuildOption* FindBuildOption(FName StructureId) const;
+	bool IsScreenPositionOverStructureSelectionPanel(const FVector2D& ScreenPosition) const;
 
 	FSRStarRoversStructureBuildOptionSelectedSignature BuildOptionSelectedEvent;
 };

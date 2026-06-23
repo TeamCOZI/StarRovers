@@ -51,6 +51,19 @@ void USRAssemblyComponent::ClearSurfaceHover()
 	DestroyStructureGhostPreview();
 }
 
+void USRAssemblyComponent::ClearSurfaceHoverPreview()
+{
+	if (IsValid(HoveredSurfaceGrid))
+	{
+		HoveredSurfaceGrid->ClearHoveredCell();
+	}
+
+	HoveredSurfaceGrid = nullptr;
+	ClearPublishedHoveredCellInfo();
+	ResetHoverSampleCache();
+	DestroyStructureGhostPreview();
+}
+
 void USRAssemblyComponent::UpdateSurfaceHover()
 {
 	if (!bAssemblyModeActive)
@@ -63,6 +76,12 @@ void USRAssemblyComponent::UpdateSurfaceHover()
 	if (!PlayerController)
 	{
 		ClearSurfaceHover();
+		return;
+	}
+
+	if (PlayerController->IsPointerOverBlockingUi())
+	{
+		ClearSurfaceHoverPreview();
 		return;
 	}
 

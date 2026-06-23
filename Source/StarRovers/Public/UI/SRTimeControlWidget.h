@@ -18,6 +18,12 @@ public:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativePreConstruct() override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Input")
+	bool IsPointerOverTimeControlPanel() const;
 
 protected:
 	UPROPERTY(Transient)
@@ -50,6 +56,7 @@ private:
 	void RefreshTimeControlState();
 	class USRTimeControlSubsystem* GetTimeControlSubsystem() const;
 	void UpdateButtonStyle(UButton* Button, bool bIsActive) const;
+	bool IsScreenPositionOverTimeControlPanel(const FVector2D& ScreenPosition) const;
 
 	UFUNCTION()
 	void HandlePauseClicked();

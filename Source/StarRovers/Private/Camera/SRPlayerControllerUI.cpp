@@ -1,10 +1,12 @@
 #include "Camera/SRPlayerController.h"
 
+#include "Assembly/SRAssemblyComponent.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 #include "UI/SRCelestialBodyOverviewWidget.h"
+#include "UI/SRFacilityControlWidget.h"
 #include "UI/SRStructureSelectionWidget.h"
 #include "UI/SRTimeControlWidget.h"
 USRCelestialBodyFocusInfoWidget* ASRPlayerController::GetFocusInfoWidget() const
@@ -25,6 +27,36 @@ USRTimeControlWidget* ASRPlayerController::GetTimeControlWidget() const
 USRStructureSelectionWidget* ASRPlayerController::GetStructureSelectionWidget() const
 {
 	return StructureSelectionWidget;
+}
+
+USRFacilityControlWidget* ASRPlayerController::GetFacilityControlWidget() const
+{
+	return FacilityControlWidget;
+}
+
+bool ASRPlayerController::IsPointerOverFacilityControlWidget() const
+{
+	return IsValid(FacilityControlWidget) && FacilityControlWidget->IsPointerOverControlPanel();
+}
+
+bool ASRPlayerController::IsPointerOverBlockingUi() const
+{
+	return (IsValid(FacilityControlWidget) && FacilityControlWidget->IsPointerOverControlPanel())
+		|| (IsValid(FocusInfoWidget) && FocusInfoWidget->IsPointerOverFocusInfoUi())
+		|| (IsValid(OverviewWidget) && OverviewWidget->IsPointerOverOverviewUi())
+		|| (IsValid(TimeControlWidget) && TimeControlWidget->IsPointerOverTimeControlPanel())
+		|| (IsValid(StructureSelectionWidget) && StructureSelectionWidget->IsPointerOverStructureSelectionPanel());
+}
+
+void ASRPlayerController::ClearFacilityFocus()
+{
+	if (AssemblyComponent)
+	{
+		AssemblyComponent->ClearSelectedStructureFocus();
+		return;
+	}
+
+	SetSelectedSurfaceStructureInfo(false, FSRFocusedSurfaceStructureInfo());
 }
 
 void ASRPlayerController::CreateFocusInfoWidget()
@@ -65,11 +97,13 @@ void ASRPlayerController::RefreshFocusInfoWidget()
 		FocusInfoWidget->SetFocusInfo(SelectedActorFocusInfo);
 		FocusInfoWidget->SetAssemblyModeActive(IsAssemblyModeActive());
 		FocusInfoWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		RefreshFacilityControlWidget();
 		return;
 	}
 
 	FocusInfoWidget->ClearFocusInfo();
 	FocusInfoWidget->SetVisibility(ESlateVisibility::Collapsed);
+	RefreshFacilityControlWidget();
 }
 
 void ASRPlayerController::CreateOverviewWidget()
@@ -204,6 +238,53 @@ void ASRPlayerController::RefreshStructureSelectionWidget()
 		StructureSelectionWidget->SetSelectedStructureId(SelectedStructureBuildId);
 		SelectedStructureDataAsset = StructureSelectionWidget->GetSelectedStructureDataAsset();
 	}
+}
+
+void ASRPlayerController::CreateFacilityControlWidget()
+{
+	if (!IsLocalController() || FacilityControlWidget)
+	{
+		return;
+	}
+
+	if (!FacilityControlWidgetClass)
+	{
+		FacilityControlWidgetClass = USRFacilityControlWidget::StaticClass();
+	}
+
+	FacilityControlWidget = CreateWidget<USRFacilityControlWidget>(this, FacilityControlWidgetClass);
+	if (!FacilityControlWidget)
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController failed to create FacilityControlWidget from '%s'."), *GetNameSafe(FacilityControlWidgetClass));
+		return;
+	}
+
+	FacilityControlWidget->AddToViewport(FacilityControlWidgetZOrder);
+	FacilityControlWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void ASRPlayerController::RefreshFacilityControlWidget()
+{
+	if (!FacilityControlWidget)
+	{
+		return;
+	}
+
+	const FSRFocusedSurfaceStructureInfo& StructureInfo = SelectedActorFocusInfo.SelectedSurfaceStructureInfo;
+	if (SelectedActorFocusInfo.bIsValid
+		&& SelectedActorFocusInfo.bHasSelectedSurfaceStructure
+		&& StructureInfo.bIsValid
+		&& StructureInfo.bHasFacilityRuntimeInfo
+		&& StructureInfo.FacilityRuntimeInfo.bIsValid
+		&& !StructureInfo.OccupantId.IsNone())
+	{
+		FacilityControlWidget->SetFocusedFacility(SelectedActor, StructureInfo.OccupantId);
+		FacilityControlWidget->SetVisibility(ESlateVisibility::Visible);
+		return;
+	}
+
+	FacilityControlWidget->ClearFocusedFacility();
+	FacilityControlWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void ASRPlayerController::GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const

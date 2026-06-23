@@ -37,6 +37,9 @@ struct STARROVERS_API FSRStructurePortSpec
 {
 	GENERATED_BODY()
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Structure|Port", meta = (DisplayName = "PortId"))
+	FName PortId = NAME_None;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Structure|Port", meta = (DisplayName = "CellOffsetX", ClampMin = "0"))
 	int32 CellOffsetX = 0;
 
@@ -106,6 +109,15 @@ struct STARROVERS_API FSRStructureData
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Automation", meta = (DisplayName = "FacilityDataAsset"))
 	TObjectPtr<USRFacilityDataAsset> FacilityDataAsset = nullptr;
 
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "bIsResourceDeposit"))
+	bool bIsResourceDeposit = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "DepositResourceDataAsset"))
+	TObjectPtr<USRResourceDataAsset> DepositResourceDataAsset = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "DepositTotalAmount"))
+	int32 DepositTotalAmount = 0;
+
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Automation|Ports", meta = (DisplayName = "InputPorts"))
 	TArray<FSRStructurePortSpec> InputPorts;
 
@@ -118,6 +130,101 @@ struct STARROVERS_API FSRStructureData
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorLayerHeight"))
 	float ConveyorLayerHeight = 160.0f;
 };
+
+namespace StarRovers::Structure
+{
+	FORCEINLINE int32 NormalizePlacementRotationSteps(int32 PlacementRotationSteps)
+	{
+		return ((PlacementRotationSteps % 4) + 4) % 4;
+	}
+
+	FORCEINLINE float PlacementRotationStepsToYawDegrees(int32 PlacementRotationSteps)
+	{
+		return static_cast<float>(NormalizePlacementRotationSteps(PlacementRotationSteps)) * 90.0f;
+	}
+
+	FORCEINLINE bool DoesPlacementRotationSwapFootprintAxes(int32 PlacementRotationSteps)
+	{
+		const int32 NormalizedSteps = NormalizePlacementRotationSteps(PlacementRotationSteps);
+		return NormalizedSteps == 1 || NormalizedSteps == 3;
+	}
+
+	FORCEINLINE int32 GetRotatedFootprintCellsX(const FSRStructureData& StructureData, int32 PlacementRotationSteps)
+	{
+		return FMath::Max(1, DoesPlacementRotationSwapFootprintAxes(PlacementRotationSteps)
+			? StructureData.FootprintCellsY
+			: StructureData.FootprintCellsX);
+	}
+
+	FORCEINLINE int32 GetRotatedFootprintCellsY(const FSRStructureData& StructureData, int32 PlacementRotationSteps)
+	{
+		return FMath::Max(1, DoesPlacementRotationSwapFootprintAxes(PlacementRotationSteps)
+			? StructureData.FootprintCellsX
+			: StructureData.FootprintCellsY);
+	}
+
+	FORCEINLINE ESRStructurePortDirection RotateStructurePortDirection(ESRStructurePortDirection Direction, int32 PlacementRotationSteps)
+	{
+		const int32 NormalizedSteps = NormalizePlacementRotationSteps(PlacementRotationSteps);
+		ESRStructurePortDirection RotatedDirection = Direction;
+		for (int32 StepIndex = 0; StepIndex < NormalizedSteps; ++StepIndex)
+		{
+			switch (RotatedDirection)
+			{
+			case ESRStructurePortDirection::Left:
+				RotatedDirection = ESRStructurePortDirection::Top;
+				break;
+			case ESRStructurePortDirection::Top:
+				RotatedDirection = ESRStructurePortDirection::Right;
+				break;
+			case ESRStructurePortDirection::Right:
+				RotatedDirection = ESRStructurePortDirection::Bottom;
+				break;
+			case ESRStructurePortDirection::Bottom:
+				RotatedDirection = ESRStructurePortDirection::Left;
+				break;
+			default:
+				break;
+			}
+		}
+		return RotatedDirection;
+	}
+
+	FORCEINLINE FSRStructurePortSpec RotateStructurePortSpec(
+		const FSRStructurePortSpec& PortSpec,
+		const FSRStructureData& StructureData,
+		int32 PlacementRotationSteps)
+	{
+		FSRStructurePortSpec RotatedPortSpec = PortSpec;
+		const int32 NormalizedSteps = NormalizePlacementRotationSteps(PlacementRotationSteps);
+		if (NormalizedSteps == 0)
+		{
+			return RotatedPortSpec;
+		}
+
+		const int32 FootprintCellsX = FMath::Max(1, StructureData.FootprintCellsX);
+		const int32 FootprintCellsY = FMath::Max(1, StructureData.FootprintCellsY);
+		switch (NormalizedSteps)
+		{
+		case 1:
+			RotatedPortSpec.CellOffsetX = FootprintCellsY - 1 - PortSpec.CellOffsetY;
+			RotatedPortSpec.CellOffsetY = PortSpec.CellOffsetX;
+			break;
+		case 2:
+			RotatedPortSpec.CellOffsetX = FootprintCellsX - 1 - PortSpec.CellOffsetX;
+			RotatedPortSpec.CellOffsetY = FootprintCellsY - 1 - PortSpec.CellOffsetY;
+			break;
+		case 3:
+			RotatedPortSpec.CellOffsetX = PortSpec.CellOffsetY;
+			RotatedPortSpec.CellOffsetY = FootprintCellsX - 1 - PortSpec.CellOffsetX;
+			break;
+		default:
+			break;
+		}
+		RotatedPortSpec.Direction = RotateStructurePortDirection(PortSpec.Direction, NormalizedSteps);
+		return RotatedPortSpec;
+	}
+}
 
 UCLASS(BlueprintType)
 class STARROVERS_API USRStructureDataAsset : public UDataAsset
@@ -183,6 +290,15 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Automation", meta = (DisplayName = "FacilityDataAsset"))
 	TObjectPtr<USRFacilityDataAsset> FacilityDataAsset = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "bIsResourceDeposit"))
+	bool bIsResourceDeposit = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "DepositResourceDataAsset"))
+	TObjectPtr<USRResourceDataAsset> DepositResourceDataAsset = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "DepositTotalAmount", ClampMin = "0"))
+	int32 DepositTotalAmount = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Automation|Ports", meta = (DisplayName = "InputPorts"))
 	TArray<FSRStructurePortSpec> InputPorts;

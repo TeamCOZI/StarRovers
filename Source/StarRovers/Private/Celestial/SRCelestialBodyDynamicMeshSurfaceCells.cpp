@@ -1,5 +1,7 @@
 #include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
 
+#include "Surface/SRPlanetSurfaceGrid.h"
+
 namespace StarRovers::Celestial::DynamicMesh
 {
 FSRCelestialBodyDynamicMeshQuadRenderData AppendDynamicMeshSurfaceCellQuad(
@@ -79,6 +81,8 @@ void CacheDynamicMeshSurfaceGridCell(
 	CachedCell.Biome = TerrainSample.Biome;
 	CachedCell.BiomeId = TerrainSample.BiomeId;
 	CachedCell.WaterRole = TerrainSample.WaterRole;
+	CachedCell.SurfaceTemperature = TerrainSample.Temperature;
+	CachedCell.TemperatureState = USRPlanetSurfaceGrid::ResolveTemperatureStateFromSurfaceTemperature(TerrainSample.Temperature);
 	CachedCell.Neighbors = BaseCell.Neighbors;
 
 	CachedCellIndexByFlatId[CellFlatIndex] = CachedCellIndex;

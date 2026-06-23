@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Automation/SRFacilityDataAsset.h"
 #include "Surface/SRPlanetBiomeTypes.h"
 #include "SRPlanetSurfaceGridTypes.generated.h"
 
@@ -155,6 +156,12 @@ struct STARROVERS_API FSRPlanetSurfaceGridCell
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "WaterRole"))
     ESRBiomeWaterRole WaterRole = ESRBiomeWaterRole::None;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface|Temperature", meta = (DisplayName = "SurfaceTemperature", ClampMin = "0.0", ClampMax = "1.0"))
+    float SurfaceTemperature = 0.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface|Temperature", meta = (DisplayName = "TemperatureState"))
+    ESRFacilityTemperatureState TemperatureState = ESRFacilityTemperatureState::Normal;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "Neighbors"))
     FSRPlanetSurfaceGridCellNeighbors Neighbors;
 
@@ -229,6 +236,12 @@ struct STARROVERS_API FSRPlanetSurfaceGridCellInfo
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "WaterRole"))
     ESRBiomeWaterRole WaterRole = ESRBiomeWaterRole::None;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface|Temperature", meta = (DisplayName = "SurfaceTemperature", ClampMin = "0.0", ClampMax = "1.0"))
+    float SurfaceTemperature = 0.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface|Temperature", meta = (DisplayName = "TemperatureState"))
+    ESRFacilityTemperatureState TemperatureState = ESRFacilityTemperatureState::Normal;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Surface", meta = (DisplayName = "Neighbors"))
     FSRPlanetSurfaceGridCellNeighbors Neighbors;

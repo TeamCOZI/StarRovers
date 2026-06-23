@@ -135,6 +135,10 @@ bool USRConveyorNetworkComponent::TryRemoveConveyorAtCell(
 	}
 	USRStructureDataAsset* RemovedStructureDataAsset = RemovedSegment->StructureDataAsset.Get();
 	ConveyorItemsByLane.Remove(TargetLaneKey);
+	if (bShowTransportItemVisuals)
+	{
+		RefreshConveyorItemVisuals(SurfaceGrid, 0.0f);
+	}
 
 	TSet<FSRPlanetSurfaceGridCellId> OldAffectedCellIds;
 	TSet<FSRPlanetSurfaceGridCellId> RetainedAffectedCellIds;

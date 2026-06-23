@@ -54,4 +54,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star", meta = (DisplayName = "StarPointLightColor"))
 	FLinearColor StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "InitialStoredStellarFuel", ClampMin = "0.0"))
+	double InitialStoredStellarFuel = 0.0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "RequiredStellarFuelPerCycle", ClampMin = "0.0"))
+	double RequiredStellarFuelPerCycle = 10.0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "StellarFuelRequirementGrowthPerCycle", ClampMin = "0.0"))
+	double StellarFuelRequirementGrowthPerCycle = 1.0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "InitialRedGiantPressure", ClampMin = "0.0"))
+	double InitialRedGiantPressure = 0.0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "RedGiantPressurePerMissingFuel", ClampMin = "0.0"))
+	double RedGiantPressurePerMissingFuel = 1.0;
 };

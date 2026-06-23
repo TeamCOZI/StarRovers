@@ -82,6 +82,11 @@ void ASRPlayerController::EndAssemblyPlacementDrag()
 	}
 }
 
+bool ASRPlayerController::RotateStructurePlacement(int32 StepDelta)
+{
+	return AssemblyComponent && AssemblyComponent->RotateStructurePlacement(StepDelta);
+}
+
 void ASRPlayerController::HandleStructureBuildOptionSelected(FName StructureId, USRStructureDataAsset* StructureDataAsset)
 {
 	if (StructureId.IsNone() || !IsValid(StructureDataAsset))

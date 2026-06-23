@@ -116,6 +116,13 @@ void ASRCameraPawn::HandleDragHoldStarted()
 {
 	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
 	{
+		if (PlayerController->IsPointerOverBlockingUi())
+		{
+			bIsDragging = false;
+			bHasDragStartMousePosition = false;
+			return;
+		}
+
 		if (PlayerController->ShouldHandleAssemblyPlacementDrag())
 		{
 			PlayerController->BeginAssemblyPlacementDrag();
@@ -161,6 +168,12 @@ void ASRCameraPawn::HandleFocusSurfaceDragHoldStarted()
 {
 	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
 	{
+		if (PlayerController->IsPointerOverBlockingUi())
+		{
+			bIsDraggingFocusSurface = false;
+			return;
+		}
+
 		if (PlayerController->IsAssemblyModeActive())
 		{
 			bIsDraggingFocusSurface = false;
@@ -255,6 +268,14 @@ void ASRCameraPawn::HandleZoom(const FInputActionValue& Value)
 	if (FMath::IsNearlyZero(AxisValue))
 	{
 		return;
+	}
+
+	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
+	{
+		if (PlayerController->IsPointerOverBlockingUi())
+		{
+			return;
+		}
 	}
 
 	ZoomDistanceTarget = ClampZoomDistance(ZoomDistanceTarget - (AxisValue * GetZoomSpeed()));

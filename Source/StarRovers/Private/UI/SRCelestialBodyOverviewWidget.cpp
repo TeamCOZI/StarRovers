@@ -2,6 +2,9 @@
 
 #include "Blueprint/WidgetTree.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Components/Border.h"
+#include "Components/Button.h"
+#include "Framework/Application/SlateApplication.h"
 
 void USRCelestialBodyOverviewEntryAction::Initialize(
 	USRCelestialBodyOverviewWidget* InOwnerWidget,
@@ -53,6 +56,36 @@ void USRCelestialBodyOverviewWidget::NativeTick(const FGeometry& MyGeometry,
 	RefreshNameplateButtonLayout();
 }
 
+FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverOverviewUi(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverOverviewUi(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+FReply USRCelestialBodyOverviewWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverOverviewUi(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+}
+
 void USRCelestialBodyOverviewWidget::SetCelestialBodies(
 	const TArray<AActor*>& NewCelestialBodies)
 {
@@ -85,6 +118,16 @@ void USRCelestialBodyOverviewWidget::SetSelectedActor(
 	RebuildNameplateButtons();
 }
 
+bool USRCelestialBodyOverviewWidget::IsPointerOverOverviewUi() const
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+
+	return IsScreenPositionOverOverviewUi(FSlateApplication::Get().GetCursorPos());
+}
+
 void USRCelestialBodyOverviewWidget::DispatchEntryClicked(
 	AActor* CelestialBodyActor)
 {
@@ -98,4 +141,29 @@ FSRStarRoversCelestialBodyRequestedSignature&
 USRCelestialBodyOverviewWidget::OnCelestialBodyRequested()
 {
 	return CelestialBodyRequestedEvent;
+}
+
+bool USRCelestialBodyOverviewWidget::IsScreenPositionOverOverviewUi(const FVector2D& ScreenPosition) const
+{
+	if (!IsVisible())
+	{
+		return false;
+	}
+
+	if (OverviewBorder && OverviewBorder->GetCachedGeometry().IsUnderLocation(ScreenPosition))
+	{
+		return true;
+	}
+
+	for (const UButton* NameplateButton : NameplateButtons)
+	{
+		if (IsValid(NameplateButton)
+			&& NameplateButton->IsVisible()
+			&& NameplateButton->GetCachedGeometry().IsUnderLocation(ScreenPosition))
+		{
+			return true;
+		}
+	}
+
+	return false;
 }

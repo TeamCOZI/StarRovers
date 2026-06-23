@@ -6,6 +6,8 @@
 
 namespace StarRovers::FacilityNetwork
 {
+	constexpr int32 HalfLifeDefaultCycles = 3;
+
 	inline FString BuildFacilityCellDebugString(const FSRPlanetSurfaceGridCellId& CellId)
 	{
 		return FString::Printf(
@@ -18,12 +20,14 @@ namespace StarRovers::FacilityNetwork
 	inline FString BuildResourceDebugString(const FSRResourceInstance& ResourceInstance)
 	{
 		return FString::Printf(
-			TEXT("ResourceId=%s Energy=%.3f RemainingProcessLimit=%d ProcessCount=%d StackCount=%d Tags=%d"),
+			TEXT("ResourceId=%s Energy=%.3f RemainingProcessLimit=%d ProcessCount=%d StackCount=%d Tags=%d StellarFuel=%s FuelMultiplier=%.3f"),
 			*ResourceInstance.ResourceId.ToString(),
 			ResourceInstance.EnergyValue,
 			ResourceInstance.RemainingProcessLimit,
 			ResourceInstance.ProcessCount,
 			ResourceInstance.StackCount,
-			ResourceInstance.Tags.Num());
+			ResourceInstance.Tags.Num(),
+			ResourceInstance.bCountsAsStellarFuel ? TEXT("true") : TEXT("false"),
+			ResourceInstance.StellarFuelValueMultiplier);
 	}
 }

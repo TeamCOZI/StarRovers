@@ -2,6 +2,7 @@
 
 #include "Assembly/SRAssemblyComponent.h"
 #include "InputAction.h"
+#include "UI/SRFacilityControlWidget.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace StarRoversControllerInputPaths
@@ -54,12 +55,16 @@ ASRPlayerController::ASRPlayerController()
 	OverviewWidgetZOrder = 1;
 	TimeControlWidgetZOrder = 2;
 	StructureSelectionWidgetZOrder = 3;
+	FacilityControlWidgetClass = USRFacilityControlWidget::StaticClass();
+	FacilityControlWidgetZOrder = 4;
 	MaxStructurePlacementsPerFrame = 4;
 	MaxQueuedStructurePlacements = 256;
 	SelectedStructureBuildId = NAME_None;
 	bHasSelectedStructureBuildId = false;
 	SelectedStructureDataAsset = nullptr;
 	bPendingInitialPrimaryStarFocus = true;
+	LastPlacementRotationInputFrame = MAX_uint64;
+	LastPlacementRotationInputStepDelta = 0;
 
 	AssemblyComponent = CreateDefaultSubobject<USRAssemblyComponent>(TEXT("AssemblyComponent"));
 	AssemblyComponent->ConfigurePlacementPerformance(MaxStructurePlacementsPerFrame, MaxQueuedStructurePlacements);
@@ -89,6 +94,8 @@ void ASRPlayerController::BeginPlay()
 	CreateTimeControlWidget();
 	CreateStructureSelectionWidget();
 	RefreshStructureSelectionWidget();
+	CreateFacilityControlWidget();
+	RefreshFacilityControlWidget();
 	TryAutoFocusPrimaryStar();
 }
 

@@ -7,6 +7,8 @@
 
 class UBorder;
 class UButton;
+class UScrollBox;
+class USizeBox;
 class UTextBlock;
 class UWidget;
 class SWidget;
@@ -22,6 +24,10 @@ public:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativePreConstruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Focus")
 	void SetFocusInfo(const FSRCelestialBodyFocusInfo& NewFocusInfo);
@@ -40,6 +46,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
 	bool IsAssemblyModeActive() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Input")
+	bool IsPointerOverFocusInfoUi() const;
 
 	FSRStarRoversAssemblyModeRequestedSignature& OnAssemblyModeRequested();
 
@@ -69,6 +78,12 @@ protected:
 	TObjectPtr<UTextBlock> HoveredCellTextBlock;
 
 	UPROPERTY(Transient)
+	TObjectPtr<USizeBox> HoveredCellContainer;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UScrollBox> HoveredCellScrollBox;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UButton> AssemblyModeButton;
 
 	UPROPERTY(Transient)
@@ -82,8 +97,10 @@ private:
 	void EnsureHoveredCellTextBlock(UWidget* HoveredCellTextBlockParent);
 	void EnsureAssemblyModeButton(UWidget* AssemblyModeButtonParent);
 	void BindAssemblyModeButtonHandler();
+	bool RefreshStarFuelInfoFromFocusedActor();
 	void RefreshFocusInfoText();
 	void RefreshAssemblyModeButton();
+	bool IsScreenPositionOverFocusInfoUi(const FVector2D& ScreenPosition) const;
 
 	FSRStarRoversAssemblyModeRequestedSignature AssemblyModeRequestedEvent;
 };

@@ -1,5 +1,7 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
+#include "Conveyor/SRConveyorNetworkComponent.h"
+#include "GameFramework/Actor.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
@@ -56,8 +58,8 @@ namespace
 			return false;
 		}
 
-		const int32 FootprintCellsX = FMath::Max(1, StructureData.FootprintCellsX);
-		const int32 FootprintCellsY = FMath::Max(1, StructureData.FootprintCellsY);
+		const int32 FootprintCellsX = StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, FacilityInstance.PlacementRotationSteps);
+		const int32 FootprintCellsY = StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, FacilityInstance.PlacementRotationSteps);
 		if (PortSpec.CellOffsetX < 0
 			|| PortSpec.CellOffsetY < 0
 			|| PortSpec.CellOffsetX >= FootprintCellsX
@@ -76,31 +78,6 @@ namespace
 		return true;
 	}
 
-	bool IsConveyorCellConnectedToStructurePorts(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRFacilityInstance& FacilityInstance,
-		const FSRStructureData& StructureData,
-		const TArray<FSRStructurePortSpec>& Ports,
-		const FSRPlanetSurfaceGridCellId& ConveyorCellId)
-	{
-		for (const FSRStructurePortSpec& PortSpec : Ports)
-		{
-			FSRPlanetSurfaceGridCellId PortCellId;
-			if (!GetStructurePortFootprintCellId(FacilityInstance, StructureData, PortSpec, PortCellId))
-			{
-				continue;
-			}
-
-			FSRPlanetSurfaceGridCellId NeighborCellId;
-			if (GetNeighborCellIdByStructurePortDirection(SurfaceGrid, PortCellId, PortSpec.Direction, NeighborCellId)
-				&& NeighborCellId == ConveyorCellId)
-			{
-				return true;
-			}
-		}
-
-		return false;
-	}
 }
 
 bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
@@ -118,24 +95,28 @@ bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 	{
 		FSRFacilityInstance& FacilityInstance = FacilityPair.Value;
 		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		FSRFacilityPortInventory* InputPortInventory = FindConnectedInputPortInventory(SurfaceGrid, FacilityInstance, ConveyorCellId);
 		if (!IsValid(FacilityDataAsset)
+			|| !InputPortInventory
 			|| (!SourceFacilityOccupantId.IsNone() && FacilityInstance.OccupantId == SourceFacilityOccupantId)
-			|| FacilityInstance.InputInventory.Num() >= FMath::Max(1, FacilityDataAsset->InputCapacity)
-			|| !IsConveyorCellConnectedToFacilityPort(SurfaceGrid, FacilityInstance, ConveyorCellId, ESRFacilityPortKind::Input))
+			|| InputPortInventory->Inventory.Num() >= FMath::Max(1, InputPortInventory->Capacity))
 		{
 			continue;
 		}
 
-		FacilityInstance.InputInventory.Add(ResourceInstance);
+		InputPortInventory->Inventory.Add(ResourceInstance);
+		RefreshFacilityAggregateInventories(FacilityInstance);
 		SetComponentTickEnabled(bAutoProcessFacilities);
 		if (bLogFacilityNetworkEvents)
 		{
 			UE_LOG(
 				LogTemp,
 				Display,
-				TEXT("[FacilityNetwork] Transfer accepted input: OccupantId=%s ResourceId=%s InputCount=%d Owner=%s"),
+				TEXT("[FacilityNetwork] Transfer accepted input: OccupantId=%s Port=%s ResourceId=%s PortInputCount=%d InputCount=%d Owner=%s"),
 				*FacilityInstance.OccupantId.ToString(),
+				*InputPortInventory->PortId.ToString(),
 				*ResourceInstance.ResourceId.ToString(),
+				InputPortInventory->Inventory.Num(),
 				FacilityInstance.InputInventory.Num(),
 				*GetNameSafe(GetOwner()));
 		}
@@ -161,23 +142,29 @@ bool USRFacilityNetworkComponent::TryPullOutputResourceToConveyorCell(
 	for (TPair<FName, FSRFacilityInstance>& FacilityPair : FacilityInstancesByOccupantId)
 	{
 		FSRFacilityInstance& FacilityInstance = FacilityPair.Value;
-		if (FacilityInstance.OutputInventory.IsEmpty()
-			|| !IsConveyorCellConnectedToFacilityPort(SurfaceGrid, FacilityInstance, ConveyorCellId, ESRFacilityPortKind::Output))
+		FSRFacilityPortInventory* OutputPortInventory = FindConnectedOutputPortInventory(SurfaceGrid, FacilityInstance, ConveyorCellId);
+		if (!OutputPortInventory
+			|| OutputPortInventory->Inventory.IsEmpty()
+			|| !FacilityInstance.bDeliverEnabled
+			|| !IsConveyorCellConnectedToPortInventory(SurfaceGrid, FacilityInstance, *OutputPortInventory, ConveyorCellId))
 		{
 			continue;
 		}
 
-		OutResourceInstance = FacilityInstance.OutputInventory[0];
+		OutResourceInstance = OutputPortInventory->Inventory[0];
 		OutSourceFacilityOccupantId = FacilityInstance.OccupantId;
-		FacilityInstance.OutputInventory.RemoveAt(0);
+		OutputPortInventory->Inventory.RemoveAt(0);
+		RefreshFacilityAggregateInventories(FacilityInstance);
 		if (bLogFacilityNetworkEvents)
 		{
 			UE_LOG(
 				LogTemp,
 				Display,
-				TEXT("[FacilityNetwork] Transfer provided output: OccupantId=%s ResourceId=%s RemainingOutput=%d Owner=%s"),
+				TEXT("[FacilityNetwork] Transfer provided output: OccupantId=%s Port=%s ResourceId=%s RemainingPortOutput=%d RemainingOutput=%d Owner=%s"),
 				*FacilityInstance.OccupantId.ToString(),
+				*OutputPortInventory->PortId.ToString(),
 				*OutResourceInstance.ResourceId.ToString(),
+				OutputPortInventory->Inventory.Num(),
 				FacilityInstance.OutputInventory.Num(),
 				*GetNameSafe(GetOwner()));
 		}
@@ -189,74 +176,95 @@ bool USRFacilityNetworkComponent::TryPullOutputResourceToConveyorCell(
 	return false;
 }
 
-bool USRFacilityNetworkComponent::IsConveyorCellConnectedToFacilityPort(
-	USRPlanetSurfaceGrid* SurfaceGrid,
-	const FSRFacilityInstance& FacilityInstance,
-	const FSRPlanetSurfaceGridCellId& ConveyorCellId,
-	ESRFacilityPortKind PortKind) const
+bool USRFacilityNetworkComponent::HasConnectedConveyorForFacilityPort(FName OccupantId, ESRFacilityPortKind PortKind) const
 {
-	if (IsValid(FacilityInstance.StructureDataAsset.Get()))
-	{
-		const FSRStructureData StructureData = FacilityInstance.StructureDataAsset->BuildData();
-		const bool bHasStructurePortLayout = !StructureData.InputPorts.IsEmpty() || !StructureData.OutputPorts.IsEmpty();
-		if (bHasStructurePortLayout)
-		{
-			const TArray<FSRStructurePortSpec>& Ports = PortKind == ESRFacilityPortKind::Output
-				? StructureData.OutputPorts
-				: StructureData.InputPorts;
-			return IsConveyorCellConnectedToStructurePorts(SurfaceGrid, FacilityInstance, StructureData, Ports, ConveyorCellId);
-		}
-	}
-
-	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-	if (!IsValid(FacilityDataAsset))
+	const FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance)
 	{
 		return false;
 	}
 
-	bool bHasExplicitPortForKind = false;
-	for (const FSRFacilityPortSpec& PortSpec : FacilityDataAsset->Ports)
+	AActor* Owner = GetOwner();
+	USRPlanetSurfaceGrid* SurfaceGrid = IsValid(Owner) ? Owner->FindComponentByClass<USRPlanetSurfaceGrid>() : nullptr;
+	const USRConveyorNetworkComponent* ConveyorNetwork = IsValid(Owner) ? Owner->FindComponentByClass<USRConveyorNetworkComponent>() : nullptr;
+	if (!IsValid(SurfaceGrid) || !IsValid(ConveyorNetwork))
 	{
-		if (PortSpec.PortKind != PortKind)
+		return false;
+	}
+
+	for (const FSRPlanetSurfaceGridCellId& FootprintCellId : FacilityInstance->FootprintCellIds)
+	{
+		TArray<FSRPlanetSurfaceGridCellId> NeighborCellIds;
+		if (!GetNeighborCellIds(SurfaceGrid, FootprintCellId, NeighborCellIds))
 		{
 			continue;
 		}
 
-		bHasExplicitPortForKind = true;
-		if (IsConveyorCellConnectedToExplicitPort(SurfaceGrid, FacilityInstance, PortSpec, ConveyorCellId))
+		for (const FSRPlanetSurfaceGridCellId& NeighborCellId : NeighborCellIds)
 		{
-			return true;
+			if (ConveyorNetwork->HasConveyorSegmentAtCell(NeighborCellId)
+				&& IsConveyorCellConnectedToFacilityPort(SurfaceGrid, *FacilityInstance, NeighborCellId, PortKind))
+			{
+				return true;
+			}
 		}
 	}
 
-	return !bHasExplicitPortForKind
-		&& IsConveyorCellAdjacentToFacilityFootprint(SurfaceGrid, FacilityInstance, ConveyorCellId);
+	return false;
 }
 
-bool USRFacilityNetworkComponent::IsConveyorCellConnectedToExplicitPort(
+FSRFacilityPortInventory* USRFacilityNetworkComponent::FindConnectedInputPortInventory(
 	USRPlanetSurfaceGrid* SurfaceGrid,
-	const FSRFacilityInstance& FacilityInstance,
-	const FSRFacilityPortSpec& PortSpec,
-	const FSRPlanetSurfaceGridCellId& ConveyorCellId) const
+	FSRFacilityInstance& FacilityInstance,
+	const FSRPlanetSurfaceGridCellId& ConveyorCellId)
 {
-	FSRPlanetSurfaceGridCellId PortCellId;
-	if (!GetFootprintCellIdByOffset(FacilityInstance, PortSpec.FootprintCellX, PortSpec.FootprintCellY, PortCellId))
+	FSRFacilityPortInventory* FirstConnectedPortInventory = nullptr;
+	for (FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
 	{
-		return false;
+		if (IsConveyorCellConnectedToPortInventory(SurfaceGrid, FacilityInstance, InputPortInventory, ConveyorCellId))
+		{
+			if (!FirstConnectedPortInventory)
+			{
+				FirstConnectedPortInventory = &InputPortInventory;
+			}
+			if (InputPortInventory.Inventory.Num() < FMath::Max(1, InputPortInventory.Capacity))
+			{
+				return &InputPortInventory;
+			}
+		}
 	}
 
-	TArray<FSRPlanetSurfaceGridCellId> NeighborCellIds;
-	if (!GetNeighborCellIdByFacilityPortDirection(SurfaceGrid, PortCellId, PortSpec.Direction, NeighborCellIds))
-	{
-		return false;
-	}
-
-	return NeighborCellIds.Contains(ConveyorCellId);
+	return FirstConnectedPortInventory;
 }
 
-bool USRFacilityNetworkComponent::IsConveyorCellAdjacentToFacilityFootprint(
+FSRFacilityPortInventory* USRFacilityNetworkComponent::FindConnectedOutputPortInventory(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	FSRFacilityInstance& FacilityInstance,
+	const FSRPlanetSurfaceGridCellId& ConveyorCellId)
+{
+	FSRFacilityPortInventory* FirstConnectedPortInventory = nullptr;
+	for (FSRFacilityPortInventory& OutputPortInventory : FacilityInstance.OutputPortInventories)
+	{
+		if (IsConveyorCellConnectedToPortInventory(SurfaceGrid, FacilityInstance, OutputPortInventory, ConveyorCellId))
+		{
+			if (!FirstConnectedPortInventory)
+			{
+				FirstConnectedPortInventory = &OutputPortInventory;
+			}
+			if (!OutputPortInventory.Inventory.IsEmpty())
+			{
+				return &OutputPortInventory;
+			}
+		}
+	}
+
+	return FirstConnectedPortInventory;
+}
+
+bool USRFacilityNetworkComponent::IsConveyorCellConnectedToPortInventory(
 	USRPlanetSurfaceGrid* SurfaceGrid,
 	const FSRFacilityInstance& FacilityInstance,
+	const FSRFacilityPortInventory& PortInventory,
 	const FSRPlanetSurfaceGridCellId& ConveyorCellId) const
 {
 	if (!IsValid(SurfaceGrid))
@@ -264,11 +272,21 @@ bool USRFacilityNetworkComponent::IsConveyorCellAdjacentToFacilityFootprint(
 		return false;
 	}
 
-	for (const FSRPlanetSurfaceGridCellId& FootprintCellId : FacilityInstance.FootprintCellIds)
+	return IsConveyorCellConnectedToExplicitPort(SurfaceGrid, FacilityInstance, PortInventory.PortSpec, ConveyorCellId);
+}
+
+bool USRFacilityNetworkComponent::IsConveyorCellConnectedToFacilityPort(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const FSRFacilityInstance& FacilityInstance,
+	const FSRPlanetSurfaceGridCellId& ConveyorCellId,
+	ESRFacilityPortKind PortKind) const
+{
+	const TArray<FSRFacilityPortInventory>& PortInventories = PortKind == ESRFacilityPortKind::Output
+		? FacilityInstance.OutputPortInventories
+		: FacilityInstance.InputPortInventories;
+	for (const FSRFacilityPortInventory& PortInventory : PortInventories)
 	{
-		TArray<FSRPlanetSurfaceGridCellId> NeighborCellIds;
-		if (GetNeighborCellIdByFacilityPortDirection(SurfaceGrid, FootprintCellId, ESRFacilityPortDirection::Any, NeighborCellIds)
-			&& NeighborCellIds.Contains(ConveyorCellId))
+		if (IsConveyorCellConnectedToPortInventory(SurfaceGrid, FacilityInstance, PortInventory, ConveyorCellId))
 		{
 			return true;
 		}
@@ -277,41 +295,36 @@ bool USRFacilityNetworkComponent::IsConveyorCellAdjacentToFacilityFootprint(
 	return false;
 }
 
-bool USRFacilityNetworkComponent::GetFootprintCellIdByOffset(
+bool USRFacilityNetworkComponent::IsConveyorCellConnectedToExplicitPort(
+	USRPlanetSurfaceGrid* SurfaceGrid,
 	const FSRFacilityInstance& FacilityInstance,
-	int32 FootprintCellX,
-	int32 FootprintCellY,
-	FSRPlanetSurfaceGridCellId& OutCellId) const
+	const FSRStructurePortSpec& PortSpec,
+	const FSRPlanetSurfaceGridCellId& ConveyorCellId) const
 {
-	OutCellId = FSRPlanetSurfaceGridCellId();
-	if (FacilityInstance.FootprintCellIds.IsEmpty())
+	if (!IsValid(FacilityInstance.StructureDataAsset.Get()))
 	{
 		return false;
 	}
 
-	int32 FootprintCellsX = 1;
-	if (IsValid(FacilityInstance.StructureDataAsset.Get()))
+	const FSRStructureData StructureData = FacilityInstance.StructureDataAsset->BuildData();
+	FSRPlanetSurfaceGridCellId PortCellId;
+	if (!GetStructurePortFootprintCellId(FacilityInstance, StructureData, PortSpec, PortCellId))
 	{
-		FootprintCellsX = FMath::Max(1, FacilityInstance.StructureDataAsset->BuildData().FootprintCellsX);
+		return false;
 	}
 
-	const int32 SafeX = FMath::Max(0, FootprintCellX);
-	const int32 SafeY = FMath::Max(0, FootprintCellY);
-	const int32 FootprintIndex = SafeY * FootprintCellsX + SafeX;
-	if (FacilityInstance.FootprintCellIds.IsValidIndex(FootprintIndex))
+	FSRPlanetSurfaceGridCellId NeighborCellId;
+	if (!GetNeighborCellIdByStructurePortDirection(SurfaceGrid, PortCellId, PortSpec.Direction, NeighborCellId))
 	{
-		OutCellId = FacilityInstance.FootprintCellIds[FootprintIndex];
-		return true;
+		return false;
 	}
 
-	OutCellId = FacilityInstance.OriginCellId;
-	return true;
+	return NeighborCellId == ConveyorCellId;
 }
 
-bool USRFacilityNetworkComponent::GetNeighborCellIdByFacilityPortDirection(
+bool USRFacilityNetworkComponent::GetNeighborCellIds(
 	USRPlanetSurfaceGrid* SurfaceGrid,
 	const FSRPlanetSurfaceGridCellId& CellId,
-	ESRFacilityPortDirection Direction,
 	TArray<FSRPlanetSurfaceGridCellId>& OutNeighborCellIds) const
 {
 	OutNeighborCellIds.Reset();
@@ -326,28 +339,10 @@ bool USRFacilityNetworkComponent::GetNeighborCellIdByFacilityPortDirection(
 		return false;
 	}
 
-	switch (Direction)
-	{
-	case ESRFacilityPortDirection::NegativeU:
-		OutNeighborCellIds.Add(Neighbors.NegativeU);
-		break;
-	case ESRFacilityPortDirection::PositiveU:
-		OutNeighborCellIds.Add(Neighbors.PositiveU);
-		break;
-	case ESRFacilityPortDirection::NegativeV:
-		OutNeighborCellIds.Add(Neighbors.NegativeV);
-		break;
-	case ESRFacilityPortDirection::PositiveV:
-		OutNeighborCellIds.Add(Neighbors.PositiveV);
-		break;
-	case ESRFacilityPortDirection::Any:
-	default:
-		OutNeighborCellIds.Add(Neighbors.NegativeU);
-		OutNeighborCellIds.Add(Neighbors.PositiveU);
-		OutNeighborCellIds.Add(Neighbors.NegativeV);
-		OutNeighborCellIds.Add(Neighbors.PositiveV);
-		break;
-	}
+	OutNeighborCellIds.Add(Neighbors.NegativeU);
+	OutNeighborCellIds.Add(Neighbors.PositiveU);
+	OutNeighborCellIds.Add(Neighbors.NegativeV);
+	OutNeighborCellIds.Add(Neighbors.PositiveV);
 
 	return !OutNeighborCellIds.IsEmpty();
 }

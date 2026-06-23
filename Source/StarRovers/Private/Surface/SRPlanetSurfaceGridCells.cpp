@@ -3,6 +3,27 @@
 #include "Math/RotationMatrix.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
 
+namespace
+{
+	float GetRepresentativeSurfaceTemperature(ESRFacilityTemperatureState TemperatureState)
+	{
+		switch (TemperatureState)
+		{
+		case ESRFacilityTemperatureState::Frozen:
+			return 0.0f;
+		case ESRFacilityTemperatureState::Cold:
+			return 0.25f;
+		case ESRFacilityTemperatureState::Hot:
+			return 0.78f;
+		case ESRFacilityTemperatureState::Overheated:
+			return 1.0f;
+		case ESRFacilityTemperatureState::Normal:
+		default:
+			return 0.5f;
+		}
+	}
+}
+
 int32 USRPlanetSurfaceGrid::GetCellCount() const
 {
 	return Cells.Num();
@@ -54,6 +75,83 @@ bool USRPlanetSurfaceGrid::GetCellNeighbors(const FSRPlanetSurfaceGridCellId& Ce
 	}
 
 	OutNeighbors = Cell.Neighbors;
+	return true;
+}
+
+ESRFacilityTemperatureState USRPlanetSurfaceGrid::ResolveTemperatureStateFromSurfaceTemperature(float SurfaceTemperature)
+{
+	const float ClampedSurfaceTemperature = FMath::Clamp(SurfaceTemperature, 0.0f, 1.0f);
+	if (ClampedSurfaceTemperature <= 0.12f)
+	{
+		return ESRFacilityTemperatureState::Frozen;
+	}
+	if (ClampedSurfaceTemperature <= 0.35f)
+	{
+		return ESRFacilityTemperatureState::Cold;
+	}
+	if (ClampedSurfaceTemperature < 0.70f)
+	{
+		return ESRFacilityTemperatureState::Normal;
+	}
+	if (ClampedSurfaceTemperature < 0.88f)
+	{
+		return ESRFacilityTemperatureState::Hot;
+	}
+	return ESRFacilityTemperatureState::Overheated;
+}
+
+bool USRPlanetSurfaceGrid::GetCellTemperatureState(const FSRPlanetSurfaceGridCellId& CellId, ESRFacilityTemperatureState& OutTemperatureState) const
+{
+	FSRPlanetSurfaceGridCell Cell;
+	if (!GetCellById(CellId, Cell))
+	{
+		OutTemperatureState = ESRFacilityTemperatureState::Normal;
+		return false;
+	}
+
+	OutTemperatureState = Cell.TemperatureState;
+	return true;
+}
+
+bool USRPlanetSurfaceGrid::SetCellTemperatureState(const FSRPlanetSurfaceGridCellId& CellId, ESRFacilityTemperatureState TemperatureState)
+{
+	int32 CellIndex = INDEX_NONE;
+	if (!GetCellIndex(CellId, CellIndex))
+	{
+		return false;
+	}
+
+	FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
+	Cell.TemperatureState = TemperatureState;
+	Cell.SurfaceTemperature = GetRepresentativeSurfaceTemperature(TemperatureState);
+	FSRPlanetSurfaceGridCellInfo UpdatedCellInfo = BuildCellInfo(Cell);
+	FSRPlanetSurfaceGridCellInfo ExistingCellInfo;
+	if (GetStoredCellInfoById(CellId, ExistingCellInfo))
+	{
+		UpdatedCellInfo.FaceCellIndex = ExistingCellInfo.FaceCellIndex;
+	}
+	StoreCellInfo(UpdatedCellInfo);
+	return true;
+}
+
+bool USRPlanetSurfaceGrid::SetCellSurfaceTemperature(const FSRPlanetSurfaceGridCellId& CellId, float SurfaceTemperature)
+{
+	int32 CellIndex = INDEX_NONE;
+	if (!GetCellIndex(CellId, CellIndex))
+	{
+		return false;
+	}
+
+	FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
+	Cell.SurfaceTemperature = FMath::Clamp(SurfaceTemperature, 0.0f, 1.0f);
+	Cell.TemperatureState = ResolveTemperatureStateFromSurfaceTemperature(Cell.SurfaceTemperature);
+	FSRPlanetSurfaceGridCellInfo UpdatedCellInfo = BuildCellInfo(Cell);
+	FSRPlanetSurfaceGridCellInfo ExistingCellInfo;
+	if (GetStoredCellInfoById(CellId, ExistingCellInfo))
+	{
+		UpdatedCellInfo.FaceCellIndex = ExistingCellInfo.FaceCellIndex;
+	}
+	StoreCellInfo(UpdatedCellInfo);
 	return true;
 }
 
@@ -289,6 +387,8 @@ FSRPlanetSurfaceGridCellInfo USRPlanetSurfaceGrid::BuildCellInfo(const FSRPlanet
 	CellInfo.Biome = Cell.Biome;
 	CellInfo.BiomeId = Cell.BiomeId;
 	CellInfo.WaterRole = Cell.WaterRole;
+	CellInfo.SurfaceTemperature = Cell.SurfaceTemperature;
+	CellInfo.TemperatureState = Cell.TemperatureState;
 	CellInfo.Neighbors = Cell.Neighbors;
 	CellInfo.bOccupied = Cell.bOccupied;
 	CellInfo.OccupantId = Cell.OccupantId;

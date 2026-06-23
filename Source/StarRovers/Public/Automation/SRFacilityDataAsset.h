@@ -20,6 +20,7 @@ enum class ESRFacilityOperationKind : uint8
 	Process UMETA(DisplayName = "Process"),
 	Synthesize UMETA(DisplayName = "Synthesize"),
 	Split UMETA(DisplayName = "Split"),
+	Mine UMETA(DisplayName = "Mine"),
 };
 
 UENUM(BlueprintType)
@@ -40,16 +41,6 @@ enum class ESRFacilityPortKind : uint8
 };
 
 UENUM(BlueprintType)
-enum class ESRFacilityPortDirection : uint8
-{
-	Any UMETA(DisplayName = "Any"),
-	NegativeU UMETA(DisplayName = "NegativeU"),
-	PositiveU UMETA(DisplayName = "PositiveU"),
-	NegativeV UMETA(DisplayName = "NegativeV"),
-	PositiveV UMETA(DisplayName = "PositiveV"),
-};
-
-UENUM(BlueprintType)
 enum class ESRFacilityEffectKind : uint8
 {
 	AddEnergy UMETA(DisplayName = "AddEnergy"),
@@ -58,6 +49,13 @@ enum class ESRFacilityEffectKind : uint8
 	AddTag UMETA(DisplayName = "AddTag"),
 	RemoveTag UMETA(DisplayName = "RemoveTag"),
 	ProduceResource UMETA(DisplayName = "ProduceResource"),
+	SubtractEnergy UMETA(DisplayName = "SubtractEnergy"),
+	DivideEnergy UMETA(DisplayName = "DivideEnergy"),
+	SubtractProcessLimit UMETA(DisplayName = "SubtractProcessLimit"),
+	MultiplyProcessLimit UMETA(DisplayName = "MultiplyProcessLimit"),
+	DivideProcessLimit UMETA(DisplayName = "DivideProcessLimit"),
+	AddCellTemperature UMETA(DisplayName = "AddCellTemperature"),
+	SubtractCellTemperature UMETA(DisplayName = "SubtractCellTemperature"),
 };
 
 USTRUCT(BlueprintType)
@@ -79,24 +77,6 @@ struct STARROVERS_API FSRFacilityEffectSpec
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "ProducedResource"))
 	TObjectPtr<USRResourceDataAsset> ProducedResource = nullptr;
-};
-
-USTRUCT(BlueprintType)
-struct STARROVERS_API FSRFacilityPortSpec
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "PortKind"))
-	ESRFacilityPortKind PortKind = ESRFacilityPortKind::Input;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "Direction"))
-	ESRFacilityPortDirection Direction = ESRFacilityPortDirection::Any;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "FootprintCellX", ClampMin = "0"))
-	int32 FootprintCellX = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "FootprintCellY", ClampMin = "0"))
-	int32 FootprintCellY = 0;
 };
 
 UCLASS(BlueprintType)
@@ -122,12 +102,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "OperationKind"))
 	ESRFacilityOperationKind OperationKind = ESRFacilityOperationKind::Process;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "InputResourceCount", ClampMin = "1"))
-	int32 InputResourceCount = 1;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "SplitOutputCount", ClampMin = "2"))
-	int32 SplitOutputCount = 2;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "BaseProcessSeconds", ClampMin = "0.01"))
 	float BaseProcessSeconds = 1.0f;
 
@@ -136,9 +110,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "OutputCapacity", ClampMin = "1"))
 	int32 OutputCapacity = 8;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "Ports"))
-	TArray<FSRFacilityPortSpec> Ports;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "bRequiresColdTemperature"))
 	bool bRequiresColdTemperature = false;

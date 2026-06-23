@@ -14,6 +14,11 @@ USRStarDataAsset::USRStarDataAsset()
 	bRandomizeGenerationSeedEachRun = false;
 	StarPointLightIntensity = 100.0f;
 	StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
+	InitialStoredStellarFuel = 0.0;
+	RequiredStellarFuelPerCycle = 10.0;
+	StellarFuelRequirementGrowthPerCycle = 1.0;
+	InitialRedGiantPressure = 0.0;
+	RedGiantPressurePerMissingFuel = 1.0;
 }
 
 FSRCelestialBodyData USRStarDataAsset::BuildData() const
@@ -35,5 +40,10 @@ FSRCelestialBodyData USRStarDataAsset::BuildData() const
 	Result.bHasOcean = false;
 	Result.StarPointLightIntensity = FMath::Max(0.0f, StarPointLightIntensity);
 	Result.StarPointLightColor = StarPointLightColor;
+	Result.InitialStoredStellarFuel = FMath::Max(0.0, InitialStoredStellarFuel);
+	Result.RequiredStellarFuelPerCycle = FMath::Max(0.0, RequiredStellarFuelPerCycle);
+	Result.StellarFuelRequirementGrowthPerCycle = FMath::Max(0.0, StellarFuelRequirementGrowthPerCycle);
+	Result.InitialRedGiantPressure = FMath::Max(0.0, InitialRedGiantPressure);
+	Result.RedGiantPressurePerMissingFuel = FMath::Max(0.0, RedGiantPressurePerMissingFuel);
 	return Result;
 }

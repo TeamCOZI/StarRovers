@@ -1,5 +1,6 @@
 #include "Assembly/SRAssemblyComponent.h"
 
+#include "Automation/SRFacilityNetworkComponent.h"
 #include "Camera/SRPlayerController.h"
 #include "GameFramework/Actor.h"
 #include "Structure/SRStructureDataAsset.h"
@@ -108,6 +109,7 @@ namespace
 		const FSRFocusedSurfaceStructureInfo& StructureInfo,
 		const FSRStructureData& StructureData,
 		int32 FootprintCellsX,
+		int32 PlacementRotationSteps,
 		TArray<FSRFocusedFacilityPortInfo>& OutFacilityPorts)
 	{
 		OutFacilityPorts.Reset();
@@ -120,25 +122,91 @@ namespace
 
 		for (const FSRStructurePortSpec& PortSpec : StructureData.InputPorts)
 		{
+			const FSRStructurePortSpec RotatedPortSpec = StarRovers::Structure::RotateStructurePortSpec(
+				PortSpec,
+				StructureData,
+				PlacementRotationSteps);
 			AppendFocusedFacilityPortInfo(
 				SurfaceGrid,
 				StructureInfo,
 				ESRStructurePortKind::Input,
-				PortSpec,
+				RotatedPortSpec,
 				FootprintCellsX,
 				OutFacilityPorts);
 		}
 
 		for (const FSRStructurePortSpec& PortSpec : StructureData.OutputPorts)
 		{
+			const FSRStructurePortSpec RotatedPortSpec = StarRovers::Structure::RotateStructurePortSpec(
+				PortSpec,
+				StructureData,
+				PlacementRotationSteps);
 			AppendFocusedFacilityPortInfo(
 				SurfaceGrid,
 				StructureInfo,
 				ESRStructurePortKind::Output,
-				PortSpec,
+				RotatedPortSpec,
 				FootprintCellsX,
 				OutFacilityPorts);
 		}
+	}
+
+	float ResolveFocusedFacilityProcessSeconds(const FSRFacilityInstance& FacilityInstance)
+	{
+		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		if (!IsValid(FacilityDataAsset))
+		{
+			return 0.0f;
+		}
+
+		float ProcessSeconds = FMath::Max(0.01f, FacilityDataAsset->BaseProcessSeconds);
+		if (FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Cold)
+		{
+			ProcessSeconds *= 2.0f;
+		}
+		return ProcessSeconds;
+	}
+
+	void PopulateFocusedFacilityRuntimeInfo(AActor* FocusedActor, FSRFocusedSurfaceStructureInfo& StructureInfo)
+	{
+		if (!IsValid(FocusedActor) || StructureInfo.OccupantId.IsNone())
+		{
+			return;
+		}
+
+		USRFacilityNetworkComponent* FacilityNetwork = FocusedActor->FindComponentByClass<USRFacilityNetworkComponent>();
+		if (!IsValid(FacilityNetwork))
+		{
+			return;
+		}
+
+		FSRFacilityInstance FacilityInstance;
+		if (!FacilityNetwork->GetFacilityInstance(StructureInfo.OccupantId, FacilityInstance))
+		{
+			return;
+		}
+
+		FSRFocusedFacilityRuntimeInfo RuntimeInfo;
+		RuntimeInfo.bIsValid = true;
+		RuntimeInfo.TemperatureState = FacilityInstance.TemperatureState;
+		RuntimeInfo.ProcessProgressSeconds = FacilityInstance.ProcessProgressSeconds;
+		RuntimeInfo.ProcessSeconds = ResolveFocusedFacilityProcessSeconds(FacilityInstance);
+		RuntimeInfo.bProcessing = FacilityInstance.bProcessing;
+		RuntimeInfo.InputInventory = FacilityInstance.InputInventory;
+		RuntimeInfo.ProcessingInventory = FacilityInstance.ProcessingInventory;
+		RuntimeInfo.OutputInventory = FacilityInstance.OutputInventory;
+
+		if (const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get())
+		{
+			RuntimeInfo.FacilityId = FacilityDataAsset->FacilityId;
+			RuntimeInfo.DisplayName = FacilityDataAsset->DisplayName.IsEmpty()
+				? FText::FromName(FacilityDataAsset->FacilityId)
+				: FacilityDataAsset->DisplayName;
+			RuntimeInfo.OperationKind = FacilityDataAsset->OperationKind;
+		}
+
+		StructureInfo.bHasFacilityRuntimeInfo = true;
+		StructureInfo.FacilityRuntimeInfo = RuntimeInfo;
 	}
 
 	void GatherFacilityPortPreviewCells(
@@ -230,6 +298,7 @@ bool USRAssemblyComponent::TryPublishSelectedStructureInfo(AActor* FocusedActor,
 	FSRStructureData StructureDataForPorts;
 	bool bHasStructureDataForPorts = false;
 	int32 StructureFootprintCellsX = 1;
+	int32 PlacedStructureRotationSteps = 0;
 
 	if (USRStructureInstanceManagerComponent* StructureInstanceManager = FocusedActor->FindComponentByClass<USRStructureInstanceManagerComponent>())
 	{
@@ -239,6 +308,7 @@ bool USRAssemblyComponent::TryPublishSelectedStructureInfo(AActor* FocusedActor,
 			StructureInfo.StructureId = PlacedStructure.StructureId;
 			StructureInfo.OriginCellId = PlacedStructure.OriginCellId;
 			StructureInfo.FootprintCellIds = PlacedStructure.FootprintCellIds;
+			PlacedStructureRotationSteps = PlacedStructure.PlacementRotationSteps;
 			StructureInfo.StructureDataAsset = PlacedStructure.StructureDataAsset;
 			StructureInfo.bNaturalStructure = PlacedStructure.bNaturalStructure;
 		}
@@ -249,7 +319,7 @@ bool USRAssemblyComponent::TryPublishSelectedStructureInfo(AActor* FocusedActor,
 		const FSRStructureData StructureData = StructureInfo.StructureDataAsset->BuildData();
 		StructureDataForPorts = StructureData;
 		bHasStructureDataForPorts = true;
-		StructureFootprintCellsX = FMath::Max(1, StructureData.FootprintCellsX);
+		StructureFootprintCellsX = StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacedStructureRotationSteps);
 		StructureInfo.StructureId = StructureInfo.StructureId.IsNone() ? StructureData.StructureId : StructureInfo.StructureId;
 		StructureInfo.DisplayName = StructureData.DisplayName.IsEmpty()
 			? FText::FromName(StructureInfo.StructureId)
@@ -270,8 +340,15 @@ bool USRAssemblyComponent::TryPublishSelectedStructureInfo(AActor* FocusedActor,
 
 	if (bHasStructureDataForPorts)
 	{
-		BuildFocusedFacilityPortInfo(SurfaceGrid, StructureInfo, StructureDataForPorts, StructureFootprintCellsX, StructureInfo.FacilityPorts);
+		BuildFocusedFacilityPortInfo(
+			SurfaceGrid,
+			StructureInfo,
+			StructureDataForPorts,
+			StructureFootprintCellsX,
+			PlacedStructureRotationSteps,
+			StructureInfo.FacilityPorts);
 	}
+	PopulateFocusedFacilityRuntimeInfo(FocusedActor, StructureInfo);
 
 	TArray<FSRPlanetSurfaceGridCellId> InputConnectionCellIds;
 	TArray<FSRPlanetSurfaceGridCellId> OutputConnectionCellIds;
@@ -299,4 +376,9 @@ void USRAssemblyComponent::ClearSelectedStructureInfo()
 	{
 		PlayerController->SetSelectedSurfaceStructureInfo(false, FSRFocusedSurfaceStructureInfo());
 	}
+}
+
+void USRAssemblyComponent::ClearSelectedStructureFocus()
+{
+	ClearSelectedStructureInfo();
 }

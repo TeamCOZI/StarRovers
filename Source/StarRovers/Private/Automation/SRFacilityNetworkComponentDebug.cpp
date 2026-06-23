@@ -136,7 +136,7 @@ bool USRFacilityNetworkComponent::DebugDumpFacilityState(FName OccupantId) const
 	UE_LOG(
 		LogTemp,
 		Display,
-		TEXT("[FacilityNetwork][Debug] Dump: OccupantId=%s Structure=%s Facility=%s Owner=%s Input=%d Processing=%d Output=%d bProcessing=%s Progress=%.3f Temperature=%d Origin=(%s)"),
+		TEXT("[FacilityNetwork][Debug] Dump: OccupantId=%s Structure=%s Facility=%s Owner=%s Input=%d Processing=%d Output=%d bProcessing=%s ProcessEnabled=%s DeliverEnabled=%s Progress=%.3f Temperature=%d Origin=(%s)"),
 		*FacilityInstance->OccupantId.ToString(),
 		*GetNameSafe(FacilityInstance->StructureDataAsset.Get()),
 		*GetNameSafe(FacilityInstance->FacilityDataAsset.Get()),
@@ -145,6 +145,8 @@ bool USRFacilityNetworkComponent::DebugDumpFacilityState(FName OccupantId) const
 		FacilityInstance->ProcessingInventory.Num(),
 		FacilityInstance->OutputInventory.Num(),
 		FacilityInstance->bProcessing ? TEXT("true") : TEXT("false"),
+		FacilityInstance->bProcessEnabled ? TEXT("true") : TEXT("false"),
+		FacilityInstance->bDeliverEnabled ? TEXT("true") : TEXT("false"),
 		FacilityInstance->ProcessProgressSeconds,
 		static_cast<int32>(FacilityInstance->TemperatureState),
 		*StarRovers::FacilityNetwork::BuildFacilityCellDebugString(FacilityInstance->OriginCellId));

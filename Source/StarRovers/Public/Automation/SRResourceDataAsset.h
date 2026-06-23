@@ -20,13 +20,14 @@ enum class ESRResourceCatalystOperator : uint8
 	Add UMETA(DisplayName = "Add"),
 	Multiply UMETA(DisplayName = "Multiply"),
 	Subtract UMETA(DisplayName = "Subtract"),
+	Divide UMETA(DisplayName = "Divide"),
 };
 
 UENUM(BlueprintType)
 enum class ESRResourceProcessTag : uint8
 {
-	Responsive UMETA(DisplayName = "Responsive"),
-	Waste UMETA(DisplayName = "Waste"),
+	Responsive UMETA(DisplayName = "HeatResponsive"),
+	Waste UMETA(DisplayName = "DeprecatedWaste"),
 	HalfLife UMETA(DisplayName = "HalfLife"),
 	Volatile UMETA(DisplayName = "Volatile"),
 	Singularity UMETA(DisplayName = "Singularity"),
@@ -81,6 +82,12 @@ struct STARROVERS_API FSRResourceInstance
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource", meta = (DisplayName = "StackCount", ClampMin = "1"))
 	int32 StackCount = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource|Stellar Fuel", meta = (DisplayName = "bCountsAsStellarFuel"))
+	bool bCountsAsStellarFuel = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource|Stellar Fuel", meta = (DisplayName = "StellarFuelValueMultiplier", ClampMin = "0.0"))
+	double StellarFuelValueMultiplier = 1.0;
 };
 
 UCLASS(BlueprintType)
@@ -117,4 +124,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource", meta = (DisplayName = "DefaultTags"))
 	TArray<FSRResourceTagStack> DefaultTags;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource|Stellar Fuel", meta = (DisplayName = "bCountsAsStellarFuel"))
+	bool bCountsAsStellarFuel = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource|Stellar Fuel", meta = (DisplayName = "StellarFuelValueMultiplier", ClampMin = "0.0"))
+	double StellarFuelValueMultiplier = 1.0;
 };

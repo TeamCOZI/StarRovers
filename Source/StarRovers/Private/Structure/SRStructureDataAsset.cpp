@@ -13,6 +13,8 @@ USRStructureDataAsset::USRStructureDataAsset()
 	bAlignToSurfaceNormal = true;
 	bAvailableForConstruction = true;
 	BuildKind = ESRStructureBuildKind::Structure;
+	bIsResourceDeposit = false;
+	DepositTotalAmount = 0;
 	ConveyorLayer = 0;
 	ConveyorLayerHeight = 160.0f;
 }
@@ -38,6 +40,9 @@ FSRStructureData USRStructureDataAsset::BuildData() const
 	Result.bAvailableForConstruction = bAvailableForConstruction;
 	Result.BuildKind = BuildKind;
 	Result.FacilityDataAsset = FacilityDataAsset;
+	Result.bIsResourceDeposit = bIsResourceDeposit;
+	Result.DepositResourceDataAsset = DepositResourceDataAsset;
+	Result.DepositTotalAmount = FMath::Max(0, DepositTotalAmount);
 	Result.InputPorts = InputPorts;
 	Result.OutputPorts = OutputPorts;
 	Result.ConveyorLayer = FMath::Max(0, ConveyorLayer);

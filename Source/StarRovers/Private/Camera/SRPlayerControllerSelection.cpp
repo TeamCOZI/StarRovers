@@ -63,6 +63,7 @@ void ASRPlayerController::SetHoveredSurfaceCellInfo(bool bHasHoveredSurfaceCell,
 		FocusInfoWidget->SetFocusInfo(SelectedActorFocusInfo);
 		FocusInfoWidget->SetAssemblyModeActive(IsAssemblyModeActive());
 	}
+	RefreshFacilityControlWidget();
 }
 
 void ASRPlayerController::SetSelectedSurfaceStructureInfo(bool bHasSelectedSurfaceStructure, const FSRFocusedSurfaceStructureInfo& SelectedSurfaceStructureInfo)
@@ -87,6 +88,7 @@ void ASRPlayerController::SetSelectedSurfaceStructureInfo(bool bHasSelectedSurfa
 		FocusInfoWidget->SetFocusInfo(SelectedActorFocusInfo);
 		FocusInfoWidget->SetAssemblyModeActive(IsAssemblyModeActive());
 	}
+	RefreshFacilityControlWidget();
 }
 
 void ASRPlayerController::SetSelectedActorSurfaceStructureInfo(AActor* NewSelectedActor, const FSRFocusedSurfaceStructureInfo& SelectedSurfaceStructureInfo)
@@ -121,6 +123,7 @@ void ASRPlayerController::SetSelectedActorSurfaceStructureInfo(AActor* NewSelect
 		FocusInfoWidget->SetAssemblyModeActive(IsAssemblyModeActive());
 		FocusInfoWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	}
+	RefreshFacilityControlWidget();
 }
 
 USRCelestialBodyRegistrySubsystem* ASRPlayerController::GetCelestialBodyRegistry() const
@@ -320,6 +323,10 @@ void ASRPlayerController::UpdateSelection(AActor* NewSelectedActor)
 	if (bPreserveSelectedSurfaceStructure)
 	{
 		SetSelectedSurfaceStructureInfo(true, PreservedSelectedSurfaceStructureInfo);
+	}
+	else
+	{
+		RefreshFacilityControlWidget();
 	}
 	RefreshOverviewWidget();
 	OnSelectionChanged(SelectedActor);

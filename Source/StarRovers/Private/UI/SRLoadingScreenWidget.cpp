@@ -38,6 +38,21 @@ void USRLoadingScreenWidget::NativePreConstruct()
 	RefreshLoadingScreenText();
 }
 
+FReply USRLoadingScreenWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	return IsVisible() ? FReply::Handled() : Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply USRLoadingScreenWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	return IsVisible() ? FReply::Handled() : Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+FReply USRLoadingScreenWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	return IsVisible() ? FReply::Handled() : Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+}
+
 void USRLoadingScreenWidget::SetLoadingProgress(float InProgress, const FText& InStatusText)
 {
 	LoadingProgress = FMath::Clamp(InProgress, 0.0f, 1.0f);

@@ -9,6 +9,7 @@ class ASRPlayerController;
 class USRConveyorNetworkComponent;
 class USRPlanetSurfaceGrid;
 class USRStructureDataAsset;
+struct FSRStructureData;
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
 class STARROVERS_API USRAssemblyComponent : public UActorComponent
@@ -40,6 +41,10 @@ public:
 	void EndStructurePlacementDrag();
 	void ClearSurfaceGridInteraction(AActor* SurfaceActor);
 	void ClearSurfaceHover();
+	void ClearSelectedStructureFocus();
+	bool RotateStructurePlacement(int32 StepDelta);
+	int32 GetStructurePlacementRotationSteps() const;
+	float GetStructurePlacementAdditionalYawDegrees() const;
 
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "HoveredSurfaceGrid"))
@@ -65,6 +70,9 @@ protected:
 	TObjectPtr<USRStructureDataAsset> StructureGhostDataAsset;
 
 	UPROPERTY(Transient)
+	TObjectPtr<USRPlanetSurfaceGrid> StructureGhostPortPreviewSurfaceGrid;
+
+	UPROPERTY(Transient)
 	TObjectPtr<USRStructureDataAsset> LastLoggedInvalidGhostDataAsset;
 
 	FVector2D LastHoveredSampleMousePosition;
@@ -73,7 +81,9 @@ protected:
 	FSRPlanetSurfaceGridCellId LastPublishedHoveredCellId;
 	FSRPlanetSurfaceGridCellId StructureGhostCellId;
 	bool bHasStructureGhostCellId;
+	bool bHasStructureGhostPortPreview;
 	bool bIsStructurePlacementDragActive;
+	int32 StructurePlacementRotationSteps;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USRPlanetSurfaceGrid> LastStructurePlacementDragSurfaceGrid;
@@ -92,6 +102,7 @@ private:
 	{
 		TWeakObjectPtr<USRPlanetSurfaceGrid> SurfaceGrid;
 		FSRPlanetSurfaceGridCellId CellId;
+		int32 PlacementRotationSteps = 0;
 	};
 
 	ASRPlayerController* GetOwnerController() const;
@@ -99,6 +110,7 @@ private:
 	bool TryGetFocusedSurfaceGrid(AActor*& OutFocusedActor, USRPlanetSurfaceGrid*& OutSurfaceGrid) const;
 	bool TryProjectCursorToSurfaceCell(USRPlanetSurfaceGrid* SurfaceGrid, FSRPlanetSurfaceGridCell& OutCell, FVector& OutHitLocation) const;
 	void UpdateSurfaceHover();
+	void ClearSurfaceHoverPreview();
 	void ProcessQueuedStructurePlacements();
 	void ApplyAssemblyModeToFocusedSurfaceGrid();
 	void ResetHoverSampleCache();
@@ -108,6 +120,8 @@ private:
 	void ClearSelectedStructureInfo();
 	void UpdateStructureGhostPreview();
 	void DestroyStructureGhostPreview();
+	void UpdateStructureGhostPortPreview(USRPlanetSurfaceGrid* SurfaceGrid, const FSRStructureData& StructureData, const TArray<FSRPlanetSurfaceGridCellId>& FootprintCellIds, int32 PlacementRotationSteps);
+	void ClearStructureGhostPortPreview();
 	bool BuildStructureGhostTransform(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& CellId, USRStructureDataAsset* StructureDataAsset, FTransform& OutTransform) const;
 	void PublishStructureGhostPlacementDebug(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& HoveredCell, const FTransform& GhostTransform, float StructureHeightOffset, bool bLogDebug) const;
 	bool TryResolveStructurePlacementDragTarget(AActor*& OutFocusedActor, USRPlanetSurfaceGrid*& OutSurfaceGrid, FSRPlanetSurfaceGridCell& OutTargetCell) const;
@@ -115,7 +129,7 @@ private:
 	void EnqueueStructurePlacement(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& CellId);
 	bool TryPlaceStructureDragPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell);
 	bool TryPlaceConveyorDragPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset);
-	bool TryPlaceSelectedStructure(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, bool bRefreshPreviewAndUI = true);
+	bool TryPlaceSelectedStructure(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, bool bRefreshPreviewAndUI = true, int32 PlacementRotationStepsOverride = INDEX_NONE);
 	bool TryPlaceSelectedConveyor(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset, bool bRefreshPreviewAndUI = true);
 	bool TryPlaceSelectedConveyorPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& StartCellId, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset, bool bRefreshPreviewAndUI = true);
 	bool TryDeleteStructureAtCell(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId);

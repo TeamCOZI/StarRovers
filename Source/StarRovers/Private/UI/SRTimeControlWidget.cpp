@@ -11,6 +11,7 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Fonts/SlateFontInfo.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Simulation/SRTimeControlSubsystem.h"
 #include "Styling/SlateColor.h"
 
@@ -66,6 +67,46 @@ void USRTimeControlWidget::NativePreConstruct()
 
 	BuildTimeControlWidgetTree();
 	RefreshTimeControlState();
+}
+
+FReply USRTimeControlWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverTimeControlPanel(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply USRTimeControlWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverTimeControlPanel(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+FReply USRTimeControlWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (IsScreenPositionOverTimeControlPanel(InMouseEvent.GetScreenSpacePosition()))
+	{
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+}
+
+bool USRTimeControlWidget::IsPointerOverTimeControlPanel() const
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+
+	return IsScreenPositionOverTimeControlPanel(FSlateApplication::Get().GetCursorPos());
 }
 
 void USRTimeControlWidget::BuildTimeControlWidgetTree()
@@ -261,6 +302,13 @@ void USRTimeControlWidget::UpdateButtonStyle(UButton* Button, bool bIsActive) co
 			? FLinearColor(0.15f, 0.42f, 0.30f, 1.0f)
 			: FLinearColor(0.16f, 0.20f, 0.26f, 0.95f)
 	);
+}
+
+bool USRTimeControlWidget::IsScreenPositionOverTimeControlPanel(const FVector2D& ScreenPosition) const
+{
+	return IsVisible()
+		&& TimeControlBorder
+		&& TimeControlBorder->GetCachedGeometry().IsUnderLocation(ScreenPosition);
 }
 
 void USRTimeControlWidget::HandlePauseClicked()

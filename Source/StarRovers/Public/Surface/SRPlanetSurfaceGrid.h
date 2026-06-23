@@ -75,6 +75,18 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     bool RaycastCell(const FVector& RayOrigin, const FVector& RayDirection, FSRPlanetSurfaceGridCell& OutCell, FVector& OutHitLocation) const;
 
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Temperature")
+    static ESRFacilityTemperatureState ResolveTemperatureStateFromSurfaceTemperature(float SurfaceTemperature);
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Temperature")
+    bool GetCellTemperatureState(const FSRPlanetSurfaceGridCellId& CellId, ESRFacilityTemperatureState& OutTemperatureState) const;
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Temperature")
+    bool SetCellTemperatureState(const FSRPlanetSurfaceGridCellId& CellId, ESRFacilityTemperatureState TemperatureState);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Temperature")
+    bool SetCellSurfaceTemperature(const FSRPlanetSurfaceGridCellId& CellId, float SurfaceTemperature);
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     bool SetCellOccupied(const FSRPlanetSurfaceGridCellId& CellId, bool bOccupied, FName OccupantId);
 

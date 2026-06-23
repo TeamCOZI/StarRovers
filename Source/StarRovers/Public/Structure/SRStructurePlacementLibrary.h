@@ -18,12 +18,14 @@ public:
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlanetSurfaceGridCellId& CellId,
 		USRStructureDataAsset* StructureDataAsset,
-		FTransform& OutTransform);
+		FTransform& OutTransform,
+		float AdditionalYawDegrees = 0.0f);
 
 	static bool TryPlaceStructureOnSurfaceGrid(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlanetSurfaceGridCellId& TargetCellId,
 		USRStructureDataAsset* StructureDataAsset,
 		AActor*& OutPlacedStructureActor,
-		bool bUseStaticMeshMaterials = false);
+		bool bUseStaticMeshMaterials = false,
+		int32 PlacementRotationSteps = 0);
 };

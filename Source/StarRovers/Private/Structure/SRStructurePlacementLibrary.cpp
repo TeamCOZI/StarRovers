@@ -58,7 +58,8 @@ bool USRStructurePlacementLibrary::BuildStructurePlacementTransform(
 	USRPlanetSurfaceGrid* SurfaceGrid,
 	const FSRPlanetSurfaceGridCellId& CellId,
 	USRStructureDataAsset* StructureDataAsset,
-	FTransform& OutTransform)
+	FTransform& OutTransform,
+	float AdditionalYawDegrees)
 {
 	OutTransform = FTransform::Identity;
 	if (!IsValid(SurfaceGrid) || !IsValid(StructureDataAsset))
@@ -72,18 +73,19 @@ bool USRStructurePlacementLibrary::BuildStructurePlacementTransform(
 		return false;
 	}
 
+	const float FinalYawDegrees = StructureData.PlacementYawDegrees + AdditionalYawDegrees;
 	if (StructureData.bAlignToSurfaceNormal)
 	{
 		const FQuat BaseRotation = OutTransform.GetRotation();
 		const FVector SurfaceNormal = BaseRotation.GetAxisZ().GetSafeNormal();
 		const FQuat YawRotation = SurfaceNormal.IsNearlyZero()
 			? FQuat::Identity
-			: FQuat(SurfaceNormal, FMath::DegreesToRadians(StructureData.PlacementYawDegrees));
+			: FQuat(SurfaceNormal, FMath::DegreesToRadians(FinalYawDegrees));
 		OutTransform.SetRotation(YawRotation * BaseRotation);
 	}
 	else
 	{
-		OutTransform.SetRotation(FRotator(0.0f, StructureData.PlacementYawDegrees, 0.0f).Quaternion());
+		OutTransform.SetRotation(FRotator(0.0f, FinalYawDegrees, 0.0f).Quaternion());
 	}
 
 	return true;
@@ -94,7 +96,8 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 	const FSRPlanetSurfaceGridCellId& TargetCellId,
 	USRStructureDataAsset* StructureDataAsset,
 	AActor*& OutPlacedStructureActor,
-	bool bUseStaticMeshMaterials)
+	bool bUseStaticMeshMaterials,
+	int32 PlacementRotationSteps)
 {
 	OutPlacedStructureActor = nullptr;
 	if (!IsValid(SurfaceGrid) || !IsValid(StructureDataAsset))
@@ -120,6 +123,7 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 	{
 		return false;
 	}
+	const int32 NormalizedRotationSteps = StarRovers::Structure::NormalizePlacementRotationSteps(PlacementRotationSteps);
 
 	UClass* StructureActorClass = StructureData.StructureActorClass.Get();
 	if (!IsValid(StructureActorClass))
@@ -135,14 +139,23 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 	}
 
 	TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
-	if (!SurfaceGrid->GetFootprintCellIds(TargetCellId, StructureData.FootprintCellsX, StructureData.FootprintCellsY, FootprintCellIds)
+	if (!SurfaceGrid->GetFootprintCellIds(
+		TargetCellId,
+		StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, NormalizedRotationSteps),
+		StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, NormalizedRotationSteps),
+		FootprintCellIds)
 		|| !SurfaceGrid->CanOccupyCells(FootprintCellIds))
 	{
 		return false;
 	}
 
 	FTransform StructureTransform;
-	if (!BuildStructurePlacementTransform(SurfaceGrid, TargetCellId, StructureDataAsset, StructureTransform))
+	if (!BuildStructurePlacementTransform(
+		SurfaceGrid,
+		TargetCellId,
+		StructureDataAsset,
+		StructureTransform,
+		StarRovers::Structure::PlacementRotationStepsToYawDegrees(NormalizedRotationSteps)))
 	{
 		return false;
 	}
@@ -199,7 +212,7 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 	}
 	if (USRFacilityNetworkComponent* FacilityNetwork = SurfaceOwner->FindComponentByClass<USRFacilityNetworkComponent>())
 	{
-		FacilityNetwork->RegisterFacility(OccupantId, StructureDataAsset, TargetCellId, FootprintCellIds);
+		FacilityNetwork->RegisterFacility(OccupantId, StructureDataAsset, TargetCellId, FootprintCellIds, NormalizedRotationSteps);
 	}
 
 	OutPlacedStructureActor = PlacedStructureActor;

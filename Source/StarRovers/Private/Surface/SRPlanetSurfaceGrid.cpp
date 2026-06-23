@@ -80,6 +80,8 @@ void USRPlanetSurfaceGrid::RebuildGrid()
 			Cell.Biome = TerrainSample.Biome;
 			Cell.BiomeId = TerrainSample.BiomeId;
 			Cell.WaterRole = TerrainSample.WaterRole;
+			Cell.SurfaceTemperature = TerrainSample.Temperature;
+			Cell.TemperatureState = ResolveTemperatureStateFromSurfaceTemperature(TerrainSample.Temperature);
 		}
 	}
 	if (ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(GetOwner()))
