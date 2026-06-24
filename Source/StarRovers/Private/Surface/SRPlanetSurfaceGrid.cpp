@@ -20,6 +20,7 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 	OccupiedCellColor = FLinearColor(1.0f, 0.35f, 0.35f, 1.0f);
 	InputPortPreviewCellColor = FLinearColor(0.15f, 0.55f, 1.0f, 1.0f);
 	OutputPortPreviewCellColor = FLinearColor(1.0f, 0.55f, 0.05f, 1.0f);
+	DeletionPreviewCellColor = FLinearColor(1.0f, 0.05f, 0.02f, 1.0f);
 	DebugLineThickness = 1.0f;
 	GridSurfaceOffset = 0.0f;
 	DynamicMeshGeneration = FSRDynamicMeshGeneration();
@@ -94,6 +95,7 @@ void USRPlanetSurfaceGrid::RebuildGrid()
 	SelectedCellId = FSRPlanetSurfaceGridCellId();
 	InputPortPreviewCellIds.Reset();
 	OutputPortPreviewCellIds.Reset();
+	DeletionPreviewCellIds.Reset();
 	SetInteractionOverlayVisible(false);
 	RebuildCellIndex();
 	RebuildCellInfoIndex();

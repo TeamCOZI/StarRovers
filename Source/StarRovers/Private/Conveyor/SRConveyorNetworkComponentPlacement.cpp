@@ -1,6 +1,8 @@
 #include "Conveyor/SRConveyorNetworkComponent.h"
 
 #include "SRConveyorNetworkComponentInternal.h"
+#include "GameFramework/Actor.h"
+#include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 bool USRConveyorNetworkComponent::TryPlaceConveyorPath(
@@ -19,10 +21,73 @@ bool USRConveyorNetworkComponent::TryPlaceConveyorPath(
 	const int32 SafeLayer = FMath::Max(0, Layer);
 	const float SafeLayerHeight = ResolveConveyorLayerHeight(SurfaceGrid, LayerHeight);
 	const int32 PreviousVisualPathCount = VisualPaths.Num();
+	TArray<FSRPlanetSurfaceGridCellId> DestructibleNaturalStructureCellIds;
 	for (const FSRPlanetSurfaceGridCellId& CellId : PathCellIds)
 	{
 		const FSRConveyorLaneKey LaneKey = MakeLaneKey(CellId, SafeLayer);
 		if (!Segments.Contains(LaneKey) && !CanPlaceConveyorSegment(SurfaceGrid, LaneKey))
+		{
+			return false;
+		}
+
+		if (SafeLayer == 0 && !Segments.Contains(LaneKey))
+		{
+			FSRPlanetSurfaceGridCellInfo CellInfo;
+			if (!SurfaceGrid->GetCellInfoById(CellId, CellInfo))
+			{
+				return false;
+			}
+
+			if (CellInfo.bOccupied
+				&& CanDestroyNaturalStructureForConveyorPlacement(SurfaceGrid, CellInfo.OccupantId))
+			{
+				DestructibleNaturalStructureCellIds.AddUnique(CellId);
+			}
+		}
+	}
+
+	TArray<FSRConveyorSegment> ProposedSegments;
+	ProposedSegments.Reserve(PathCellIds.Num());
+	for (int32 PathIndex = 0; PathIndex < PathCellIds.Num(); ++PathIndex)
+	{
+		const FSRPlanetSurfaceGridCellId& CellId = PathCellIds[PathIndex];
+		ESRConveyorGridDirection InputDirection = ESRConveyorGridDirection::None;
+		ESRConveyorGridDirection OutputDirection = ESRConveyorGridDirection::None;
+		if (PathIndex > 0)
+		{
+			ESRConveyorGridDirection PreviousDirection = ESRConveyorGridDirection::None;
+			if (FindDirectionBetweenCells(SurfaceGrid, CellId, PathCellIds[PathIndex - 1], PreviousDirection))
+			{
+				InputDirection = PreviousDirection;
+			}
+		}
+		if (PathIndex + 1 < PathCellIds.Num())
+		{
+			FindDirectionBetweenCells(SurfaceGrid, CellId, PathCellIds[PathIndex + 1], OutputDirection);
+		}
+
+		FSRConveyorSegment Segment;
+		Segment.Lane = MakeLaneKey(CellId, SafeLayer);
+		Segment.InputDirection = InputDirection;
+		Segment.OutputDirection = OutputDirection;
+		Segment.Shape = ResolveSegmentShape(InputDirection, OutputDirection);
+		Segment.NetworkId = NetworkId;
+		Segment.StructureDataAsset = StructureDataAsset;
+		if (!CanMergeConveyorSegment(Segment))
+		{
+			return false;
+		}
+		ProposedSegments.Add(Segment);
+	}
+
+	if (!DestructibleNaturalStructureCellIds.IsEmpty())
+	{
+		AActor* SurfaceOwner = SurfaceGrid->GetOwner();
+		USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(SurfaceOwner)
+			? SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>()
+			: nullptr;
+		if (!IsValid(StructureInstanceManager)
+			|| !StructureInstanceManager->TryRemoveConstructionDestructibleNaturalStructuresAtCells(SurfaceGrid, DestructibleNaturalStructureCellIds))
 		{
 			return false;
 		}
@@ -55,32 +120,9 @@ bool USRConveyorNetworkComponent::TryPlaceConveyorPath(
 		VisualPaths.SetNum(PreviousVisualPathCount, EAllowShrinking::No);
 	};
 
-	for (int32 PathIndex = 0; PathIndex < PathCellIds.Num(); ++PathIndex)
+	for (const FSRConveyorSegment& Segment : ProposedSegments)
 	{
-		const FSRPlanetSurfaceGridCellId& CellId = PathCellIds[PathIndex];
-		ESRConveyorGridDirection InputDirection = ESRConveyorGridDirection::None;
-		ESRConveyorGridDirection OutputDirection = ESRConveyorGridDirection::None;
-		if (PathIndex > 0)
-		{
-			ESRConveyorGridDirection PreviousDirection = ESRConveyorGridDirection::None;
-			if (FindDirectionBetweenCells(SurfaceGrid, CellId, PathCellIds[PathIndex - 1], PreviousDirection))
-			{
-				InputDirection = PreviousDirection;
-			}
-		}
-		if (PathIndex + 1 < PathCellIds.Num())
-		{
-			FindDirectionBetweenCells(SurfaceGrid, CellId, PathCellIds[PathIndex + 1], OutputDirection);
-		}
-
-		FSRConveyorSegment Segment;
-		Segment.Lane = MakeLaneKey(CellId, SafeLayer);
-		Segment.InputDirection = InputDirection;
-		Segment.OutputDirection = OutputDirection;
-		Segment.Shape = ResolveSegmentShape(InputDirection, OutputDirection);
-		Segment.NetworkId = NetworkId;
-		Segment.StructureDataAsset = StructureDataAsset;
-		Segments.Add(Segment.Lane, Segment);
+		MergeConveyorSegment(Segment);
 	}
 
 	FSRConveyorVisualPath VisualPath;
@@ -233,6 +275,6 @@ bool USRConveyorNetworkComponent::TryRemoveConveyorAtCell(
 	RefreshPCGSplineInputs(SurfaceGrid);
 	RequestPCGGeneration();
 	RefreshPathDebugLines(SurfaceGrid);
-	SetComponentTickEnabled(HasDirtyConveyorActorGroups() || ShouldKeepTransportTickEnabled());
+	SetComponentTickEnabled(HasDirtyConveyorActorGroups() || ShouldKeepTransportTickEnabled() || bShowPathDebugLine || bShowConnectionDebugLine);
 	return true;
 }

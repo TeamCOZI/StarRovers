@@ -100,6 +100,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Structure")
 	bool GetPlacedStructure(FName OccupantId, FSRPlacedStructureInstance& OutPlacedStructure) const;
 
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Structure")
+	void GetPlacedStructures(TArray<FSRPlacedStructureInstance>& OutPlacedStructures) const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Structure")
+	bool CanDestroyNaturalStructureForConstruction(FName OccupantId) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Structure")
+	bool TryRemoveConstructionDestructibleNaturalStructuresAtCells(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Resource Deposit")
 	bool GetResourceDepositInstance(FName OccupantId, FSRResourceDepositInstance& OutResourceDeposit) const;
 

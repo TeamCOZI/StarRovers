@@ -259,7 +259,15 @@ bool USRConveyorNetworkComponent::ResolveConveyorItemWorldLocation(
 	if (const FSRConveyorSegment* Segment = Segments.Find(LaneKey))
 	{
 		FSRConveyorLaneKey NextLaneKey;
-		if (TryResolveNextLane(SurfaceGrid, *Segment, NextLaneKey) && Segments.Contains(NextLaneKey))
+		TArray<ESRConveyorGridDirection> OutputDirections;
+		CollectConveyorOutputDirections(*Segment, OutputDirections);
+		const int32 OutputDirectionIndex = OutputDirections.IsValidIndex(Segment->NextOutputDirectionIndex)
+			? Segment->NextOutputDirectionIndex
+			: 0;
+		const ESRConveyorGridDirection VisualOutputDirection = OutputDirections.IsValidIndex(OutputDirectionIndex)
+			? OutputDirections[OutputDirectionIndex]
+			: ESRConveyorGridDirection::None;
+		if (TryResolveNextLaneByDirection(SurfaceGrid, *Segment, VisualOutputDirection, NextLaneKey) && Segments.Contains(NextLaneKey))
 		{
 			FSRPlanetSurfaceGridCellInfo NextCellInfo;
 			if (SurfaceGrid->GetCellInfoById(NextLaneKey.CellId, NextCellInfo))

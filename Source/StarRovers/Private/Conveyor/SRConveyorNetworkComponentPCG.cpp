@@ -6,6 +6,16 @@
 #include "PCGComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
+FName USRConveyorNetworkComponent::GetConveyorActorSplineComponentTag() const
+{
+	return PCGSplineComponentTag;
+}
+
+float USRConveyorNetworkComponent::GetConveyorActorSurfaceOffset() const
+{
+	return FMath::Max(0.0f, BeltSurfaceOffset + PCGSplineHeightOffset);
+}
+
 void USRConveyorNetworkComponent::RefreshPCGSplineInputs(USRPlanetSurfaceGrid* SurfaceGrid)
 {
 	if (!bBuildPCGSplineInputs || !IsValid(SurfaceGrid))

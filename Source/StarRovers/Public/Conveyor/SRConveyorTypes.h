@@ -63,6 +63,9 @@ struct STARROVERS_API FSRConveyorSegment
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "OutputDirection"))
 	ESRConveyorGridDirection OutputDirection = ESRConveyorGridDirection::None;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "BranchOutputDirection"))
+	ESRConveyorGridDirection BranchOutputDirection = ESRConveyorGridDirection::None;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "Shape"))
 	ESRConveyorSegmentShape Shape = ESRConveyorSegmentShape::End;
 
@@ -71,6 +74,9 @@ struct STARROVERS_API FSRConveyorSegment
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "StructureDataAsset"))
 	TObjectPtr<USRStructureDataAsset> StructureDataAsset = nullptr;
+
+	UPROPERTY(Transient)
+	int32 NextOutputDirectionIndex = 0;
 };
 
 USTRUCT(BlueprintType)

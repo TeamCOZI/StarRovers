@@ -62,9 +62,14 @@ ASRPlayerController::ASRPlayerController()
 	SelectedStructureBuildId = NAME_None;
 	bHasSelectedStructureBuildId = false;
 	SelectedStructureDataAsset = nullptr;
+	RotatePlacementCounterClockwiseAction = nullptr;
+	RotatePlacementClockwiseAction = nullptr;
+	ConveyorWaypointAction = nullptr;
+	BulkDeleteConveyorModifierAction = nullptr;
 	bPendingInitialPrimaryStarFocus = true;
 	LastPlacementRotationInputFrame = MAX_uint64;
 	LastPlacementRotationInputStepDelta = 0;
+	bConveyorBulkDeleteModifierActive = false;
 
 	AssemblyComponent = CreateDefaultSubobject<USRAssemblyComponent>(TEXT("AssemblyComponent"));
 	AssemblyComponent->ConfigurePlacementPerformance(MaxStructurePlacementsPerFrame, MaxQueuedStructurePlacements);

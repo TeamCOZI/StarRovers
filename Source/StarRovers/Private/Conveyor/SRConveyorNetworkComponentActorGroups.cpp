@@ -86,7 +86,7 @@ void USRConveyorNetworkComponent::DestroyPlacedConveyorActors()
 	PendingPlacementDiagnosticActorGroupKeys.Reset();
 	PendingDeletionDiagnosticActorGroupKeys.Reset();
 	PendingConveyorActorRefreshSurfaceGrid.Reset();
-	SetComponentTickEnabled(ShouldKeepTransportTickEnabled());
+	SetComponentTickEnabled(ShouldKeepTransportTickEnabled() || bShowPathDebugLine || bShowConnectionDebugLine);
 }
 
 void USRConveyorNetworkComponent::MarkConveyorActorGroupDirty(USRStructureDataAsset* StructureDataAsset, int32 Layer)
@@ -281,7 +281,7 @@ void USRConveyorNetworkComponent::RebuildSegmentsFromVisualPaths(USRPlanetSurfac
 			Segment.Shape = ResolveSegmentShape(InputDirection, OutputDirection);
 			Segment.NetworkId = VisualPath.NetworkId;
 			Segment.StructureDataAsset = VisualPath.StructureDataAsset;
-			Segments.Add(Segment.Lane, Segment);
+			MergeConveyorSegment(Segment);
 		}
 	}
 }

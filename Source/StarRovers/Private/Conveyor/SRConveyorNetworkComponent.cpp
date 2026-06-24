@@ -6,6 +6,7 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "GameFramework/Actor.h"
 #include "PCGComponent.h"
+#include "Simulation/SRTimeControlSubsystem.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 USRConveyorNetworkComponent::USRConveyorNetworkComponent()
@@ -26,6 +27,12 @@ USRConveyorNetworkComponent::USRConveyorNetworkComponent()
 	bShowPathDebugLine = false;
 	PathDebugLineColor = FLinearColor(1.0f, 0.1f, 0.0f, 1.0f);
 	PathDebugLineThickness = 8.0f;
+	bShowConnectionDebugLine = false;
+	ConnectionDebugLineColor = FLinearColor(0.1f, 1.0f, 0.25f, 1.0f);
+	BrokenConnectionDebugLineColor = FLinearColor(1.0f, 0.15f, 0.05f, 1.0f);
+	EndpointDebugLineColor = FLinearColor(1.0f, 0.9f, 0.1f, 1.0f);
+	ConnectionDebugLineThickness = 6.0f;
+	ConnectionDebugLineHeightOffset = 110.0f;
 	bAutoTransportItems = true;
 	ItemSpeedCellsPerSecond = 1.0f;
 	MaxItemTransfersPerTick = 128;
@@ -60,6 +67,13 @@ void USRConveyorNetworkComponent::BeginPlay()
 		}
 	}
 	BindPCGGenerationDelegates();
+
+	if (bShowPathDebugLine || bShowConnectionDebugLine)
+	{
+		USRPlanetSurfaceGrid* SurfaceGrid = OwnerActor->FindComponentByClass<USRPlanetSurfaceGrid>();
+		RefreshPathDebugLines(SurfaceGrid);
+		SetComponentTickEnabled(true);
+	}
 }
 
 void USRConveyorNetworkComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -76,9 +90,18 @@ void USRConveyorNetworkComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		}
 	}
 
-	if (bAutoTransportItems && IsValid(SurfaceGrid))
+	float TransportDeltaTime = FMath::Max(0.0f, DeltaTime);
+	if (const UWorld* World = GetWorld())
 	{
-		ProcessConveyorTransport(SurfaceGrid, DeltaTime);
+		if (const USRTimeControlSubsystem* TimeControlSubsystem = World->GetSubsystem<USRTimeControlSubsystem>())
+		{
+			TransportDeltaTime *= FMath::Max(0.0f, TimeControlSubsystem->GetEffectiveTimeScale());
+		}
+	}
+
+	if (bAutoTransportItems && IsValid(SurfaceGrid) && TransportDeltaTime > 0.0f)
+	{
+		ProcessConveyorTransport(SurfaceGrid, TransportDeltaTime);
 	}
 
 	if (bShowTransportItemVisuals && IsValid(SurfaceGrid))
@@ -90,8 +113,13 @@ void USRConveyorNetworkComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		DestroyConveyorItemVisuals();
 	}
 
+	if ((bShowPathDebugLine || bShowConnectionDebugLine) && IsValid(SurfaceGrid))
+	{
+		RefreshPathDebugLines(SurfaceGrid);
+	}
+
 	RefreshDirtyConveyorActorGroups(SurfaceGrid, FMath::Max(1, MaxConveyorActorGroupsRefreshedPerFrame));
-	if (!HasDirtyConveyorActorGroups() && !ShouldKeepTransportTickEnabled())
+	if (!HasDirtyConveyorActorGroups() && !ShouldKeepTransportTickEnabled() && !bShowPathDebugLine && !bShowConnectionDebugLine)
 	{
 		PendingConveyorActorRefreshSurfaceGrid.Reset();
 		SetComponentTickEnabled(false);
@@ -116,6 +144,7 @@ void USRConveyorNetworkComponent::PostEditChangeProperty(FPropertyChangedEvent& 
 		}
 		RefreshConveyorVisuals(SurfaceGrid);
 		RefreshPathDebugLines(SurfaceGrid);
+		SetComponentTickEnabled(HasDirtyConveyorActorGroups() || ShouldKeepTransportTickEnabled() || bShowPathDebugLine || bShowConnectionDebugLine);
 	}
 }
 #endif
@@ -204,9 +233,30 @@ void USRConveyorNetworkComponent::SetPathDebugLineVisible(bool bNewPathDebugLine
 	{
 		RefreshPathDebugLines(OwnerActor->FindComponentByClass<USRPlanetSurfaceGrid>());
 	}
+	SetComponentTickEnabled(HasDirtyConveyorActorGroups() || ShouldKeepTransportTickEnabled() || bShowPathDebugLine || bShowConnectionDebugLine);
 }
 
 bool USRConveyorNetworkComponent::IsPathDebugLineVisible() const
 {
 	return bShowPathDebugLine;
+}
+
+void USRConveyorNetworkComponent::SetConnectionDebugLineVisible(bool bNewConnectionDebugLineVisible)
+{
+	if (bShowConnectionDebugLine == bNewConnectionDebugLineVisible)
+	{
+		return;
+	}
+
+	bShowConnectionDebugLine = bNewConnectionDebugLineVisible;
+	if (AActor* OwnerActor = GetOwner())
+	{
+		RefreshPathDebugLines(OwnerActor->FindComponentByClass<USRPlanetSurfaceGrid>());
+	}
+	SetComponentTickEnabled(HasDirtyConveyorActorGroups() || ShouldKeepTransportTickEnabled() || bShowPathDebugLine || bShowConnectionDebugLine);
+}
+
+bool USRConveyorNetworkComponent::IsConnectionDebugLineVisible() const
+{
+	return bShowConnectionDebugLine;
 }

@@ -2,9 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Conveyor/SRConveyorTypes.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "SRAssemblyComponent.generated.h"
 
+class ASRConveyorBeltActor;
 class ASRPlayerController;
 class USRConveyorNetworkComponent;
 class USRPlanetSurfaceGrid;
@@ -38,11 +40,12 @@ public:
 	bool ShouldHandleStructurePlacementDrag() const;
 	bool BeginStructurePlacementDrag(AActor*& OutSelectedActor);
 	bool ContinueStructurePlacementDrag(AActor*& OutSelectedActor);
-	void EndStructurePlacementDrag();
+	void EndStructurePlacementDrag(bool bCommitConveyorDrag = false);
 	void ClearSurfaceGridInteraction(AActor* SurfaceActor);
 	void ClearSurfaceHover();
 	void ClearSelectedStructureFocus();
 	bool RotateStructurePlacement(int32 StepDelta);
+	bool TryAddConveyorPlacementDragWaypoint();
 	int32 GetStructurePlacementRotationSteps() const;
 	float GetStructurePlacementAdditionalYawDegrees() const;
 
@@ -73,6 +76,30 @@ protected:
 	TObjectPtr<USRPlanetSurfaceGrid> StructureGhostPortPreviewSurfaceGrid;
 
 	UPROPERTY(Transient)
+	TObjectPtr<USRPlanetSurfaceGrid> ConveyorPortPreviewSurfaceGrid;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ASRConveyorBeltActor> ConveyorGhostActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ASRConveyorBeltActor> ConveyorDeletionGhostActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStructureDataAsset> ConveyorGhostDataAsset;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStructureDataAsset> ConveyorDeletionGhostDataAsset;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRPlanetSurfaceGrid> ConveyorGhostSurfaceGrid;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRPlanetSurfaceGrid> ConveyorDeletionGhostSurfaceGrid;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRPlanetSurfaceGrid> ConveyorBulkDeletionPreviewSurfaceGrid;
+
+	UPROPERTY(Transient)
 	TObjectPtr<USRStructureDataAsset> LastLoggedInvalidGhostDataAsset;
 
 	FVector2D LastHoveredSampleMousePosition;
@@ -82,7 +109,9 @@ protected:
 	FSRPlanetSurfaceGridCellId StructureGhostCellId;
 	bool bHasStructureGhostCellId;
 	bool bHasStructureGhostPortPreview;
+	bool bHasConveyorPortPreview;
 	bool bIsStructurePlacementDragActive;
+	bool bIsConveyorPlacementDragActive;
 	int32 StructurePlacementRotationSteps;
 
 	UPROPERTY(Transient)
@@ -96,6 +125,19 @@ protected:
 
 	FSRPlanetSurfaceGridCellId PendingConveyorStartCellId;
 	bool bHasPendingConveyorStartCell;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRPlanetSurfaceGrid> ConveyorDragStartSurfaceGrid;
+
+	TArray<FSRPlanetSurfaceGridCellId> ConveyorDragWaypointCellIds;
+	FSRPlanetSurfaceGridCellId ConveyorDragStartCellId;
+	FSRPlanetSurfaceGridCellId ConveyorGhostTargetCellId;
+	FSRPlanetSurfaceGridCellId ConveyorDeletionGhostTargetCellId;
+	bool bHasConveyorDragStartCell;
+	bool bHasConveyorGhostTargetCell;
+	bool bHasConveyorDeletionGhostTargetCell;
+	bool bHasConveyorBulkDeletionPreview;
+	int32 ConveyorDeletionGhostLayer;
 
 private:
 	struct FSRQueuedStructurePlacement
@@ -118,8 +160,21 @@ private:
 	void ClearPublishedHoveredCellInfo();
 	bool TryPublishSelectedStructureInfo(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& ClickedCell);
 	void ClearSelectedStructureInfo();
+	void UpdateConveyorPlacementPortPreview();
+	void ClearConveyorPlacementPortPreview();
+	bool UpdateConveyorBulkDeletionPreview();
+	void ClearConveyorBulkDeletionPreview();
+	bool UpdateConveyorDeletionGhostPreview(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		USRConveyorNetworkComponent* ConveyorNetwork,
+		const FSRPlanetSurfaceGridCellId& TargetCellId,
+		int32 Layer,
+		const TArray<FSRConveyorVisualPath>& VisualPaths);
+	void DestroyConveyorDeletionGhostPreview();
 	void UpdateStructureGhostPreview();
 	void DestroyStructureGhostPreview();
+	bool UpdateConveyorGhostPreview(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset);
+	void DestroyConveyorGhostPreview();
 	void UpdateStructureGhostPortPreview(USRPlanetSurfaceGrid* SurfaceGrid, const FSRStructureData& StructureData, const TArray<FSRPlanetSurfaceGridCellId>& FootprintCellIds, int32 PlacementRotationSteps);
 	void ClearStructureGhostPortPreview();
 	bool BuildStructureGhostTransform(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& CellId, USRStructureDataAsset* StructureDataAsset, FTransform& OutTransform) const;
@@ -129,12 +184,21 @@ private:
 	void EnqueueStructurePlacement(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& CellId);
 	bool TryPlaceStructureDragPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell);
 	bool TryPlaceConveyorDragPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset);
+	bool BuildConveyorPlacementDragPath(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		USRConveyorNetworkComponent* ConveyorNetwork,
+		const FSRStructureData& ConveyorData,
+		const FSRPlanetSurfaceGridCellId& TargetCellId,
+		TArray<FSRPlanetSurfaceGridCellId>& OutPathCellIds) const;
+	bool CommitConveyorPlacementDrag();
 	bool TryPlaceSelectedStructure(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, bool bRefreshPreviewAndUI = true, int32 PlacementRotationStepsOverride = INDEX_NONE);
 	bool TryPlaceSelectedConveyor(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset, bool bRefreshPreviewAndUI = true);
 	bool TryPlaceSelectedConveyorPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& StartCellId, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset, bool bRefreshPreviewAndUI = true);
 	bool TryDeleteStructureAtCell(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId);
+	bool TryDeleteConnectedConveyorsAtCell(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId);
 	bool TryDestroyAttachedOccupantActor(AActor* SurfaceOwner, FName OccupantId) const;
 	void ClearPendingConveyorPathStart();
+	void BuildCandidateConveyorLayers(TArray<int32>& OutLayers) const;
 	void LogInvalidGhostDataAssetOnce(USRStructureDataAsset* StructureDataAsset, const TCHAR* Reason);
 
 	TArray<FSRQueuedStructurePlacement> PendingStructurePlacementQueue;

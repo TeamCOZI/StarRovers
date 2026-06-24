@@ -36,7 +36,8 @@ int32 USRConveyorNetworkComponent::GetConveyorItemCount() const
 
 void USRConveyorNetworkComponent::ProcessConveyorTransport(USRPlanetSurfaceGrid* SurfaceGrid, float DeltaTime)
 {
-	if (!IsValid(SurfaceGrid))
+	const float ClampedDeltaTime = FMath::Max(0.0f, DeltaTime);
+	if (!IsValid(SurfaceGrid) || ClampedDeltaTime <= 0.0f)
 	{
 		return;
 	}
@@ -56,11 +57,11 @@ void USRConveyorNetworkComponent::ProcessConveyorTransport(USRPlanetSurfaceGrid*
 
 	int32 TransferCount = 0;
 	TMap<FSRConveyorLaneKey, FSRConveyorItem> NextItemsByLane;
-	const float ProgressDelta = FMath::Max(0.0f, DeltaTime) * FMath::Max(0.01f, ItemSpeedCellsPerSecond);
+	const float ProgressDelta = ClampedDeltaTime * FMath::Max(0.01f, ItemSpeedCellsPerSecond);
 	for (const FSRConveyorLaneKey& LaneKey : ItemLaneKeys)
 	{
 		const FSRConveyorItem* ExistingItem = ConveyorItemsByLane.Find(LaneKey);
-		const FSRConveyorSegment* Segment = Segments.Find(LaneKey);
+		FSRConveyorSegment* Segment = Segments.Find(LaneKey);
 		if (!ExistingItem || !Segment)
 		{
 			continue;
@@ -71,20 +72,30 @@ void USRConveyorNetworkComponent::ProcessConveyorTransport(USRPlanetSurfaceGrid*
 		Item.Progress = FMath::Min(1.0f, Item.Progress + ProgressDelta);
 		if (Item.Progress >= 1.0f)
 		{
-			FSRConveyorLaneKey NextLaneKey;
-			const bool bHasNextLane = TryResolveNextLane(SurfaceGrid, *Segment, NextLaneKey)
-				&& Segments.Contains(NextLaneKey);
-			if (bHasNextLane)
+			TArray<ESRConveyorGridDirection> OutputDirections;
+			CollectConveyorOutputDirections(*Segment, OutputDirections);
+			bool bHasConnectedOutputLane = false;
+			for (const ESRConveyorGridDirection OutputDirection : OutputDirections)
 			{
-				if (!ConveyorItemsByLane.Contains(NextLaneKey) && !NextItemsByLane.Contains(NextLaneKey))
+				FSRConveyorLaneKey CandidateLaneKey;
+				if (TryResolveNextLaneByDirection(SurfaceGrid, *Segment, OutputDirection, CandidateLaneKey)
+					&& Segments.Contains(CandidateLaneKey))
 				{
-					Item.CurrentLane = NextLaneKey;
-					Item.Progress = 0.0f;
-					NextItemsByLane.Add(NextLaneKey, Item);
-					continue;
+					bHasConnectedOutputLane = true;
+					break;
 				}
 			}
-			else if (TransferCount < FMath::Max(1, MaxItemTransfersPerTick)
+
+			FSRConveyorLaneKey NextLaneKey;
+			if (TryResolveNextTransferLane(SurfaceGrid, *Segment, NextItemsByLane, NextLaneKey))
+			{
+				Item.CurrentLane = NextLaneKey;
+				Item.Progress = 0.0f;
+				NextItemsByLane.Add(NextLaneKey, Item);
+				continue;
+			}
+			else if (!bHasConnectedOutputLane
+				&& TransferCount < FMath::Max(1, MaxItemTransfersPerTick)
 				&& FacilityNetwork->TryAcceptInputResourceFromConveyorCell(
 					SurfaceGrid,
 					LaneKey.CellId,
@@ -129,8 +140,17 @@ bool USRConveyorNetworkComponent::TryResolveNextLane(
 	const FSRConveyorSegment& Segment,
 	FSRConveyorLaneKey& OutNextLane) const
 {
+	return TryResolveNextLaneByDirection(SurfaceGrid, Segment, Segment.OutputDirection, OutNextLane);
+}
+
+bool USRConveyorNetworkComponent::TryResolveNextLaneByDirection(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const FSRConveyorSegment& Segment,
+	ESRConveyorGridDirection Direction,
+	FSRConveyorLaneKey& OutNextLane) const
+{
 	OutNextLane = FSRConveyorLaneKey();
-	if (!IsValid(SurfaceGrid) || Segment.OutputDirection == ESRConveyorGridDirection::None)
+	if (!IsValid(SurfaceGrid) || Direction == ESRConveyorGridDirection::None)
 	{
 		return false;
 	}
@@ -142,13 +162,51 @@ bool USRConveyorNetworkComponent::TryResolveNextLane(
 	}
 
 	FSRPlanetSurfaceGridCellId NextCellId;
-	if (!GetNeighborCellIdByDirection(Neighbors, Segment.OutputDirection, NextCellId))
+	if (!GetNeighborCellIdByDirection(Neighbors, Direction, NextCellId))
 	{
 		return false;
 	}
 
 	OutNextLane = MakeLaneKey(NextCellId, Segment.Lane.Layer);
 	return true;
+}
+
+bool USRConveyorNetworkComponent::TryResolveNextTransferLane(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	FSRConveyorSegment& Segment,
+	const TMap<FSRConveyorLaneKey, FSRConveyorItem>& NextItemsByLane,
+	FSRConveyorLaneKey& OutNextLane)
+{
+	OutNextLane = FSRConveyorLaneKey();
+
+	TArray<ESRConveyorGridDirection> OutputDirections;
+	CollectConveyorOutputDirections(Segment, OutputDirections);
+	if (OutputDirections.IsEmpty())
+	{
+		Segment.NextOutputDirectionIndex = 0;
+		return false;
+	}
+
+	const int32 OutputCount = OutputDirections.Num();
+	const int32 StartIndex = FMath::Clamp(Segment.NextOutputDirectionIndex, 0, OutputCount - 1);
+	for (int32 AttemptIndex = 0; AttemptIndex < OutputCount; ++AttemptIndex)
+	{
+		const int32 OutputIndex = (StartIndex + AttemptIndex) % OutputCount;
+		FSRConveyorLaneKey CandidateLaneKey;
+		if (!TryResolveNextLaneByDirection(SurfaceGrid, Segment, OutputDirections[OutputIndex], CandidateLaneKey)
+			|| !Segments.Contains(CandidateLaneKey)
+			|| ConveyorItemsByLane.Contains(CandidateLaneKey)
+			|| NextItemsByLane.Contains(CandidateLaneKey))
+		{
+			continue;
+		}
+
+		OutNextLane = CandidateLaneKey;
+		Segment.NextOutputDirectionIndex = (OutputIndex + 1) % OutputCount;
+		return true;
+	}
+
+	return false;
 }
 
 bool USRConveyorNetworkComponent::TryPullFacilityOutputToConveyor(

@@ -78,7 +78,7 @@ void ASRPlayerController::EndAssemblyPlacementDrag()
 {
 	if (AssemblyComponent)
 	{
-		AssemblyComponent->EndStructurePlacementDrag();
+		AssemblyComponent->EndStructurePlacementDrag(true);
 	}
 }
 

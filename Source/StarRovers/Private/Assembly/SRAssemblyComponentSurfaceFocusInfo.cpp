@@ -228,6 +228,20 @@ namespace
 			}
 		}
 	}
+
+	void AppendUniqueCellIdsInPatch(
+		const TArray<FSRPlanetSurfaceGridCellId>& SourceCellIds,
+		const TSet<FSRPlanetSurfaceGridCellId>& PatchCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& TargetCellIds)
+	{
+		for (const FSRPlanetSurfaceGridCellId& CellId : SourceCellIds)
+		{
+			if (PatchCellIds.Contains(CellId))
+			{
+				TargetCellIds.AddUnique(CellId);
+			}
+		}
+	}
 }
 
 void USRAssemblyComponent::PublishHoveredCellInfo(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& HoveredCell)
@@ -272,6 +286,123 @@ void USRAssemblyComponent::ClearPublishedHoveredCellInfo()
 	{
 		PlayerController->SetHoveredSurfaceCellInfo(false, FSRPlanetSurfaceGridCellInfo());
 	}
+}
+
+void USRAssemblyComponent::UpdateConveyorPlacementPortPreview()
+{
+	ASRPlayerController* PlayerController = GetOwnerController();
+	USRStructureDataAsset* SelectedStructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
+	if (!bAssemblyModeActive
+		|| !IsValid(PlayerController)
+		|| PlayerController->IsPointerOverBlockingUi()
+		|| !IsValid(SelectedStructureDataAsset)
+		|| SelectedStructureDataAsset->BuildData().BuildKind != ESRStructureBuildKind::Conveyor
+		|| !IsValid(HoveredSurfaceGrid))
+	{
+		ClearConveyorPlacementPortPreview();
+		return;
+	}
+
+	FSRPlanetSurfaceGridCell HoveredCell;
+	TArray<FSRPlanetSurfaceGridCellId> HoverPatchCellIds;
+	if (!HoveredSurfaceGrid->GetHoveredCell(HoveredCell)
+		|| !HoveredSurfaceGrid->GetInteractionGridPatchCellIds(HoveredCell.CellId, HoverPatchCellIds)
+		|| HoverPatchCellIds.IsEmpty())
+	{
+		ClearConveyorPlacementPortPreview();
+		return;
+	}
+
+	TSet<FSRPlanetSurfaceGridCellId> HoverPatchCellSet;
+	HoverPatchCellSet.Reserve(HoverPatchCellIds.Num());
+	for (const FSRPlanetSurfaceGridCellId& PatchCellId : HoverPatchCellIds)
+	{
+		HoverPatchCellSet.Add(PatchCellId);
+	}
+
+	AActor* SurfaceOwner = HoveredSurfaceGrid->GetOwner();
+	USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(SurfaceOwner)
+		? SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>()
+		: nullptr;
+	if (!IsValid(StructureInstanceManager))
+	{
+		ClearConveyorPlacementPortPreview();
+		return;
+	}
+
+	TArray<FSRPlacedStructureInstance> PlacedStructures;
+	StructureInstanceManager->GetPlacedStructures(PlacedStructures);
+
+	TArray<FSRPlanetSurfaceGridCellId> InputConnectionCellIds;
+	TArray<FSRPlanetSurfaceGridCellId> OutputConnectionCellIds;
+	for (const FSRPlacedStructureInstance& PlacedStructure : PlacedStructures)
+	{
+		USRStructureDataAsset* StructureDataAsset = PlacedStructure.StructureDataAsset.Get();
+		if (PlacedStructure.bNaturalStructure
+			|| !IsValid(StructureDataAsset)
+			|| PlacedStructure.FootprintCellIds.IsEmpty())
+		{
+			continue;
+		}
+
+		const FSRStructureData StructureData = StructureDataAsset->BuildData();
+		if (StructureData.BuildKind != ESRStructureBuildKind::Structure
+			|| (StructureData.InputPorts.IsEmpty() && StructureData.OutputPorts.IsEmpty()))
+		{
+			continue;
+		}
+
+		FSRFocusedSurfaceStructureInfo StructureInfo;
+		StructureInfo.bIsValid = true;
+		StructureInfo.OccupantId = PlacedStructure.OccupantId;
+		StructureInfo.StructureId = PlacedStructure.StructureId;
+		StructureInfo.OriginCellId = PlacedStructure.OriginCellId;
+		StructureInfo.FootprintCellIds = PlacedStructure.FootprintCellIds;
+		StructureInfo.StructureDataAsset = StructureDataAsset;
+		StructureInfo.BuildKind = StructureData.BuildKind;
+		StructureInfo.bNaturalStructure = PlacedStructure.bNaturalStructure;
+
+		TArray<FSRFocusedFacilityPortInfo> FacilityPorts;
+		BuildFocusedFacilityPortInfo(
+			HoveredSurfaceGrid,
+			StructureInfo,
+			StructureData,
+			StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacedStructure.PlacementRotationSteps),
+			PlacedStructure.PlacementRotationSteps,
+			FacilityPorts);
+
+		TArray<FSRPlanetSurfaceGridCellId> StructureInputConnectionCellIds;
+		TArray<FSRPlanetSurfaceGridCellId> StructureOutputConnectionCellIds;
+		GatherFacilityPortPreviewCells(FacilityPorts, StructureInputConnectionCellIds, StructureOutputConnectionCellIds);
+		AppendUniqueCellIdsInPatch(StructureInputConnectionCellIds, HoverPatchCellSet, InputConnectionCellIds);
+		AppendUniqueCellIdsInPatch(StructureOutputConnectionCellIds, HoverPatchCellSet, OutputConnectionCellIds);
+	}
+
+	if (InputConnectionCellIds.IsEmpty() && OutputConnectionCellIds.IsEmpty())
+	{
+		ClearConveyorPlacementPortPreview();
+		return;
+	}
+
+	if (IsValid(ConveyorPortPreviewSurfaceGrid) && ConveyorPortPreviewSurfaceGrid != HoveredSurfaceGrid)
+	{
+		ConveyorPortPreviewSurfaceGrid->ClearFacilityPortPreviewCells();
+	}
+
+	HoveredSurfaceGrid->SetFacilityPortPreviewCells(InputConnectionCellIds, OutputConnectionCellIds);
+	ConveyorPortPreviewSurfaceGrid = HoveredSurfaceGrid;
+	bHasConveyorPortPreview = true;
+}
+
+void USRAssemblyComponent::ClearConveyorPlacementPortPreview()
+{
+	if (bHasConveyorPortPreview && IsValid(ConveyorPortPreviewSurfaceGrid))
+	{
+		ConveyorPortPreviewSurfaceGrid->ClearFacilityPortPreviewCells();
+	}
+
+	ConveyorPortPreviewSurfaceGrid = nullptr;
+	bHasConveyorPortPreview = false;
 }
 
 bool USRAssemblyComponent::TryPublishSelectedStructureInfo(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& ClickedCell)

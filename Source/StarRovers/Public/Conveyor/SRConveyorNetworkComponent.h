@@ -54,8 +54,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor|Debug")
 	bool IsPathDebugLineVisible() const;
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor|Debug")
+	void SetConnectionDebugLineVisible(bool bNewConnectionDebugLineVisible);
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor|Debug")
+	bool IsConnectionDebugLineVisible() const;
+
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor|Transport")
 	int32 GetConveyorItemCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor|PCG")
+	FName GetConveyorActorSplineComponentTag() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor|PCG")
+	float GetConveyorActorSurfaceOffset() const;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
 	bool FindConveyorPath(
@@ -76,6 +88,26 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
 	bool TryRemoveConveyorAtCell(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& CellId,
+		int32 Layer);
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor")
+	bool GetConnectedConveyorCellIdsAtCell(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& CellId,
+		int32 Layer,
+		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor")
+	bool GetConnectedConveyorVisualPathsAtCell(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& CellId,
+		int32 Layer,
+		TArray<FSRConveyorVisualPath>& OutVisualPaths) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
+	bool TryRemoveConnectedConveyorsAtCell(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlanetSurfaceGridCellId& CellId,
 		int32 Layer);
@@ -122,6 +154,24 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Debug", meta = (DisplayName = "PathDebugLineThickness", ClampMin = "0.0"))
 	float PathDebugLineThickness;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Debug", meta = (DisplayName = "bShowConnectionDebugLine"))
+	bool bShowConnectionDebugLine;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Debug", meta = (DisplayName = "ConnectionDebugLineColor"))
+	FLinearColor ConnectionDebugLineColor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Debug", meta = (DisplayName = "BrokenConnectionDebugLineColor"))
+	FLinearColor BrokenConnectionDebugLineColor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Debug", meta = (DisplayName = "EndpointDebugLineColor"))
+	FLinearColor EndpointDebugLineColor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Debug", meta = (DisplayName = "ConnectionDebugLineThickness", ClampMin = "0.0"))
+	float ConnectionDebugLineThickness;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Debug", meta = (DisplayName = "ConnectionDebugLineHeightOffset", ClampMin = "0.0"))
+	float ConnectionDebugLineHeightOffset;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport", meta = (DisplayName = "bAutoTransportItems"))
 	bool bAutoTransportItems;
@@ -185,8 +235,20 @@ private:
 	static ESRConveyorSegmentShape ResolveSegmentShape(ESRConveyorGridDirection InputDirection, ESRConveyorGridDirection OutputDirection);
 	static bool GetNeighborCellIdByDirection(const FSRPlanetSurfaceGridCellNeighbors& Neighbors, ESRConveyorGridDirection Direction, FSRPlanetSurfaceGridCellId& OutCellId);
 	static bool FindDirectionBetweenCells(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& FromCellId, const FSRPlanetSurfaceGridCellId& ToCellId, ESRConveyorGridDirection& OutDirection);
+	static bool AreConveyorDirectionsCompatible(ESRConveyorGridDirection ExistingDirection, ESRConveyorGridDirection IncomingDirection);
+	static void CollectConveyorOutputDirections(const FSRConveyorSegment& Segment, TArray<ESRConveyorGridDirection>& OutDirections);
 
 	bool CanPlaceConveyorSegment(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorLaneKey& LaneKey) const;
+	bool CanMergeConveyorSegment(const FSRConveyorSegment& Segment) const;
+	void MergeConveyorSegment(const FSRConveyorSegment& Segment);
+	void MergeConveyorOutputDirection(FSRConveyorSegment& ExistingSegment, ESRConveyorGridDirection IncomingDirection);
+	bool CanDestroyNaturalStructureForConveyorPlacement(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId) const;
+	bool DoesConveyorSegmentReferenceLane(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorSegment& Segment, const FSRConveyorLaneKey& TargetLaneKey) const;
+	bool GatherConnectedConveyorLaneKeysAtCell(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& CellId,
+		int32 Layer,
+		TArray<FSRConveyorLaneKey>& OutLaneKeys) const;
 	void EnsureBeltMeshComponent();
 	void EnsurePathDebugLineBatchComponent();
 	USplineComponent* EnsurePCGSplineComponent(int32 SplineIndex);
@@ -237,6 +299,12 @@ private:
 	FText BuildConveyorItemLabelText(const FSRResourceInstance& ResourceInstance) const;
 	FColor ResolveConveyorItemLabelColor(const FSRResourceInstance& ResourceInstance) const;
 	bool TryResolveNextLane(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorSegment& Segment, FSRConveyorLaneKey& OutNextLane) const;
+	bool TryResolveNextLaneByDirection(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorSegment& Segment, ESRConveyorGridDirection Direction, FSRConveyorLaneKey& OutNextLane) const;
+	bool TryResolveNextTransferLane(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		FSRConveyorSegment& Segment,
+		const TMap<FSRConveyorLaneKey, FSRConveyorItem>& NextItemsByLane,
+		FSRConveyorLaneKey& OutNextLane);
 	bool TryPullFacilityOutputToConveyor(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		USRFacilityNetworkComponent* FacilityNetwork,

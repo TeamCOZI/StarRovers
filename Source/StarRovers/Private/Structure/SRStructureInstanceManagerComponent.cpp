@@ -186,6 +186,72 @@ bool USRStructureInstanceManagerComponent::GetPlacedStructure(FName OccupantId, 
 	return false;
 }
 
+void USRStructureInstanceManagerComponent::GetPlacedStructures(TArray<FSRPlacedStructureInstance>& OutPlacedStructures) const
+{
+	OutPlacedStructures.Reset();
+	OutPlacedStructures.Reserve(PlacedStructuresByOccupantId.Num());
+	for (const TPair<FName, FSRPlacedStructureInstance>& PlacedStructurePair : PlacedStructuresByOccupantId)
+	{
+		OutPlacedStructures.Add(PlacedStructurePair.Value);
+	}
+}
+
+bool USRStructureInstanceManagerComponent::CanDestroyNaturalStructureForConstruction(FName OccupantId) const
+{
+	if (OccupantId.IsNone())
+	{
+		return false;
+	}
+
+	const FSRPlacedStructureInstance* PlacedStructure = PlacedStructuresByOccupantId.Find(OccupantId);
+	if (!PlacedStructure || !PlacedStructure->bNaturalStructure || !IsValid(PlacedStructure->StructureDataAsset.Get()))
+	{
+		return false;
+	}
+
+	return PlacedStructure->StructureDataAsset->BuildData().bDestroyableByConstruction;
+}
+
+bool USRStructureInstanceManagerComponent::TryRemoveConstructionDestructibleNaturalStructuresAtCells(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+{
+	if (!IsValid(SurfaceGrid))
+	{
+		return false;
+	}
+
+	TArray<FName> OccupantIdsToRemove;
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		FSRPlanetSurfaceGridCellInfo CellInfo;
+		if (!SurfaceGrid->GetCellInfoById(CellId, CellInfo))
+		{
+			return false;
+		}
+
+		if (!CellInfo.bOccupied || CellInfo.OccupantId.IsNone())
+		{
+			continue;
+		}
+
+		if (!CanDestroyNaturalStructureForConstruction(CellInfo.OccupantId))
+		{
+			return false;
+		}
+
+		OccupantIdsToRemove.AddUnique(CellInfo.OccupantId);
+	}
+
+	if (OccupantIdsToRemove.IsEmpty())
+	{
+		return true;
+	}
+
+	RemoveStructuresByOccupantIds(SurfaceGrid, OccupantIdsToRemove);
+	return true;
+}
+
 FName USRStructureInstanceManagerComponent::MakeVisualKey(USRStructureDataAsset* StructureDataAsset, bool bUseStaticMeshMaterials)
 {
 	if (!IsValid(StructureDataAsset))

@@ -81,6 +81,7 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	SelectedCellId = FSRPlanetSurfaceGridCellId();
 	InputPortPreviewCellIds.Reset();
 	OutputPortPreviewCellIds.Reset();
+	DeletionPreviewCellIds.Reset();
 	SetInteractionOverlayVisible(false);
 	const double AssignCellsMs = SRSurfaceGridElapsedMilliseconds(StageStart);
 

@@ -103,6 +103,9 @@ struct STARROVERS_API FSRStructureData
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Placement", meta = (DisplayName = "bAvailableForConstruction"))
 	bool bAvailableForConstruction = true;
 
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Placement", meta = (DisplayName = "bDestroyableByConstruction"))
+	bool bDestroyableByConstruction = true;
+
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Build", meta = (DisplayName = "BuildKind"))
 	ESRStructureBuildKind BuildKind = ESRStructureBuildKind::Structure;
 
@@ -284,6 +287,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Placement", meta = (DisplayName = "bAvailableForConstruction"))
 	bool bAvailableForConstruction = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Placement", meta = (DisplayName = "bDestroyableByConstruction"))
+	bool bDestroyableByConstruction = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Build", meta = (DisplayName = "BuildKind"))
 	ESRStructureBuildKind BuildKind = ESRStructureBuildKind::Structure;

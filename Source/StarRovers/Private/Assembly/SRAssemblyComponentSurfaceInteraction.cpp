@@ -13,6 +13,7 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 		CurrentSurfaceGrid->ClearHoveredCell();
 		CurrentSurfaceGrid->ClearSelectedCell();
 		CurrentSurfaceGrid->ClearFacilityPortPreviewCells();
+		CurrentSurfaceGrid->ClearDeletionPreviewCells();
 		CurrentSurfaceGrid->SetGridVisible(false);
 	}
 	if (CurrentSurfaceGrid == ActiveAssemblySurfaceGrid)
@@ -20,6 +21,8 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 		ActiveAssemblySurfaceGrid = nullptr;
 	}
 
+	ClearConveyorPlacementPortPreview();
+	ClearConveyorBulkDeletionPreview();
 	if (!IsValid(SurfaceActor) || CurrentSurfaceGrid == HoveredSurfaceGrid)
 	{
 		HoveredSurfaceGrid = nullptr;
@@ -31,6 +34,8 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 	ClearPendingConveyorPathStart();
 	PendingStructurePlacementQueue.Reset();
 	DestroyStructureGhostPreview();
+	DestroyConveyorGhostPreview();
+	DestroyConveyorDeletionGhostPreview();
 }
 
 void USRAssemblyComponent::ClearSurfaceHover()
@@ -39,8 +44,11 @@ void USRAssemblyComponent::ClearSurfaceHover()
 	{
 		HoveredSurfaceGrid->ClearHoveredCell();
 		HoveredSurfaceGrid->ClearFacilityPortPreviewCells();
+		HoveredSurfaceGrid->ClearDeletionPreviewCells();
 	}
 
+	ClearConveyorPlacementPortPreview();
+	ClearConveyorBulkDeletionPreview();
 	HoveredSurfaceGrid = nullptr;
 	ClearPublishedHoveredCellInfo();
 	ClearSelectedStructureInfo();
@@ -49,6 +57,8 @@ void USRAssemblyComponent::ClearSurfaceHover()
 	ClearPendingConveyorPathStart();
 	PendingStructurePlacementQueue.Reset();
 	DestroyStructureGhostPreview();
+	DestroyConveyorGhostPreview();
+	DestroyConveyorDeletionGhostPreview();
 }
 
 void USRAssemblyComponent::ClearSurfaceHoverPreview()
@@ -58,10 +68,14 @@ void USRAssemblyComponent::ClearSurfaceHoverPreview()
 		HoveredSurfaceGrid->ClearHoveredCell();
 	}
 
+	ClearConveyorPlacementPortPreview();
+	ClearConveyorBulkDeletionPreview();
 	HoveredSurfaceGrid = nullptr;
 	ClearPublishedHoveredCellInfo();
 	ResetHoverSampleCache();
 	DestroyStructureGhostPreview();
+	DestroyConveyorGhostPreview();
+	DestroyConveyorDeletionGhostPreview();
 }
 
 void USRAssemblyComponent::UpdateSurfaceHover()
@@ -140,6 +154,9 @@ void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
 	{
 		ActiveAssemblySurfaceGrid->SetGridVisible(false);
 		ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
+		ActiveAssemblySurfaceGrid->ClearDeletionPreviewCells();
+		ClearConveyorPlacementPortPreview();
+		ClearConveyorBulkDeletionPreview();
 	}
 
 	ActiveAssemblySurfaceGrid = DesiredSurfaceGrid;
@@ -152,9 +169,14 @@ void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
 	{
 		ClearSurfaceHover();
 		DestroyStructureGhostPreview();
+		DestroyConveyorGhostPreview();
+		DestroyConveyorDeletionGhostPreview();
+		ClearConveyorPlacementPortPreview();
+		ClearConveyorBulkDeletionPreview();
 		if (ActiveAssemblySurfaceGrid)
 		{
 			ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
+			ActiveAssemblySurfaceGrid->ClearDeletionPreviewCells();
 		}
 	}
 }

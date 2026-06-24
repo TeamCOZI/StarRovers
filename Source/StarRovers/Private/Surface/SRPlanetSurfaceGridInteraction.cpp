@@ -165,6 +165,40 @@ void USRPlanetSurfaceGrid::ClearFacilityPortPreviewCells()
 	UpdateDebugTickState();
 }
 
+void USRPlanetSurfaceGrid::SetDeletionPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+{
+	TArray<FSRPlanetSurfaceGridCellId> NewDeletionPreviewCellIds;
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		int32 CellIndex = INDEX_NONE;
+		if (GetCellIndex(CellId, CellIndex))
+		{
+			NewDeletionPreviewCellIds.AddUnique(CellId);
+		}
+	}
+
+	if (DeletionPreviewCellIds == NewDeletionPreviewCellIds)
+	{
+		return;
+	}
+
+	DeletionPreviewCellIds = MoveTemp(NewDeletionPreviewCellIds);
+	RequestInteractionHighlightRefresh();
+	UpdateDebugTickState();
+}
+
+void USRPlanetSurfaceGrid::ClearDeletionPreviewCells()
+{
+	if (DeletionPreviewCellIds.IsEmpty())
+	{
+		return;
+	}
+
+	DeletionPreviewCellIds.Reset();
+	RequestInteractionHighlightRefresh();
+	UpdateDebugTickState();
+}
+
 bool USRPlanetSurfaceGrid::HasSelectedCell() const
 {
 	return bHasSelectedCell;

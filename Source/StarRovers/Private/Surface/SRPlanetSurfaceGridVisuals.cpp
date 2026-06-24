@@ -10,12 +10,13 @@ void USRPlanetSurfaceGrid::SetGridVisible(bool bNewGridVisible)
 	bGridVisible = bNewGridVisible;
 	SetVisibility(false);
 	SetHiddenInGame(true);
-	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell || !InputPortPreviewCellIds.IsEmpty() || !OutputPortPreviewCellIds.IsEmpty()));
+	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell || !InputPortPreviewCellIds.IsEmpty() || !OutputPortPreviewCellIds.IsEmpty() || !DeletionPreviewCellIds.IsEmpty()));
 	if (!bGridVisible)
 	{
 		ClearHoveredCell();
 		ClearSelectedCell();
 		ClearFacilityPortPreviewCells();
+		ClearDeletionPreviewCells();
 	}
 	else
 	{

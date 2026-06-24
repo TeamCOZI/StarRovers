@@ -4,7 +4,6 @@
 #include "Camera/SRCameraPawn.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "EnhancedInputComponent.h"
-#include "InputCoreTypes.h"
 
 void ASRPlayerController::SetupInputComponent()
 {
@@ -38,10 +37,45 @@ void ASRPlayerController::SetupInputComponent()
 		{
 			UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires DeleteStructureAction before right-click structure deletion binding."));
 		}
-	}
 
-	InputComponent->BindKey(EKeys::Q, IE_Pressed, this, &ASRPlayerController::HandleRotatePlacementCounterClockwise);
-	InputComponent->BindKey(EKeys::E, IE_Pressed, this, &ASRPlayerController::HandleRotatePlacementClockwise);
+		if (RotatePlacementCounterClockwiseAction)
+		{
+			EnhancedInputComponent->BindAction(RotatePlacementCounterClockwiseAction, ETriggerEvent::Started, this, &ASRPlayerController::HandleRotatePlacementCounterClockwise);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires RotatePlacementCounterClockwiseAction before placement rotation binding."));
+		}
+
+		if (RotatePlacementClockwiseAction)
+		{
+			EnhancedInputComponent->BindAction(RotatePlacementClockwiseAction, ETriggerEvent::Started, this, &ASRPlayerController::HandleRotatePlacementClockwise);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires RotatePlacementClockwiseAction before placement rotation binding."));
+		}
+
+		if (ConveyorWaypointAction)
+		{
+			EnhancedInputComponent->BindAction(ConveyorWaypointAction, ETriggerEvent::Started, this, &ASRPlayerController::HandleConveyorPlacementWaypoint);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires ConveyorWaypointAction before conveyor waypoint binding."));
+		}
+
+		if (BulkDeleteConveyorModifierAction)
+		{
+			EnhancedInputComponent->BindAction(BulkDeleteConveyorModifierAction, ETriggerEvent::Started, this, &ASRPlayerController::HandleBulkDeleteConveyorModifierStarted);
+			EnhancedInputComponent->BindAction(BulkDeleteConveyorModifierAction, ETriggerEvent::Completed, this, &ASRPlayerController::HandleBulkDeleteConveyorModifierEnded);
+			EnhancedInputComponent->BindAction(BulkDeleteConveyorModifierAction, ETriggerEvent::Canceled, this, &ASRPlayerController::HandleBulkDeleteConveyorModifierEnded);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires BulkDeleteConveyorModifierAction before conveyor bulk deletion modifier binding."));
+		}
+	}
 }
 
 void ASRPlayerController::HandleLeftClick()
@@ -104,7 +138,7 @@ void ASRPlayerController::HandleRightClick()
 
 void ASRPlayerController::HandleFocusParent()
 {
-	if (TryHandlePlacementRotationInput(-1))
+	if (IsAssemblyModeActive())
 	{
 		return;
 	}
@@ -137,6 +171,19 @@ void ASRPlayerController::HandleFocusParent()
 	RequestFocusActor(ParentBody);
 }
 
+void ASRPlayerController::HandleConveyorPlacementWaypoint()
+{
+	if (IsPointerOverBlockingUi())
+	{
+		return;
+	}
+
+	if (AssemblyComponent)
+	{
+		AssemblyComponent->TryAddConveyorPlacementDragWaypoint();
+	}
+}
+
 void ASRPlayerController::HandleRotatePlacementCounterClockwise()
 {
 	TryHandlePlacementRotationInput(-1);
@@ -145,6 +192,21 @@ void ASRPlayerController::HandleRotatePlacementCounterClockwise()
 void ASRPlayerController::HandleRotatePlacementClockwise()
 {
 	TryHandlePlacementRotationInput(1);
+}
+
+void ASRPlayerController::HandleBulkDeleteConveyorModifierStarted()
+{
+	bConveyorBulkDeleteModifierActive = true;
+}
+
+void ASRPlayerController::HandleBulkDeleteConveyorModifierEnded()
+{
+	bConveyorBulkDeleteModifierActive = false;
+}
+
+bool ASRPlayerController::IsConveyorBulkDeleteModifierActive() const
+{
+	return bConveyorBulkDeleteModifierActive;
 }
 
 bool ASRPlayerController::TryHandlePlacementRotationInput(int32 StepDelta)

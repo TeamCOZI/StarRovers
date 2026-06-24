@@ -6,6 +6,8 @@
 #include "SRConveyorBeltActor.generated.h"
 
 class UPCGComponent;
+class UBoxComponent;
+class UMaterialInterface;
 class USceneComponent;
 class USplineComponent;
 class USplineMeshComponent;
@@ -35,12 +37,18 @@ public:
 		FName SplineComponentTag,
 		float SurfaceOffset);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor|Visual")
+	void SetConveyorGhostMode(bool bNewGhostMode, UMaterialInterface* InGhostMaterial);
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SceneRoot"))
 	TObjectPtr<USceneComponent> SceneRoot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "PCGComponent"))
 	TObjectPtr<UPCGComponent> PCGComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "PCGBoundsComponent"))
+	TObjectPtr<UBoxComponent> PCGBoundsComponent;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorVisualPath"))
 	FSRConveyorVisualPath ConveyorVisualPath;
@@ -60,6 +68,12 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor|PCG", meta = (DisplayName = "ConveyorSurfaceOffset"))
 	float ConveyorSurfaceOffset;
 
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor|Visual", meta = (DisplayName = "bConveyorGhostMode"))
+	bool bConveyorGhostMode;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> ConveyorGhostMaterial;
+
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<USplineComponent>> ConveyorSplineComponents;
 
@@ -71,8 +85,11 @@ private:
 		const FSRConveyorVisualPath& VisualPath,
 		TArray<FVector>& OutWorldPoints,
 		TArray<FVector>& OutWorldNormals) const;
+	void UpdatePCGBoundsFromWorldBounds(const FBox& WorldBounds);
 	void BindPCGGenerationDelegate();
 	void RequestPCGGeneration();
 	void HandlePCGGraphGenerated(UPCGComponent* InPCGComponent);
 	void RebaseGeneratedSplineMeshes();
+	void ApplyConveyorGhostModeToSplineMesh(USplineMeshComponent* SplineMeshComponent) const;
+	void ApplyConveyorGhostModeToGeneratedMeshes() const;
 };

@@ -144,8 +144,17 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighli
 		}
 	}
 
+	for (const FSRPlanetSurfaceGridCellId& DeletionCellId : DeletionPreviewCellIds)
+	{
+		FSRPlanetSurfaceGridCell DeletionCell;
+		if (GetCellById(DeletionCellId, DeletionCell))
+		{
+			AppendInteractionCell(OverlayMesh, DeletionCell, DeletionPreviewCellColor, DebugLineThickness * 3.5f);
+		}
+	}
+
 	InteractionOverlayMesh->SetMesh(MoveTemp(OverlayMesh));
-	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell || !InputPortPreviewCellIds.IsEmpty() || !OutputPortPreviewCellIds.IsEmpty()));
+	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell || !InputPortPreviewCellIds.IsEmpty() || !OutputPortPreviewCellIds.IsEmpty() || !DeletionPreviewCellIds.IsEmpty()));
 }
 
 void USRPlanetSurfaceGrid::AppendInteractionGridPatch(

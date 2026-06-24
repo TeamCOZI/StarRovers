@@ -87,6 +87,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
     USRStructureDataAsset* GetSelectedStructureDataAsset() const;
 
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
+    bool IsConveyorBulkDeleteModifierActive() const;
+
     bool ShouldHandleAssemblyPlacementDrag() const;
     bool ShouldBlockAssemblyCameraDrag() const;
     bool BeginAssemblyPlacementDrag();
@@ -103,6 +106,18 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "DeleteStructureAction"))
     TObjectPtr<UInputAction> DeleteStructureAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "RotatePlacementCounterClockwiseAction"))
+    TObjectPtr<UInputAction> RotatePlacementCounterClockwiseAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "RotatePlacementClockwiseAction"))
+    TObjectPtr<UInputAction> RotatePlacementClockwiseAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "ConveyorWaypointAction"))
+    TObjectPtr<UInputAction> ConveyorWaypointAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "BulkDeleteConveyorModifierAction"))
+    TObjectPtr<UInputAction> BulkDeleteConveyorModifierAction;
 
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Selection", meta = (DisplayName = "SelectedActor"))
     TObjectPtr<AActor> SelectedActor;
@@ -210,12 +225,16 @@ private:
     void HandleLeftClick();
     void HandleRightClick();
     void HandleFocusParent();
+    void HandleConveyorPlacementWaypoint();
     void HandleRotatePlacementCounterClockwise();
     void HandleRotatePlacementClockwise();
+    void HandleBulkDeleteConveyorModifierStarted();
+    void HandleBulkDeleteConveyorModifierEnded();
     bool TryHandlePlacementRotationInput(int32 StepDelta);
     void UpdateSelection(AActor* NewSelectedActor);
 
     bool bPendingInitialPrimaryStarFocus;
     uint64 LastPlacementRotationInputFrame;
     int32 LastPlacementRotationInputStepDelta;
+    bool bConveyorBulkDeleteModifierActive;
 };

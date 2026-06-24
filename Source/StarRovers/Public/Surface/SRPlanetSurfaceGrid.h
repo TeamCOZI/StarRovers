@@ -131,6 +131,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Facility")
     void ClearFacilityPortPreviewCells();
 
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Deletion")
+    void SetDeletionPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Deletion")
+    void ClearDeletionPreviewCells();
+
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     bool HasSelectedCell() const;
 
@@ -251,6 +257,12 @@ protected:
 
     UPROPERTY()
     FLinearColor OutputPortPreviewCellColor;
+
+    UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> DeletionPreviewCellIds;
+
+    UPROPERTY()
+    FLinearColor DeletionPreviewCellColor;
 
     UPROPERTY()
     bool bUsingGeneratedGridCells;

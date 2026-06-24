@@ -1,5 +1,7 @@
 #include "Conveyor/SRConveyorNetworkComponent.h"
 
+#include "GameFramework/Actor.h"
+#include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 bool USRConveyorNetworkComponent::FindConveyorPath(
@@ -23,6 +25,12 @@ bool USRConveyorNetworkComponent::FindConveyorPath(
 	}
 
 	const int32 SafeLayer = FMath::Max(0, Layer);
+	const FSRConveyorLaneKey StartLaneKey = MakeLaneKey(StartCellId, SafeLayer);
+	if (!Segments.Contains(StartLaneKey) && !CanPlaceConveyorSegment(SurfaceGrid, StartLaneKey))
+	{
+		return false;
+	}
+
 	TArray<FSRPlanetSurfaceGridCellId> OpenSet;
 	TSet<FSRPlanetSurfaceGridCellId> Visited;
 	TMap<FSRPlanetSurfaceGridCellId, FSRPlanetSurfaceGridCellId> CameFrom;
@@ -79,7 +87,7 @@ bool USRConveyorNetworkComponent::FindConveyorPath(
 			}
 
 			const FSRConveyorLaneKey NeighborLaneKey = MakeLaneKey(NeighborCellId, SafeLayer);
-			if (!(NeighborCellId == EndCellId) && !CanPlaceConveyorSegment(SurfaceGrid, NeighborLaneKey))
+			if (!Segments.Contains(NeighborLaneKey) && !CanPlaceConveyorSegment(SurfaceGrid, NeighborLaneKey))
 			{
 				continue;
 			}
@@ -186,6 +194,110 @@ bool USRConveyorNetworkComponent::FindDirectionBetweenCells(USRPlanetSurfaceGrid
 	return false;
 }
 
+bool USRConveyorNetworkComponent::AreConveyorDirectionsCompatible(ESRConveyorGridDirection ExistingDirection, ESRConveyorGridDirection IncomingDirection)
+{
+	return IncomingDirection == ESRConveyorGridDirection::None
+		|| ExistingDirection == ESRConveyorGridDirection::None
+		|| ExistingDirection == IncomingDirection;
+}
+
+void USRConveyorNetworkComponent::CollectConveyorOutputDirections(const FSRConveyorSegment& Segment, TArray<ESRConveyorGridDirection>& OutDirections)
+{
+	OutDirections.Reset();
+	if (Segment.OutputDirection != ESRConveyorGridDirection::None)
+	{
+		OutDirections.Add(Segment.OutputDirection);
+	}
+	if (Segment.BranchOutputDirection != ESRConveyorGridDirection::None
+		&& Segment.BranchOutputDirection != Segment.OutputDirection)
+	{
+		OutDirections.Add(Segment.BranchOutputDirection);
+	}
+}
+
+bool USRConveyorNetworkComponent::CanMergeConveyorSegment(const FSRConveyorSegment& Segment) const
+{
+	const FSRConveyorSegment* ExistingSegment = Segments.Find(Segment.Lane);
+	if (!ExistingSegment)
+	{
+		return true;
+	}
+
+	if (!AreConveyorDirectionsCompatible(ExistingSegment->InputDirection, Segment.InputDirection))
+	{
+		return false;
+	}
+
+	TArray<ESRConveyorGridDirection> OutputDirections;
+	CollectConveyorOutputDirections(*ExistingSegment, OutputDirections);
+	auto CanAddOutputDirection = [&OutputDirections](ESRConveyorGridDirection IncomingDirection)
+	{
+		if (IncomingDirection == ESRConveyorGridDirection::None || OutputDirections.Contains(IncomingDirection))
+		{
+			return true;
+		}
+		if (OutputDirections.Num() >= 2)
+		{
+			return false;
+		}
+
+		OutputDirections.Add(IncomingDirection);
+		return true;
+	};
+
+	return CanAddOutputDirection(Segment.OutputDirection)
+		&& CanAddOutputDirection(Segment.BranchOutputDirection);
+}
+
+void USRConveyorNetworkComponent::MergeConveyorSegment(const FSRConveyorSegment& Segment)
+{
+	FSRConveyorSegment* ExistingSegment = Segments.Find(Segment.Lane);
+	if (!ExistingSegment)
+	{
+		Segments.Add(Segment.Lane, Segment);
+		return;
+	}
+
+	if (ExistingSegment->InputDirection == ESRConveyorGridDirection::None)
+	{
+		ExistingSegment->InputDirection = Segment.InputDirection;
+	}
+	MergeConveyorOutputDirection(*ExistingSegment, Segment.OutputDirection);
+	MergeConveyorOutputDirection(*ExistingSegment, Segment.BranchOutputDirection);
+	if (ExistingSegment->NetworkId.IsNone())
+	{
+		ExistingSegment->NetworkId = Segment.NetworkId;
+	}
+	if (!IsValid(ExistingSegment->StructureDataAsset.Get()) && IsValid(Segment.StructureDataAsset.Get()))
+	{
+		ExistingSegment->StructureDataAsset = Segment.StructureDataAsset;
+	}
+
+	ExistingSegment->Shape = ResolveSegmentShape(ExistingSegment->InputDirection, ExistingSegment->OutputDirection);
+}
+
+void USRConveyorNetworkComponent::MergeConveyorOutputDirection(FSRConveyorSegment& ExistingSegment, ESRConveyorGridDirection IncomingDirection)
+{
+	if (IncomingDirection == ESRConveyorGridDirection::None
+		|| ExistingSegment.OutputDirection == IncomingDirection
+		|| ExistingSegment.BranchOutputDirection == IncomingDirection)
+	{
+		return;
+	}
+
+	if (ExistingSegment.OutputDirection == ESRConveyorGridDirection::None)
+	{
+		ExistingSegment.OutputDirection = IncomingDirection;
+		return;
+	}
+
+	if (ExistingSegment.BranchOutputDirection == ESRConveyorGridDirection::None)
+	{
+		ExistingSegment.BranchOutputDirection = IncomingDirection;
+		ExistingSegment.NextOutputDirectionIndex = 0;
+	}
+}
+
 bool USRConveyorNetworkComponent::CanPlaceConveyorSegment(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorLaneKey& LaneKey) const
 {
 	if (!IsValid(SurfaceGrid) || Segments.Contains(LaneKey))
@@ -199,7 +311,32 @@ bool USRConveyorNetworkComponent::CanPlaceConveyorSegment(USRPlanetSurfaceGrid* 
 		return false;
 	}
 
-	return LaneKey.Layer > 0 || (CellInfo.bCanConstruct && !CellInfo.bOccupied);
+	if (LaneKey.Layer > 0)
+	{
+		return true;
+	}
+
+	if (!CellInfo.bOccupied)
+	{
+		return CellInfo.bCanConstruct;
+	}
+
+	return CanDestroyNaturalStructureForConveyorPlacement(SurfaceGrid, CellInfo.OccupantId);
+}
+
+bool USRConveyorNetworkComponent::CanDestroyNaturalStructureForConveyorPlacement(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId) const
+{
+	if (!IsValid(SurfaceGrid) || OccupantId.IsNone())
+	{
+		return false;
+	}
+
+	AActor* SurfaceOwner = SurfaceGrid->GetOwner();
+	const USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(SurfaceOwner)
+		? SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>()
+		: nullptr;
+	return IsValid(StructureInstanceManager)
+		&& StructureInstanceManager->CanDestroyNaturalStructureForConstruction(OccupantId);
 }
 
 float USRConveyorNetworkComponent::ResolveConveyorLayerHeight(USRPlanetSurfaceGrid* SurfaceGrid, float RequestedLayerHeight) const

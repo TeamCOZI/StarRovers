@@ -12,6 +12,7 @@ USRStructureDataAsset::USRStructureDataAsset()
 	PlacementYawDegrees = 0.0f;
 	bAlignToSurfaceNormal = true;
 	bAvailableForConstruction = true;
+	bDestroyableByConstruction = true;
 	BuildKind = ESRStructureBuildKind::Structure;
 	bIsResourceDeposit = false;
 	DepositTotalAmount = 0;
@@ -38,6 +39,7 @@ FSRStructureData USRStructureDataAsset::BuildData() const
 	Result.PlacementYawDegrees = PlacementYawDegrees;
 	Result.bAlignToSurfaceNormal = bAlignToSurfaceNormal;
 	Result.bAvailableForConstruction = bAvailableForConstruction;
+	Result.bDestroyableByConstruction = bDestroyableByConstruction;
 	Result.BuildKind = BuildKind;
 	Result.FacilityDataAsset = FacilityDataAsset;
 	Result.bIsResourceDeposit = bIsResourceDeposit;

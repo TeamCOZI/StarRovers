@@ -1,14 +1,19 @@
 #include "Conveyor/SRConveyorBeltActor.h"
 
+#include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
 #include "PCGComponent.h"
+#include "Helpers/PCGHelpers.h"
+#include "Materials/MaterialInterface.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 namespace
 {
 	const FName ConveyorBeltSplineNameBase(TEXT("ConveyorVisualSpline"));
+	constexpr float ConveyorPCGBoundsDefaultExtent = 100.0f;
+	constexpr float ConveyorPCGBoundsPadding = 500.0f;
 }
 
 ASRConveyorBeltActor::ASRConveyorBeltActor()
@@ -20,10 +25,22 @@ ASRConveyorBeltActor::ASRConveyorBeltActor()
 
 	PCGComponent = CreateDefaultSubobject<UPCGComponent>(TEXT("PCGComponent"));
 
+	PCGBoundsComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("PCGBoundsComponent"));
+	PCGBoundsComponent->SetupAttachment(SceneRoot);
+	PCGBoundsComponent->InitBoxExtent(FVector(ConveyorPCGBoundsDefaultExtent));
+	PCGBoundsComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PCGBoundsComponent->SetGenerateOverlapEvents(false);
+	PCGBoundsComponent->SetCanEverAffectNavigation(false);
+	PCGBoundsComponent->SetVisibility(false);
+	PCGBoundsComponent->SetHiddenInGame(true);
+	PCGBoundsComponent->ComponentTags.AddUnique(TEXT("StarRovers.ConveyorPCGBounds"));
+
 	bAutoGeneratePCG = true;
 	bRebaseGeneratedSplineMeshes = true;
 	ConveyorSplineComponentTag = TEXT("ConveyorVisualSpline");
 	ConveyorSurfaceOffset = 0.0f;
+	bConveyorGhostMode = false;
+	ConveyorGhostMaterial = nullptr;
 }
 
 void ASRConveyorBeltActor::BeginPlay()
@@ -76,12 +93,18 @@ bool ASRConveyorBeltActor::InitializeConveyorPaths(
 
 	TArray<FVector> WorldPoints;
 	TArray<FVector> WorldNormals;
+	FBox ConveyorWorldBounds(EForceInit::ForceInit);
 	int32 UsedSplineCount = 0;
 	for (const FSRConveyorVisualPath& VisualPath : ConveyorVisualPaths)
 	{
 		if (!BuildConveyorPathPoints(SurfaceGrid, VisualPath, WorldPoints, WorldNormals))
 		{
 			continue;
+		}
+
+		for (const FVector& WorldPoint : WorldPoints)
+		{
+			ConveyorWorldBounds += WorldPoint;
 		}
 
 		for (int32 SegmentIndex = 0; SegmentIndex + 1 < WorldPoints.Num(); ++SegmentIndex)
@@ -133,9 +156,18 @@ bool ASRConveyorBeltActor::InitializeConveyorPaths(
 		return false;
 	}
 
+	UpdatePCGBoundsFromWorldBounds(ConveyorWorldBounds);
 	BindPCGGenerationDelegate();
 	RequestPCGGeneration();
 	return true;
+}
+
+void ASRConveyorBeltActor::SetConveyorGhostMode(bool bNewGhostMode, UMaterialInterface* InGhostMaterial)
+{
+	bConveyorGhostMode = bNewGhostMode;
+	ConveyorGhostMaterial = InGhostMaterial;
+	SetActorEnableCollision(!bConveyorGhostMode);
+	ApplyConveyorGhostModeToGeneratedMeshes();
 }
 
 USplineComponent* ASRConveyorBeltActor::EnsureConveyorSplineComponent(int32 SplineIndex)
@@ -266,6 +298,55 @@ bool ASRConveyorBeltActor::BuildConveyorPathPoints(
 	return OutWorldPoints.Num() >= 2 && OutWorldPoints.Num() == OutWorldNormals.Num();
 }
 
+void ASRConveyorBeltActor::UpdatePCGBoundsFromWorldBounds(const FBox& WorldBounds)
+{
+	if (!IsValid(PCGBoundsComponent))
+	{
+		return;
+	}
+
+	FBox LocalBounds(EForceInit::ForceInit);
+	if (WorldBounds.IsValid)
+	{
+		const FTransform RootTransform = IsValid(SceneRoot)
+			? SceneRoot->GetComponentTransform()
+			: GetActorTransform();
+
+		const FVector Min = WorldBounds.Min;
+		const FVector Max = WorldBounds.Max;
+		const FVector Corners[] =
+		{
+			FVector(Min.X, Min.Y, Min.Z),
+			FVector(Min.X, Min.Y, Max.Z),
+			FVector(Min.X, Max.Y, Min.Z),
+			FVector(Min.X, Max.Y, Max.Z),
+			FVector(Max.X, Min.Y, Min.Z),
+			FVector(Max.X, Min.Y, Max.Z),
+			FVector(Max.X, Max.Y, Min.Z),
+			FVector(Max.X, Max.Y, Max.Z),
+		};
+
+		for (const FVector& Corner : Corners)
+		{
+			LocalBounds += RootTransform.InverseTransformPosition(Corner);
+		}
+	}
+
+	if (!LocalBounds.IsValid)
+	{
+		LocalBounds = FBox::BuildAABB(FVector::ZeroVector, FVector(ConveyorPCGBoundsDefaultExtent));
+	}
+
+	FVector Extent = LocalBounds.GetExtent() + FVector(ConveyorPCGBoundsPadding);
+	Extent.X = FMath::Max(ConveyorPCGBoundsDefaultExtent, Extent.X);
+	Extent.Y = FMath::Max(ConveyorPCGBoundsDefaultExtent, Extent.Y);
+	Extent.Z = FMath::Max(ConveyorPCGBoundsDefaultExtent, Extent.Z);
+
+	PCGBoundsComponent->SetRelativeLocation(LocalBounds.GetCenter());
+	PCGBoundsComponent->SetBoxExtent(Extent, false);
+	PCGBoundsComponent->UpdateBounds();
+}
+
 void ASRConveyorBeltActor::BindPCGGenerationDelegate()
 {
 	if (!IsValid(PCGComponent))
@@ -286,6 +367,7 @@ void ASRConveyorBeltActor::RequestPCGGeneration()
 	}
 
 	PCGComponent->GenerationTrigger = EPCGComponentGenerationTrigger::GenerateOnDemand;
+	PCGComponent->DirtyGenerated(EPCGComponentDirtyFlag::All, /*bDispatchToLocalComponents=*/false);
 	PCGComponent->Generate(true);
 }
 
@@ -308,7 +390,14 @@ void ASRConveyorBeltActor::RebaseGeneratedSplineMeshes()
 	GetComponents<USplineMeshComponent>(GeneratedSplineMeshes);
 	GeneratedSplineMeshes.RemoveAll([this](const USplineMeshComponent* SplineMeshComponent)
 	{
-		return !IsValid(SplineMeshComponent) || !SplineMeshComponent->ComponentTags.Contains(PCGComponent->GetFName());
+		return !IsValid(SplineMeshComponent)
+			|| SplineMeshComponent->ComponentTags.Contains(PCGHelpers::MarkedForCleanupPCGTag)
+			|| (!SplineMeshComponent->ComponentTags.Contains(PCGComponent->GetFName())
+				&& !SplineMeshComponent->ComponentTags.Contains(PCGHelpers::DefaultPCGTag));
+	});
+	GeneratedSplineMeshes.Sort([](const USplineMeshComponent& Left, const USplineMeshComponent& Right)
+	{
+		return Left.GetFName().LexicalLess(Right.GetFName());
 	});
 
 	const int32 SegmentCount = FMath::Min(GeneratedSplineMeshes.Num(), ConveyorSplineComponents.Num());
@@ -336,6 +425,59 @@ void ASRConveyorBeltActor::RebaseGeneratedSplineMeshes()
 		SplineMeshComponent->SetEndRollDegrees(0.0f, false);
 		SplineMeshComponent->SetVisibility(true);
 		SplineMeshComponent->SetHiddenInGame(false);
+		SplineMeshComponent->ComponentTags.AddUnique(PCGComponent->GetFName());
+		SplineMeshComponent->ComponentTags.AddUnique(PCGHelpers::DefaultPCGTag);
+		ApplyConveyorGhostModeToSplineMesh(SplineMeshComponent);
 		SplineMeshComponent->UpdateMesh();
+	}
+
+	for (int32 SegmentIndex = SegmentCount; SegmentIndex < GeneratedSplineMeshes.Num(); ++SegmentIndex)
+	{
+		USplineMeshComponent* SplineMeshComponent = GeneratedSplineMeshes[SegmentIndex];
+		if (!IsValid(SplineMeshComponent))
+		{
+			continue;
+		}
+
+		SplineMeshComponent->SetVisibility(false);
+		SplineMeshComponent->SetHiddenInGame(true);
+	}
+}
+
+void ASRConveyorBeltActor::ApplyConveyorGhostModeToSplineMesh(USplineMeshComponent* SplineMeshComponent) const
+{
+	if (!IsValid(SplineMeshComponent) || !bConveyorGhostMode)
+	{
+		return;
+	}
+
+	SplineMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SplineMeshComponent->SetGenerateOverlapEvents(false);
+	SplineMeshComponent->SetCastShadow(false);
+
+	if (!IsValid(ConveyorGhostMaterial))
+	{
+		return;
+	}
+
+	const int32 MaterialSlotCount = FMath::Max(1, SplineMeshComponent->GetNumMaterials());
+	for (int32 MaterialIndex = 0; MaterialIndex < MaterialSlotCount; ++MaterialIndex)
+	{
+		SplineMeshComponent->SetMaterial(MaterialIndex, ConveyorGhostMaterial);
+	}
+}
+
+void ASRConveyorBeltActor::ApplyConveyorGhostModeToGeneratedMeshes() const
+{
+	if (!bConveyorGhostMode)
+	{
+		return;
+	}
+
+	TArray<USplineMeshComponent*> GeneratedSplineMeshes;
+	GetComponents<USplineMeshComponent>(GeneratedSplineMeshes);
+	for (USplineMeshComponent* SplineMeshComponent : GeneratedSplineMeshes)
+	{
+		ApplyConveyorGhostModeToSplineMesh(SplineMeshComponent);
 	}
 }
