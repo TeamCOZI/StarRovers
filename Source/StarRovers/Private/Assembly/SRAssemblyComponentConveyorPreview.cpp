@@ -12,6 +12,8 @@
 
 namespace
 {
+	constexpr int32 MaxConveyorPlacementDragSegmentExtentCells = 30;
+
 	enum class ESRConveyorPlacementEndpointRole : uint8
 	{
 		None,
@@ -38,6 +40,28 @@ namespace
 
 			OutPathCellIds.Add(CellId);
 		}
+	}
+
+	bool IsConveyorPlacementDragSegmentWithinExtent(
+		const FSRPlanetSurfaceGridCellId& StartCellId,
+		const FSRPlanetSurfaceGridCellId& EndCellId)
+	{
+		if (StartCellId.Face != EndCellId.Face)
+		{
+			return false;
+		}
+
+		const int32 ExtentX = FMath::Abs(EndCellId.CellX - StartCellId.CellX) + 1;
+		const int32 ExtentY = FMath::Abs(EndCellId.CellY - StartCellId.CellY) + 1;
+		return ExtentX <= MaxConveyorPlacementDragSegmentExtentCells
+			&& ExtentY <= MaxConveyorPlacementDragSegmentExtentCells;
+	}
+
+	const FSRPlanetSurfaceGridCellId& ResolveConveyorPlacementDragAnchorCellId(
+		const FSRPlanetSurfaceGridCellId& StartCellId,
+		const TArray<FSRPlanetSurfaceGridCellId>& WaypointCellIds)
+	{
+		return WaypointCellIds.IsEmpty() ? StartCellId : WaypointCellIds.Last();
 	}
 
 	ESRConveyorPlacementEndpointRole CombineEndpointRole(
@@ -221,20 +245,53 @@ namespace
 			return ESRConveyorPlacementEndpointRole::None;
 		}
 
-		const bool bHasInput = Segment.InputDirection != ESRConveyorGridDirection::None;
-		const bool bHasOutput = Segment.OutputDirection != ESRConveyorGridDirection::None
-			|| Segment.BranchOutputDirection != ESRConveyorGridDirection::None;
-
-		if (!bHasInput && bHasOutput)
+		TArray<ESRConveyorGridDirection> InputDirections;
+		if (Segment.InputDirection != ESRConveyorGridDirection::None)
 		{
-			return ESRConveyorPlacementEndpointRole::Sink;
+			InputDirections.Add(Segment.InputDirection);
 		}
-		if (bHasInput)
+		if (Segment.MergeInputDirection != ESRConveyorGridDirection::None
+			&& Segment.MergeInputDirection != Segment.InputDirection)
 		{
-			return ESRConveyorPlacementEndpointRole::Source;
+			InputDirections.Add(Segment.MergeInputDirection);
+		}
+		if (Segment.SecondMergeInputDirection != ESRConveyorGridDirection::None
+			&& !InputDirections.Contains(Segment.SecondMergeInputDirection))
+		{
+			InputDirections.Add(Segment.SecondMergeInputDirection);
 		}
 
-		return ESRConveyorPlacementEndpointRole::None;
+		TArray<ESRConveyorGridDirection> OutputDirections;
+		if (Segment.OutputDirection != ESRConveyorGridDirection::None)
+		{
+			OutputDirections.Add(Segment.OutputDirection);
+		}
+		if (Segment.BranchOutputDirection != ESRConveyorGridDirection::None
+			&& Segment.BranchOutputDirection != Segment.OutputDirection)
+		{
+			OutputDirections.Add(Segment.BranchOutputDirection);
+		}
+		if (Segment.SecondBranchOutputDirection != ESRConveyorGridDirection::None
+			&& !OutputDirections.Contains(Segment.SecondBranchOutputDirection))
+		{
+			OutputDirections.Add(Segment.SecondBranchOutputDirection);
+		}
+
+		ESRConveyorPlacementEndpointRole ResolvedRole = ESRConveyorPlacementEndpointRole::None;
+		const bool bCanAddOutput = OutputDirections.Num() < 3
+			&& (InputDirections.Num() <= 1 || OutputDirections.IsEmpty());
+		const bool bCanAddInput = InputDirections.Num() < 3
+			&& (OutputDirections.Num() <= 1 || InputDirections.IsEmpty());
+		if (bCanAddOutput)
+		{
+			ResolvedRole = CombineEndpointRole(ResolvedRole, ESRConveyorPlacementEndpointRole::Source);
+		}
+		if (bCanAddInput)
+		{
+			ResolvedRole = CombineEndpointRole(ResolvedRole, ESRConveyorPlacementEndpointRole::Sink);
+		}
+
+		return ResolvedRole;
 	}
 
 	ESRConveyorPlacementEndpointRole ResolveConveyorPlacementEndpointRole(
@@ -306,6 +363,60 @@ namespace
 			Algo::Reverse(PathCellIds);
 		}
 	}
+
+	bool DoesConveyorPathContainNewCell(
+		const USRConveyorNetworkComponent* ConveyorNetwork,
+		const TArray<FSRPlanetSurfaceGridCellId>& PathCellIds,
+		int32 Layer)
+	{
+		if (!IsValid(ConveyorNetwork))
+		{
+			return false;
+		}
+
+		const int32 SafeLayer = FMath::Max(0, Layer);
+		for (const FSRPlanetSurfaceGridCellId& PathCellId : PathCellIds)
+		{
+			FSRConveyorLaneKey LaneKey;
+			LaneKey.CellId = PathCellId;
+			LaneKey.Layer = SafeLayer;
+			if (!ConveyorNetwork->HasConveyorSegment(LaneKey))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+void USRAssemblyComponent::SetConveyorInvalidPlacementPreview(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+{
+	if (!IsValid(SurfaceGrid))
+	{
+		ClearConveyorInvalidPlacementPreview();
+		return;
+	}
+
+	if (IsValid(ConveyorInvalidPlacementPreviewSurfaceGrid) && ConveyorInvalidPlacementPreviewSurfaceGrid != SurfaceGrid)
+	{
+		ConveyorInvalidPlacementPreviewSurfaceGrid->ClearInvalidPreviewCells();
+	}
+
+	SurfaceGrid->SetInvalidPreviewCells(CellIds);
+	ConveyorInvalidPlacementPreviewSurfaceGrid = SurfaceGrid;
+	bHasConveyorInvalidPlacementPreview = true;
+}
+
+void USRAssemblyComponent::ClearConveyorInvalidPlacementPreview()
+{
+	if (bHasConveyorInvalidPlacementPreview && IsValid(ConveyorInvalidPlacementPreviewSurfaceGrid))
+	{
+		ConveyorInvalidPlacementPreviewSurfaceGrid->ClearInvalidPreviewCells();
+	}
+
+	ConveyorInvalidPlacementPreviewSurfaceGrid = nullptr;
+	bHasConveyorInvalidPlacementPreview = false;
 }
 
 bool USRAssemblyComponent::BuildConveyorPlacementDragPath(
@@ -344,14 +455,22 @@ bool USRAssemblyComponent::BuildConveyorPlacementDragPath(
 		ControlCellIds.Add(TargetCellId);
 	}
 
+	TSet<FSRPlanetSurfaceGridCellId> BlockedPreviewCellIds;
 	for (int32 ControlIndex = 1; ControlIndex < ControlCellIds.Num(); ++ControlIndex)
 	{
+		if (!IsConveyorPlacementDragSegmentWithinExtent(ControlCellIds[ControlIndex - 1], ControlCellIds[ControlIndex]))
+		{
+			OutPathCellIds.Reset();
+			return false;
+		}
+
 		TArray<FSRPlanetSurfaceGridCellId> SegmentCellIds;
-		if (!ConveyorNetwork->FindConveyorPath(
+		if (!ConveyorNetwork->FindConveyorPathAvoidingCells(
 			SurfaceGrid,
 			ControlCellIds[ControlIndex - 1],
 			ControlCellIds[ControlIndex],
 			ConveyorData.ConveyorLayer,
+			BlockedPreviewCellIds,
 			SegmentCellIds))
 		{
 			OutPathCellIds.Reset();
@@ -359,6 +478,10 @@ bool USRAssemblyComponent::BuildConveyorPlacementDragPath(
 		}
 
 		AppendConveyorPathSegment(SegmentCellIds, OutPathCellIds);
+		for (const FSRPlanetSurfaceGridCellId& SegmentCellId : SegmentCellIds)
+		{
+			BlockedPreviewCellIds.Add(SegmentCellId);
+		}
 	}
 
 	if (OutPathCellIds.IsEmpty() && !ControlCellIds.IsEmpty())
@@ -366,7 +489,25 @@ bool USRAssemblyComponent::BuildConveyorPlacementDragPath(
 		OutPathCellIds.Add(ControlCellIds[0]);
 	}
 	OrientConveyorPathToConnectedEndpoints(SurfaceGrid, ConveyorNetwork, ConveyorData.ConveyorLayer, OutPathCellIds);
-	return !OutPathCellIds.IsEmpty();
+	if (OutPathCellIds.IsEmpty()
+		|| !DoesConveyorPathContainNewCell(ConveyorNetwork, OutPathCellIds, ConveyorData.ConveyorLayer))
+	{
+		OutPathCellIds.Reset();
+		return false;
+	}
+
+	const TSet<FSRPlanetSurfaceGridCellId> EmptyIgnoredOccupiedCellIds;
+	if (!ConveyorNetwork->CanPlaceConveyorPath(
+			SurfaceGrid,
+			OutPathCellIds,
+			ConveyorData.ConveyorLayer,
+			EmptyIgnoredOccupiedCellIds))
+	{
+		OutPathCellIds.Reset();
+		return false;
+	}
+
+	return true;
 }
 
 bool USRAssemblyComponent::UpdateConveyorGhostPreview(
@@ -403,6 +544,15 @@ bool USRAssemblyComponent::UpdateConveyorGhostPreview(
 	SurfaceGrid->SetHoveredCell(TargetCell.CellId);
 	PublishHoveredCellInfo(SurfaceGrid, TargetCell);
 
+	const FSRPlanetSurfaceGridCellId& CurrentAnchorCellId = ResolveConveyorPlacementDragAnchorCellId(
+		ConveyorDragStartCellId,
+		ConveyorDragWaypointCellIds);
+	if (!IsConveyorPlacementDragSegmentWithinExtent(CurrentAnchorCellId, TargetCell.CellId))
+	{
+		ClearConveyorInvalidPlacementPreview();
+		return true;
+	}
+
 	if (IsValid(ConveyorGhostActor)
 		&& ConveyorGhostDataAsset == ConveyorDataAsset
 		&& ConveyorGhostSurfaceGrid == SurfaceGrid
@@ -421,8 +571,13 @@ bool USRAssemblyComponent::UpdateConveyorGhostPreview(
 		PathCellIds))
 	{
 		DestroyConveyorGhostPreview();
+		TArray<FSRPlanetSurfaceGridCellId> InvalidPreviewCellIds;
+		InvalidPreviewCellIds.Add(TargetCell.CellId);
+		SetConveyorInvalidPlacementPreview(SurfaceGrid, InvalidPreviewCellIds);
 		return true;
 	}
+
+	ClearConveyorInvalidPlacementPreview();
 
 	UClass* ConveyorActorClass = ConveyorData.StructureActorClass.Get();
 	if (!IsValid(ConveyorActorClass) || !ConveyorActorClass->IsChildOf(ASRConveyorBeltActor::StaticClass()))
@@ -487,7 +642,7 @@ bool USRAssemblyComponent::UpdateConveyorGhostPreview(
 	}
 
 	ConveyorGhostActor->SetConveyorGhostMode(true, ConveyorData.GhostMaterial);
-	ConveyorGhostActor->SetActorHiddenInGame(false);
+	ConveyorGhostActor->SetActorHiddenInGame(ConveyorGhostActor->IsConveyorGhostGenerationPending());
 	ConveyorGhostTargetCellId = TargetCell.CellId;
 	bHasConveyorGhostTargetCell = true;
 	return true;
@@ -583,12 +738,22 @@ bool USRAssemblyComponent::CommitConveyorPlacementDrag()
 	AActor* FocusedActor = nullptr;
 	USRPlanetSurfaceGrid* CurrentSurfaceGrid = nullptr;
 	FSRPlanetSurfaceGridCell CurrentTargetCell;
+	bool bUseCurrentTargetCell = false;
 	if (TryResolveStructurePlacementDragTarget(FocusedActor, CurrentSurfaceGrid, CurrentTargetCell)
 		&& CurrentSurfaceGrid == StartSurfaceGrid)
 	{
-		TargetCell = CurrentTargetCell;
+		const FSRPlanetSurfaceGridCellId& CurrentAnchorCellId = ResolveConveyorPlacementDragAnchorCellId(
+			ConveyorDragStartCellId,
+			ConveyorDragWaypointCellIds);
+		if (IsConveyorPlacementDragSegmentWithinExtent(CurrentAnchorCellId, CurrentTargetCell.CellId))
+		{
+			TargetCell = CurrentTargetCell;
+			bUseCurrentTargetCell = true;
+		}
 	}
-	else if (!bHasConveyorGhostTargetCell || !StartSurfaceGrid->GetCellById(ConveyorGhostTargetCellId, TargetCell))
+
+	if (!bUseCurrentTargetCell
+		&& (!bHasConveyorGhostTargetCell || !StartSurfaceGrid->GetCellById(ConveyorGhostTargetCellId, TargetCell)))
 	{
 		return false;
 	}
@@ -609,13 +774,37 @@ bool USRAssemblyComponent::CommitConveyorPlacementDrag()
 		return false;
 	}
 
+	const FName NetworkId = MakeConveyorNetworkId(SurfaceOwner, ConveyorData.ConveyorLayer);
+	FSRConveyorVisualPath HistoryVisualPath;
+	TArray<FSRPlanetSurfaceGridCellId> HistoryPlacedCellIds;
+	TArray<FSRRestorableNaturalStructure> HistoryRemovedNaturalStructures;
+	BuildConveyorPlacementHistoryPayload(
+		StartSurfaceGrid,
+		ConveyorNetwork,
+		ConveyorDataAsset,
+		PathCellIds,
+		ConveyorData.ConveyorLayer,
+		ConveyorData.ConveyorLayerHeight,
+		NetworkId,
+		HistoryVisualPath,
+		HistoryPlacedCellIds,
+		HistoryRemovedNaturalStructures);
 	const bool bPlaced = ConveyorNetwork->TryPlaceConveyorPath(
 		StartSurfaceGrid,
 		PathCellIds,
 		ConveyorData.ConveyorLayer,
 		ConveyorData.ConveyorLayerHeight,
 		ConveyorDataAsset,
-		MakeConveyorNetworkId(SurfaceOwner, ConveyorData.ConveyorLayer));
+		NetworkId);
+	if (bPlaced)
+	{
+		RecordConveyorPlacementHistory(
+			StartSurfaceGrid,
+			ConveyorNetwork,
+			HistoryVisualPath,
+			HistoryPlacedCellIds,
+			HistoryRemovedNaturalStructures);
+	}
 	StartSurfaceGrid->ClearSelectedCell();
 	return bPlaced;
 }

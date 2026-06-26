@@ -244,6 +244,7 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 		UCanvasPanel::StaticClass(),
 		TEXT("StructureSelectionCanvasPanel"));
 	WidgetTree->RootWidget = StructureSelectionCanvasPanel;
+	StructureSelectionCanvasPanel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
 	StructureSelectionBorder = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(),

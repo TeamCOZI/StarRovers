@@ -72,15 +72,6 @@ void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 		{
 			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusAction before focus reset input binding."));
 		}
-
-		if (AlignFocusSurfaceGridAction)
-		{
-			EnhancedInputComponent->BindAction(AlignFocusSurfaceGridAction, ETriggerEvent::Started, this, &ASRCameraPawn::HandleAlignFocusSurfaceGrid);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires AlignFocusSurfaceGridAction before manual focus surface grid alignment binding."));
-		}
 	}
 }
 
@@ -123,6 +114,14 @@ void ASRCameraPawn::HandleDragHoldStarted()
 			return;
 		}
 
+		if (PlayerController->ShouldHandleAssemblyAreaSelectionDrag())
+		{
+			PlayerController->BeginAssemblyAreaSelectionDrag();
+			bIsDragging = false;
+			bHasDragStartMousePosition = false;
+			return;
+		}
+
 		if (PlayerController->ShouldHandleAssemblyPlacementDrag())
 		{
 			PlayerController->BeginAssemblyPlacementDrag();
@@ -158,6 +157,7 @@ void ASRCameraPawn::HandleDragHoldCompleted()
 	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
 	{
 		PlayerController->EndAssemblyPlacementDrag();
+		PlayerController->EndAssemblyAreaSelectionDrag();
 	}
 
 	bIsDragging = false;
@@ -199,6 +199,11 @@ void ASRCameraPawn::HandleFocusSurfaceDragHoldStarted()
 
 void ASRCameraPawn::HandleFocusSurfaceDragHoldCompleted()
 {
+	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
+	{
+		PlayerController->EndAssemblyAreaDeletionDrag();
+	}
+
 	bIsDraggingFocusSurface = false;
 }
 
@@ -218,6 +223,20 @@ void ASRCameraPawn::HandleDragDelta(const FInputActionValue& Value)
 
 	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
 	{
+		if (PlayerController->ContinueAssemblyAreaSelectionDrag())
+		{
+			bIsDragging = false;
+			bHasDragStartMousePosition = false;
+			return;
+		}
+
+		if (PlayerController->ContinueAssemblyAreaDeletionDrag())
+		{
+			bIsDragging = false;
+			bHasDragStartMousePosition = false;
+			return;
+		}
+
 		if (PlayerController->ContinueAssemblyPlacementDrag())
 		{
 			bIsDragging = false;
@@ -301,38 +320,47 @@ void ASRCameraPawn::HandleFocusSurfaceCompleted()
 
 void ASRCameraPawn::HandleResetFocus()
 {
+	if (const ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
+	{
+		if (PlayerController->IsAssemblyModeActive())
+		{
+			return;
+		}
+	}
+
 	ResetFocus();
 }
 
-void ASRCameraPawn::HandleAlignFocusSurfaceGrid()
+bool ASRCameraPawn::TryStartFocusSurfaceGridAlignment()
 {
 	if (!ShouldAllowFocusSurface())
 	{
-		return;
+		return false;
 	}
 
 	const float CurrentZoomDistance = FMath::Max(1.0f, SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
 	const FQuat BaseViewQuat = GetViewRotationForZoom(CurrentZoomDistance).Quaternion();
-	const FQuat ViewQuat = (BaseViewQuat * FocusSurfaceRotation.GetNormalized()).GetNormalized();
+	const FQuat ViewQuat = (FocusSurfaceRotation.GetNormalized() * BaseViewQuat).GetNormalized();
 
 	float RollRadians = 0.0f;
 	if (!TryComputeFocusSurfaceGridAlignmentRoll(ViewQuat, CurrentZoomDistance, RollRadians)
 		|| FMath::IsNearlyZero(RollRadians))
 	{
-		return;
+		return false;
 	}
 
 	const FVector ViewForward = ViewQuat.RotateVector(FVector::ForwardVector).GetSafeNormal();
 	if (ViewForward.IsNearlyZero())
 	{
-		return;
+		return false;
 	}
 
 	const FQuat AlignedViewQuat = (FQuat(ViewForward, RollRadians).GetNormalized() * ViewQuat).GetNormalized();
-	FocusSurfaceTargetRotation = (BaseViewQuat.Inverse() * AlignedViewQuat).GetNormalized();
+	FocusSurfaceTargetRotation = (AlignedViewQuat * BaseViewQuat.Inverse()).GetNormalized();
 	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
 	bIsResettingFocusSurfaceRotation = true;
 	ClearFocusSurfaceMotion();
+	return true;
 }
 
 bool ASRCameraPawn::GetMouseScreenPosition(FVector2D& OutMouseScreenPosition) const

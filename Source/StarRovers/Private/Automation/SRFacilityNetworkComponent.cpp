@@ -75,7 +75,21 @@ void USRFacilityNetworkComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	}
 
 	RefreshFacilityTemperaturesFromSurface();
-	ProcessFacilities(DeltaTime);
+
+	float ProcessDeltaTime = FMath::Max(0.0f, DeltaTime);
+	if (const UWorld* World = GetWorld())
+	{
+		if (const USRTimeControlSubsystem* TimeControlSubsystem = World->GetSubsystem<USRTimeControlSubsystem>())
+		{
+			ProcessDeltaTime *= FMath::Max(0.0f, TimeControlSubsystem->GetEffectiveTimeScale());
+		}
+	}
+	if (ProcessDeltaTime <= 0.0f)
+	{
+		return;
+	}
+
+	ProcessFacilities(ProcessDeltaTime);
 }
 
 bool USRFacilityNetworkComponent::RegisterFacility(

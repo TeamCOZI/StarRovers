@@ -10,6 +10,54 @@
 
 using namespace StarRovers::SurfaceGridVisual;
 
+namespace
+{
+	FString FormatSurfacePatchCellId(const FSRPlanetSurfaceGridCellId& CellId)
+	{
+		return FString::Printf(
+			TEXT("Face=%d X=%d Y=%d"),
+			static_cast<int32>(CellId.Face),
+			CellId.CellX,
+			CellId.CellY);
+	}
+
+	bool IsContiguousRectangularCellRegion(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+	{
+		if (CellIds.IsEmpty())
+		{
+			return true;
+		}
+
+		const ESRCubeSphereFace Face = CellIds[0].Face;
+		int32 MinCellX = CellIds[0].CellX;
+		int32 MaxCellX = CellIds[0].CellX;
+		int32 MinCellY = CellIds[0].CellY;
+		int32 MaxCellY = CellIds[0].CellY;
+		TSet<FSRPlanetSurfaceGridCellId> RegionCellIdSet;
+		RegionCellIdSet.Reserve(CellIds.Num());
+
+		for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+		{
+			if (CellId.Face != Face)
+			{
+				return false;
+			}
+
+			RegionCellIdSet.Add(CellId);
+			MinCellX = FMath::Min(MinCellX, CellId.CellX);
+			MaxCellX = FMath::Max(MaxCellX, CellId.CellX);
+			MinCellY = FMath::Min(MinCellY, CellId.CellY);
+			MaxCellY = FMath::Max(MaxCellY, CellId.CellY);
+		}
+
+		const int64 RegionCellsX = static_cast<int64>(MaxCellX) - static_cast<int64>(MinCellX) + 1;
+		const int64 RegionCellsY = static_cast<int64>(MaxCellY) - static_cast<int64>(MinCellY) + 1;
+		return RegionCellsX > 0
+			&& RegionCellsY > 0
+			&& static_cast<int64>(RegionCellIdSet.Num()) == RegionCellsX * RegionCellsY;
+	}
+}
+
 void USRPlanetSurfaceGrid::EnsureInteractionOverlay()
 {
 	if (InteractionOverlayMesh || IsTemplate())
@@ -91,6 +139,17 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighli
 	TSet<uint64> PatchDrawnEdges;
 	PatchDrawnEdges.Reserve(320);
 
+	for (const FSRPlanetSurfaceGridCellId& OccupiedPreviewCellId : OccupiedPreviewCellIds)
+	{
+		FSRPlanetSurfaceGridCell OccupiedPreviewCell;
+		if (GetCellById(OccupiedPreviewCellId, OccupiedPreviewCell))
+		{
+			AppendInteractionCell(OverlayMesh, OccupiedPreviewCell, OccupiedCellColor, DebugLineThickness * 2.5f);
+		}
+	}
+
+	AppendInteractionCellRegion(OverlayMesh, AreaSelectionCellIds, AreaSelectionCellColor, DebugLineThickness * 2.0f, true);
+
 	FSRPlanetSurfaceGridCell SelectedCell;
 	if (bHasSelectedCell && GetCellById(SelectedCellId, SelectedCell))
 	{
@@ -105,24 +164,16 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighli
 		FSRPlanetSurfaceGridCell HoveredCell;
 		if (GetCellById(HoveredCellId, HoveredCell))
 		{
-			AppendInteractionGridPatch(OverlayMesh, HoveredCellId, HoveredCellColor, DebugLineThickness, PatchDrawnEdges);
 			if (bIncludeCellHighlightOverlay && (!bHasSelectedCell || !(HoveredCellId == SelectedCellId)))
 			{
 				AppendInteractionCell(OverlayMesh, HoveredCell, HoveredCellColor, DebugLineThickness * 2.0f);
 			}
 		}
 
-		TArray<FSRPlanetSurfaceGridCellId> PatchCellIds;
-		if (GetInteractionGridPatchCellIds(HoveredCellId, PatchCellIds))
+		FSRPlanetSurfaceGridCell HoveredCellInfo;
+		if (GetCellById(HoveredCellId, HoveredCellInfo) && HoveredCellInfo.bOccupied)
 		{
-			for (const FSRPlanetSurfaceGridCellId& PatchCellId : PatchCellIds)
-			{
-				FSRPlanetSurfaceGridCell PatchCell;
-				if (GetCellById(PatchCellId, PatchCell) && PatchCell.bOccupied)
-				{
-					AppendInteractionCell(OverlayMesh, PatchCell, OccupiedCellColor, DebugLineThickness * 2.5f);
-				}
-			}
+			AppendInteractionCell(OverlayMesh, HoveredCellInfo, OccupiedCellColor, DebugLineThickness * 2.5f);
 		}
 	}
 
@@ -144,17 +195,24 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighli
 		}
 	}
 
-	for (const FSRPlanetSurfaceGridCellId& DeletionCellId : DeletionPreviewCellIds)
+	AppendInteractionCellRegion(OverlayMesh, DeletionPreviewCellIds, DeletionPreviewCellColor, DebugLineThickness * 3.5f, true);
+
+	for (const FSRPlanetSurfaceGridCellId& InvalidCellId : InvalidPreviewCellIds)
 	{
-		FSRPlanetSurfaceGridCell DeletionCell;
-		if (GetCellById(DeletionCellId, DeletionCell))
+		FSRPlanetSurfaceGridCell InvalidCell;
+		if (GetCellById(InvalidCellId, InvalidCell))
 		{
-			AppendInteractionCell(OverlayMesh, DeletionCell, DeletionPreviewCellColor, DebugLineThickness * 3.5f);
+			AppendInteractionCell(OverlayMesh, InvalidCell, InvalidPreviewCellColor, DebugLineThickness * 3.5f);
 		}
 	}
 
+	if (bHasHoveredCell && bHoveredInteractionGridPatchVisible)
+	{
+		AppendInteractionGridPatch(OverlayMesh, HoveredCellId, HoveredCellColor, DebugLineThickness * 1.5f, PatchDrawnEdges);
+	}
+
 	InteractionOverlayMesh->SetMesh(MoveTemp(OverlayMesh));
-	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell || !InputPortPreviewCellIds.IsEmpty() || !OutputPortPreviewCellIds.IsEmpty() || !DeletionPreviewCellIds.IsEmpty()));
+	SetInteractionOverlayVisible(bGridVisible && (bHasHoveredCell || bHasSelectedCell || !AreaSelectionCellIds.IsEmpty() || !OccupiedPreviewCellIds.IsEmpty() || !InputPortPreviewCellIds.IsEmpty() || !OutputPortPreviewCellIds.IsEmpty() || !DeletionPreviewCellIds.IsEmpty() || !InvalidPreviewCellIds.IsEmpty()));
 }
 
 void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
@@ -168,6 +226,11 @@ void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
 	TArray<FSRPlanetSurfaceGridCellId> PatchCellIds;
 	if (!GetInteractionGridPatchCellIds(CenterCellId, PatchCellIds))
 	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[SR SurfacePatch] Result=PatchBuildFailed Center={%s}"),
+			*FormatSurfacePatchCellId(CenterCellId));
 		return;
 	}
 	PatchCells.Reserve(PatchCellIds.Num());
@@ -186,6 +249,16 @@ void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
 		{
 			PatchCells.Add(PatchCell);
 		}
+	}
+	if (!PatchCellIds.Contains(CenterCellId))
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[SR SurfacePatch] Result=CenterMissing Center={%s} PatchIds=%d PatchCells=%d"),
+			*FormatSurfacePatchCellId(CenterCellId),
+			PatchCellIds.Num(),
+			PatchCells.Num());
 	}
 
 	auto AppendDedupedSegment = [this, &OverlayMesh, &PatchLineColor, LineThickness, &DrawnEdges](
@@ -330,4 +403,197 @@ void USRPlanetSurfaceGrid::AppendInteractionCell(
 	const FVector FillPoint01 = ResolveLocalSurfacePoint(Cell.Corner01.GetSafeNormal(), GridSurfaceOffset + HighlightOffset);
 	AppendFilledQuad(FillPoint00, FillPoint10, FillPoint11, FillPoint01, LineColor);
 	AppendGridWireCell(OverlayMesh, Cell, LineColor, LineThickness, false, nullptr);
+}
+
+void USRPlanetSurfaceGrid::AppendInteractionCellRegion(
+	UE::Geometry::FDynamicMesh3& OverlayMesh,
+	const TArray<FSRPlanetSurfaceGridCellId>& CellIds,
+	const FLinearColor& LineColor,
+	float LineThickness,
+	bool bPreferCompactRectangles) const
+{
+	if (CellIds.IsEmpty())
+	{
+		return;
+	}
+
+	constexpr int32 CompactRegionCellThreshold = 16;
+	if (bPreferCompactRectangles && CellIds.Num() >= CompactRegionCellThreshold)
+	{
+		TArray<FSRPlanetSurfaceGridCellId> FaceCellIds[6];
+		bool bCanGroupByFace = true;
+		for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+		{
+			const int32 FaceIndex = static_cast<int32>(CellId.Face);
+			if (FaceIndex >= 0 && FaceIndex < UE_ARRAY_COUNT(FaceCellIds))
+			{
+				FaceCellIds[FaceIndex].Add(CellId);
+				continue;
+			}
+
+			bCanGroupByFace = false;
+			break;
+		}
+
+		bool bAllFaceRegionsRectangular = bCanGroupByFace;
+		if (bAllFaceRegionsRectangular)
+		{
+			for (const TArray<FSRPlanetSurfaceGridCellId>& RegionCellIds : FaceCellIds)
+			{
+				if (RegionCellIds.IsEmpty())
+				{
+					continue;
+				}
+
+				if (!IsContiguousRectangularCellRegion(RegionCellIds))
+				{
+					bAllFaceRegionsRectangular = false;
+					break;
+				}
+			}
+		}
+
+		if (bAllFaceRegionsRectangular)
+		{
+			for (const TArray<FSRPlanetSurfaceGridCellId>& RegionCellIds : FaceCellIds)
+			{
+				if (!RegionCellIds.IsEmpty())
+				{
+					TryAppendRectangularInteractionCellRegion(OverlayMesh, RegionCellIds, LineColor, LineThickness);
+				}
+			}
+
+			return;
+		}
+	}
+
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		FSRPlanetSurfaceGridCell Cell;
+		if (GetCellById(CellId, Cell))
+		{
+			AppendInteractionCell(OverlayMesh, Cell, LineColor, LineThickness);
+		}
+	}
+}
+
+bool USRPlanetSurfaceGrid::TryAppendRectangularInteractionCellRegion(
+	UE::Geometry::FDynamicMesh3& OverlayMesh,
+	const TArray<FSRPlanetSurfaceGridCellId>& CellIds,
+	const FLinearColor& LineColor,
+	float LineThickness) const
+{
+	if (CellIds.IsEmpty())
+	{
+		return true;
+	}
+
+	const ESRCubeSphereFace Face = CellIds[0].Face;
+	int32 MinCellX = CellIds[0].CellX;
+	int32 MaxCellX = CellIds[0].CellX;
+	int32 MinCellY = CellIds[0].CellY;
+	int32 MaxCellY = CellIds[0].CellY;
+	TSet<FSRPlanetSurfaceGridCellId> RegionCellIdSet;
+	RegionCellIdSet.Reserve(CellIds.Num());
+
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		if (CellId.Face != Face)
+		{
+			return false;
+		}
+
+		RegionCellIdSet.Add(CellId);
+		MinCellX = FMath::Min(MinCellX, CellId.CellX);
+		MaxCellX = FMath::Max(MaxCellX, CellId.CellX);
+		MinCellY = FMath::Min(MinCellY, CellId.CellY);
+		MaxCellY = FMath::Max(MaxCellY, CellId.CellY);
+	}
+
+	const int32 RegionCellsX = MaxCellX - MinCellX + 1;
+	const int32 RegionCellsY = MaxCellY - MinCellY + 1;
+	if (RegionCellsX <= 0 || RegionCellsY <= 0 || RegionCellIdSet.Num() != RegionCellsX * RegionCellsY)
+	{
+		return false;
+	}
+
+	TSet<uint64> DrawnEdges;
+	DrawnEdges.Reserve((RegionCellsX + RegionCellsY) * 2);
+	const float HighlightOffset = FMath::Max(0.5f, LineThickness * 0.25f);
+
+	auto AppendBoundaryEdge = [this, &OverlayMesh, &LineColor, LineThickness, HighlightOffset, &DrawnEdges](
+		const FSRPlanetSurfaceGridCellId& CellId,
+		int32 EdgeIndex)
+	{
+		FSRPlanetSurfaceGridCell Cell;
+		if (!GetCellById(CellId, Cell))
+		{
+			return;
+		}
+
+		FVector EdgePointA;
+		FVector EdgePointB;
+		if (!GetGridCellEdgePoints(Cell, EdgeIndex, EdgePointA, EdgePointB))
+		{
+			return;
+		}
+
+		if (bUsingGeneratedGridCells)
+		{
+			EdgePointA = OffsetGeneratedGridWirePoint(EdgePointA, GridSurfaceOffset + HighlightOffset);
+			EdgePointB = OffsetGeneratedGridWirePoint(EdgePointB, GridSurfaceOffset + HighlightOffset);
+		}
+
+		if (FVector::DistSquared(EdgePointA, EdgePointB) <= KINDA_SMALL_NUMBER)
+		{
+			return;
+		}
+
+		const uint64 EdgeKey = BuildGridEdgeKey(EdgePointA, EdgePointB);
+		if (DrawnEdges.Contains(EdgeKey))
+		{
+			return;
+		}
+		DrawnEdges.Add(EdgeKey);
+
+		if (bUsingGeneratedGridCells)
+		{
+			AppendGridWireSegment(OverlayMesh, EdgePointA, EdgePointB, LineColor, LineThickness);
+			return;
+		}
+
+		AppendGridWireEdge(OverlayMesh, EdgePointA, EdgePointB, LineColor, LineThickness);
+	};
+
+	for (int32 CellX = MinCellX; CellX <= MaxCellX; ++CellX)
+	{
+		FSRPlanetSurfaceGridCellId TopCellId;
+		TopCellId.Face = Face;
+		TopCellId.CellX = CellX;
+		TopCellId.CellY = MinCellY;
+		AppendBoundaryEdge(TopCellId, 0);
+
+		FSRPlanetSurfaceGridCellId BottomCellId;
+		BottomCellId.Face = Face;
+		BottomCellId.CellX = CellX;
+		BottomCellId.CellY = MaxCellY;
+		AppendBoundaryEdge(BottomCellId, 2);
+	}
+
+	for (int32 CellY = MinCellY; CellY <= MaxCellY; ++CellY)
+	{
+		FSRPlanetSurfaceGridCellId LeftCellId;
+		LeftCellId.Face = Face;
+		LeftCellId.CellX = MinCellX;
+		LeftCellId.CellY = CellY;
+		AppendBoundaryEdge(LeftCellId, 3);
+
+		FSRPlanetSurfaceGridCellId RightCellId;
+		RightCellId.Face = Face;
+		RightCellId.CellX = MaxCellX;
+		RightCellId.CellY = CellY;
+		AppendBoundaryEdge(RightCellId, 1);
+	}
+
+	return true;
 }

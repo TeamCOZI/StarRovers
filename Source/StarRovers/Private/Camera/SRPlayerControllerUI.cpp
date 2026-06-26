@@ -4,11 +4,33 @@
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "Surface/SRPlanetSurfaceGrid.h"
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 #include "UI/SRCelestialBodyOverviewWidget.h"
 #include "UI/SRFacilityControlWidget.h"
 #include "UI/SRStructureSelectionWidget.h"
 #include "UI/SRTimeControlWidget.h"
+
+namespace
+{
+	constexpr ESRPlayerUiLayer DefaultWidgetLayerOrder[] =
+	{
+		ESRPlayerUiLayer::FocusInfo,
+		ESRPlayerUiLayer::Overview,
+		ESRPlayerUiLayer::TimeControl,
+		ESRPlayerUiLayer::StructureSelection,
+		ESRPlayerUiLayer::FacilityControl
+	};
+
+	void AddUniqueWidgetLayer(TArray<ESRPlayerUiLayer>& OutLayers, ESRPlayerUiLayer WidgetLayer)
+	{
+		if (!OutLayers.Contains(WidgetLayer))
+		{
+			OutLayers.Add(WidgetLayer);
+		}
+	}
+}
+
 USRCelestialBodyFocusInfoWidget* ASRPlayerController::GetFocusInfoWidget() const
 {
 	return FocusInfoWidget;
@@ -48,6 +70,25 @@ bool ASRPlayerController::IsPointerOverBlockingUi() const
 		|| (IsValid(StructureSelectionWidget) && StructureSelectionWidget->IsPointerOverStructureSelectionPanel());
 }
 
+int32 ASRPlayerController::ResolveWidgetLayerZOrder(ESRPlayerUiLayer WidgetLayer) const
+{
+	TArray<ESRPlayerUiLayer> ResolvedLayerOrder;
+	ResolvedLayerOrder.Reserve(UE_ARRAY_COUNT(DefaultWidgetLayerOrder));
+
+	for (const ESRPlayerUiLayer ConfiguredLayer : WidgetLayerOrder)
+	{
+		AddUniqueWidgetLayer(ResolvedLayerOrder, ConfiguredLayer);
+	}
+
+	for (const ESRPlayerUiLayer DefaultLayer : DefaultWidgetLayerOrder)
+	{
+		AddUniqueWidgetLayer(ResolvedLayerOrder, DefaultLayer);
+	}
+
+	const int32 LayerIndex = ResolvedLayerOrder.IndexOfByKey(WidgetLayer);
+	return LayerIndex != INDEX_NONE ? LayerIndex : ResolvedLayerOrder.Num();
+}
+
 void ASRPlayerController::ClearFacilityFocus()
 {
 	if (AssemblyComponent)
@@ -78,8 +119,7 @@ void ASRPlayerController::CreateFocusInfoWidget()
 		return;
 	}
 
-	FocusInfoWidget->AddToViewport(FocusInfoWidgetZOrder);
-	FocusInfoWidget->OnAssemblyModeRequested().AddUObject(this, &ASRPlayerController::ToggleAssemblyMode);
+	FocusInfoWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::FocusInfo));
 	FocusInfoWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
 
@@ -125,7 +165,7 @@ void ASRPlayerController::CreateOverviewWidget()
 		return;
 	}
 
-	OverviewWidget->AddToViewport(OverviewWidgetZOrder);
+	OverviewWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::Overview));
 	OverviewWidget->OnCelestialBodyRequested().AddUObject(this, &ASRPlayerController::HandleOverviewCelestialBodyRequested);
 	OverviewWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
@@ -177,7 +217,7 @@ void ASRPlayerController::CreateTimeControlWidget()
 		return;
 	}
 
-	TimeControlWidget->AddToViewport(TimeControlWidgetZOrder);
+	TimeControlWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::TimeControl));
 }
 
 void ASRPlayerController::CreateStructureSelectionWidget()
@@ -200,7 +240,7 @@ void ASRPlayerController::CreateStructureSelectionWidget()
 		return;
 	}
 
-	StructureSelectionWidget->AddToViewport(StructureSelectionWidgetZOrder);
+	StructureSelectionWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::StructureSelection));
 	StructureSelectionWidget->OnBuildOptionSelected().AddUObject(this, &ASRPlayerController::HandleStructureBuildOptionSelected);
 	TArray<USRStructureDataAsset*> StructureDataAssets;
 	GetAvailableStructureDataAssets(StructureDataAssets);
@@ -224,6 +264,10 @@ void ASRPlayerController::RefreshStructureSelectionWidget()
 		SelectedStructureBuildId = NAME_None;
 		bHasSelectedStructureBuildId = false;
 		SelectedStructureDataAsset = nullptr;
+		if (USRPlanetSurfaceGrid* SurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
+		{
+			SurfaceGrid->SetHoveredInteractionGridPatchVisible(false);
+		}
 	}
 	StructureSelectionWidget->SetVisibility(bShowStructureSelection ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	if (!bShowStructureSelection)
@@ -231,12 +275,20 @@ void ASRPlayerController::RefreshStructureSelectionWidget()
 		SelectedStructureBuildId = NAME_None;
 		bHasSelectedStructureBuildId = false;
 		SelectedStructureDataAsset = nullptr;
+		if (USRPlanetSurfaceGrid* SurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
+		{
+			SurfaceGrid->SetHoveredInteractionGridPatchVisible(false);
+		}
 		StructureSelectionWidget->ClearSelectedStructureId();
 	}
 	else if (bHasSelectedStructureBuildId)
 	{
 		StructureSelectionWidget->SetSelectedStructureId(SelectedStructureBuildId);
 		SelectedStructureDataAsset = StructureSelectionWidget->GetSelectedStructureDataAsset();
+		if (USRPlanetSurfaceGrid* SurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
+		{
+			SurfaceGrid->SetHoveredInteractionGridPatchVisible(IsValid(SelectedStructureDataAsset));
+		}
 	}
 }
 
@@ -249,7 +301,8 @@ void ASRPlayerController::CreateFacilityControlWidget()
 
 	if (!FacilityControlWidgetClass)
 	{
-		FacilityControlWidgetClass = USRFacilityControlWidget::StaticClass();
+		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires FacilityControlWidgetClass to create the facility control widget."));
+		return;
 	}
 
 	FacilityControlWidget = CreateWidget<USRFacilityControlWidget>(this, FacilityControlWidgetClass);
@@ -259,7 +312,7 @@ void ASRPlayerController::CreateFacilityControlWidget()
 		return;
 	}
 
-	FacilityControlWidget->AddToViewport(FacilityControlWidgetZOrder);
+	FacilityControlWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::FacilityControl));
 	FacilityControlWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
 

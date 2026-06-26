@@ -619,7 +619,7 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 					CellInfo.LatitudeDegrees,
 					GetFocusedFacilityTemperatureLabel(CellInfo.TemperatureState),
 					CellInfo.SurfaceTemperature);
-				CellText += FString::Printf(TEXT("\nPatchDisplayCells: %d"), FocusInfo.HoveredSurfaceGridPatchCellIds.Num());
+				CellText += FString::Printf(TEXT("\nHoverGridCells: %d"), FocusInfo.HoveredSurfaceGridPatchCellIds.Num());
 				for (int32 CellIndex = 0; CellIndex < FocusInfo.HoveredSurfaceGridPatchCellIds.Num(); ++CellIndex)
 				{
 					const FSRPlanetSurfaceGridCellId& PatchCellId = FocusInfo.HoveredSurfaceGridPatchCellIds[CellIndex];
@@ -689,9 +689,8 @@ void USRCelestialBodyFocusInfoWidget::RefreshAssemblyModeButton()
 		return;
 	}
 
-	const bool bCanUseAssemblyMode = bHasFocusInfo && (FocusInfo.bCanConstruct || FocusInfo.bHasSurfaceGrid);
-	AssemblyModeButton->SetVisibility(bCanUseAssemblyMode ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	AssemblyModeButton->SetIsEnabled(bCanUseAssemblyMode);
+	AssemblyModeButton->SetVisibility(ESlateVisibility::Collapsed);
+	AssemblyModeButton->SetIsEnabled(false);
 	AssemblyModeButton->SetBackgroundColor(
 		bAssemblyModeActive
 			? FLinearColor(0.25f, 0.48f, 0.34f, 0.98f)

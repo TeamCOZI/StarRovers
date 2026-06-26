@@ -87,9 +87,6 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "ResetFocusAction"))
     TObjectPtr<UInputAction> ResetFocusAction;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "AlignFocusSurfaceGridAction"))
-    TObjectPtr<UInputAction> AlignFocusSurfaceGridAction;
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera", meta = (DisplayName = "ZoomSpeed", ClampMin = "0.0"))
     float ZoomSpeed;
 
@@ -122,6 +119,21 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|ObliqueView", meta = (DisplayName = "ObliqueViewEnd", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
     float ObliqueViewEnd;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|ObliqueView|Focused", meta = (DisplayName = "UseFocusedObliqueViewAltitudeRange"))
+    bool UseFocusedObliqueViewAltitudeRange;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|ObliqueView|Focused", meta = (DisplayName = "FocusedObliqueViewNearAltitudeMultiplier", ClampMin = "0.0", UIMin = "0.0"))
+    float FocusedObliqueViewNearAltitudeMultiplier;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|ObliqueView|Focused", meta = (DisplayName = "FocusedObliqueViewFarAltitudeMultiplier", ClampMin = "0.0", UIMin = "0.0"))
+    float FocusedObliqueViewFarAltitudeMultiplier;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|ObliqueView|Focused", meta = (DisplayName = "FocusedObliqueViewBaseRotation"))
+    FRotator FocusedObliqueViewBaseRotation;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera|ObliqueView|Focused", meta = (DisplayName = "FocusedObliqueViewMaxRotation"))
+    FRotator FocusedObliqueViewMaxRotation;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Focus", meta = (DisplayName = "FocusFollowSmoothTime", ClampMin = "0.01"))
     float FocusFollowSmoothTime;
@@ -199,7 +211,6 @@ private:
     void HandleFocusSurface(const FInputActionValue& Value);
     void HandleFocusSurfaceCompleted();
     void HandleResetFocus();
-    void HandleAlignFocusSurfaceGrid();
     bool HasExitedFocusedActorGravityField() const;
     bool GetMouseScreenPosition(FVector2D& OutMouseScreenPosition) const;
     FVector ConvertScreenDragToDragOffset(const FVector2D& StartScreenPosition, const FVector2D& CurrentScreenPosition) const;
@@ -214,11 +225,14 @@ private:
     bool ResolveCelestialCameraAvoidanceSphere(const AActor* Actor, FVector& OutCenter, float& OutRadius) const;
     FVector GetCameraDirectionFromPivot() const;
     float ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance, const FVector& CandidatePawnLocation) const;
+    bool ResolveFocusedObliqueViewZoomRange(float& OutNearZoomDistance, float& OutFarZoomDistance) const;
+    float GetFocusedObliqueViewBlendAlpha(float ZoomDistance) const;
     float GetObliqueViewBlendAlpha(float ZoomDistance) const;
     FRotator GetViewRotationForZoom(float ZoomDistance) const;
     void ApplyZoomDrivenViewRotation(float ZoomDistance);
     bool ShouldAllowFocusSurface() const;
     bool TryComputeFocusSurfaceGridAlignmentRoll(const FQuat& ViewQuat, float ZoomDistance, float& OutRollRadians) const;
+    bool TryStartFocusSurfaceGridAlignment();
     void UpdateFocusSurface(float DeltaSeconds);
     void UpdateFocusSurfaceRotation(float DeltaSeconds);
     void ApplyFocusSurfaceDelta(const FVector2D& DegreesDelta);
@@ -261,4 +275,5 @@ private:
     bool bHasDynamicMeshVisibilityState;
     bool bIsResettingFocusSurfaceRotation;
     bool bIsFocusArcTransitionActive;
+    bool bPendingFocusSurfaceGridAutoAlignment;
 };

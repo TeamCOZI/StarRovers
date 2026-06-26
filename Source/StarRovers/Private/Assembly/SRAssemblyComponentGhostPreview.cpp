@@ -6,6 +6,7 @@
 #include "Structure/SRBuildableStructureInterface.h"
 #include "Structure/SRStructure.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "Structure/SRStructureSurfacePortHelpers.h"
 #include "Structure/SRStructurePlacementLibrary.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
@@ -17,38 +18,11 @@ namespace
 		ESRStructurePortDirection Direction,
 		FSRPlanetSurfaceGridCellId& OutNeighborCellId)
 	{
-		OutNeighborCellId = FSRPlanetSurfaceGridCellId();
-		if (!IsValid(SurfaceGrid))
-		{
-			return false;
-		}
-
-		FSRPlanetSurfaceGridCellNeighbors Neighbors;
-		if (!SurfaceGrid->GetCellNeighbors(CellId, Neighbors))
-		{
-			return false;
-		}
-
-		switch (Direction)
-		{
-		case ESRStructurePortDirection::Left:
-			OutNeighborCellId = Neighbors.NegativeU;
-			break;
-		case ESRStructurePortDirection::Right:
-			OutNeighborCellId = Neighbors.PositiveU;
-			break;
-		case ESRStructurePortDirection::Top:
-			OutNeighborCellId = Neighbors.NegativeV;
-			break;
-		case ESRStructurePortDirection::Bottom:
-			OutNeighborCellId = Neighbors.PositiveV;
-			break;
-		default:
-			return false;
-		}
-
-		FSRPlanetSurfaceGridCell NeighborCell;
-		return SurfaceGrid->GetCellById(OutNeighborCellId, NeighborCell);
+		return StarRovers::Structure::SurfacePorts::TryGetPortConnectionCellId(
+			SurfaceGrid,
+			CellId,
+			Direction,
+			OutNeighborCellId);
 	}
 
 	bool ResolveGhostPortFootprintCellId(
@@ -240,6 +214,211 @@ void USRAssemblyComponent::DestroyStructureGhostPreview()
 	StructureGhostDataAsset = nullptr;
 	StructureGhostCellId = FSRPlanetSurfaceGridCellId();
 	bHasStructureGhostCellId = false;
+}
+
+void USRAssemblyComponent::DestroyStructurePlacementDragPreviewActors()
+{
+	for (FSRStructurePlacementDragPreviewActor& PreviewInfo : StructurePlacementDragPreviewActors)
+	{
+		if (AActor* PreviewActor = PreviewInfo.PreviewActor.Get())
+		{
+			PreviewActor->Destroy();
+		}
+	}
+
+	StructurePlacementDragPreviewActors.Reset();
+}
+
+AActor* USRAssemblyComponent::SpawnStructurePlacementDragPreviewActor(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	USRStructureDataAsset* StructureDataAsset)
+{
+	UWorld* World = GetWorld();
+	ASRPlayerController* PlayerController = GetOwnerController();
+	if (!IsValid(World) || !IsValid(PlayerController) || !IsValid(SurfaceGrid) || !IsValid(StructureDataAsset))
+	{
+		return nullptr;
+	}
+
+	const FSRStructureData StructureData = StructureDataAsset->BuildData();
+	UClass* StructureActorClass = StructureData.StructureActorClass.Get();
+	if (!IsValid(StructureActorClass))
+	{
+		StructureActorClass = ASRStructure::StaticClass();
+	}
+	if (!IsValid(StructureActorClass)
+		|| !StructureActorClass->ImplementsInterface(USRBuildableStructureInterface::StaticClass()))
+	{
+		return nullptr;
+	}
+
+	AActor* SurfaceOwner = SurfaceGrid->GetOwner();
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = IsValid(SurfaceOwner) ? SurfaceOwner : Cast<AActor>(PlayerController);
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParameters.ObjectFlags |= RF_Transient;
+
+	AActor* PreviewActor = World->SpawnActor<AActor>(StructureActorClass, FTransform::Identity, SpawnParameters);
+	if (!IsValid(PreviewActor))
+	{
+		return nullptr;
+	}
+
+	if (IsValid(SurfaceOwner))
+	{
+		PreviewActor->SetOwner(SurfaceOwner);
+		PreviewActor->AttachToActor(SurfaceOwner, FAttachmentTransformRules::KeepWorldTransform);
+	}
+
+	ISRBuildableStructureInterface::Execute_ApplyStructureDataAsset(PreviewActor, StructureDataAsset);
+	ISRBuildableStructureInterface::Execute_SetStructureGhostMode(PreviewActor, true);
+	PreviewActor->SetActorEnableCollision(false);
+	PreviewActor->SetActorHiddenInGame(true);
+	return PreviewActor;
+}
+
+bool USRAssemblyComponent::UpdateStructurePlacementDragPreview(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const FSRPlanetSurfaceGridCell& TargetCell)
+{
+	ASRPlayerController* PlayerController = GetOwnerController();
+	USRStructureDataAsset* StructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
+	if (!IsValid(SurfaceGrid)
+		|| !IsValid(StructureDataAsset)
+		|| !bIsStructurePlacementDragActive
+		|| !IsValid(StructurePlacementDragSurfaceGrid)
+		|| SurfaceGrid != StructurePlacementDragSurfaceGrid)
+	{
+		return false;
+	}
+
+	const FSRStructureData StructureData = StructureDataAsset->BuildData();
+	if (StructureData.BuildKind != ESRStructureBuildKind::Structure)
+	{
+		return false;
+	}
+
+	if (bHasLastStructurePlacementDragCellId
+		&& LastStructurePlacementDragSurfaceGrid == SurfaceGrid
+		&& LastStructurePlacementDragCellId == TargetCell.CellId
+		&& !StructurePlacementDragCellIds.IsEmpty())
+	{
+		return true;
+	}
+
+	TArray<FSRPlanetSurfaceGridCellId> CandidateCellIds;
+	if (!BuildAreaSelectionCellIds(SurfaceGrid, StructurePlacementDragStartCellId, TargetCell.CellId, CandidateCellIds))
+	{
+		return false;
+	}
+
+	TMap<FSRPlanetSurfaceGridCellId, AActor*> ExistingPreviewActorsByCellId;
+	for (const FSRStructurePlacementDragPreviewActor& PreviewInfo : StructurePlacementDragPreviewActors)
+	{
+		if (AActor* PreviewActor = PreviewInfo.PreviewActor.Get())
+		{
+			ExistingPreviewActorsByCellId.Add(PreviewInfo.CellId, PreviewActor);
+		}
+	}
+
+	const int32 PlacementRotationSteps = StarRovers::Structure::NormalizePlacementRotationSteps(StructurePlacementDragRotationSteps);
+	const int32 FootprintCellsX = StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacementRotationSteps);
+	const int32 FootprintCellsY = StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, PlacementRotationSteps);
+
+	TSet<FSRPlanetSurfaceGridCellId> ReservedFootprintCellIds;
+	TArray<FSRPlanetSurfaceGridCellId> NewPlacementCellIds;
+	TArray<FSRStructurePlacementDragPreviewActor> NewPreviewActors;
+	NewPlacementCellIds.Reserve(CandidateCellIds.Num());
+	NewPreviewActors.Reserve(CandidateCellIds.Num());
+
+	for (const FSRPlanetSurfaceGridCellId& CandidateCellId : CandidateCellIds)
+	{
+		FSRPlanetSurfaceGridCellInfo CandidateCellInfo;
+		TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
+		if (!SurfaceGrid->GetCellInfoById(CandidateCellId, CandidateCellInfo)
+			|| !CandidateCellInfo.bCanConstruct
+			|| !SurfaceGrid->GetFootprintCellIds(CandidateCellId, FootprintCellsX, FootprintCellsY, FootprintCellIds)
+			|| !SurfaceGrid->CanOccupyCells(FootprintCellIds))
+		{
+			continue;
+		}
+
+		bool bOverlapsReservedFootprint = false;
+		for (const FSRPlanetSurfaceGridCellId& FootprintCellId : FootprintCellIds)
+		{
+			if (ReservedFootprintCellIds.Contains(FootprintCellId))
+			{
+				bOverlapsReservedFootprint = true;
+				break;
+			}
+		}
+		if (bOverlapsReservedFootprint)
+		{
+			continue;
+		}
+
+		AActor* PreviewActor = nullptr;
+		if (AActor** ExistingPreviewActor = ExistingPreviewActorsByCellId.Find(CandidateCellId))
+		{
+			PreviewActor = *ExistingPreviewActor;
+			ExistingPreviewActorsByCellId.Remove(CandidateCellId);
+		}
+		if (!IsValid(PreviewActor))
+		{
+			PreviewActor = SpawnStructurePlacementDragPreviewActor(SurfaceGrid, StructureDataAsset);
+		}
+		if (!IsValid(PreviewActor))
+		{
+			continue;
+		}
+
+		FTransform PreviewTransform;
+		if (!BuildStructureGhostTransform(SurfaceGrid, CandidateCellId, StructureDataAsset, PreviewTransform))
+		{
+			PreviewActor->SetActorHiddenInGame(true);
+			continue;
+		}
+
+		if (!ISRBuildableStructureInterface::Execute_CanPlaceOnSurfaceCell(PreviewActor, CandidateCellInfo))
+		{
+			PreviewActor->SetActorHiddenInGame(true);
+			continue;
+		}
+
+		for (const FSRPlanetSurfaceGridCellId& FootprintCellId : FootprintCellIds)
+		{
+			ReservedFootprintCellIds.Add(FootprintCellId);
+		}
+
+		ISRBuildableStructureInterface::Execute_SetStructureGhostMode(PreviewActor, true);
+		PreviewActor->SetActorTransform(PreviewTransform);
+		PreviewActor->SetActorEnableCollision(false);
+		PreviewActor->SetActorHiddenInGame(false);
+
+		FSRStructurePlacementDragPreviewActor PreviewInfo;
+		PreviewInfo.CellId = CandidateCellId;
+		PreviewInfo.PreviewActor = PreviewActor;
+		NewPreviewActors.Add(PreviewInfo);
+		NewPlacementCellIds.Add(CandidateCellId);
+	}
+
+	for (const TPair<FSRPlanetSurfaceGridCellId, AActor*>& RemovedPreviewPair : ExistingPreviewActorsByCellId)
+	{
+		if (IsValid(RemovedPreviewPair.Value))
+		{
+			RemovedPreviewPair.Value->Destroy();
+		}
+	}
+
+	StructurePlacementDragCellIds = MoveTemp(NewPlacementCellIds);
+	StructurePlacementDragPreviewActors = MoveTemp(NewPreviewActors);
+	SurfaceGrid->SetHoveredCell(TargetCell.CellId);
+	PublishHoveredCellInfo(SurfaceGrid, TargetCell);
+	LastStructurePlacementDragSurfaceGrid = SurfaceGrid;
+	LastStructurePlacementDragCellId = TargetCell.CellId;
+	bHasLastStructurePlacementDragCellId = true;
+	ClearStructureGhostPortPreview();
+	return true;
 }
 
 void USRAssemblyComponent::UpdateStructureGhostPortPreview(

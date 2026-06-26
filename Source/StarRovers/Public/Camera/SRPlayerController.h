@@ -6,6 +6,7 @@
 #include "SRPlayerController.generated.h"
 
 class UInputAction;
+class UInputMappingContext;
 class USRAssemblyComponent;
 class USRCelestialBodyFocusInfoWidget;
 class USRCelestialBodyOverviewWidget;
@@ -15,6 +16,16 @@ class USRStructureDataAsset;
 class USRTimeControlWidget;
 class ASRCameraPawn;
 class USRCelestialBodyRegistrySubsystem;
+
+UENUM(BlueprintType)
+enum class ESRPlayerUiLayer : uint8
+{
+    FocusInfo UMETA(DisplayName = "Focus Info"),
+    Overview UMETA(DisplayName = "Overview"),
+    TimeControl UMETA(DisplayName = "Time Control"),
+    StructureSelection UMETA(DisplayName = "Structure Selection"),
+    FacilityControl UMETA(DisplayName = "Facility Control")
+};
 
 UCLASS(Blueprintable)
 class STARROVERS_API ASRPlayerController : public APlayerController
@@ -90,11 +101,22 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
     bool IsConveyorBulkDeleteModifierActive() const;
 
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
+    bool IsAssemblyShiftModifierActive() const;
+
     bool ShouldHandleAssemblyPlacementDrag() const;
+    bool ShouldHandleAssemblyAreaSelectionDrag() const;
+    bool ShouldHandleAssemblyAreaDeletionDrag() const;
     bool ShouldBlockAssemblyCameraDrag() const;
     bool BeginAssemblyPlacementDrag();
     bool ContinueAssemblyPlacementDrag();
     void EndAssemblyPlacementDrag();
+    bool BeginAssemblyAreaSelectionDrag();
+    bool ContinueAssemblyAreaSelectionDrag();
+    void EndAssemblyAreaSelectionDrag();
+    bool BeginAssemblyAreaDeletionDrag();
+    bool ContinueAssemblyAreaDeletionDrag();
+    void EndAssemblyAreaDeletionDrag();
     bool RotateStructurePlacement(int32 StepDelta);
 
 protected:
@@ -106,6 +128,21 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "DeleteStructureAction"))
     TObjectPtr<UInputAction> DeleteStructureAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "AssemblyAreaDeletionDragHoldAction"))
+    TObjectPtr<UInputAction> AssemblyAreaDeletionDragHoldAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "AssemblyAreaSelectionDeleteAction"))
+    TObjectPtr<UInputAction> AssemblyAreaSelectionDeleteAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "AssemblyAreaSelectionCopyAction"))
+    TObjectPtr<UInputAction> AssemblyAreaSelectionCopyAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "AssemblyAreaCopyMirrorAction"))
+    TObjectPtr<UInputAction> AssemblyAreaCopyMirrorAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "AssemblyPickStructureAction"))
+    TObjectPtr<UInputAction> AssemblyPickStructureAction;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "RotatePlacementCounterClockwiseAction"))
     TObjectPtr<UInputAction> RotatePlacementCounterClockwiseAction;
@@ -119,23 +156,23 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "BulkDeleteConveyorModifierAction"))
     TObjectPtr<UInputAction> BulkDeleteConveyorModifierAction;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "AssemblyShiftModifierAction"))
+    TObjectPtr<UInputAction> AssemblyShiftModifierAction;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "AssemblyUndoRedoAction"))
+    TObjectPtr<UInputAction> AssemblyUndoRedoAction;
+
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Selection", meta = (DisplayName = "SelectedActor"))
     TObjectPtr<AActor> SelectedActor;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "FocusInfoWidgetClass"))
     TSubclassOf<USRCelestialBodyFocusInfoWidget> FocusInfoWidgetClass;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "FocusInfoWidgetZOrder"))
-    int32 FocusInfoWidgetZOrder;
-
     UPROPERTY()
     TObjectPtr<USRCelestialBodyFocusInfoWidget> FocusInfoWidget;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "OverviewWidgetClass"))
     TSubclassOf<USRCelestialBodyOverviewWidget> OverviewWidgetClass;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "OverviewWidgetZOrder"))
-    int32 OverviewWidgetZOrder;
 
     UPROPERTY()
     TObjectPtr<USRCelestialBodyOverviewWidget> OverviewWidget;
@@ -146,17 +183,11 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "TimeControlWidgetClass"))
     TSubclassOf<USRTimeControlWidget> TimeControlWidgetClass;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "TimeControlWidgetZOrder"))
-    int32 TimeControlWidgetZOrder;
-
     UPROPERTY()
     TObjectPtr<USRTimeControlWidget> TimeControlWidget;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "StructureSelectionWidgetClass"))
     TSubclassOf<USRStructureSelectionWidget> StructureSelectionWidgetClass;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "StructureSelectionWidgetZOrder"))
-    int32 StructureSelectionWidgetZOrder;
 
     UPROPERTY()
     TObjectPtr<USRStructureSelectionWidget> StructureSelectionWidget;
@@ -164,11 +195,11 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "FacilityControlWidgetClass"))
     TSubclassOf<USRFacilityControlWidget> FacilityControlWidgetClass;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "FacilityControlWidgetZOrder"))
-    int32 FacilityControlWidgetZOrder;
-
     UPROPERTY()
     TObjectPtr<USRFacilityControlWidget> FacilityControlWidget;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "WidgetLayerOrder", ToolTip = "Index 0 is the bottom UI layer. Later entries are drawn and hit-tested above earlier entries."))
+    TArray<ESRPlayerUiLayer> WidgetLayerOrder;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "AvailableStructureDataAssets"))
     TArray<TObjectPtr<USRStructureDataAsset>> AvailableStructureDataAssets;
@@ -178,6 +209,9 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly|Performance", meta = (DisplayName = "MaxQueuedStructurePlacements", ClampMin = "1"))
     int32 MaxQueuedStructurePlacements;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Assembly|Auto", meta = (DisplayName = "AssemblyModeScreenSizeThreshold", ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
+    float AssemblyModeScreenSizeThreshold;
 
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "SelectedStructureBuildId"))
     FName SelectedStructureBuildId;
@@ -193,6 +227,9 @@ protected:
 
     UPROPERTY(Transient)
     TObjectPtr<USRCelestialBodyRegistrySubsystem> BoundCelestialBodyRegistry;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UInputMappingContext> RuntimeAssemblyInputMappingContext;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "AssemblyComponent"))
     TObjectPtr<USRAssemblyComponent> AssemblyComponent;
@@ -217,19 +254,37 @@ private:
     void RefreshStructureSelectionWidget();
     void CreateFacilityControlWidget();
     void RefreshFacilityControlWidget();
+    int32 ResolveWidgetLayerZOrder(ESRPlayerUiLayer WidgetLayer) const;
     void HandleStructureBuildOptionSelected(FName StructureId, USRStructureDataAsset* StructureDataAsset);
     void GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const;
+    void UpdateAssemblyModeFromFocusedActorScreenSize();
+    bool ShouldActivateAssemblyModeForFocusedActorScreenSize() const;
     void UpdateHitResultTraceDistance();
     void RequestFocusActor(AActor* NewFocusedActor, bool bSnapImmediately = false);
     void TryAutoFocusPrimaryStar();
     void HandleLeftClick();
     void HandleRightClick();
+    void HandleAssemblyAreaDeletionDragStarted();
+    void HandleAssemblyAreaDeletionDragCompleted();
+    void HandleAssemblyAreaSelectionDelete();
+    void HandleAssemblyAreaSelectionCopy();
+    void HandleAssemblyAreaCopyMirror();
+    void EnsureAssemblyAreaCopyMirrorInputAction();
+    void EnsureAssemblyPickStructureInputAction();
+    void ApplyRuntimeAssemblyInputMapping();
+    void HandleAssemblyPickStructure();
+    void HandleAssemblyUndoRedoAction();
     void HandleFocusParent();
     void HandleConveyorPlacementWaypoint();
     void HandleRotatePlacementCounterClockwise();
     void HandleRotatePlacementClockwise();
     void HandleBulkDeleteConveyorModifierStarted();
     void HandleBulkDeleteConveyorModifierEnded();
+    void HandleAssemblyShiftModifierStarted();
+    void HandleAssemblyShiftModifierEnded();
+    bool ClearSelectedStructureBuildOption();
+    bool TrySelectBuildOptionFromHoveredCell();
+    USRStructureDataAsset* ResolveSelectableStructureDataAsset(USRStructureDataAsset* CandidateStructureDataAsset) const;
     bool TryHandlePlacementRotationInput(int32 StepDelta);
     void UpdateSelection(AActor* NewSelectedActor);
 
@@ -237,4 +292,7 @@ private:
     uint64 LastPlacementRotationInputFrame;
     int32 LastPlacementRotationInputStepDelta;
     bool bConveyorBulkDeleteModifierActive;
+    bool bAssemblyShiftModifierActive;
+    bool bAssemblyAreaDeletionDragHoldActive;
+    bool bRuntimeAssemblyInputMappingApplied;
 };

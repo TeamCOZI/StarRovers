@@ -38,6 +38,21 @@ bool USRPlanetSurfaceGrid::SetHoveredCell(const FSRPlanetSurfaceGridCellId& Cell
 	return true;
 }
 
+void USRPlanetSurfaceGrid::SetHoveredInteractionGridPatchVisible(bool bNewVisible)
+{
+	if (bHoveredInteractionGridPatchVisible == bNewVisible)
+	{
+		return;
+	}
+
+	bHoveredInteractionGridPatchVisible = bNewVisible;
+	if (bHasHoveredCell)
+	{
+		RequestInteractionHighlightRefresh();
+		UpdateDebugTickState();
+	}
+}
+
 void USRPlanetSurfaceGrid::ClearHoveredCell()
 {
 	if (!bHasHoveredCell)
@@ -116,6 +131,40 @@ void USRPlanetSurfaceGrid::ClearSelectedCell()
 	UpdateDebugTickState();
 }
 
+void USRPlanetSurfaceGrid::SetAreaSelectionCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+{
+	TArray<FSRPlanetSurfaceGridCellId> NewAreaSelectionCellIds;
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		int32 CellIndex = INDEX_NONE;
+		if (GetCellIndex(CellId, CellIndex))
+		{
+			NewAreaSelectionCellIds.AddUnique(CellId);
+		}
+	}
+
+	if (AreaSelectionCellIds == NewAreaSelectionCellIds)
+	{
+		return;
+	}
+
+	AreaSelectionCellIds = MoveTemp(NewAreaSelectionCellIds);
+	RequestInteractionHighlightRefresh();
+	UpdateDebugTickState();
+}
+
+void USRPlanetSurfaceGrid::ClearAreaSelectionCells()
+{
+	if (AreaSelectionCellIds.IsEmpty())
+	{
+		return;
+	}
+
+	AreaSelectionCellIds.Reset();
+	RequestInteractionHighlightRefresh();
+	UpdateDebugTickState();
+}
+
 void USRPlanetSurfaceGrid::SetFacilityPortPreviewCells(
 	const TArray<FSRPlanetSurfaceGridCellId>& InputConnectionCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& OutputConnectionCellIds)
@@ -165,6 +214,40 @@ void USRPlanetSurfaceGrid::ClearFacilityPortPreviewCells()
 	UpdateDebugTickState();
 }
 
+void USRPlanetSurfaceGrid::SetOccupiedPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+{
+	TArray<FSRPlanetSurfaceGridCellId> NewOccupiedPreviewCellIds;
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		int32 CellIndex = INDEX_NONE;
+		if (GetCellIndex(CellId, CellIndex))
+		{
+			NewOccupiedPreviewCellIds.AddUnique(CellId);
+		}
+	}
+
+	if (OccupiedPreviewCellIds == NewOccupiedPreviewCellIds)
+	{
+		return;
+	}
+
+	OccupiedPreviewCellIds = MoveTemp(NewOccupiedPreviewCellIds);
+	RequestInteractionHighlightRefresh();
+	UpdateDebugTickState();
+}
+
+void USRPlanetSurfaceGrid::ClearOccupiedPreviewCells()
+{
+	if (OccupiedPreviewCellIds.IsEmpty())
+	{
+		return;
+	}
+
+	OccupiedPreviewCellIds.Reset();
+	RequestInteractionHighlightRefresh();
+	UpdateDebugTickState();
+}
+
 void USRPlanetSurfaceGrid::SetDeletionPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
 {
 	TArray<FSRPlanetSurfaceGridCellId> NewDeletionPreviewCellIds;
@@ -195,6 +278,40 @@ void USRPlanetSurfaceGrid::ClearDeletionPreviewCells()
 	}
 
 	DeletionPreviewCellIds.Reset();
+	RequestInteractionHighlightRefresh();
+	UpdateDebugTickState();
+}
+
+void USRPlanetSurfaceGrid::SetInvalidPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+{
+	TArray<FSRPlanetSurfaceGridCellId> NewInvalidPreviewCellIds;
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		int32 CellIndex = INDEX_NONE;
+		if (GetCellIndex(CellId, CellIndex))
+		{
+			NewInvalidPreviewCellIds.AddUnique(CellId);
+		}
+	}
+
+	if (InvalidPreviewCellIds == NewInvalidPreviewCellIds)
+	{
+		return;
+	}
+
+	InvalidPreviewCellIds = MoveTemp(NewInvalidPreviewCellIds);
+	RequestInteractionHighlightRefresh();
+	UpdateDebugTickState();
+}
+
+void USRPlanetSurfaceGrid::ClearInvalidPreviewCells()
+{
+	if (InvalidPreviewCellIds.IsEmpty())
+	{
+		return;
+	}
+
+	InvalidPreviewCellIds.Reset();
 	RequestInteractionHighlightRefresh();
 	UpdateDebugTickState();
 }

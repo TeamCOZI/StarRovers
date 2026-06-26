@@ -26,6 +26,7 @@ USRAssemblyComponent::USRAssemblyComponent()
 	ConveyorGhostSurfaceGrid = nullptr;
 	ConveyorDeletionGhostSurfaceGrid = nullptr;
 	ConveyorBulkDeletionPreviewSurfaceGrid = nullptr;
+	ConveyorInvalidPlacementPreviewSurfaceGrid = nullptr;
 	LastLoggedInvalidGhostDataAsset = nullptr;
 	LastHoveredSampleMousePosition = FVector2D::ZeroVector;
 	bHasLastHoveredSampleMousePosition = false;
@@ -41,6 +42,25 @@ USRAssemblyComponent::USRAssemblyComponent()
 	LastStructurePlacementDragSurfaceGrid = nullptr;
 	LastStructurePlacementDragCellId = FSRPlanetSurfaceGridCellId();
 	bHasLastStructurePlacementDragCellId = false;
+	StructurePlacementDragSurfaceGrid = nullptr;
+	StructurePlacementDragStartCellId = FSRPlanetSurfaceGridCellId();
+	StructurePlacementDragRotationSteps = 0;
+	bIsAreaSelectionDragActive = false;
+	AreaSelectionSurfaceGrid = nullptr;
+	AreaSelectionStartCellId = FSRPlanetSurfaceGridCellId();
+	LastAreaSelectionTargetCellId = FSRPlanetSurfaceGridCellId();
+	bHasAreaSelectionStartCell = false;
+	bHasLastAreaSelectionTargetCell = false;
+	bIsAreaDeletionDragActive = false;
+	AreaDeletionSurfaceGrid = nullptr;
+	AreaDeletionStartCellId = FSRPlanetSurfaceGridCellId();
+	LastAreaDeletionTargetCellId = FSRPlanetSurfaceGridCellId();
+	bHasAreaDeletionStartCell = false;
+	bHasLastAreaDeletionTargetCell = false;
+	bIsAreaCopyPlacementActive = false;
+	bHasLastAreaCopyPreviewHoverCell = false;
+	LastAreaCopyPreviewHoverCellId = FSRPlanetSurfaceGridCellId();
+	LastAreaCopyPreviewState = ESRAreaCopyPlacementPreviewState::Blocked;
 	PendingConveyorStartSurfaceGrid = nullptr;
 	PendingConveyorStartCellId = FSRPlanetSurfaceGridCellId();
 	bHasPendingConveyorStartCell = false;
@@ -53,6 +73,7 @@ USRAssemblyComponent::USRAssemblyComponent()
 	bHasConveyorGhostTargetCell = false;
 	bHasConveyorDeletionGhostTargetCell = false;
 	bHasConveyorBulkDeletionPreview = false;
+	bHasConveyorInvalidPlacementPreview = false;
 	ConveyorDeletionGhostLayer = 0;
 }
 
@@ -62,29 +83,55 @@ void USRAssemblyComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 
 	UpdateSurfaceHover();
 	ProcessQueuedStructurePlacements();
+	if (bIsAreaCopyPlacementActive)
+	{
+		ClearConveyorPlacementPortPreview();
+		ClearConveyorBulkDeletionPreview();
+		ClearConveyorInvalidPlacementPreview();
+		DestroyStructureGhostPreview();
+		DestroyConveyorGhostPreview();
+		UpdateAreaCopyPlacementPreview();
+		return;
+	}
+
 	const ASRPlayerController* PlayerController = GetOwnerController();
-	if (PlayerController && PlayerController->IsConveyorBulkDeleteModifierActive())
+	if (PlayerController
+		&& PlayerController->IsConveyorBulkDeleteModifierActive()
+		&& !PlayerController->IsAssemblyShiftModifierActive())
 	{
 		if (!UpdateConveyorBulkDeletionPreview())
 		{
 			ClearConveyorBulkDeletionPreview();
 		}
 		ClearConveyorPlacementPortPreview();
+		ClearConveyorInvalidPlacementPreview();
 		DestroyStructureGhostPreview();
 		DestroyConveyorGhostPreview();
 		return;
 	}
 
 	ClearConveyorBulkDeletionPreview();
+	if (bIsStructurePlacementDragActive)
+	{
+		ClearConveyorPlacementPortPreview();
+		DestroyStructureGhostPreview();
+		return;
+	}
 	UpdateConveyorPlacementPortPreview();
 	UpdateStructureGhostPreview();
 }
 
 void USRAssemblyComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ClearAssemblyPlacementHistory();
+	ClearAreaSelection();
+	ClearAreaDeletion();
+	CancelAreaCopyPlacement();
 	ClearConveyorPlacementPortPreview();
 	ClearConveyorBulkDeletionPreview();
+	ClearConveyorInvalidPlacementPreview();
 	DestroyStructureGhostPreview();
+	DestroyStructurePlacementDragPreviewActors();
 	DestroyConveyorGhostPreview();
 	DestroyConveyorDeletionGhostPreview();
 
@@ -120,12 +167,17 @@ void USRAssemblyComponent::SetAssemblyModeActive(bool bNewAssemblyModeActive)
 	if (!bAssemblyModeActive)
 	{
 		EndStructurePlacementDrag();
+		ClearAreaSelection();
+		ClearAreaDeletion();
+		CancelAreaCopyPlacement();
 		ClearPendingConveyorPathStart();
 		PendingStructurePlacementQueue.Reset();
 		StructurePlacementRotationSteps = 0;
 		ClearConveyorPlacementPortPreview();
 		ClearConveyorBulkDeletionPreview();
+		ClearConveyorInvalidPlacementPreview();
 		DestroyStructureGhostPreview();
+		DestroyStructurePlacementDragPreviewActors();
 		DestroyConveyorGhostPreview();
 		DestroyConveyorDeletionGhostPreview();
 	}
@@ -182,6 +234,23 @@ void USRAssemblyComponent::ConfigurePlacementPerformance(int32 NewMaxStructurePl
 	MaxQueuedStructurePlacements = FMath::Max(1, NewMaxQueuedStructurePlacements);
 }
 
+void USRAssemblyComponent::CancelSelectedStructurePlacement()
+{
+	EndStructurePlacementDrag(false);
+	ClearPendingConveyorPathStart();
+	PendingStructurePlacementQueue.Reset();
+	ClearConveyorPlacementPortPreview();
+	ClearConveyorInvalidPlacementPreview();
+	DestroyStructureGhostPreview();
+	DestroyStructurePlacementDragPreviewActors();
+	DestroyConveyorGhostPreview();
+
+	if (IsValid(HoveredSurfaceGrid))
+	{
+		HoveredSurfaceGrid->SetHoveredInteractionGridPatchVisible(false);
+	}
+}
+
 bool USRAssemblyComponent::TryHandleAssemblyClick(AActor*& OutSelectedActor)
 {
 	OutSelectedActor = nullptr;
@@ -191,6 +260,14 @@ bool USRAssemblyComponent::TryHandleAssemblyClick(AActor*& OutSelectedActor)
 	{
 		return false;
 	}
+
+	if (bIsAreaCopyPlacementActive)
+	{
+		return TryCommitAreaCopyPlacement(OutSelectedActor);
+	}
+
+	ClearAreaSelection();
+	ClearAreaDeletion();
 
 	AActor* FocusedActor = nullptr;
 	USRPlanetSurfaceGrid* FocusedSurfaceGrid = nullptr;
@@ -230,7 +307,7 @@ bool USRAssemblyComponent::TryHandleAssemblyClick(AActor*& OutSelectedActor)
 
 		ClearPendingConveyorPathStart();
 		ClearSelectedStructureInfo();
-		FocusedSurfaceGrid->SetSelectedCell(HoveredCell.CellId);
+		FocusedSurfaceGrid->ClearSelectedCell();
 		return true;
 	}
 
@@ -246,6 +323,15 @@ bool USRAssemblyComponent::TryHandleAssemblyDelete(AActor*& OutSelectedActor)
 	{
 		return false;
 	}
+
+	if (bIsAreaCopyPlacementActive)
+	{
+		CancelAreaCopyPlacement();
+		return true;
+	}
+
+	ClearAreaSelection();
+	ClearAreaDeletion();
 
 	AActor* FocusedActor = nullptr;
 	USRPlanetSurfaceGrid* FocusedSurfaceGrid = nullptr;
@@ -285,7 +371,7 @@ bool USRAssemblyComponent::ShouldHandleStructurePlacementDrag() const
 {
 	const ASRPlayerController* PlayerController = GetOwnerController();
 	const USRStructureDataAsset* SelectedStructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
-	if (!bAssemblyModeActive || !IsValid(SelectedStructureDataAsset))
+	if (!bAssemblyModeActive || bIsAreaCopyPlacementActive || !IsValid(SelectedStructureDataAsset))
 	{
 		return false;
 	}
@@ -296,7 +382,14 @@ bool USRAssemblyComponent::ShouldHandleStructurePlacementDrag() const
 bool USRAssemblyComponent::BeginStructurePlacementDrag(AActor*& OutSelectedActor)
 {
 	OutSelectedActor = nullptr;
+	if (bIsAreaCopyPlacementActive)
+	{
+		return false;
+	}
+
 	EndStructurePlacementDrag(false);
+	ClearAreaSelection();
+	ClearAreaDeletion();
 
 	AActor* FocusedActor = nullptr;
 	USRPlanetSurfaceGrid* SurfaceGrid = nullptr;
@@ -327,9 +420,14 @@ bool USRAssemblyComponent::BeginStructurePlacementDrag(AActor*& OutSelectedActor
 	}
 
 	bIsStructurePlacementDragActive = true;
+	StructurePlacementDragSurfaceGrid = SurfaceGrid;
+	StructurePlacementDragStartCellId = TargetCell.CellId;
+	StructurePlacementDragRotationSteps = GetStructurePlacementRotationSteps();
 	OutSelectedActor = FocusedActor;
 	DestroyConveyorGhostPreview();
-	return TryPlaceStructureDragPath(SurfaceGrid, TargetCell);
+	DestroyStructureGhostPreview();
+	ClearStructureGhostPortPreview();
+	return UpdateStructurePlacementDragPreview(SurfaceGrid, TargetCell);
 }
 
 bool USRAssemblyComponent::ContinueStructurePlacementDrag(AActor*& OutSelectedActor)
@@ -358,7 +456,12 @@ bool USRAssemblyComponent::ContinueStructurePlacementDrag(AActor*& OutSelectedAc
 			&& UpdateConveyorGhostPreview(SurfaceGrid, TargetCell, SelectedStructureDataAsset);
 	}
 
-	return TryPlaceStructureDragPath(SurfaceGrid, TargetCell);
+	if (SurfaceGrid != StructurePlacementDragSurfaceGrid)
+	{
+		return false;
+	}
+
+	return UpdateStructurePlacementDragPreview(SurfaceGrid, TargetCell);
 }
 
 void USRAssemblyComponent::EndStructurePlacementDrag(bool bCommitConveyorDrag)
@@ -367,15 +470,25 @@ void USRAssemblyComponent::EndStructurePlacementDrag(bool bCommitConveyorDrag)
 	{
 		CommitConveyorPlacementDrag();
 	}
+	else if (bCommitConveyorDrag && bIsStructurePlacementDragActive)
+	{
+		CommitStructurePlacementDrag();
+	}
 
 	bIsStructurePlacementDragActive = false;
 	bIsConveyorPlacementDragActive = false;
 	LastStructurePlacementDragSurfaceGrid = nullptr;
 	LastStructurePlacementDragCellId = FSRPlanetSurfaceGridCellId();
 	bHasLastStructurePlacementDragCellId = false;
+	StructurePlacementDragSurfaceGrid = nullptr;
+	StructurePlacementDragStartCellId = FSRPlanetSurfaceGridCellId();
+	StructurePlacementDragRotationSteps = 0;
+	StructurePlacementDragCellIds.Reset();
 	ConveyorDragStartSurfaceGrid = nullptr;
 	ConveyorDragWaypointCellIds.Reset();
 	ConveyorDragStartCellId = FSRPlanetSurfaceGridCellId();
 	bHasConveyorDragStartCell = false;
+	DestroyStructurePlacementDragPreviewActors();
 	DestroyConveyorGhostPreview();
+	ClearConveyorInvalidPlacementPreview();
 }

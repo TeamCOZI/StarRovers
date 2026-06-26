@@ -4,6 +4,7 @@
 #include "Camera/SRPlayerController.h"
 #include "GameFramework/Actor.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "Structure/SRStructureSurfacePortHelpers.h"
 #include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
@@ -16,36 +17,18 @@ namespace
 		TArray<FSRPlanetSurfaceGridCellId>& OutNeighborCellIds)
 	{
 		OutNeighborCellIds.Reset();
-		if (!IsValid(SurfaceGrid))
+		FSRPlanetSurfaceGridCellId NeighborCellId;
+		if (!StarRovers::Structure::SurfacePorts::TryGetPortConnectionCellId(
+			SurfaceGrid,
+			CellId,
+			Direction,
+			NeighborCellId))
 		{
 			return false;
 		}
 
-		FSRPlanetSurfaceGridCellNeighbors Neighbors;
-		if (!SurfaceGrid->GetCellNeighbors(CellId, Neighbors))
-		{
-			return false;
-		}
-
-		switch (Direction)
-		{
-		case ESRStructurePortDirection::Left:
-			OutNeighborCellIds.Add(Neighbors.NegativeU);
-			break;
-		case ESRStructurePortDirection::Right:
-			OutNeighborCellIds.Add(Neighbors.PositiveU);
-			break;
-		case ESRStructurePortDirection::Top:
-			OutNeighborCellIds.Add(Neighbors.NegativeV);
-			break;
-		case ESRStructurePortDirection::Bottom:
-			OutNeighborCellIds.Add(Neighbors.PositiveV);
-			break;
-		default:
-			break;
-		}
-
-		return !OutNeighborCellIds.IsEmpty();
+		OutNeighborCellIds.Add(NeighborCellId);
+		return true;
 	}
 
 	bool ResolveFacilityFootprintCellId(
@@ -229,17 +212,14 @@ namespace
 		}
 	}
 
-	void AppendUniqueCellIdsInPatch(
+	void AppendHoveredCellIdIfPresent(
 		const TArray<FSRPlanetSurfaceGridCellId>& SourceCellIds,
-		const TSet<FSRPlanetSurfaceGridCellId>& PatchCellIds,
+		const FSRPlanetSurfaceGridCellId& HoveredCellId,
 		TArray<FSRPlanetSurfaceGridCellId>& TargetCellIds)
 	{
-		for (const FSRPlanetSurfaceGridCellId& CellId : SourceCellIds)
+		if (SourceCellIds.Contains(HoveredCellId))
 		{
-			if (PatchCellIds.Contains(CellId))
-			{
-				TargetCellIds.AddUnique(CellId);
-			}
+			TargetCellIds.AddUnique(HoveredCellId);
 		}
 	}
 }
@@ -304,20 +284,10 @@ void USRAssemblyComponent::UpdateConveyorPlacementPortPreview()
 	}
 
 	FSRPlanetSurfaceGridCell HoveredCell;
-	TArray<FSRPlanetSurfaceGridCellId> HoverPatchCellIds;
-	if (!HoveredSurfaceGrid->GetHoveredCell(HoveredCell)
-		|| !HoveredSurfaceGrid->GetInteractionGridPatchCellIds(HoveredCell.CellId, HoverPatchCellIds)
-		|| HoverPatchCellIds.IsEmpty())
+	if (!HoveredSurfaceGrid->GetHoveredCell(HoveredCell))
 	{
 		ClearConveyorPlacementPortPreview();
 		return;
-	}
-
-	TSet<FSRPlanetSurfaceGridCellId> HoverPatchCellSet;
-	HoverPatchCellSet.Reserve(HoverPatchCellIds.Num());
-	for (const FSRPlanetSurfaceGridCellId& PatchCellId : HoverPatchCellIds)
-	{
-		HoverPatchCellSet.Add(PatchCellId);
 	}
 
 	AActor* SurfaceOwner = HoveredSurfaceGrid->GetOwner();
@@ -374,8 +344,8 @@ void USRAssemblyComponent::UpdateConveyorPlacementPortPreview()
 		TArray<FSRPlanetSurfaceGridCellId> StructureInputConnectionCellIds;
 		TArray<FSRPlanetSurfaceGridCellId> StructureOutputConnectionCellIds;
 		GatherFacilityPortPreviewCells(FacilityPorts, StructureInputConnectionCellIds, StructureOutputConnectionCellIds);
-		AppendUniqueCellIdsInPatch(StructureInputConnectionCellIds, HoverPatchCellSet, InputConnectionCellIds);
-		AppendUniqueCellIdsInPatch(StructureOutputConnectionCellIds, HoverPatchCellSet, OutputConnectionCellIds);
+		AppendHoveredCellIdIfPresent(StructureInputConnectionCellIds, HoveredCell.CellId, InputConnectionCellIds);
+		AppendHoveredCellIdIfPresent(StructureOutputConnectionCellIds, HoveredCell.CellId, OutputConnectionCellIds);
 	}
 
 	if (InputConnectionCellIds.IsEmpty() && OutputConnectionCellIds.IsEmpty())
@@ -484,6 +454,7 @@ bool USRAssemblyComponent::TryPublishSelectedStructureInfo(AActor* FocusedActor,
 	TArray<FSRPlanetSurfaceGridCellId> InputConnectionCellIds;
 	TArray<FSRPlanetSurfaceGridCellId> OutputConnectionCellIds;
 	GatherFacilityPortPreviewCells(StructureInfo.FacilityPorts, InputConnectionCellIds, OutputConnectionCellIds);
+	SurfaceGrid->SetOccupiedPreviewCells(StructureInfo.FootprintCellIds);
 	SurfaceGrid->SetFacilityPortPreviewCells(InputConnectionCellIds, OutputConnectionCellIds);
 
 	PlayerController->SetSelectedActorSurfaceStructureInfo(FocusedActor, StructureInfo);
@@ -496,10 +467,12 @@ void USRAssemblyComponent::ClearSelectedStructureInfo()
 	USRPlanetSurfaceGrid* FocusedSurfaceGrid = nullptr;
 	if (TryGetFocusedSurfaceGrid(FocusedActor, FocusedSurfaceGrid))
 	{
+		FocusedSurfaceGrid->ClearOccupiedPreviewCells();
 		FocusedSurfaceGrid->ClearFacilityPortPreviewCells();
 	}
 	else if (IsValid(ActiveAssemblySurfaceGrid))
 	{
+		ActiveAssemblySurfaceGrid->ClearOccupiedPreviewCells();
 		ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
 	}
 

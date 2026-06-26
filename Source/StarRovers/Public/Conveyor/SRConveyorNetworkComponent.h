@@ -77,6 +77,24 @@ public:
 		int32 Layer,
 		TArray<FSRPlanetSurfaceGridCellId>& OutPath) const;
 
+	bool FindConveyorPathAvoidingCells(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& StartCellId,
+		const FSRPlanetSurfaceGridCellId& EndCellId,
+		int32 Layer,
+		const TSet<FSRPlanetSurfaceGridCellId>& AdditionalBlockedCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& OutPath) const;
+
+	bool GetConveyorVisualPathsInCells(
+		const TSet<FSRPlanetSurfaceGridCellId>& CellIds,
+		TArray<FSRConveyorVisualPath>& OutVisualPaths) const;
+
+	bool CanPlaceConveyorPath(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const TArray<FSRPlanetSurfaceGridCellId>& PathCellIds,
+		int32 Layer,
+		const TSet<FSRPlanetSurfaceGridCellId>& IgnoredOccupiedCellIds) const;
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
 	bool TryPlaceConveyorPath(
 		USRPlanetSurfaceGrid* SurfaceGrid,
@@ -91,6 +109,16 @@ public:
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlanetSurfaceGridCellId& CellId,
 		int32 Layer);
+
+	bool TryRemoveConveyorVisualPath(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRConveyorVisualPath& VisualPath,
+		const TArray<FSRPlanetSurfaceGridCellId>& PlacedCellIds);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
+	bool TryRemoveConveyorsAtCells(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor")
 	bool GetConnectedConveyorCellIdsAtCell(
@@ -235,12 +263,15 @@ private:
 	static ESRConveyorSegmentShape ResolveSegmentShape(ESRConveyorGridDirection InputDirection, ESRConveyorGridDirection OutputDirection);
 	static bool GetNeighborCellIdByDirection(const FSRPlanetSurfaceGridCellNeighbors& Neighbors, ESRConveyorGridDirection Direction, FSRPlanetSurfaceGridCellId& OutCellId);
 	static bool FindDirectionBetweenCells(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& FromCellId, const FSRPlanetSurfaceGridCellId& ToCellId, ESRConveyorGridDirection& OutDirection);
-	static bool AreConveyorDirectionsCompatible(ESRConveyorGridDirection ExistingDirection, ESRConveyorGridDirection IncomingDirection);
+	static int32 GetConveyorDirectionClockwiseOrder(ESRConveyorGridDirection Direction);
+	static void SortConveyorDirectionsClockwise(TArray<ESRConveyorGridDirection>& Directions);
+	static void CollectConveyorInputDirections(const FSRConveyorSegment& Segment, TArray<ESRConveyorGridDirection>& OutDirections);
 	static void CollectConveyorOutputDirections(const FSRConveyorSegment& Segment, TArray<ESRConveyorGridDirection>& OutDirections);
 
 	bool CanPlaceConveyorSegment(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorLaneKey& LaneKey) const;
 	bool CanMergeConveyorSegment(const FSRConveyorSegment& Segment) const;
 	void MergeConveyorSegment(const FSRConveyorSegment& Segment);
+	void MergeConveyorInputDirection(FSRConveyorSegment& ExistingSegment, ESRConveyorGridDirection IncomingDirection);
 	void MergeConveyorOutputDirection(FSRConveyorSegment& ExistingSegment, ESRConveyorGridDirection IncomingDirection);
 	bool CanDestroyNaturalStructureForConveyorPlacement(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId) const;
 	bool DoesConveyorSegmentReferenceLane(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorSegment& Segment, const FSRConveyorLaneKey& TargetLaneKey) const;
@@ -305,6 +336,11 @@ private:
 		FSRConveyorSegment& Segment,
 		const TMap<FSRConveyorLaneKey, FSRConveyorItem>& NextItemsByLane,
 		FSRConveyorLaneKey& OutNextLane);
+	bool CanTransferIntoMergeConveyorSegment(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		FSRConveyorSegment& MergeSegment,
+		ESRConveyorGridDirection IncomingInputDirection,
+		const TMap<FSRConveyorLaneKey, FSRConveyorItem>& NextItemsByLane) const;
 	bool TryPullFacilityOutputToConveyor(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		USRFacilityNetworkComponent* FacilityNetwork,

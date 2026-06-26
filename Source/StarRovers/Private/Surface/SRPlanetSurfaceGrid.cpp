@@ -18,15 +18,18 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 	HoveredCellColor = FLinearColor(1.0f, 0.85f, 0.2f, 1.0f);
 	SelectedCellColor = FLinearColor(0.25f, 1.0f, 0.35f, 1.0f);
 	OccupiedCellColor = FLinearColor(1.0f, 0.35f, 0.35f, 1.0f);
+	AreaSelectionCellColor = FLinearColor(0.1f, 0.55f, 1.0f, 1.0f);
 	InputPortPreviewCellColor = FLinearColor(0.15f, 0.55f, 1.0f, 1.0f);
 	OutputPortPreviewCellColor = FLinearColor(1.0f, 0.55f, 0.05f, 1.0f);
 	DeletionPreviewCellColor = FLinearColor(1.0f, 0.05f, 0.02f, 1.0f);
+	InvalidPreviewCellColor = FLinearColor(1.0f, 0.02f, 0.02f, 1.0f);
 	DebugLineThickness = 1.0f;
 	GridSurfaceOffset = 0.0f;
 	DynamicMeshGeneration = FSRDynamicMeshGeneration();
 	DynamicMeshGeneration.bDynamicMeshGeneration = false;
 	DynamicMeshGeneration.DynamicMeshHeight = 0.0f;
 	bHasHoveredCell = false;
+	bHoveredInteractionGridPatchVisible = true;
 	bHasSelectedCell = false;
 	bUsingGeneratedGridCells = false;
 	bGridMeshDirty = true;
@@ -91,11 +94,15 @@ void USRPlanetSurfaceGrid::RebuildGrid()
 	}
 	bHasHoveredCell = false;
 	HoveredCellId = FSRPlanetSurfaceGridCellId();
+	bHoveredInteractionGridPatchVisible = true;
 	bHasSelectedCell = false;
 	SelectedCellId = FSRPlanetSurfaceGridCellId();
+	AreaSelectionCellIds.Reset();
+	OccupiedPreviewCellIds.Reset();
 	InputPortPreviewCellIds.Reset();
 	OutputPortPreviewCellIds.Reset();
 	DeletionPreviewCellIds.Reset();
+	InvalidPreviewCellIds.Reset();
 	SetInteractionOverlayVisible(false);
 	RebuildCellIndex();
 	RebuildCellInfoIndex();

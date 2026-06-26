@@ -104,6 +104,7 @@ void ASRPlayerController::SetSelectedActorSurfaceStructureInfo(AActor* NewSelect
 		if (USRPlanetSurfaceGrid* PreviousSurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
 		{
 			PreviousSurfaceGrid->ClearSelectedCell();
+			PreviousSurfaceGrid->ClearOccupiedPreviewCells();
 			PreviousSurfaceGrid->ClearFacilityPortPreviewCells();
 		}
 		SelectedActor = NewSelectedActor;
@@ -314,6 +315,7 @@ void ASRPlayerController::UpdateSelection(AActor* NewSelectedActor)
 		if (USRPlanetSurfaceGrid* PreviousSurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
 		{
 			PreviousSurfaceGrid->ClearSelectedCell();
+			PreviousSurfaceGrid->ClearOccupiedPreviewCells();
 			PreviousSurfaceGrid->ClearFacilityPortPreviewCells();
 		}
 	}

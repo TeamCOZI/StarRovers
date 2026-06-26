@@ -267,6 +267,7 @@ bool USRConveyorNetworkComponent::ResolveConveyorItemWorldLocation(
 		const ESRConveyorGridDirection VisualOutputDirection = OutputDirections.IsValidIndex(OutputDirectionIndex)
 			? OutputDirections[OutputDirectionIndex]
 			: ESRConveyorGridDirection::None;
+		bool bHasVisualOutput = false;
 		if (TryResolveNextLaneByDirection(SurfaceGrid, *Segment, VisualOutputDirection, NextLaneKey) && Segments.Contains(NextLaneKey))
 		{
 			FSRPlanetSurfaceGridCellInfo NextCellInfo;
@@ -277,27 +278,36 @@ bool USRConveyorNetworkComponent::ResolveConveyorItemWorldLocation(
 				StartPoint = CurrentPoint;
 				EndPoint = NextCellInfo.WorldCenter + NextNormal * HeightOffset;
 				EndNormal = NextNormal;
+				bHasVisualOutput = true;
 			}
 		}
-		else if (Segment->InputDirection != ESRConveyorGridDirection::None)
+		if (!bHasVisualOutput)
 		{
-			FSRPlanetSurfaceGridCellNeighbors Neighbors;
-			FSRPlanetSurfaceGridCellId PreviousCellId;
-			if (SurfaceGrid->GetCellNeighbors(LaneKey.CellId, Neighbors)
-				&& GetNeighborCellIdByDirection(Neighbors, Segment->InputDirection, PreviousCellId))
+			TArray<ESRConveyorGridDirection> InputDirections;
+			CollectConveyorInputDirections(*Segment, InputDirections);
+			const ESRConveyorGridDirection VisualInputDirection = InputDirections.IsValidIndex(0)
+				? InputDirections[0]
+				: ESRConveyorGridDirection::None;
+			if (VisualInputDirection != ESRConveyorGridDirection::None)
 			{
-				FSRPlanetSurfaceGridCellInfo PreviousCellInfo;
-				if (SurfaceGrid->GetCellInfoById(PreviousCellId, PreviousCellInfo))
+				FSRPlanetSurfaceGridCellNeighbors Neighbors;
+				FSRPlanetSurfaceGridCellId PreviousCellId;
+				if (SurfaceGrid->GetCellNeighbors(LaneKey.CellId, Neighbors)
+					&& GetNeighborCellIdByDirection(Neighbors, VisualInputDirection, PreviousCellId))
 				{
-					FVector PreviousNormal = FVector::UpVector;
-					ResolveOutwardNormal(SurfaceGrid, PreviousCellInfo, PreviousNormal);
-					const FVector PreviousPoint = PreviousCellInfo.WorldCenter + PreviousNormal * HeightOffset;
-					const FVector TravelDirection = (CurrentPoint - PreviousPoint).GetSafeNormal();
-					if (!TravelDirection.IsNearlyZero())
+					FSRPlanetSurfaceGridCellInfo PreviousCellInfo;
+					if (SurfaceGrid->GetCellInfoById(PreviousCellId, PreviousCellInfo))
 					{
-						const float HalfCellTravelDistance = FVector::Distance(CurrentPoint, PreviousPoint) * 0.35f;
-						StartPoint = CurrentPoint - TravelDirection * HalfCellTravelDistance;
-						EndPoint = CurrentPoint + TravelDirection * HalfCellTravelDistance;
+						FVector PreviousNormal = FVector::UpVector;
+						ResolveOutwardNormal(SurfaceGrid, PreviousCellInfo, PreviousNormal);
+						const FVector PreviousPoint = PreviousCellInfo.WorldCenter + PreviousNormal * HeightOffset;
+						const FVector TravelDirection = (CurrentPoint - PreviousPoint).GetSafeNormal();
+						if (!TravelDirection.IsNearlyZero())
+						{
+							const float HalfCellTravelDistance = FVector::Distance(CurrentPoint, PreviousPoint) * 0.35f;
+							StartPoint = CurrentPoint - TravelDirection * HalfCellTravelDistance;
+							EndPoint = CurrentPoint + TravelDirection * HalfCellTravelDistance;
+						}
 					}
 				}
 			}

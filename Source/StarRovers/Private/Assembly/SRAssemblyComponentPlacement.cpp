@@ -273,6 +273,20 @@ bool USRAssemblyComponent::TryPlaceConveyorDragPath(USRPlanetSurfaceGrid* Surfac
 	}
 
 	const FName NetworkId = FName(*FString::Printf(TEXT("Conveyor_%s_%d"), *GetNameSafe(FocusedActor), static_cast<int32>(ConveyorData.ConveyorLayer)));
+	FSRConveyorVisualPath HistoryVisualPath;
+	TArray<FSRPlanetSurfaceGridCellId> HistoryPlacedCellIds;
+	TArray<FSRRestorableNaturalStructure> HistoryRemovedNaturalStructures;
+	BuildConveyorPlacementHistoryPayload(
+		SurfaceGrid,
+		ConveyorNetwork,
+		ConveyorDataAsset,
+		PathCellIds,
+		ConveyorData.ConveyorLayer,
+		ConveyorData.ConveyorLayerHeight,
+		NetworkId,
+		HistoryVisualPath,
+		HistoryPlacedCellIds,
+		HistoryRemovedNaturalStructures);
 	if (!ConveyorNetwork->TryPlaceConveyorPath(
 		SurfaceGrid,
 		PathCellIds,
@@ -284,6 +298,12 @@ bool USRAssemblyComponent::TryPlaceConveyorDragPath(USRPlanetSurfaceGrid* Surfac
 		return false;
 	}
 
+	RecordConveyorPlacementHistory(
+		SurfaceGrid,
+		ConveyorNetwork,
+		HistoryVisualPath,
+		HistoryPlacedCellIds,
+		HistoryRemovedNaturalStructures);
 	SurfaceGrid->SetHoveredCell(TargetCell.CellId);
 	PublishHoveredCellInfo(SurfaceGrid, TargetCell);
 	LastStructurePlacementDragSurfaceGrid = SurfaceGrid;
@@ -292,7 +312,68 @@ bool USRAssemblyComponent::TryPlaceConveyorDragPath(USRPlanetSurfaceGrid* Surfac
 	return true;
 }
 
-bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, bool bRefreshPreviewAndUI, int32 PlacementRotationStepsOverride)
+bool USRAssemblyComponent::CommitStructurePlacementDrag()
+{
+	USRPlanetSurfaceGrid* SurfaceGrid = StructurePlacementDragSurfaceGrid.Get();
+	if (!bIsStructurePlacementDragActive || !IsValid(SurfaceGrid) || StructurePlacementDragCellIds.IsEmpty())
+	{
+		return false;
+	}
+
+	ASRPlayerController* PlayerController = GetOwnerController();
+	USRStructureDataAsset* SelectedStructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
+	if (!IsValid(SelectedStructureDataAsset) || SelectedStructureDataAsset->BuildData().BuildKind != ESRStructureBuildKind::Structure)
+	{
+		return false;
+	}
+
+	bool bPlacedAnyStructure = false;
+	TArray<FSRAssemblyPlacementHistoryEntry> HistoryEntries;
+	HistoryEntries.Reserve(StructurePlacementDragCellIds.Num());
+
+	SurfaceGrid->BeginInteractionHighlightBatch();
+	for (const FSRPlanetSurfaceGridCellId& CellId : StructurePlacementDragCellIds)
+	{
+		FSRPlanetSurfaceGridCell TargetCell;
+		if (!SurfaceGrid->GetCellById(CellId, TargetCell))
+		{
+			continue;
+		}
+
+		bPlacedAnyStructure |= TryPlaceSelectedStructure(
+			SurfaceGrid,
+			TargetCell,
+			false,
+			StructurePlacementDragRotationSteps,
+			&HistoryEntries);
+	}
+	SurfaceGrid->EndInteractionHighlightBatch();
+
+	if (!bPlacedAnyStructure)
+	{
+		return false;
+	}
+
+	RecordAssemblyPlacementHistoryBatch(SurfaceGrid, HistoryEntries);
+	DestroyStructureGhostPreview();
+	bHasLastPublishedHoveredCellInfo = false;
+	LastPublishedHoveredSurfaceGrid = nullptr;
+	LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+
+	FSRPlanetSurfaceGridCell HoveredCell;
+	if (SurfaceGrid->GetHoveredCell(HoveredCell))
+	{
+		PublishHoveredCellInfo(SurfaceGrid, HoveredCell);
+	}
+	return true;
+}
+
+bool USRAssemblyComponent::TryPlaceSelectedStructure(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const FSRPlanetSurfaceGridCell& TargetCell,
+	bool bRefreshPreviewAndUI,
+	int32 PlacementRotationStepsOverride,
+	TArray<FSRAssemblyPlacementHistoryEntry>* OutHistoryEntries)
 {
 	ASRPlayerController* PlayerController = GetOwnerController();
 	USRStructureDataAsset* SelectedStructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
@@ -339,6 +420,28 @@ bool USRAssemblyComponent::TryPlaceSelectedStructure(USRPlanetSurfaceGrid* Surfa
 				false,
 				PlacementRotationSteps))
 			{
+				if (OutHistoryEntries)
+				{
+					FSRAssemblyPlacementHistoryEntry HistoryEntry;
+					HistoryEntry.Kind = ESRAssemblyPlacementHistoryKind::Structure;
+					HistoryEntry.SurfaceGrid = SurfaceGrid;
+					HistoryEntry.StructureInstanceManager = StructureInstanceManager;
+					HistoryEntry.StructureDataAsset = SelectedStructureDataAsset;
+					HistoryEntry.OriginCellId = TargetCell.CellId;
+					HistoryEntry.PlacementRotationSteps = PlacementRotationSteps;
+					HistoryEntry.OccupantId = OccupantId;
+					OutHistoryEntries->Add(HistoryEntry);
+				}
+				else
+				{
+					RecordStructurePlacementHistory(
+						SurfaceGrid,
+						StructureInstanceManager,
+						SelectedStructureDataAsset,
+						TargetCell.CellId,
+						PlacementRotationSteps,
+						OccupantId);
+				}
 				if (bRefreshPreviewAndUI)
 				{
 					DestroyStructureGhostPreview();
@@ -394,6 +497,20 @@ bool USRAssemblyComponent::TryPlaceSelectedConveyor(USRPlanetSurfaceGrid* Surfac
 	const FSRStructureData ConveyorData = ConveyorDataAsset->BuildData();
 	const TArray<FSRPlanetSurfaceGridCellId> PathCellIds = { TargetCell.CellId };
 	const FName NetworkId = FName(*FString::Printf(TEXT("Conveyor_%s_%d"), *GetNameSafe(FocusedActor), static_cast<int32>(ConveyorData.ConveyorLayer)));
+	FSRConveyorVisualPath HistoryVisualPath;
+	TArray<FSRPlanetSurfaceGridCellId> HistoryPlacedCellIds;
+	TArray<FSRRestorableNaturalStructure> HistoryRemovedNaturalStructures;
+	BuildConveyorPlacementHistoryPayload(
+		SurfaceGrid,
+		ConveyorNetwork,
+		ConveyorDataAsset,
+		PathCellIds,
+		ConveyorData.ConveyorLayer,
+		ConveyorData.ConveyorLayerHeight,
+		NetworkId,
+		HistoryVisualPath,
+		HistoryPlacedCellIds,
+		HistoryRemovedNaturalStructures);
 	if (!ConveyorNetwork->TryPlaceConveyorPath(
 		SurfaceGrid,
 		PathCellIds,
@@ -405,6 +522,12 @@ bool USRAssemblyComponent::TryPlaceSelectedConveyor(USRPlanetSurfaceGrid* Surfac
 		return false;
 	}
 
+	RecordConveyorPlacementHistory(
+		SurfaceGrid,
+		ConveyorNetwork,
+		HistoryVisualPath,
+		HistoryPlacedCellIds,
+		HistoryRemovedNaturalStructures);
 	if (bRefreshPreviewAndUI)
 	{
 		DestroyStructureGhostPreview();
@@ -438,6 +561,20 @@ bool USRAssemblyComponent::TryPlaceSelectedConveyorPath(USRPlanetSurfaceGrid* Su
 	}
 
 	const FName NetworkId = FName(*FString::Printf(TEXT("Conveyor_%s_%d"), *GetNameSafe(FocusedActor), static_cast<int32>(ConveyorData.ConveyorLayer)));
+	FSRConveyorVisualPath HistoryVisualPath;
+	TArray<FSRPlanetSurfaceGridCellId> HistoryPlacedCellIds;
+	TArray<FSRRestorableNaturalStructure> HistoryRemovedNaturalStructures;
+	BuildConveyorPlacementHistoryPayload(
+		SurfaceGrid,
+		ConveyorNetwork,
+		ConveyorDataAsset,
+		PathCellIds,
+		ConveyorData.ConveyorLayer,
+		ConveyorData.ConveyorLayerHeight,
+		NetworkId,
+		HistoryVisualPath,
+		HistoryPlacedCellIds,
+		HistoryRemovedNaturalStructures);
 	if (!ConveyorNetwork->TryPlaceConveyorPath(
 		SurfaceGrid,
 		PathCellIds,
@@ -449,6 +586,12 @@ bool USRAssemblyComponent::TryPlaceSelectedConveyorPath(USRPlanetSurfaceGrid* Su
 		return false;
 	}
 
+	RecordConveyorPlacementHistory(
+		SurfaceGrid,
+		ConveyorNetwork,
+		HistoryVisualPath,
+		HistoryPlacedCellIds,
+		HistoryRemovedNaturalStructures);
 	if (bRefreshPreviewAndUI)
 	{
 		DestroyStructureGhostPreview();

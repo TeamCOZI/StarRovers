@@ -41,6 +41,7 @@ ASRConveyorBeltActor::ASRConveyorBeltActor()
 	ConveyorSurfaceOffset = 0.0f;
 	bConveyorGhostMode = false;
 	ConveyorGhostMaterial = nullptr;
+	bConveyorGhostGenerationPending = false;
 }
 
 void ASRConveyorBeltActor::BeginPlay()
@@ -158,6 +159,20 @@ bool ASRConveyorBeltActor::InitializeConveyorPaths(
 
 	UpdatePCGBoundsFromWorldBounds(ConveyorWorldBounds);
 	BindPCGGenerationDelegate();
+	if (bConveyorGhostMode && HasReusableGeneratedSplineMeshes(UsedSplineCount))
+	{
+		bConveyorGhostGenerationPending = false;
+		RebaseGeneratedSplineMeshes();
+		return true;
+	}
+
+	if (bConveyorGhostMode)
+	{
+		bConveyorGhostGenerationPending = true;
+		SetActorHiddenInGame(true);
+		HideGeneratedSplineMeshes();
+	}
+
 	RequestPCGGeneration();
 	return true;
 }
@@ -167,7 +182,16 @@ void ASRConveyorBeltActor::SetConveyorGhostMode(bool bNewGhostMode, UMaterialInt
 	bConveyorGhostMode = bNewGhostMode;
 	ConveyorGhostMaterial = InGhostMaterial;
 	SetActorEnableCollision(!bConveyorGhostMode);
+	if (!bConveyorGhostMode)
+	{
+		bConveyorGhostGenerationPending = false;
+	}
 	ApplyConveyorGhostModeToGeneratedMeshes();
+}
+
+bool ASRConveyorBeltActor::IsConveyorGhostGenerationPending() const
+{
+	return bConveyorGhostGenerationPending;
 }
 
 USplineComponent* ASRConveyorBeltActor::EnsureConveyorSplineComponent(int32 SplineIndex)
@@ -376,6 +400,86 @@ void ASRConveyorBeltActor::HandlePCGGraphGenerated(UPCGComponent* InPCGComponent
 	if (InPCGComponent == PCGComponent)
 	{
 		RebaseGeneratedSplineMeshes();
+		if (bConveyorGhostGenerationPending)
+		{
+			bConveyorGhostGenerationPending = false;
+			if (bConveyorGhostMode)
+			{
+				SetActorHiddenInGame(false);
+			}
+		}
+	}
+}
+
+void ASRConveyorBeltActor::CollectGeneratedSplineMeshes(TArray<USplineMeshComponent*>& OutGeneratedSplineMeshes) const
+{
+	OutGeneratedSplineMeshes.Reset();
+	if (!IsValid(PCGComponent))
+	{
+		return;
+	}
+
+	GetComponents<USplineMeshComponent>(OutGeneratedSplineMeshes);
+	OutGeneratedSplineMeshes.RemoveAll([this](const USplineMeshComponent* SplineMeshComponent)
+	{
+		return !IsValid(SplineMeshComponent)
+			|| SplineMeshComponent->ComponentTags.Contains(PCGHelpers::MarkedForCleanupPCGTag)
+			|| (!SplineMeshComponent->ComponentTags.Contains(PCGComponent->GetFName())
+				&& !SplineMeshComponent->ComponentTags.Contains(PCGHelpers::DefaultPCGTag));
+	});
+	OutGeneratedSplineMeshes.Sort([](const USplineMeshComponent& Left, const USplineMeshComponent& Right)
+	{
+		return Left.GetFName().LexicalLess(Right.GetFName());
+	});
+}
+
+void ASRConveyorBeltActor::CollectAllGeneratedSplineMeshes(TArray<USplineMeshComponent*>& OutGeneratedSplineMeshes) const
+{
+	OutGeneratedSplineMeshes.Reset();
+	if (!IsValid(PCGComponent))
+	{
+		return;
+	}
+
+	GetComponents<USplineMeshComponent>(OutGeneratedSplineMeshes);
+	OutGeneratedSplineMeshes.RemoveAll([this](const USplineMeshComponent* SplineMeshComponent)
+	{
+		return !IsValid(SplineMeshComponent)
+			|| (!SplineMeshComponent->ComponentTags.Contains(PCGComponent->GetFName())
+				&& !SplineMeshComponent->ComponentTags.Contains(PCGHelpers::DefaultPCGTag));
+	});
+	OutGeneratedSplineMeshes.Sort([](const USplineMeshComponent& Left, const USplineMeshComponent& Right)
+	{
+		return Left.GetFName().LexicalLess(Right.GetFName());
+	});
+}
+
+bool ASRConveyorBeltActor::HasReusableGeneratedSplineMeshes(int32 RequiredSplineMeshCount) const
+{
+	if (RequiredSplineMeshCount <= 0 || !IsValid(PCGComponent))
+	{
+		return false;
+	}
+
+	TArray<USplineMeshComponent*> GeneratedSplineMeshes;
+	CollectGeneratedSplineMeshes(GeneratedSplineMeshes);
+	return GeneratedSplineMeshes.Num() >= RequiredSplineMeshCount;
+}
+
+void ASRConveyorBeltActor::HideGeneratedSplineMeshes() const
+{
+	if (!IsValid(PCGComponent))
+	{
+		return;
+	}
+
+	TArray<USplineMeshComponent*> GeneratedSplineMeshes;
+	CollectAllGeneratedSplineMeshes(GeneratedSplineMeshes);
+	for (USplineMeshComponent* SplineMeshComponent : GeneratedSplineMeshes)
+	{
+		SplineMeshComponent->SetVisibility(false);
+		SplineMeshComponent->SetHiddenInGame(true);
+		SplineMeshComponent->UpdateMesh();
 	}
 }
 
@@ -386,19 +490,10 @@ void ASRConveyorBeltActor::RebaseGeneratedSplineMeshes()
 		return;
 	}
 
+	HideGeneratedSplineMeshes();
+
 	TArray<USplineMeshComponent*> GeneratedSplineMeshes;
-	GetComponents<USplineMeshComponent>(GeneratedSplineMeshes);
-	GeneratedSplineMeshes.RemoveAll([this](const USplineMeshComponent* SplineMeshComponent)
-	{
-		return !IsValid(SplineMeshComponent)
-			|| SplineMeshComponent->ComponentTags.Contains(PCGHelpers::MarkedForCleanupPCGTag)
-			|| (!SplineMeshComponent->ComponentTags.Contains(PCGComponent->GetFName())
-				&& !SplineMeshComponent->ComponentTags.Contains(PCGHelpers::DefaultPCGTag));
-	});
-	GeneratedSplineMeshes.Sort([](const USplineMeshComponent& Left, const USplineMeshComponent& Right)
-	{
-		return Left.GetFName().LexicalLess(Right.GetFName());
-	});
+	CollectGeneratedSplineMeshes(GeneratedSplineMeshes);
 
 	const int32 SegmentCount = FMath::Min(GeneratedSplineMeshes.Num(), ConveyorSplineComponents.Num());
 	for (int32 SegmentIndex = 0; SegmentIndex < SegmentCount; ++SegmentIndex)
@@ -475,7 +570,7 @@ void ASRConveyorBeltActor::ApplyConveyorGhostModeToGeneratedMeshes() const
 	}
 
 	TArray<USplineMeshComponent*> GeneratedSplineMeshes;
-	GetComponents<USplineMeshComponent>(GeneratedSplineMeshes);
+	CollectAllGeneratedSplineMeshes(GeneratedSplineMeshes);
 	for (USplineMeshComponent* SplineMeshComponent : GeneratedSplineMeshes)
 	{
 		ApplyConveyorGhostModeToSplineMesh(SplineMeshComponent);

@@ -189,7 +189,9 @@ void USRConveyorNetworkComponent::RefreshPathDebugLines(USRPlanetSurfaceGrid* Su
 		const FVector SegmentNormal = ResolveDebugNormal(SegmentCellInfo, SurfaceCenter);
 		const FVector SegmentPoint = ResolveDebugPoint(SegmentCellInfo, SurfaceCenter, HeightOffset);
 
-		if (Segment.InputDirection == ESRConveyorGridDirection::None)
+		TArray<ESRConveyorGridDirection> InputDirections;
+		CollectConveyorInputDirections(Segment, InputDirections);
+		if (InputDirections.IsEmpty())
 		{
 			DrawDebugCross(PathDebugLineBatchComponent, SegmentPoint, SegmentNormal, 80.0f * ConveyorDebugLineSizeScale, EndpointColor, LineThickness);
 		}

@@ -118,6 +118,7 @@ void USRTimeControlWidget::BuildTimeControlWidgetTree()
 
 	UCanvasPanel* TimeControlCanvasPanel = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("TimeControlCanvasPanel"));
 	WidgetTree->RootWidget = TimeControlCanvasPanel;
+	TimeControlCanvasPanel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
 	TimeControlBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TimeControlBorder"));
 	TimeControlBorder->SetPadding(FMargin(14.0f));

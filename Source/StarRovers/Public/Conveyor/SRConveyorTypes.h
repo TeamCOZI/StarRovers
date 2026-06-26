@@ -60,11 +60,20 @@ struct STARROVERS_API FSRConveyorSegment
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "InputDirection"))
 	ESRConveyorGridDirection InputDirection = ESRConveyorGridDirection::None;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "MergeInputDirection"))
+	ESRConveyorGridDirection MergeInputDirection = ESRConveyorGridDirection::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "SecondMergeInputDirection"))
+	ESRConveyorGridDirection SecondMergeInputDirection = ESRConveyorGridDirection::None;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "OutputDirection"))
 	ESRConveyorGridDirection OutputDirection = ESRConveyorGridDirection::None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "BranchOutputDirection"))
 	ESRConveyorGridDirection BranchOutputDirection = ESRConveyorGridDirection::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "SecondBranchOutputDirection"))
+	ESRConveyorGridDirection SecondBranchOutputDirection = ESRConveyorGridDirection::None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "Shape"))
 	ESRConveyorSegmentShape Shape = ESRConveyorSegmentShape::End;
@@ -77,6 +86,9 @@ struct STARROVERS_API FSRConveyorSegment
 
 	UPROPERTY(Transient)
 	int32 NextOutputDirectionIndex = 0;
+
+	UPROPERTY(Transient)
+	int32 NextInputDirectionIndex = 0;
 };
 
 USTRUCT(BlueprintType)

@@ -369,6 +369,54 @@ float ASRCameraPawn::ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance,
 	return AdjustedZoomDistance;
 }
 
+bool ASRCameraPawn::ResolveFocusedObliqueViewZoomRange(float& OutNearZoomDistance, float& OutFarZoomDistance) const
+{
+	OutNearZoomDistance = 0.0f;
+	OutFarZoomDistance = 0.0f;
+	if (!UseObliqueView || !UseFocusedObliqueViewAltitudeRange || !IsValid(FocusedActor))
+	{
+		return false;
+	}
+
+	FVector BodyCenter = FVector::ZeroVector;
+	float AvoidanceRadius = 0.0f;
+	if (!ResolveCelestialCameraAvoidanceSphere(FocusedActor, BodyCenter, AvoidanceRadius))
+	{
+		return false;
+	}
+
+	const float BodyRadius = StarRovers::Camera::ComputeScaledBodyRadius(FocusedActor);
+	if (BodyRadius <= KINDA_SMALL_NUMBER || AvoidanceRadius <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const float NearAltitudeMultiplier = FMath::Max(0.0f, FocusedObliqueViewNearAltitudeMultiplier);
+	const float FarAltitudeMultiplier = FMath::Max(
+		NearAltitudeMultiplier + UE_SMALL_NUMBER,
+		FocusedObliqueViewFarAltitudeMultiplier);
+
+	OutNearZoomDistance = AvoidanceRadius + (BodyRadius * NearAltitudeMultiplier);
+	OutFarZoomDistance = AvoidanceRadius + (BodyRadius * FarAltitudeMultiplier);
+	return OutFarZoomDistance > OutNearZoomDistance + UE_SMALL_NUMBER;
+}
+
+float ASRCameraPawn::GetFocusedObliqueViewBlendAlpha(float ZoomDistance) const
+{
+	float NearZoomDistance = 0.0f;
+	float FarZoomDistance = 0.0f;
+	if (!ResolveFocusedObliqueViewZoomRange(NearZoomDistance, FarZoomDistance))
+	{
+		return -1.0f;
+	}
+
+	const float RawFarAlpha = (FMath::Max(0.0f, ZoomDistance) - NearZoomDistance)
+		/ FMath::Max(FarZoomDistance - NearZoomDistance, UE_SMALL_NUMBER);
+	const float ClampedFarAlpha = FMath::Clamp(RawFarAlpha, 0.0f, 1.0f);
+	const float SmoothFarAlpha = ClampedFarAlpha * ClampedFarAlpha * (3.0f - (2.0f * ClampedFarAlpha));
+	return 1.0f - SmoothFarAlpha;
+}
+
 float ASRCameraPawn::GetObliqueViewBlendAlpha(float ZoomDistance) const
 {
 	if (!UseObliqueView)
@@ -390,6 +438,15 @@ float ASRCameraPawn::GetObliqueViewBlendAlpha(float ZoomDistance) const
 
 FRotator ASRCameraPawn::GetViewRotationForZoom(float ZoomDistance) const
 {
+	const float FocusedBlendAlpha = GetFocusedObliqueViewBlendAlpha(ZoomDistance);
+	if (FocusedBlendAlpha >= 0.0f)
+	{
+		return FRotator(
+			FMath::Lerp(FocusedObliqueViewBaseRotation.Pitch, FocusedObliqueViewMaxRotation.Pitch, FocusedBlendAlpha),
+			FMath::Lerp(FocusedObliqueViewBaseRotation.Yaw, FocusedObliqueViewMaxRotation.Yaw, FocusedBlendAlpha),
+			FMath::Lerp(FocusedObliqueViewBaseRotation.Roll, FocusedObliqueViewMaxRotation.Roll, FocusedBlendAlpha)).GetNormalized();
+	}
+
 	const float BlendAlpha = GetObliqueViewBlendAlpha(ZoomDistance);
 	return FRotator(
 		FMath::Lerp(NearViewRotation.Pitch, FarViewRotation.Pitch, BlendAlpha),
@@ -399,7 +456,7 @@ FRotator ASRCameraPawn::GetViewRotationForZoom(float ZoomDistance) const
 
 void ASRCameraPawn::ApplyZoomDrivenViewRotation(float ZoomDistance)
 {
-	if (!SpringArm)
+	if (!Camera)
 	{
 		return;
 	}
@@ -409,12 +466,18 @@ void ASRCameraPawn::ApplyZoomDrivenViewRotation(float ZoomDistance)
 	const FRotator BaseViewRotation = GetViewRotationForZoom(ZoomDistance);
 	if (ShouldAllowFocusSurface())
 	{
-		const FQuat BaseViewQuat = BaseViewRotation.Quaternion();
 		const FQuat SurfaceLookQuat = FocusSurfaceRotation.GetNormalized();
-		const FQuat ViewQuat = (BaseViewQuat * SurfaceLookQuat).GetNormalized();
-		SpringArm->SetWorldRotation(ViewQuat.Rotator().GetNormalized());
+		if (SpringArm)
+		{
+			SpringArm->SetWorldRotation(SurfaceLookQuat.Rotator().GetNormalized());
+		}
+		Camera->SetRelativeRotation(BaseViewRotation);
 		return;
 	}
 
-	SpringArm->SetWorldRotation(BaseViewRotation);
+	if (SpringArm)
+	{
+		SpringArm->SetRelativeRotation(FRotator::ZeroRotator);
+	}
+	Camera->SetRelativeRotation(BaseViewRotation);
 }

@@ -113,6 +113,7 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 	PlacedStructure.VisualKey = VisualKey;
 	PlacedStructure.InstanceIndex = InstanceIndex;
 	PlacedStructure.bNaturalStructure = bNaturalStructure;
+	PlacedStructure.bUseStaticMeshMaterials = bUseStaticMeshMaterials;
 
 	PlacedStructuresByOccupantId.Add(OccupantId, PlacedStructure);
 	VisualGroup.OccupantIds.Add(OccupantId);
@@ -150,6 +151,28 @@ bool USRStructureInstanceManagerComponent::TryRemoveStructureAtCell(USRPlanetSur
 	}
 
 	RemoveStructureByOccupantId(SurfaceGrid, CellInfo.OccupantId);
+	return true;
+}
+
+bool USRStructureInstanceManagerComponent::TryRemoveStructureByOccupantId(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	FName OccupantId,
+	FSRPlacedStructureInstance& OutRemovedStructure)
+{
+	OutRemovedStructure = FSRPlacedStructureInstance();
+	if (!IsValid(SurfaceGrid) || OccupantId.IsNone())
+	{
+		return false;
+	}
+
+	const FSRPlacedStructureInstance* PlacedStructure = PlacedStructuresByOccupantId.Find(OccupantId);
+	if (!PlacedStructure || PlacedStructure->bNaturalStructure)
+	{
+		return false;
+	}
+
+	OutRemovedStructure = *PlacedStructure;
+	RemoveStructureByOccupantId(SurfaceGrid, OccupantId);
 	return true;
 }
 
@@ -212,6 +235,120 @@ bool USRStructureInstanceManagerComponent::CanDestroyNaturalStructureForConstruc
 	return PlacedStructure->StructureDataAsset->BuildData().bDestroyableByConstruction;
 }
 
+void USRStructureInstanceManagerComponent::SetGhostedStructures(const TSet<FName>& OccupantIds)
+{
+	TSet<FName> NewGhostedStructureOccupantIds;
+	for (const FName OccupantId : OccupantIds)
+	{
+		if (PlacedStructuresByOccupantId.Contains(OccupantId))
+		{
+			NewGhostedStructureOccupantIds.Add(OccupantId);
+		}
+	}
+
+	if (GhostedStructureOccupantIds.Num() == NewGhostedStructureOccupantIds.Num())
+	{
+		bool bMatchesExistingSet = true;
+		for (const FName OccupantId : NewGhostedStructureOccupantIds)
+		{
+			if (!GhostedStructureOccupantIds.Contains(OccupantId))
+			{
+				bMatchesExistingSet = false;
+				break;
+			}
+		}
+		if (bMatchesExistingSet)
+		{
+			return;
+		}
+	}
+
+	GhostedStructureOccupantIds = MoveTemp(NewGhostedStructureOccupantIds);
+	RefreshVisualGroupsForPreviewState();
+}
+
+void USRStructureInstanceManagerComponent::ClearGhostedStructures()
+{
+	if (GhostedStructureOccupantIds.IsEmpty())
+	{
+		return;
+	}
+
+	GhostedStructureOccupantIds.Reset();
+	RefreshVisualGroupsForPreviewState();
+}
+
+void USRStructureInstanceManagerComponent::SetDeletePreviewedStructures(const TSet<FName>& OccupantIds)
+{
+	TSet<FName> NewDeletePreviewedStructureOccupantIds;
+	for (const FName OccupantId : OccupantIds)
+	{
+		if (IsDeletePreviewTarget(OccupantId))
+		{
+			NewDeletePreviewedStructureOccupantIds.Add(OccupantId);
+		}
+	}
+
+	if (DeletePreviewedStructureOccupantIds.Num() == NewDeletePreviewedStructureOccupantIds.Num())
+	{
+		bool bMatchesExistingSet = true;
+		for (const FName OccupantId : NewDeletePreviewedStructureOccupantIds)
+		{
+			if (!DeletePreviewedStructureOccupantIds.Contains(OccupantId))
+			{
+				bMatchesExistingSet = false;
+				break;
+			}
+		}
+		if (bMatchesExistingSet)
+		{
+			return;
+		}
+	}
+
+	DeletePreviewedStructureOccupantIds = MoveTemp(NewDeletePreviewedStructureOccupantIds);
+	RefreshVisualGroupsForPreviewState();
+}
+
+void USRStructureInstanceManagerComponent::ClearDeletePreviewedStructures()
+{
+	if (DeletePreviewedStructureOccupantIds.IsEmpty())
+	{
+		return;
+	}
+
+	DeletePreviewedStructureOccupantIds.Reset();
+	RefreshVisualGroupsForPreviewState();
+}
+
+bool USRStructureInstanceManagerComponent::RemoveNonResourceStructuresByOccupantIds(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const TSet<FName>& OccupantIds)
+{
+	if (!IsValid(SurfaceGrid) || OccupantIds.IsEmpty())
+	{
+		return false;
+	}
+
+	TArray<FName> OccupantIdsToRemove;
+	OccupantIdsToRemove.Reserve(OccupantIds.Num());
+	for (const FName OccupantId : OccupantIds)
+	{
+		if (IsDeletePreviewTarget(OccupantId))
+		{
+			OccupantIdsToRemove.AddUnique(OccupantId);
+		}
+	}
+
+	if (OccupantIdsToRemove.IsEmpty())
+	{
+		return false;
+	}
+
+	RemoveStructuresByOccupantIds(SurfaceGrid, OccupantIdsToRemove);
+	return true;
+}
+
 bool USRStructureInstanceManagerComponent::TryRemoveConstructionDestructibleNaturalStructuresAtCells(
 	USRPlanetSurfaceGrid* SurfaceGrid,
 	const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
@@ -254,6 +391,14 @@ bool USRStructureInstanceManagerComponent::TryRemoveConstructionDestructibleNatu
 
 FName USRStructureInstanceManagerComponent::MakeVisualKey(USRStructureDataAsset* StructureDataAsset, bool bUseStaticMeshMaterials)
 {
+	return MakeVisualKey(StructureDataAsset, bUseStaticMeshMaterials, ESRStructureVisualOverride::None);
+}
+
+FName USRStructureInstanceManagerComponent::MakeVisualKey(
+	USRStructureDataAsset* StructureDataAsset,
+	bool bUseStaticMeshMaterials,
+	ESRStructureVisualOverride VisualOverride)
+{
 	if (!IsValid(StructureDataAsset))
 	{
 		return NAME_None;
@@ -261,10 +406,25 @@ FName USRStructureInstanceManagerComponent::MakeVisualKey(USRStructureDataAsset*
 
 	const FSRStructureData StructureData = StructureDataAsset->BuildData();
 	const FString MeshPath = IsValid(StructureData.StaticMesh.Get()) ? StructureData.StaticMesh->GetPathName() : FString(TEXT("None"));
-	const FString MaterialPath = bUseStaticMeshMaterials
-		? FString(TEXT("StaticMeshMaterials"))
-		: (IsValid(StructureData.Material.Get()) ? StructureData.Material->GetPathName() : FString(TEXT("None")));
-	return FName(*FString::Printf(TEXT("%s|%s"), *MeshPath, *MaterialPath));
+	FString MaterialPath;
+	if (VisualOverride == ESRStructureVisualOverride::Ghost && IsValid(StructureData.GhostMaterial.Get()))
+	{
+		MaterialPath = StructureData.GhostMaterial->GetPathName();
+	}
+	else if (VisualOverride == ESRStructureVisualOverride::Delete && IsValid(StructureData.DeleteMaterial.Get()))
+	{
+		MaterialPath = StructureData.DeleteMaterial->GetPathName();
+	}
+	else if (bUseStaticMeshMaterials)
+	{
+		MaterialPath = FString(TEXT("StaticMeshMaterials"));
+	}
+	else
+	{
+		MaterialPath = IsValid(StructureData.Material.Get()) ? StructureData.Material->GetPathName() : FString(TEXT("None"));
+	}
+
+	return FName(*FString::Printf(TEXT("%s|%s|Override_%d"), *MeshPath, *MaterialPath, static_cast<int32>(VisualOverride)));
 }
 
 FName USRStructureInstanceManagerComponent::MakeOccupantId(const FSRPlanetSurfaceGridCellId& CellId, FName StructureId, int32 SequenceNumber)
@@ -315,7 +475,8 @@ FTransform USRStructureInstanceManagerComponent::BuildInstanceWorldTransform(con
 USRStructureInstanceManagerComponent::FSRStructureVisualGroup& USRStructureInstanceManagerComponent::FindOrCreateVisualGroup(
 	USRStructureDataAsset* StructureDataAsset,
 	FName VisualKey,
-	bool bUseStaticMeshMaterials)
+	bool bUseStaticMeshMaterials,
+	ESRStructureVisualOverride VisualOverride)
 {
 	FSRStructureVisualGroup& VisualGroup = VisualGroupsByKey.FindOrAdd(VisualKey);
 	if (IsValid(VisualGroup.Component) || !IsValid(StructureDataAsset))
@@ -349,7 +510,25 @@ USRStructureInstanceManagerComponent::FSRStructureVisualGroup& USRStructureInsta
 	HISMComponent->SetCastShadow(true);
 	HISMComponent->SetRenderCustomDepth(true);
 	HISMComponent->SetStaticMesh(StructureData.StaticMesh);
-	if (!bUseStaticMeshMaterials && IsValid(StructureData.Material.Get()))
+	UMaterialInterface* OverrideMaterial = nullptr;
+	if (VisualOverride == ESRStructureVisualOverride::Ghost)
+	{
+		OverrideMaterial = StructureData.GhostMaterial.Get();
+	}
+	else if (VisualOverride == ESRStructureVisualOverride::Delete)
+	{
+		OverrideMaterial = StructureData.DeleteMaterial.Get();
+	}
+
+	if (IsValid(OverrideMaterial))
+	{
+		const int32 MaterialSlotCount = FMath::Max(1, HISMComponent->GetNumMaterials());
+		for (int32 MaterialIndex = 0; MaterialIndex < MaterialSlotCount; ++MaterialIndex)
+		{
+			HISMComponent->SetMaterial(MaterialIndex, OverrideMaterial);
+		}
+	}
+	else if (!bUseStaticMeshMaterials && IsValid(StructureData.Material.Get()))
 	{
 		HISMComponent->SetMaterial(0, StructureData.Material);
 	}
@@ -359,6 +538,22 @@ USRStructureInstanceManagerComponent::FSRStructureVisualGroup& USRStructureInsta
 
 	VisualGroup.Component = HISMComponent;
 	return VisualGroup;
+}
+
+bool USRStructureInstanceManagerComponent::IsDeletePreviewTarget(FName OccupantId) const
+{
+	if (OccupantId.IsNone())
+	{
+		return false;
+	}
+
+	const FSRPlacedStructureInstance* PlacedStructure = PlacedStructuresByOccupantId.Find(OccupantId);
+	if (!PlacedStructure || !IsValid(PlacedStructure->StructureDataAsset.Get()))
+	{
+		return false;
+	}
+
+	return !PlacedStructure->StructureDataAsset->BuildData().bIsResourceDeposit;
 }
 
 void USRStructureInstanceManagerComponent::RemoveStructureByOccupantId(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId)
@@ -388,6 +583,8 @@ void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlan
 		}
 
 		DestroyStructureNameLabel(OccupantId);
+		GhostedStructureOccupantIds.Remove(OccupantId);
+		DeletePreviewedStructureOccupantIds.Remove(OccupantId);
 		ResourceDepositsByOccupantId.Remove(OccupantId);
 		ClearedCellIds.Append(RemovedStructure.FootprintCellIds);
 		RemovedOccupantIdsByVisualKey.FindOrAdd(RemovedStructure.VisualKey).Add(OccupantId);
@@ -502,6 +699,47 @@ void USRStructureInstanceManagerComponent::RebuildVisualGroup(FName VisualKey)
 		}
 	}
 	VisualGroup->OccupantIds = MoveTemp(RebuiltOccupantIds);
+}
+
+void USRStructureInstanceManagerComponent::RefreshVisualGroupsForPreviewState()
+{
+	for (TPair<FName, FSRStructureVisualGroup>& VisualGroupPair : VisualGroupsByKey)
+	{
+		VisualGroupPair.Value.OccupantIds.Reset();
+	}
+
+	for (TPair<FName, FSRPlacedStructureInstance>& PlacedStructurePair : PlacedStructuresByOccupantId)
+	{
+		FSRPlacedStructureInstance& PlacedStructure = PlacedStructurePair.Value;
+		if (!IsValid(PlacedStructure.StructureDataAsset))
+		{
+			continue;
+		}
+
+		const ESRStructureVisualOverride VisualOverride = DeletePreviewedStructureOccupantIds.Contains(PlacedStructurePair.Key)
+			? ESRStructureVisualOverride::Delete
+			: GhostedStructureOccupantIds.Contains(PlacedStructurePair.Key)
+			? ESRStructureVisualOverride::Ghost
+			: ESRStructureVisualOverride::None;
+		const FName DesiredVisualKey = MakeVisualKey(
+			PlacedStructure.StructureDataAsset,
+			PlacedStructure.bUseStaticMeshMaterials,
+			VisualOverride);
+		FSRStructureVisualGroup& VisualGroup = FindOrCreateVisualGroup(
+			PlacedStructure.StructureDataAsset,
+			DesiredVisualKey,
+			PlacedStructure.bUseStaticMeshMaterials,
+			VisualOverride);
+		PlacedStructure.VisualKey = DesiredVisualKey;
+		VisualGroup.OccupantIds.Add(PlacedStructurePair.Key);
+	}
+
+	TArray<FName> VisualKeys;
+	VisualGroupsByKey.GetKeys(VisualKeys);
+	for (const FName VisualKey : VisualKeys)
+	{
+		RebuildVisualGroup(VisualKey);
+	}
 }
 
 void USRStructureInstanceManagerComponent::LogStructureMemoryDiagnostics(const TCHAR* Label, bool bRequestGarbageCollection, int32 AffectedStructures, int32 AffectedCells) const

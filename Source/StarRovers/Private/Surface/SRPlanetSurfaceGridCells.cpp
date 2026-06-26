@@ -74,7 +74,7 @@ bool USRPlanetSurfaceGrid::GetCellNeighbors(const FSRPlanetSurfaceGridCellId& Ce
 		return false;
 	}
 
-	OutNeighbors = Cell.Neighbors;
+	OutNeighbors = USRPlanetSurfaceGridLibrary::GetCubeSphereNeighborIds(CellId, FaceResolution);
 	return true;
 }
 

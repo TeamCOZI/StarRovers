@@ -182,6 +182,39 @@ bool USRConveyorNetworkComponent::BuildConveyorSegmentRibbon(
 		AppendRibbonQuad(StartWorldPosition, EndWorldPosition, CurrentNormal);
 	}
 
+	auto AppendAdditionalDirectionRibbon = [&](ESRConveyorGridDirection Direction, bool bIncoming)
+	{
+		if (Direction == ESRConveyorGridDirection::None
+			|| Direction == Segment.InputDirection
+			|| Direction == Segment.OutputDirection)
+		{
+			return;
+		}
+
+		FTransform DirectionTransform;
+		if (!ResolveNeighborTransform(Direction, DirectionTransform))
+		{
+			return;
+		}
+
+		const FVector DirectionNormal = DirectionTransform.GetRotation().GetAxisZ().GetSafeNormal();
+		const FVector DirectionWorldPosition = DirectionTransform.GetLocation() + (DirectionNormal * HeightOffset);
+		const FVector DirectionMidPoint = (DirectionWorldPosition + CurrentWorldPosition) * 0.5f;
+		if (bIncoming)
+		{
+			AppendRibbonQuad(DirectionMidPoint, CurrentWorldPosition, CurrentNormal);
+		}
+		else
+		{
+			AppendRibbonQuad(CurrentWorldPosition, DirectionMidPoint, CurrentNormal);
+		}
+	};
+
+	AppendAdditionalDirectionRibbon(Segment.MergeInputDirection, true);
+	AppendAdditionalDirectionRibbon(Segment.SecondMergeInputDirection, true);
+	AppendAdditionalDirectionRibbon(Segment.BranchOutputDirection, false);
+	AppendAdditionalDirectionRibbon(Segment.SecondBranchOutputDirection, false);
+
 	return true;
 }
 

@@ -40,20 +40,12 @@ bool USRConveyorNetworkComponent::DoesConveyorSegmentReferenceLane(
 	}
 
 	TArray<ESRConveyorGridDirection> Directions;
-	Directions.Reserve(3);
-	if (Segment.InputDirection != ESRConveyorGridDirection::None)
-	{
-		Directions.Add(Segment.InputDirection);
-	}
-	if (Segment.OutputDirection != ESRConveyorGridDirection::None)
-	{
-		Directions.Add(Segment.OutputDirection);
-	}
-	if (Segment.BranchOutputDirection != ESRConveyorGridDirection::None
-		&& Segment.BranchOutputDirection != Segment.OutputDirection)
-	{
-		Directions.Add(Segment.BranchOutputDirection);
-	}
+	Directions.Reserve(6);
+	CollectConveyorInputDirections(Segment, Directions);
+
+	TArray<ESRConveyorGridDirection> OutputDirections;
+	CollectConveyorOutputDirections(Segment, OutputDirections);
+	Directions.Append(OutputDirections);
 
 	for (const ESRConveyorGridDirection Direction : Directions)
 	{
@@ -207,6 +199,48 @@ bool USRConveyorNetworkComponent::GetConnectedConveyorVisualPathsAtCell(
 		for (const FSRPlanetSurfaceGridCellId& PathCellId : VisualPath.CellIds)
 		{
 			if (ConnectedLaneKeySet.Contains(MakeLaneKey(PathCellId, SafeLayer)))
+			{
+				CurrentSubPath.Add(PathCellId);
+				continue;
+			}
+
+			FlushCurrentSubPath();
+		}
+		FlushCurrentSubPath();
+	}
+
+	return !OutVisualPaths.IsEmpty();
+}
+
+bool USRConveyorNetworkComponent::GetConveyorVisualPathsInCells(
+	const TSet<FSRPlanetSurfaceGridCellId>& CellIds,
+	TArray<FSRConveyorVisualPath>& OutVisualPaths) const
+{
+	OutVisualPaths.Reset();
+	if (CellIds.IsEmpty())
+	{
+		return false;
+	}
+
+	for (const FSRConveyorVisualPath& VisualPath : VisualPaths)
+	{
+		TArray<FSRPlanetSurfaceGridCellId> CurrentSubPath;
+		auto FlushCurrentSubPath = [&]()
+		{
+			if (CurrentSubPath.IsEmpty())
+			{
+				return;
+			}
+
+			FSRConveyorVisualPath SplitVisualPath = VisualPath;
+			SplitVisualPath.CellIds = CurrentSubPath;
+			OutVisualPaths.Add(SplitVisualPath);
+			CurrentSubPath.Reset();
+		};
+
+		for (const FSRPlanetSurfaceGridCellId& PathCellId : VisualPath.CellIds)
+		{
+			if (CellIds.Contains(PathCellId))
 			{
 				CurrentSubPath.Add(PathCellId);
 				continue;

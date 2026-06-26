@@ -121,7 +121,14 @@ void USRConveyorNetworkComponent::ProcessConveyorTransport(USRPlanetSurfaceGrid*
 		}
 
 		const FSRConveyorSegment* Segment = Segments.Find(LaneKey);
-		if (!Segment || Segment->InputDirection != ESRConveyorGridDirection::None || NextItemsByLane.Contains(LaneKey))
+		if (!Segment || NextItemsByLane.Contains(LaneKey))
+		{
+			continue;
+		}
+
+		TArray<ESRConveyorGridDirection> InputDirections;
+		CollectConveyorInputDirections(*Segment, InputDirections);
+		if (!InputDirections.IsEmpty())
 		{
 			continue;
 		}
@@ -194,15 +201,94 @@ bool USRConveyorNetworkComponent::TryResolveNextTransferLane(
 		const int32 OutputIndex = (StartIndex + AttemptIndex) % OutputCount;
 		FSRConveyorLaneKey CandidateLaneKey;
 		if (!TryResolveNextLaneByDirection(SurfaceGrid, Segment, OutputDirections[OutputIndex], CandidateLaneKey)
-			|| !Segments.Contains(CandidateLaneKey)
 			|| ConveyorItemsByLane.Contains(CandidateLaneKey)
 			|| NextItemsByLane.Contains(CandidateLaneKey))
 		{
 			continue;
 		}
 
+		FSRConveyorSegment* CandidateSegment = Segments.Find(CandidateLaneKey);
+		if (!CandidateSegment)
+		{
+			continue;
+		}
+
+		ESRConveyorGridDirection CandidateInputDirection = ESRConveyorGridDirection::None;
+		if (!FindDirectionBetweenCells(SurfaceGrid, CandidateLaneKey.CellId, Segment.Lane.CellId, CandidateInputDirection)
+			|| !CanTransferIntoMergeConveyorSegment(SurfaceGrid, *CandidateSegment, CandidateInputDirection, NextItemsByLane))
+		{
+			continue;
+		}
+
 		OutNextLane = CandidateLaneKey;
 		Segment.NextOutputDirectionIndex = (OutputIndex + 1) % OutputCount;
+		return true;
+	}
+
+	return false;
+}
+
+bool USRConveyorNetworkComponent::CanTransferIntoMergeConveyorSegment(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	FSRConveyorSegment& MergeSegment,
+	ESRConveyorGridDirection IncomingInputDirection,
+	const TMap<FSRConveyorLaneKey, FSRConveyorItem>& NextItemsByLane) const
+{
+	TArray<ESRConveyorGridDirection> InputDirections;
+	CollectConveyorInputDirections(MergeSegment, InputDirections);
+	if (InputDirections.IsEmpty())
+	{
+		return true;
+	}
+	if (!InputDirections.Contains(IncomingInputDirection))
+	{
+		return false;
+	}
+	if (InputDirections.Num() <= 1)
+	{
+		return true;
+	}
+
+	const int32 InputCount = InputDirections.Num();
+	const int32 StartIndex = FMath::Clamp(MergeSegment.NextInputDirectionIndex, 0, InputCount - 1);
+	for (int32 AttemptIndex = 0; AttemptIndex < InputCount; ++AttemptIndex)
+	{
+		const int32 InputIndex = (StartIndex + AttemptIndex) % InputCount;
+		const ESRConveyorGridDirection InputDirection = InputDirections[InputIndex];
+
+		FSRConveyorLaneKey SourceLaneKey;
+		if (!TryResolveNextLaneByDirection(SurfaceGrid, MergeSegment, InputDirection, SourceLaneKey)
+			|| !Segments.Contains(SourceLaneKey))
+		{
+			continue;
+		}
+
+		bool bInputReady = InputDirection == IncomingInputDirection;
+		if (!bInputReady)
+		{
+			if (const FSRConveyorItem* SourceItem = ConveyorItemsByLane.Find(SourceLaneKey))
+			{
+				bInputReady = SourceItem->Progress >= 1.0f;
+			}
+		}
+		if (!bInputReady)
+		{
+			if (const FSRConveyorItem* SourceItem = NextItemsByLane.Find(SourceLaneKey))
+			{
+				bInputReady = SourceItem->Progress >= 1.0f;
+			}
+		}
+		if (!bInputReady)
+		{
+			continue;
+		}
+
+		if (InputDirection != IncomingInputDirection)
+		{
+			return false;
+		}
+
+		MergeSegment.NextInputDirectionIndex = (InputIndex + 1) % InputCount;
 		return true;
 	}
 

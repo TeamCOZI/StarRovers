@@ -103,6 +103,9 @@ public:
     bool SetHoveredCell(const FSRPlanetSurfaceGridCellId& CellId);
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
+    void SetHoveredInteractionGridPatchVisible(bool bNewVisible);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     void ClearHoveredCell();
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
@@ -123,6 +126,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     void ClearSelectedCell();
 
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Selection")
+    void SetAreaSelectionCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Selection")
+    void ClearAreaSelectionCells();
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Facility")
     void SetFacilityPortPreviewCells(
         const TArray<FSRPlanetSurfaceGridCellId>& InputConnectionCellIds,
@@ -131,11 +140,23 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Facility")
     void ClearFacilityPortPreviewCells();
 
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
+    void SetOccupiedPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
+    void ClearOccupiedPreviewCells();
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Deletion")
     void SetDeletionPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Deletion")
     void ClearDeletionPreviewCells();
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Invalid")
+    void SetInvalidPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Invalid")
+    void ClearInvalidPreviewCells();
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface")
     bool HasSelectedCell() const;
@@ -241,16 +262,28 @@ protected:
     FSRPlanetSurfaceGridCellId HoveredCellId;
 
     UPROPERTY()
+    bool bHoveredInteractionGridPatchVisible;
+
+    UPROPERTY()
     bool bHasSelectedCell;
 
     UPROPERTY()
     FSRPlanetSurfaceGridCellId SelectedCellId;
 
     UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> AreaSelectionCellIds;
+
+    UPROPERTY()
+    FLinearColor AreaSelectionCellColor;
+
+    UPROPERTY()
     TArray<FSRPlanetSurfaceGridCellId> InputPortPreviewCellIds;
 
     UPROPERTY()
     TArray<FSRPlanetSurfaceGridCellId> OutputPortPreviewCellIds;
+
+    UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> OccupiedPreviewCellIds;
 
     UPROPERTY()
     FLinearColor InputPortPreviewCellColor;
@@ -263,6 +296,12 @@ protected:
 
     UPROPERTY()
     FLinearColor DeletionPreviewCellColor;
+
+    UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> InvalidPreviewCellIds;
+
+    UPROPERTY()
+    FLinearColor InvalidPreviewCellColor;
 
     UPROPERTY()
     bool bUsingGeneratedGridCells;
@@ -299,6 +338,8 @@ private:
     void RebuildRaycastIndex();
     void UpdateDebugTickState();
     void AppendInteractionCell(UE::Geometry::FDynamicMesh3& OverlayMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness) const;
+    void AppendInteractionCellRegion(UE::Geometry::FDynamicMesh3& OverlayMesh, const TArray<FSRPlanetSurfaceGridCellId>& CellIds, const FLinearColor& LineColor, float LineThickness, bool bPreferCompactRectangles) const;
+    bool TryAppendRectangularInteractionCellRegion(UE::Geometry::FDynamicMesh3& OverlayMesh, const TArray<FSRPlanetSurfaceGridCellId>& CellIds, const FLinearColor& LineColor, float LineThickness) const;
     void RebuildGridMesh();
     FSRPlanetSurfaceGridCellInfo BuildCellInfo(const FSRPlanetSurfaceGridCell& Cell) const;
     FSRPlanetSurfaceGridCellInfo ResolveRuntimeCellInfo(const FSRPlanetSurfaceGridCellInfo& CellInfo) const;

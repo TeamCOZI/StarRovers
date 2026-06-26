@@ -422,6 +422,19 @@ namespace StarRovers::Surface::Interaction
 
 			return FMath::Min(XOverflow, YOverflow);
 		};
+		auto GetSideOverflowSpan = [](int32 SideOverflow, int32 PerpendicularNegativeOverflow, int32 PerpendicularPositiveOverflow)
+		{
+			int32 EffectiveOverflow = SideOverflow;
+			if (PerpendicularNegativeOverflow > 0)
+			{
+				EffectiveOverflow = FMath::Min(EffectiveOverflow, PerpendicularNegativeOverflow);
+			}
+			if (PerpendicularPositiveOverflow > 0)
+			{
+				EffectiveOverflow = FMath::Min(EffectiveOverflow, PerpendicularPositiveOverflow);
+			}
+			return EffectiveOverflow;
+		};
 
 		const FSRSurfaceGridDisplayCoord CenterDisplayCoord = DisplayMapper.CanonicalToDisplay(CenterCellId);
 		const int32 DesiredMinX = CenterDisplayCoord.X - PatchRadius;
@@ -439,6 +452,11 @@ namespace StarRovers::Surface::Interaction
 		const int32 NegativeYOverflow = FMath::Max(0, -DesiredMinY);
 		const int32 PositiveYOverflow = FMath::Max(0, DesiredMaxY - (SafeFaceResolution - 1));
 
+		const int32 NegativeXSideOverflow = GetSideOverflowSpan(NegativeXOverflow, NegativeYOverflow, PositiveYOverflow);
+		const int32 PositiveXSideOverflow = GetSideOverflowSpan(PositiveXOverflow, NegativeYOverflow, PositiveYOverflow);
+		const int32 NegativeYSideOverflow = GetSideOverflowSpan(NegativeYOverflow, NegativeXOverflow, PositiveXOverflow);
+		const int32 PositiveYSideOverflow = GetSideOverflowSpan(PositiveYOverflow, NegativeXOverflow, PositiveXOverflow);
+
 		for (int32 CellY = ClippedMinY; CellY <= ClippedMaxY; ++CellY)
 		{
 			for (int32 CellX = ClippedMinX; CellX <= ClippedMaxX; ++CellX)
@@ -451,35 +469,35 @@ namespace StarRovers::Surface::Interaction
 			}
 		}
 
-		for (int32 OverflowIndex = 0; OverflowIndex < NegativeXOverflow; ++OverflowIndex)
+		for (int32 CellY = ClippedMinY; CellY <= ClippedMaxY; ++CellY)
 		{
-			const int32 OffsetX = GetOverflowOffset(-1, OverflowIndex, NegativeXOverflow);
-			for (int32 CellY = ClippedMinY; CellY <= ClippedMaxY; ++CellY)
+			for (int32 OverflowIndex = 0; OverflowIndex < NegativeXSideOverflow; ++OverflowIndex)
 			{
+				const int32 OffsetX = GetOverflowOffset(-1, OverflowIndex, NegativeXOverflow);
 				AddWalkedPatchCellId(OffsetX, CellY - CenterDisplayCoord.Y, true);
 			}
 		}
-		for (int32 OverflowIndex = 0; OverflowIndex < PositiveXOverflow; ++OverflowIndex)
+		for (int32 CellY = ClippedMinY; CellY <= ClippedMaxY; ++CellY)
 		{
-			const int32 OffsetX = GetOverflowOffset(1, OverflowIndex, PositiveXOverflow);
-			for (int32 CellY = ClippedMinY; CellY <= ClippedMaxY; ++CellY)
+			for (int32 OverflowIndex = 0; OverflowIndex < PositiveXSideOverflow; ++OverflowIndex)
 			{
+				const int32 OffsetX = GetOverflowOffset(1, OverflowIndex, PositiveXOverflow);
 				AddWalkedPatchCellId(OffsetX, CellY - CenterDisplayCoord.Y, true);
 			}
 		}
-		for (int32 OverflowIndex = 0; OverflowIndex < NegativeYOverflow; ++OverflowIndex)
+		for (int32 CellX = ClippedMinX; CellX <= ClippedMaxX; ++CellX)
 		{
-			const int32 OffsetY = GetOverflowOffset(-1, OverflowIndex, NegativeYOverflow);
-			for (int32 CellX = ClippedMinX; CellX <= ClippedMaxX; ++CellX)
+			for (int32 OverflowIndex = 0; OverflowIndex < NegativeYSideOverflow; ++OverflowIndex)
 			{
+				const int32 OffsetY = GetOverflowOffset(-1, OverflowIndex, NegativeYOverflow);
 				AddWalkedPatchCellId(CellX - CenterDisplayCoord.X, OffsetY, false);
 			}
 		}
-		for (int32 OverflowIndex = 0; OverflowIndex < PositiveYOverflow; ++OverflowIndex)
+		for (int32 CellX = ClippedMinX; CellX <= ClippedMaxX; ++CellX)
 		{
-			const int32 OffsetY = GetOverflowOffset(1, OverflowIndex, PositiveYOverflow);
-			for (int32 CellX = ClippedMinX; CellX <= ClippedMaxX; ++CellX)
+			for (int32 OverflowIndex = 0; OverflowIndex < PositiveYSideOverflow; ++OverflowIndex)
 			{
+				const int32 OffsetY = GetOverflowOffset(1, OverflowIndex, PositiveYOverflow);
 				AddWalkedPatchCellId(CellX - CenterDisplayCoord.X, OffsetY, false);
 			}
 		}

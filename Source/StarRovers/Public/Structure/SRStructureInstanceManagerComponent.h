@@ -42,6 +42,9 @@ struct STARROVERS_API FSRPlacedStructureInstance
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Structure", meta = (DisplayName = "bNaturalStructure"))
 	bool bNaturalStructure = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Structure", meta = (DisplayName = "bUseStaticMeshMaterials"))
+	bool bUseStaticMeshMaterials = false;
 };
 
 USTRUCT(BlueprintType)
@@ -91,6 +94,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Structure")
 	bool TryRemoveStructureAtCell(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId);
 
+	bool TryRemoveStructureByOccupantId(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		FName OccupantId,
+		FSRPlacedStructureInstance& OutRemovedStructure);
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Structure")
 	void ClearNaturalStructures(USRPlanetSurfaceGrid* SurfaceGrid);
 
@@ -105,6 +113,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Structure")
 	bool CanDestroyNaturalStructureForConstruction(FName OccupantId) const;
+
+	void SetGhostedStructures(const TSet<FName>& OccupantIds);
+	void ClearGhostedStructures();
+	void SetDeletePreviewedStructures(const TSet<FName>& OccupantIds);
+	void ClearDeletePreviewedStructures();
+	bool RemoveNonResourceStructuresByOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, const TSet<FName>& OccupantIds);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Structure")
 	bool TryRemoveConstructionDestructibleNaturalStructuresAtCells(
@@ -153,15 +167,25 @@ private:
 		TArray<FName> OccupantIds;
 	};
 
+	enum class ESRStructureVisualOverride : uint8
+	{
+		None,
+		Ghost,
+		Delete,
+	};
+
 	static FName MakeVisualKey(USRStructureDataAsset* StructureDataAsset, bool bUseStaticMeshMaterials);
+	static FName MakeVisualKey(USRStructureDataAsset* StructureDataAsset, bool bUseStaticMeshMaterials, ESRStructureVisualOverride VisualOverride);
 	static FName MakeOccupantId(const FSRPlanetSurfaceGridCellId& CellId, FName StructureId, int32 SequenceNumber);
 	static FTransform BuildInstanceWorldTransform(const FTransform& PlacementTransform, const FSRStructureData& StructureData);
 
-	FSRStructureVisualGroup& FindOrCreateVisualGroup(USRStructureDataAsset* StructureDataAsset, FName VisualKey, bool bUseStaticMeshMaterials);
+	FSRStructureVisualGroup& FindOrCreateVisualGroup(USRStructureDataAsset* StructureDataAsset, FName VisualKey, bool bUseStaticMeshMaterials, ESRStructureVisualOverride VisualOverride = ESRStructureVisualOverride::None);
+	bool IsDeletePreviewTarget(FName OccupantId) const;
 	void RemoveStructureByOccupantId(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId);
 	void RemoveStructuresByOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FName>& OccupantIds);
 	void RemoveVisualInstances(FName VisualKey, const TArray<FName>& RemovedOccupantIds);
 	void RebuildVisualGroup(FName VisualKey);
+	void RefreshVisualGroupsForPreviewState();
 	void RegisterResourceDeposit(const FSRPlacedStructureInstance& PlacedStructure, const FSRStructureData& StructureData);
 	void RefreshStructureNameLabel(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlacedStructureInstance& PlacedStructure);
 	void RefreshAllStructureNameLabels(USRPlanetSurfaceGrid* SurfaceGrid);
@@ -186,5 +210,7 @@ private:
 	TMap<FName, TObjectPtr<UTextRenderComponent>> StructureNameLabelsByOccupantId;
 
 	TMap<FName, FSRStructureVisualGroup> VisualGroupsByKey;
+	TSet<FName> GhostedStructureOccupantIds;
+	TSet<FName> DeletePreviewedStructureOccupantIds;
 	int32 NextStructureInstanceSequence;
 };

@@ -1,6 +1,31 @@
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
 #include "Surface/SRPlanetSurfaceGridCubeSphereHelpers.h"
+#include "Surface/SRPlanetSurfaceGridInteractionHelpers.h"
 using namespace StarRovers::SurfaceGrid::CubeSphere;
+
+namespace
+{
+	FSRPlanetSurfaceGridCellId StepCubeSphereDisplayNeighbor(
+		const FSRPlanetSurfaceGridCellId& CellId,
+		int32 Resolution,
+		const FIntPoint& LocalStep)
+	{
+		using StarRovers::Surface::Interaction::FSRSurfaceGridDisplayCoord;
+		using StarRovers::Surface::Interaction::FSRSurfaceGridDisplayMapper;
+
+		const FSRSurfaceGridDisplayMapper DisplayMapper(Resolution);
+		const FSRSurfaceGridDisplayCoord FromCoord = DisplayMapper.CanonicalToDisplay(CellId);
+		FSRSurfaceGridDisplayCoord ToCoord;
+		bool bCrossedEdge = false;
+		if (!DisplayMapper.TryStepDisplayCoord(FromCoord, LocalStep, ToCoord, bCrossedEdge))
+		{
+			return CellId;
+		}
+
+		return DisplayMapper.DisplayToCanonical(ToCoord);
+	}
+}
+
 bool USRPlanetSurfaceGridLibrary::IsValidCubeSphereCellId(const FSRPlanetSurfaceGridCellId& CellId, int32 Resolution)
 {
 	return CellId.IsValid(Resolution);
@@ -101,10 +126,10 @@ FSRPlanetSurfaceGridCellNeighbors USRPlanetSurfaceGridLibrary::GetCubeSphereNeig
 		return Result;
 	}
 
-	Result.NegativeU = GetNeighborCellId(CellId, Resolution, -1.0f, 0.0f);
-	Result.PositiveU = GetNeighborCellId(CellId, Resolution, 1.0f, 0.0f);
-	Result.NegativeV = GetNeighborCellId(CellId, Resolution, 0.0f, -1.0f);
-	Result.PositiveV = GetNeighborCellId(CellId, Resolution, 0.0f, 1.0f);
+	Result.NegativeU = StepCubeSphereDisplayNeighbor(CellId, Resolution, FIntPoint(-1, 0));
+	Result.PositiveU = StepCubeSphereDisplayNeighbor(CellId, Resolution, FIntPoint(1, 0));
+	Result.NegativeV = StepCubeSphereDisplayNeighbor(CellId, Resolution, FIntPoint(0, -1));
+	Result.PositiveV = StepCubeSphereDisplayNeighbor(CellId, Resolution, FIntPoint(0, 1));
 	return Result;
 }
 

@@ -17,7 +17,6 @@ namespace StarRoversInputPaths
 	static constexpr TCHAR ZoomAction[] = TEXT("/Game/BlueprintClasses/Core/IA_Zoom.IA_Zoom");
 	static constexpr TCHAR FocusSurfaceAction[] = TEXT("/Game/BlueprintClasses/Core/IA_FocusSurface.IA_FocusSurface");
 	static constexpr TCHAR ResetFocusAction[] = TEXT("/Game/BlueprintClasses/Core/IA_ResetFocus.IA_ResetFocus");
-	static constexpr TCHAR AlignFocusSurfaceGridAction[] = TEXT("/Game/BlueprintClasses/Core/IA_AlignFocusSurfaceGrid.IA_AlignFocusSurfaceGrid");
 }
 
 namespace
@@ -67,6 +66,11 @@ ASRCameraPawn::ASRCameraPawn()
 	FarViewRotation = FRotator(60.0f, 0.0f, 0.0f);
 	ObliqueViewStart = 0.3f;
 	ObliqueViewEnd = 1.0f;
+	UseFocusedObliqueViewAltitudeRange = true;
+	FocusedObliqueViewNearAltitudeMultiplier = 0.0f;
+	FocusedObliqueViewFarAltitudeMultiplier = 2.5f;
+	FocusedObliqueViewBaseRotation = FRotator::ZeroRotator;
+	FocusedObliqueViewMaxRotation = FRotator(60.0f, 0.0f, 0.0f);
 	FocusFollowSmoothTime = 0.35f;
 	FocusArcTransitionDuration = 1.55f;
 	FocusArcHeightMultiplier = 2.75f;
@@ -112,6 +116,7 @@ ASRCameraPawn::ASRCameraPawn()
 	bHasDynamicMeshVisibilityState = false;
 	bIsResettingFocusSurfaceRotation = false;
 	bIsFocusArcTransitionActive = false;
+	bPendingFocusSurfaceGridAutoAlignment = false;
 
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> DefaultMappingContextFinder(StarRoversInputPaths::DefaultMappingContext);
 	if (DefaultMappingContextFinder.Succeeded())
@@ -181,16 +186,6 @@ ASRCameraPawn::ASRCameraPawn()
 	else
 	{
 		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusAction at '%s' for focus reset."), StarRoversInputPaths::ResetFocusAction);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UInputAction> AlignFocusSurfaceGridFinder(StarRoversInputPaths::AlignFocusSurfaceGridAction);
-	if (AlignFocusSurfaceGridFinder.Succeeded())
-	{
-		AlignFocusSurfaceGridAction = AlignFocusSurfaceGridFinder.Object;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires AlignFocusSurfaceGridAction at '%s' for manual surface grid alignment."), StarRoversInputPaths::AlignFocusSurfaceGridAction);
 	}
 
 	ApplyZoomDrivenViewRotation(SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);

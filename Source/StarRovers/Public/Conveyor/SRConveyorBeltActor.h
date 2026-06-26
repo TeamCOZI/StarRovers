@@ -40,6 +40,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor|Visual")
 	void SetConveyorGhostMode(bool bNewGhostMode, UMaterialInterface* InGhostMaterial);
 
+	bool IsConveyorGhostGenerationPending() const;
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SceneRoot"))
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -77,6 +79,8 @@ protected:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<USplineComponent>> ConveyorSplineComponents;
 
+	bool bConveyorGhostGenerationPending;
+
 private:
 	USplineComponent* EnsureConveyorSplineComponent(int32 SplineIndex);
 	void ClearUnusedConveyorSplineComponents(int32 FirstUnusedSplineIndex);
@@ -89,6 +93,10 @@ private:
 	void BindPCGGenerationDelegate();
 	void RequestPCGGeneration();
 	void HandlePCGGraphGenerated(UPCGComponent* InPCGComponent);
+	void CollectGeneratedSplineMeshes(TArray<USplineMeshComponent*>& OutGeneratedSplineMeshes) const;
+	void CollectAllGeneratedSplineMeshes(TArray<USplineMeshComponent*>& OutGeneratedSplineMeshes) const;
+	bool HasReusableGeneratedSplineMeshes(int32 RequiredSplineMeshCount) const;
+	void HideGeneratedSplineMeshes() const;
 	void RebaseGeneratedSplineMeshes();
 	void ApplyConveyorGhostModeToSplineMesh(USplineMeshComponent* SplineMeshComponent) const;
 	void ApplyConveyorGhostModeToGeneratedMeshes() const;

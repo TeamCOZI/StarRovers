@@ -103,7 +103,15 @@ void ASRStructure::ApplyStructureVisuals()
 	StructureStaticMesh->SetRelativeScale3D(AppliedStructureData.MeshRelativeScale);
 	StructureStaticMesh->SetVisibility(IsValid(AppliedStructureData.StaticMesh.Get()));
 
-	if (UMaterialInterface* ActiveMaterial = ResolveActiveMaterial())
+	if (bStructureGhostMode && IsValid(AppliedStructureData.GhostMaterial.Get()))
+	{
+		const int32 MaterialSlotCount = FMath::Max(1, StructureStaticMesh->GetNumMaterials());
+		for (int32 MaterialIndex = 0; MaterialIndex < MaterialSlotCount; ++MaterialIndex)
+		{
+			StructureStaticMesh->SetMaterial(MaterialIndex, AppliedStructureData.GhostMaterial);
+		}
+	}
+	else if (UMaterialInterface* ActiveMaterial = ResolveActiveMaterial())
 	{
 		StructureStaticMesh->SetMaterial(0, ActiveMaterial);
 	}

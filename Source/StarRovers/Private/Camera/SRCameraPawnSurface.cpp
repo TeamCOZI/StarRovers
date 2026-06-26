@@ -1,6 +1,7 @@
 #include "Camera/SRCameraPawn.h"
 
 #include "SRCameraPawnInternal.h"
+#include "Camera/CameraComponent.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
@@ -88,7 +89,7 @@ bool ASRCameraPawn::TryComputeFocusSurfaceGridAlignmentRoll(
 	}
 
 	const float SafeZoomDistance = FMath::Max(1.0f, ZoomDistance);
-	const FVector CameraLocation = GetActorLocation() - (ViewForward * SafeZoomDistance);
+	const FVector CameraLocation = Camera ? Camera->GetComponentLocation() : GetActorLocation() - (ViewForward * SafeZoomDistance);
 	FSRPlanetSurfaceGridCell HitCell;
 	FVector HitLocation = FVector::ZeroVector;
 	if (!SurfaceGrid->RaycastCell(CameraLocation, ViewForward, HitCell, HitLocation))
@@ -185,7 +186,9 @@ void ASRCameraPawn::UpdateFocusSurface(float DeltaSeconds)
 
 	if (!FocusSurfaceAcceleratedInput.IsNearlyZero() && SafeLookSpeed > KINDA_SMALL_NUMBER)
 	{
-		ApplyFocusSurfaceDelta(FVector2D(-FocusSurfaceAcceleratedInput.X, FocusSurfaceAcceleratedInput.Y) * SafeLookSpeed * DeltaSeconds);
+		const FVector2D DegreesDelta = FVector2D(-FocusSurfaceAcceleratedInput.X, FocusSurfaceAcceleratedInput.Y) * SafeLookSpeed * DeltaSeconds;
+		ApplyFocusSurfaceDelta(DegreesDelta);
+		bPendingFocusSurfaceGridAutoAlignment = true;
 		if (bHasDirectInput)
 		{
 			FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
@@ -196,6 +199,7 @@ void ASRCameraPawn::UpdateFocusSurface(float DeltaSeconds)
 	if (!bHasDirectInput && !bIsDraggingFocusSurface && !FocusSurfaceAngularVelocity.IsNearlyZero(SafeMinInertiaSpeed))
 	{
 		ApplyFocusSurfaceDelta(FocusSurfaceAngularVelocity * DeltaSeconds);
+		bPendingFocusSurfaceGridAutoAlignment = true;
 
 		const float SafeDamping = FMath::Max(0.0f, FocusSurfaceInertiaDamping);
 		if (SafeDamping <= KINDA_SMALL_NUMBER)
@@ -214,7 +218,15 @@ void ASRCameraPawn::UpdateFocusSurface(float DeltaSeconds)
 		FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
 	}
 
-	bIsFocusSurfaceActive = bAppliedDirectInput || bIsDraggingFocusSurface || !FocusSurfaceAngularVelocity.IsNearlyZero();
+	const bool bHasRemainingFocusSurfaceMotion = bAppliedDirectInput
+		|| bIsDraggingFocusSurface
+		|| !FocusSurfaceAngularVelocity.IsNearlyZero();
+	bIsFocusSurfaceActive = bHasRemainingFocusSurfaceMotion;
+	if (!bHasRemainingFocusSurfaceMotion && bPendingFocusSurfaceGridAutoAlignment)
+	{
+		bPendingFocusSurfaceGridAutoAlignment = false;
+		TryStartFocusSurfaceGridAlignment();
+	}
 }
 
 void ASRCameraPawn::UpdateFocusSurfaceRotation(float DeltaSeconds)
@@ -230,6 +242,7 @@ void ASRCameraPawn::UpdateFocusSurfaceRotation(float DeltaSeconds)
 		FocusSurfaceTargetRotation = FQuat::Identity;
 		FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
 		bIsResettingFocusSurfaceRotation = false;
+		bPendingFocusSurfaceGridAutoAlignment = false;
 		return;
 	}
 
@@ -316,6 +329,7 @@ void ASRCameraPawn::HandleFocusSurfaceDrag(const FVector2D& DragDelta)
 	}
 
 	ApplyFocusSurfaceDelta(DegreesDelta);
+	bPendingFocusSurfaceGridAutoAlignment = true;
 
 	const UWorld* World = GetWorld();
 	const float DeltaSeconds = World ? World->GetDeltaSeconds() : 0.0f;
@@ -333,4 +347,5 @@ void ASRCameraPawn::ClearFocusSurfaceMotion()
 	FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
 	bIsFocusSurfaceActive = false;
 	bIsDraggingFocusSurface = false;
+	bPendingFocusSurfaceGridAutoAlignment = false;
 }
