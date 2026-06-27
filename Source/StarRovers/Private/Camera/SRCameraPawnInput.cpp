@@ -193,6 +193,9 @@ void ASRCameraPawn::HandleFocusSurfaceDragHoldStarted()
 	FocusSurfaceTargetRotation = FocusSurfaceRotation.GetNormalized();
 	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
 	bIsResettingFocusSurfaceRotation = false;
+	bIsAligningFocusSurfaceRig = false;
+	FocusSurfaceRigAlignmentCurrentAngleRadians = 0.0f;
+	FocusSurfaceRigAlignmentTargetAngleRadians = 0.0f;
 	FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
 	bIsFocusSurfaceActive = true;
 }
@@ -320,14 +323,6 @@ void ASRCameraPawn::HandleFocusSurfaceCompleted()
 
 void ASRCameraPawn::HandleResetFocus()
 {
-	if (const ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
-	{
-		if (PlayerController->IsAssemblyModeActive())
-		{
-			return;
-		}
-	}
-
 	ResetFocus();
 }
 
@@ -342,23 +337,42 @@ bool ASRCameraPawn::TryStartFocusSurfaceGridAlignment()
 	const FQuat BaseViewQuat = GetViewRotationForZoom(CurrentZoomDistance).Quaternion();
 	const FQuat ViewQuat = (FocusSurfaceRotation.GetNormalized() * BaseViewQuat).GetNormalized();
 
-	float RollRadians = 0.0f;
-	if (!TryComputeFocusSurfaceGridAlignmentRoll(ViewQuat, CurrentZoomDistance, RollRadians)
-		|| FMath::IsNearlyZero(RollRadians))
+	ApplyZoomDrivenViewRotation(CurrentZoomDistance);
+	UpdateComponentTransforms();
+	if (SpringArm)
+	{
+		SpringArm->UpdateComponentToWorld();
+	}
+	if (Camera)
+	{
+		Camera->UpdateComponentToWorld();
+	}
+
+	FVector AlignmentAxis = FVector::ZeroVector;
+	float AlignmentAngleRadians = 0.0f;
+	if (!TryComputeFocusSurfaceGridAlignmentDelta(ViewQuat, CurrentZoomDistance, AlignmentAxis, AlignmentAngleRadians)
+		|| FMath::IsNearlyZero(AlignmentAngleRadians))
 	{
 		return false;
 	}
 
-	const FVector ViewForward = ViewQuat.RotateVector(FVector::ForwardVector).GetSafeNormal();
-	if (ViewForward.IsNearlyZero())
+	AlignmentAxis = AlignmentAxis.GetSafeNormal();
+	if (AlignmentAxis.IsNearlyZero())
 	{
 		return false;
 	}
 
-	const FQuat AlignedViewQuat = (FQuat(ViewForward, RollRadians).GetNormalized() * ViewQuat).GetNormalized();
-	FocusSurfaceTargetRotation = (AlignedViewQuat * BaseViewQuat.Inverse()).GetNormalized();
+	const FQuat CurrentSurfaceRotation = FocusSurfaceRotation.GetNormalized();
+	const FQuat AlignmentDelta(AlignmentAxis, AlignmentAngleRadians);
+	FocusSurfaceTargetRotation = (AlignmentDelta * CurrentSurfaceRotation).GetNormalized();
+	FocusSurfaceRigAlignmentStartRotation = CurrentSurfaceRotation;
+	FocusSurfaceRigAlignmentStartOffset = GetActorLocation() - GetFocusLocation();
+	FocusSurfaceRigAlignmentAxis = AlignmentAxis;
+	FocusSurfaceRigAlignmentCurrentAngleRadians = 0.0f;
+	FocusSurfaceRigAlignmentTargetAngleRadians = AlignmentAngleRadians;
 	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
 	bIsResettingFocusSurfaceRotation = true;
+	bIsAligningFocusSurfaceRig = true;
 	ClearFocusSurfaceMotion();
 	return true;
 }

@@ -8,7 +8,7 @@
 
 namespace
 {
-	bool GetNeighborCellIdByStructurePortDirection(
+	bool GetFacilityNeighborCellIdByStructurePortDirection(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlanetSurfaceGridCellId& CellId,
 		ESRStructurePortDirection Direction,
@@ -289,7 +289,7 @@ bool USRFacilityNetworkComponent::IsConveyorCellConnectedToExplicitPort(
 	}
 
 	FSRPlanetSurfaceGridCellId NeighborCellId;
-	if (!GetNeighborCellIdByStructurePortDirection(SurfaceGrid, PortCellId, PortSpec.Direction, NeighborCellId))
+	if (!GetFacilityNeighborCellIdByStructurePortDirection(SurfaceGrid, PortCellId, PortSpec.Direction, NeighborCellId))
 	{
 		return false;
 	}

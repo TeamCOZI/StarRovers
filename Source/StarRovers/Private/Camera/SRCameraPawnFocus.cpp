@@ -21,8 +21,14 @@ void ASRCameraPawn::FocusActorWithTransition(AActor* NewFocusActor, bool bUseArc
 	FocusDragOffset = FVector::ZeroVector;
 	FocusSurfaceRotation = FQuat::Identity;
 	FocusSurfaceTargetRotation = FQuat::Identity;
+	FocusSurfaceRigAlignmentStartRotation = FQuat::Identity;
+	FocusSurfaceRigAlignmentStartOffset = FVector::ZeroVector;
+	FocusSurfaceRigAlignmentAxis = FVector::UpVector;
 	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
+	FocusSurfaceRigAlignmentCurrentAngleRadians = 0.0f;
+	FocusSurfaceRigAlignmentTargetAngleRadians = 0.0f;
 	bIsResettingFocusSurfaceRotation = false;
+	bIsAligningFocusSurfaceRig = false;
 	StopFocusArcTransition();
 	ClearFocusSurfaceMotion();
 
@@ -70,8 +76,14 @@ void ASRCameraPawn::ClearFocusActor()
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
 	FocusSurfaceRotation = FQuat::Identity;
 	FocusSurfaceTargetRotation = FQuat::Identity;
+	FocusSurfaceRigAlignmentStartRotation = FQuat::Identity;
+	FocusSurfaceRigAlignmentStartOffset = FVector::ZeroVector;
+	FocusSurfaceRigAlignmentAxis = FVector::UpVector;
 	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
+	FocusSurfaceRigAlignmentCurrentAngleRadians = 0.0f;
+	FocusSurfaceRigAlignmentTargetAngleRadians = 0.0f;
 	bIsResettingFocusSurfaceRotation = false;
+	bIsAligningFocusSurfaceRig = false;
 	StopFocusArcTransition();
 	ClearFocusSurfaceMotion();
 	BroadcastFocusedActorChangedIfNeeded(PreviousFocusedActor);
@@ -115,8 +127,14 @@ void ASRCameraPawn::ResetFocus()
 	FocusDragOffset = FVector::ZeroVector;
 	StopFocusArcTransition();
 	FocusSurfaceTargetRotation = FQuat::Identity;
+	FocusSurfaceRigAlignmentStartRotation = FocusSurfaceRotation.GetNormalized();
+	FocusSurfaceRigAlignmentStartOffset = FVector::ZeroVector;
+	FocusSurfaceRigAlignmentAxis = FVector::UpVector;
 	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
+	FocusSurfaceRigAlignmentCurrentAngleRadians = 0.0f;
+	FocusSurfaceRigAlignmentTargetAngleRadians = 0.0f;
 	bIsResettingFocusSurfaceRotation = true;
+	bIsAligningFocusSurfaceRig = false;
 	ClearFocusSurfaceMotion();
 	bIsDragging = false;
 	bHasDragStartMousePosition = false;

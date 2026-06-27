@@ -107,7 +107,12 @@ ASRCameraPawn::ASRCameraPawn()
 	FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
 	FocusSurfaceRotation = FQuat::Identity;
 	FocusSurfaceTargetRotation = FQuat::Identity;
+	FocusSurfaceRigAlignmentStartRotation = FQuat::Identity;
+	FocusSurfaceRigAlignmentStartOffset = FVector::ZeroVector;
+	FocusSurfaceRigAlignmentAxis = FVector::UpVector;
 	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
+	FocusSurfaceRigAlignmentCurrentAngleRadians = 0.0f;
+	FocusSurfaceRigAlignmentTargetAngleRadians = 0.0f;
 	LastDynamicMeshVisibilityCameraLocation = FVector::ZeroVector;
 	LastDynamicMeshVisibilityCameraRotation = FRotator::ZeroRotator;
 	LastDynamicMeshVisibilityFocusedActor = nullptr;
@@ -115,6 +120,7 @@ ASRCameraPawn::ASRCameraPawn()
 	LastDynamicMeshVisibilityUpdateTime = -BIG_NUMBER;
 	bHasDynamicMeshVisibilityState = false;
 	bIsResettingFocusSurfaceRotation = false;
+	bIsAligningFocusSurfaceRig = false;
 	bIsFocusArcTransitionActive = false;
 	bPendingFocusSurfaceGridAutoAlignment = false;
 
@@ -328,6 +334,20 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 	}
 
 	SetActorLocation(NewLocation);
+	UpdateComponentTransforms();
+	if (SpringArm)
+	{
+		SpringArm->UpdateComponentToWorld();
+	}
+	if (Camera)
+	{
+		Camera->UpdateComponentToWorld();
+	}
+	if (!bIsFocusSurfaceActive && bPendingFocusSurfaceGridAutoAlignment)
+	{
+		bPendingFocusSurfaceGridAutoAlignment = false;
+		TryStartFocusSurfaceGridAlignment();
+	}
 	UpdateDynamicMeshVisibility();
 }
 

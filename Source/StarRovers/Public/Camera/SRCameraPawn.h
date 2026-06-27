@@ -231,10 +231,11 @@ private:
     FRotator GetViewRotationForZoom(float ZoomDistance) const;
     void ApplyZoomDrivenViewRotation(float ZoomDistance);
     bool ShouldAllowFocusSurface() const;
-    bool TryComputeFocusSurfaceGridAlignmentRoll(const FQuat& ViewQuat, float ZoomDistance, float& OutRollRadians) const;
+    bool TryComputeFocusSurfaceGridAlignmentDelta(const FQuat& ViewQuat, float ZoomDistance, FVector& OutAxis, float& OutAngleRadians) const;
     bool TryStartFocusSurfaceGridAlignment();
     void UpdateFocusSurface(float DeltaSeconds);
     void UpdateFocusSurfaceRotation(float DeltaSeconds);
+    void ApplyFocusSurfaceRigAlignmentLocation();
     void ApplyFocusSurfaceDelta(const FVector2D& DegreesDelta);
     void RefreshScreenSpaceThicknessReferenceView();
     void UpdateDynamicMeshVisibility();
@@ -266,7 +267,12 @@ private:
     FVector2D FocusSurfaceAngularVelocity;
     FQuat FocusSurfaceRotation;
     FQuat FocusSurfaceTargetRotation;
+    FQuat FocusSurfaceRigAlignmentStartRotation;
+    FVector FocusSurfaceRigAlignmentStartOffset;
+    FVector FocusSurfaceRigAlignmentAxis;
     FVector FocusSurfaceRotationSmoothVelocity;
+    float FocusSurfaceRigAlignmentCurrentAngleRadians;
+    float FocusSurfaceRigAlignmentTargetAngleRadians;
     FVector LastDynamicMeshVisibilityCameraLocation;
     FRotator LastDynamicMeshVisibilityCameraRotation;
     TWeakObjectPtr<AActor> LastDynamicMeshVisibilityFocusedActor;
@@ -274,6 +280,7 @@ private:
     double LastDynamicMeshVisibilityUpdateTime;
     bool bHasDynamicMeshVisibilityState;
     bool bIsResettingFocusSurfaceRotation;
+    bool bIsAligningFocusSurfaceRig;
     bool bIsFocusArcTransitionActive;
     bool bPendingFocusSurfaceGridAutoAlignment;
 };
