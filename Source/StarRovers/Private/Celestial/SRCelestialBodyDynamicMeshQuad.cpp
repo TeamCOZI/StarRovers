@@ -30,6 +30,9 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	UE::Geometry::FDynamicMesh3& TargetDynamicMesh = FaceDynamicMeshes[MeshComponentIndex];
 	UE::Geometry::FDynamicMeshNormalOverlay* NormalOverlay = TargetDynamicMesh.Attributes()->PrimaryNormals();
 	UE::Geometry::FDynamicMeshUVOverlay* UVOverlay = TargetDynamicMesh.Attributes()->PrimaryUV();
+	UE::Geometry::FDynamicMeshUVOverlay* FeatureMaskUVOverlay = TargetDynamicMesh.Attributes()->NumUVLayers() > 1
+		? TargetDynamicMesh.Attributes()->GetUVLayer(1)
+		: nullptr;
 	auto* ColorOverlay = TargetDynamicMesh.Attributes()->PrimaryColors();
 	auto* MaterialIdAttribute = TargetDynamicMesh.Attributes()->GetMaterialID();
 	if (!NormalOverlay || !ColorOverlay)
@@ -38,6 +41,7 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	}
 
 	FVector QuadPoints[4] = { Point0, Point1, Point2, Point3 };
+	int32 InputEdgeToFeatureMaskEdgeIndex[4] = { 0, 1, 2, 3 };
 	FSRTerrainVertexKey ResolvedVertexKeys[4];
 	if (VertexKeys)
 	{
@@ -59,6 +63,10 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		{
 			Swap(ResolvedVertexKeys[1], ResolvedVertexKeys[3]);
 		}
+		InputEdgeToFeatureMaskEdgeIndex[0] = 3;
+		InputEdgeToFeatureMaskEdgeIndex[1] = 2;
+		InputEdgeToFeatureMaskEdgeIndex[2] = 1;
+		InputEdgeToFeatureMaskEdgeIndex[3] = 0;
 		QuadNormal *= -1.0f;
 	}
 	if (QuadNormal.IsNearlyZero())
@@ -96,6 +104,19 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	const int32 UV1 = UVOverlay ? UVOverlay->AppendElement(FVector2f(1.0f, 0.0f)) : INDEX_NONE;
 	const int32 UV2 = UVOverlay ? UVOverlay->AppendElement(FVector2f(1.0f, 1.0f)) : INDEX_NONE;
 	const int32 UV3 = UVOverlay ? UVOverlay->AppendElement(FVector2f(0.0f, 1.0f)) : INDEX_NONE;
+	const int32 FeatureMaskUV0 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
+	const int32 FeatureMaskUV1 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
+	const int32 FeatureMaskUV2 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
+	const int32 FeatureMaskUV3 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
+	RenderData.FeatureMaskRef.MeshComponentIndex = MeshComponentIndex;
+	RenderData.FeatureMaskRef.FeatureMaskUVElementIds[0] = FeatureMaskUV0;
+	RenderData.FeatureMaskRef.FeatureMaskUVElementIds[1] = FeatureMaskUV1;
+	RenderData.FeatureMaskRef.FeatureMaskUVElementIds[2] = FeatureMaskUV2;
+	RenderData.FeatureMaskRef.FeatureMaskUVElementIds[3] = FeatureMaskUV3;
+	RenderData.FeatureMaskRef.InputEdgeToFeatureMaskEdgeIndex[0] = InputEdgeToFeatureMaskEdgeIndex[0];
+	RenderData.FeatureMaskRef.InputEdgeToFeatureMaskEdgeIndex[1] = InputEdgeToFeatureMaskEdgeIndex[1];
+	RenderData.FeatureMaskRef.InputEdgeToFeatureMaskEdgeIndex[2] = InputEdgeToFeatureMaskEdgeIndex[2];
+	RenderData.FeatureMaskRef.InputEdgeToFeatureMaskEdgeIndex[3] = InputEdgeToFeatureMaskEdgeIndex[3];
 
 	auto TrackColorElement = [&RenderData, &SurfaceColor, MeshComponentIndex](int32 ColorElementId)
 	{
@@ -119,6 +140,7 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		&TargetDynamicMesh,
 		NormalOverlay,
 		UVOverlay,
+		FeatureMaskUVOverlay,
 		ColorOverlay,
 		MaterialIdAttribute,
 		&RenderData,
@@ -151,6 +173,9 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		const int32 FallbackUV0 = UVOverlay ? UVOverlay->AppendElement(UVPosition0) : INDEX_NONE;
 		const int32 FallbackUV1 = UVOverlay ? UVOverlay->AppendElement(UVPosition1) : INDEX_NONE;
 		const int32 FallbackUV2 = UVOverlay ? UVOverlay->AppendElement(UVPosition2) : INDEX_NONE;
+		const int32 FallbackFeatureMaskUV0 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
+		const int32 FallbackFeatureMaskUV1 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
+		const int32 FallbackFeatureMaskUV2 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
 		TrackColorElement(FallbackColor0);
 		TrackColorElement(FallbackColor1);
 		TrackColorElement(FallbackColor2);
@@ -159,6 +184,12 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		if (UVOverlay)
 		{
 			UVOverlay->SetTriangle(FallbackTriangle, UE::Geometry::FIndex3i(FallbackUV0, FallbackUV1, FallbackUV2));
+		}
+		if (FeatureMaskUVOverlay)
+		{
+			FeatureMaskUVOverlay->SetTriangle(
+				FallbackTriangle,
+				UE::Geometry::FIndex3i(FallbackFeatureMaskUV0, FallbackFeatureMaskUV1, FallbackFeatureMaskUV2));
 		}
 		ColorOverlay->SetTriangle(FallbackTriangle, UE::Geometry::FIndex3i(FallbackColor0, FallbackColor1, FallbackColor2));
 		if (MaterialIdAttribute)
@@ -177,6 +208,10 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		if (UVOverlay)
 		{
 			UVOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(UV0, UV2, UV1));
+		}
+		if (FeatureMaskUVOverlay)
+		{
+			FeatureMaskUVOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(FeatureMaskUV0, FeatureMaskUV2, FeatureMaskUV1));
 		}
 		ColorOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Color0, Color2, Color1));
 		if (MaterialIdAttribute)
@@ -204,6 +239,10 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		if (UVOverlay)
 		{
 			UVOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(UV0, UV3, UV2));
+		}
+		if (FeatureMaskUVOverlay)
+		{
+			FeatureMaskUVOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(FeatureMaskUV0, FeatureMaskUV3, FeatureMaskUV2));
 		}
 		ColorOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Color0, Color3, Color2));
 		if (MaterialIdAttribute)
@@ -251,6 +290,10 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 			{
 				UVOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(UV0, UV1, UV2));
 			}
+			if (FeatureMaskUVOverlay)
+			{
+				FeatureMaskUVOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(FeatureMaskUV0, FeatureMaskUV1, FeatureMaskUV2));
+			}
 			ColorOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(BackColor0, BackColor1, BackColor2));
 			if (MaterialIdAttribute)
 			{
@@ -263,6 +306,10 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 			if (UVOverlay)
 			{
 				UVOverlay->SetTriangle(BackTriangle1, UE::Geometry::FIndex3i(UV0, UV2, UV3));
+			}
+			if (FeatureMaskUVOverlay)
+			{
+				FeatureMaskUVOverlay->SetTriangle(BackTriangle1, UE::Geometry::FIndex3i(FeatureMaskUV0, FeatureMaskUV2, FeatureMaskUV3));
 			}
 			ColorOverlay->SetTriangle(BackTriangle1, UE::Geometry::FIndex3i(BackColor0, BackColor2, BackColor3));
 			if (MaterialIdAttribute)

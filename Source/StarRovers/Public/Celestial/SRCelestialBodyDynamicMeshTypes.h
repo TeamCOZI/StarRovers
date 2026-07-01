@@ -11,9 +11,17 @@ struct FSRCelestialBodyDynamicMeshColorElement
 	FLinearColor BaseColor = FLinearColor::White;
 };
 
+struct FSRCelestialBodyDynamicMeshQuadFeatureMaskRef
+{
+	int32 MeshComponentIndex = INDEX_NONE;
+	int32 FeatureMaskUVElementIds[4] = { INDEX_NONE, INDEX_NONE, INDEX_NONE, INDEX_NONE };
+	int32 InputEdgeToFeatureMaskEdgeIndex[4] = { 0, 1, 2, 3 };
+};
+
 struct FSRCelestialBodyDynamicMeshQuadRenderData
 {
 	TArray<FSRCelestialBodyDynamicMeshColorElement, TInlineAllocator<8>> ColorElements;
+	FSRCelestialBodyDynamicMeshQuadFeatureMaskRef FeatureMaskRef;
 	int32 FailedTriangleCount = 0;
 	int32 FallbackTriangleCount = 0;
 };
@@ -29,6 +37,7 @@ struct FSRCelestialBodyPreparedDynamicMesh
 	bool bValid = false;
 	uint32 BuildHash = 0;
 	TArray<UE::Geometry::FDynamicMesh3> FaceDynamicMeshes;
+	int32 FeatureEdgeMaskCount = 0;
 	TArray<FSRPlanetSurfaceGridCell> SurfaceGridCells;
 	TMap<FSRPlanetSurfaceGridCellId, int32> CellIndexById;
 	TArray<int32> CellIndexByFlatId;

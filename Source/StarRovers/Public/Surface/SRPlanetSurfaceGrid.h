@@ -329,6 +329,7 @@ private:
     void RebuildRaycastIndex();
     void UpdateDebugTickState();
     void AppendInteractionCell(UE::Geometry::FDynamicMesh3& OverlayMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness) const;
+    void AppendInteractionCellRegionBoundary(UE::Geometry::FDynamicMesh3& OverlayMesh, const TArray<FSRPlanetSurfaceGridCellId>& CellIds, const FLinearColor& LineColor, float LineThickness, bool bIncludeFill, TSet<uint64>* SharedDrawnEdges = nullptr) const;
     void AppendInteractionCellRegion(UE::Geometry::FDynamicMesh3& OverlayMesh, const TArray<FSRPlanetSurfaceGridCellId>& CellIds, const FLinearColor& LineColor, float LineThickness, bool bPreferCompactRectangles) const;
     bool TryAppendRectangularInteractionCellRegion(UE::Geometry::FDynamicMesh3& OverlayMesh, const TArray<FSRPlanetSurfaceGridCellId>& CellIds, const FLinearColor& LineColor, float LineThickness) const;
     void RebuildGridMesh();

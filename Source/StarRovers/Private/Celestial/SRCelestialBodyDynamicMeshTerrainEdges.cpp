@@ -1,5 +1,8 @@
 #include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
 
+#include "DynamicMesh/DynamicMeshAttributeSet.h"
+#include "DynamicMesh/DynamicMeshOverlay.h"
+
 namespace StarRovers::Celestial::DynamicMesh
 {
 namespace
@@ -7,6 +10,63 @@ namespace
 int32 GetDynamicMeshTerrainEdgeFlatCellIndex(int32 FaceResolution, const FSRPlanetSurfaceGridCellId& CellId)
 {
 	return ((static_cast<int32>(CellId.Face) * FaceResolution) + CellId.CellY) * FaceResolution + CellId.CellX;
+}
+
+bool IsFeatureToonOutlineEnabled(const FSRToonOutlineSettings& ToonOutlineSettings)
+{
+	return ToonOutlineSettings.bEnableToonOutline
+		&& ToonOutlineSettings.bUseFeatureEdgeToonOutline
+		&& ToonOutlineSettings.ToonLineThickness > KINDA_SMALL_NUMBER;
+}
+
+bool ShouldDrawNormalFeatureToonOutline(
+	const FSRToonOutlineSettings& ToonOutlineSettings,
+	const FVector& NormalA,
+	const FVector& NormalB)
+{
+	if (!IsFeatureToonOutlineEnabled(ToonOutlineSettings))
+	{
+		return false;
+	}
+
+	const FVector SafeNormalA = NormalA.GetSafeNormal();
+	const FVector SafeNormalB = NormalB.GetSafeNormal();
+	if (SafeNormalA.IsNearlyZero() || SafeNormalB.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const float AngleThresholdDegrees = FMath::Clamp(ToonOutlineSettings.FeatureEdgeAngleThresholdDegrees, 0.0f, 90.0f);
+	const float CosThreshold = FMath::Cos(FMath::DegreesToRadians(AngleThresholdDegrees));
+	return FVector::DotProduct(SafeNormalA, SafeNormalB) < CosThreshold;
+}
+
+uint64 BuildSideWallFeatureMaskVerticalEdgeKey(uint32 SourceHash, float HeightOffsetA, float HeightOffsetB)
+{
+	const float LowerHeightOffset = FMath::Min(HeightOffsetA, HeightOffsetB);
+	const float UpperHeightOffset = FMath::Max(HeightOffsetA, HeightOffsetB);
+	uint32 KeyHash = HashCombine(SourceHash, ::GetTypeHash(LowerHeightOffset));
+	KeyHash = HashCombine(KeyHash, ::GetTypeHash(UpperHeightOffset));
+	return (static_cast<uint64>(SourceHash) << 32) | KeyHash;
+}
+
+bool SetFeatureMaskUVComponent(UE::Geometry::FDynamicMeshUVOverlay* UVOverlay, int32 ElementId, int32 ComponentIndex)
+{
+	if (!UVOverlay || ElementId == INDEX_NONE)
+	{
+		return false;
+	}
+
+	FVector2f Value = UVOverlay->GetElement(ElementId);
+	float& Component = ComponentIndex == 0 ? Value.X : Value.Y;
+	if (Component >= 0.5f)
+	{
+		return false;
+	}
+
+	Component = 1.0f;
+	UVOverlay->SetElement(ElementId, Value);
+	return true;
 }
 }
 
@@ -16,6 +76,7 @@ FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::FSRCelestialBodyDynamicMeshTe
 	TArray<FSRPlanetSurfaceGridCell>& InPreparedSurfaceGridCells,
 	const TArray<int32>& InCachedCellIndexByFlatId,
 	TArray<FSRCelestialBodyDynamicMeshCellColorData>& InPreparedColorDataByFlatId,
+	const FSRToonOutlineSettings& InToonOutlineSettings,
 	int32 InFaceResolution,
 	float InBodyScale,
 	float InTerrainHeightStep,
@@ -26,6 +87,7 @@ FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::FSRCelestialBodyDynamicMeshTe
 	, PreparedSurfaceGridCells(InPreparedSurfaceGridCells)
 	, CachedCellIndexByFlatId(InCachedCellIndexByFlatId)
 	, PreparedColorDataByFlatId(InPreparedColorDataByFlatId)
+	, ToonOutlineSettings(InToonOutlineSettings)
 	, FaceResolution(InFaceResolution)
 	, BodyScale(InBodyScale)
 	, TerrainHeightStep(InTerrainHeightStep)
@@ -37,6 +99,103 @@ FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::FSRCelestialBodyDynamicMeshTe
 void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::ReservePendingEdges(int32 ReserveCount)
 {
 	PendingEdges.Reserve(ReserveCount);
+	PendingSideWallFeatureMaskEdges.Reserve(FMath::Max(1, ReserveCount / 4));
+}
+
+bool FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::ApplyFeatureEdgeMask(
+	const FSRCelestialBodyDynamicMeshQuadFeatureMaskRef& FeatureMaskRef,
+	int32 EdgeIndex)
+{
+	if (!IsFeatureToonOutlineEnabled(ToonOutlineSettings)
+		|| EdgeIndex < 0
+		|| EdgeIndex >= 4
+		|| !FaceDynamicMeshes.IsValidIndex(FeatureMaskRef.MeshComponentIndex))
+	{
+		return false;
+	}
+
+	const int32 RenderEdgeIndex = FeatureMaskRef.InputEdgeToFeatureMaskEdgeIndex[EdgeIndex];
+	if (RenderEdgeIndex < 0 || RenderEdgeIndex >= 4)
+	{
+		return false;
+	}
+
+	UE::Geometry::FDynamicMesh3& TargetMesh = FaceDynamicMeshes[FeatureMaskRef.MeshComponentIndex];
+	UE::Geometry::FDynamicMeshAttributeSet* Attributes = TargetMesh.Attributes();
+	if (!Attributes || Attributes->NumUVLayers() <= 1)
+	{
+		return false;
+	}
+
+	UE::Geometry::FDynamicMeshUVOverlay* FeatureMaskUVOverlay = Attributes->GetUVLayer(1);
+	if (!FeatureMaskUVOverlay)
+	{
+		return false;
+	}
+
+	const int32 CornerAByEdge[4] = { 0, 1, 2, 3 };
+	const int32 CornerBByEdge[4] = { 1, 2, 3, 0 };
+	const int32 ComponentIndexByEdge[4] = { 1, 0, 1, 0 };
+	const int32 CornerA = CornerAByEdge[RenderEdgeIndex];
+	const int32 CornerB = CornerBByEdge[RenderEdgeIndex];
+	const int32 ComponentIndex = ComponentIndexByEdge[RenderEdgeIndex];
+
+	const bool bChangedA = SetFeatureMaskUVComponent(
+		FeatureMaskUVOverlay,
+		FeatureMaskRef.FeatureMaskUVElementIds[CornerA],
+		ComponentIndex);
+	const bool bChangedB = SetFeatureMaskUVComponent(
+		FeatureMaskUVOverlay,
+		FeatureMaskRef.FeatureMaskUVElementIds[CornerB],
+		ComponentIndex);
+	if (bChangedA || bChangedB)
+	{
+		++Stats.FeatureEdgeMaskCount;
+		return true;
+	}
+	return false;
+}
+
+void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::AppendSideWallFeatureMaskBoundaryEdge(
+	const FSRCelestialBodyDynamicMeshQuadFeatureMaskRef& FeatureMaskRef,
+	int32 EdgeIndex)
+{
+	if (!IsFeatureToonOutlineEnabled(ToonOutlineSettings))
+	{
+		return;
+	}
+
+	ApplyFeatureEdgeMask(FeatureMaskRef, EdgeIndex);
+}
+
+void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterSideWallFeatureMaskVerticalEdge(
+	uint32 SourceHash,
+	float HeightOffsetA,
+	float HeightOffsetB,
+	const FSRCelestialBodyDynamicMeshQuadFeatureMaskRef& FeatureMaskRef,
+	int32 EdgeIndex,
+	const FVector& WallNormal)
+{
+	if (!IsFeatureToonOutlineEnabled(ToonOutlineSettings) || EdgeIndex == INDEX_NONE)
+	{
+		return;
+	}
+
+	const uint64 EdgeKey = BuildSideWallFeatureMaskVerticalEdgeKey(SourceHash, HeightOffsetA, HeightOffsetB);
+	if (FSRCelestialBodyDynamicMeshSideWallFeatureMaskEdge* ExistingEdge = PendingSideWallFeatureMaskEdges.Find(EdgeKey))
+	{
+		if (ShouldDrawNormalFeatureToonOutline(ToonOutlineSettings, ExistingEdge->WallNormal, WallNormal))
+		{
+			ApplyFeatureEdgeMask(ExistingEdge->FeatureMaskRef, ExistingEdge->EdgeIndex);
+		}
+		PendingSideWallFeatureMaskEdges.Remove(EdgeKey);
+		return;
+	}
+
+	FSRCelestialBodyDynamicMeshSideWallFeatureMaskEdge& NewEdge = PendingSideWallFeatureMaskEdges.Add(EdgeKey);
+	NewEdge.FeatureMaskRef = FeatureMaskRef;
+	NewEdge.EdgeIndex = EdgeIndex;
+	NewEdge.WallNormal = WallNormal;
 }
 
 void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
@@ -45,8 +204,11 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 	const FVector& PointA,
 	const FVector& PointB,
 	const FVector& CellCenter,
+	const FVector& CellNormal,
 	float HeightOffset,
 	const FLinearColor& SurfaceColor,
+	const FSRCelestialBodyDynamicMeshQuadRenderData& SurfaceRenderData,
+	int32 SurfaceFeatureMaskEdgeIndex,
 	int32 MaterialId,
 	const FSRPlanetSurfaceGridCellId& CellId)
 {
@@ -124,6 +286,31 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 				WallVertexKeys,
 				&WallNormalReferenceDirection,
 				true);
+			if (IsFeatureToonOutlineEnabled(ToonOutlineSettings))
+			{
+				ApplyFeatureEdgeMask(ExistingEdge->SurfaceFeatureMaskRef, ExistingEdge->SurfaceFeatureMaskEdgeIndex);
+				ApplyFeatureEdgeMask(SurfaceRenderData.FeatureMaskRef, SurfaceFeatureMaskEdgeIndex);
+				AppendSideWallFeatureMaskBoundaryEdge(
+					SideRenderData.FeatureMaskRef,
+					0);
+				AppendSideWallFeatureMaskBoundaryEdge(
+					SideRenderData.FeatureMaskRef,
+					2);
+				RegisterSideWallFeatureMaskVerticalEdge(
+					OrderedHashA,
+					ExistingEdge->HeightOffset,
+					HeightOffset,
+					SideRenderData.FeatureMaskRef,
+					3,
+					WallNormalReferenceDirection);
+				RegisterSideWallFeatureMaskVerticalEdge(
+					OrderedHashB,
+					ExistingEdge->HeightOffset,
+					HeightOffset,
+					SideRenderData.FeatureMaskRef,
+					1,
+					WallNormalReferenceDirection);
+			}
 			Stats.SideWallFailedTriangleCount += SideRenderData.FailedTriangleCount;
 			Stats.SideWallFallbackTriangleCount += SideRenderData.FallbackTriangleCount;
 			AddPreparedSurfaceGridSideWallOutline(
@@ -191,6 +378,11 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 				}
 			}
 		}
+		else if (ShouldDrawNormalFeatureToonOutline(ToonOutlineSettings, ExistingEdge->CellNormal, CellNormal))
+		{
+			ApplyFeatureEdgeMask(ExistingEdge->SurfaceFeatureMaskRef, ExistingEdge->SurfaceFeatureMaskEdgeIndex);
+			ApplyFeatureEdgeMask(SurfaceRenderData.FeatureMaskRef, SurfaceFeatureMaskEdgeIndex);
+		}
 		PendingEdges.Remove(EdgeKey);
 		return;
 	}
@@ -199,18 +391,22 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 	NewEdge.PointA = OrderedPointA;
 	NewEdge.PointB = OrderedPointB;
 	NewEdge.CellCenter = CellCenter;
+	NewEdge.CellNormal = CellNormal;
 	NewEdge.SourceHashA = OrderedHashA;
 	NewEdge.SourceHashB = OrderedHashB;
 	NewEdge.HeightOffset = HeightOffset;
 	NewEdge.SurfaceColor = SurfaceColor;
 	NewEdge.MaterialId = MaterialId;
 	NewEdge.CellId = CellId;
+	NewEdge.SurfaceFeatureMaskRef = SurfaceRenderData.FeatureMaskRef;
+	NewEdge.SurfaceFeatureMaskEdgeIndex = SurfaceFeatureMaskEdgeIndex;
 	Stats.MaxPendingEdgeCount = FMath::Max(Stats.MaxPendingEdgeCount, PendingEdges.Num());
 }
 
 void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 	const FSRCelestialBodyDynamicMeshSurfaceCellGeometry& CellGeometry,
 	const FSRPlanetTerrainSample& TerrainSample,
+	const FSRCelestialBodyDynamicMeshQuadRenderData& SurfaceRenderData,
 	int32 MaterialId,
 	const FSRPlanetSurfaceGridCellId& CellId,
 	bool bProfileBuildBreakdown,
@@ -226,8 +422,11 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 		TargetPositions[0],
 		TargetPositions[1],
 		TargetCellCenter,
+		CellGeometry.CellNormal,
 		TerrainSample.HeightOffset,
 		TerrainSample.SurfaceColor,
+		SurfaceRenderData,
+		0,
 		MaterialId,
 		CellId);
 	RegisterEdge(
@@ -236,8 +435,11 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 		TargetPositions[1],
 		TargetPositions[2],
 		TargetCellCenter,
+		CellGeometry.CellNormal,
 		TerrainSample.HeightOffset,
 		TerrainSample.SurfaceColor,
+		SurfaceRenderData,
+		1,
 		MaterialId,
 		CellId);
 	RegisterEdge(
@@ -246,8 +448,11 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 		TargetPositions[2],
 		TargetPositions[3],
 		TargetCellCenter,
+		CellGeometry.CellNormal,
 		TerrainSample.HeightOffset,
 		TerrainSample.SurfaceColor,
+		SurfaceRenderData,
+		2,
 		MaterialId,
 		CellId);
 	RegisterEdge(
@@ -256,14 +461,33 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 		TargetPositions[3],
 		TargetPositions[0],
 		TargetCellCenter,
+		CellGeometry.CellNormal,
 		TerrainSample.HeightOffset,
 		TerrainSample.SurfaceColor,
+		SurfaceRenderData,
+		3,
 		MaterialId,
 		CellId);
 	if (bProfileBuildBreakdown)
 	{
 		TerrainEdgeRegisterMs += SRCelestialElapsedMilliseconds(InnerStart);
 	}
+}
+
+void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::FlushPendingSideWallFeatureMaskEdges()
+{
+	if (!IsFeatureToonOutlineEnabled(ToonOutlineSettings))
+	{
+		PendingSideWallFeatureMaskEdges.Reset();
+		return;
+	}
+
+	for (const TPair<uint64, FSRCelestialBodyDynamicMeshSideWallFeatureMaskEdge>& PendingPair : PendingSideWallFeatureMaskEdges)
+	{
+		const FSRCelestialBodyDynamicMeshSideWallFeatureMaskEdge& PendingEdge = PendingPair.Value;
+		ApplyFeatureEdgeMask(PendingEdge.FeatureMaskRef, PendingEdge.EdgeIndex);
+	}
+	PendingSideWallFeatureMaskEdges.Reset();
 }
 
 int32 FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::GetPendingEdgeCount() const

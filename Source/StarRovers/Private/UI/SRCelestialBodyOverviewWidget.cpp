@@ -26,6 +26,9 @@ void USRCelestialBodyOverviewEntryAction::Initialize(
 
 void USRCelestialBodyOverviewEntryAction::HandleClicked()
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: Overview Entry OnClicked Actor=%s"),
+		*GetNameSafe(CelestialBodyActor.Get()));
+
 	if (IsValid(OwnerWidget))
 	{
 		OwnerWidget->DispatchEntryClicked(CelestialBodyActor);
@@ -107,8 +110,12 @@ void USRCelestialBodyOverviewWidget::NativeTick(const FGeometry& MyGeometry,
 
 FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (IsScreenPositionOverOverviewUi(InMouseEvent.GetScreenSpacePosition()))
+	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+	if (IsScreenPositionOverOverviewUi(ScreenPosition))
 	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: Overview NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
+			ScreenPosition.X,
+			ScreenPosition.Y);
 		return FReply::Handled();
 	}
 
@@ -117,8 +124,12 @@ FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonDown(const FGeometry& 
 
 FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (IsScreenPositionOverOverviewUi(InMouseEvent.GetScreenSpacePosition()))
+	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+	if (IsScreenPositionOverOverviewUi(ScreenPosition))
 	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: Overview NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
+			ScreenPosition.X,
+			ScreenPosition.Y);
 		return FReply::Handled();
 	}
 
@@ -180,6 +191,9 @@ bool USRCelestialBodyOverviewWidget::IsPointerOverOverviewUi() const
 void USRCelestialBodyOverviewWidget::DispatchEntryClicked(
 	AActor* CelestialBodyActor)
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: Overview DispatchEntryClicked Actor=%s"),
+		*GetNameSafe(CelestialBodyActor));
+
 	if (IsValid(CelestialBodyActor))
 	{
 		CelestialBodyRequestedEvent.Broadcast(CelestialBodyActor);

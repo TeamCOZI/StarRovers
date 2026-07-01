@@ -107,6 +107,7 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 				{
 					MeshCopy.EnableAttributes();
 					MeshCopy.Attributes()->EnablePrimaryColors();
+					MeshCopy.Attributes()->SetNumUVLayers(2);
 				}
 				FaceDynamicMeshComponent->SetMesh(MoveTemp(MeshCopy));
 			}
@@ -188,8 +189,11 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 	UE::Geometry::FDynamicMesh3 DynamicMesh;
 	DynamicMesh.EnableAttributes();
 	DynamicMesh.Attributes()->EnablePrimaryColors();
+	DynamicMesh.Attributes()->SetNumUVLayers(2);
 	DynamicMesh.Attributes()->EnableMaterialID();
 	UE::Geometry::FDynamicMeshNormalOverlay* NormalOverlay = DynamicMesh.Attributes()->PrimaryNormals();
+	UE::Geometry::FDynamicMeshUVOverlay* UVOverlay = DynamicMesh.Attributes()->PrimaryUV();
+	UE::Geometry::FDynamicMeshUVOverlay* FeatureMaskUVOverlay = DynamicMesh.Attributes()->GetUVLayer(1);
 	auto* ColorOverlay = DynamicMesh.Attributes()->PrimaryColors();
 	auto* MaterialIdAttribute = DynamicMesh.Attributes()->GetMaterialID();
 
@@ -197,6 +201,10 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 	DynamicVertexIds.Reserve(VertexCount);
 	TArray<int32> DynamicNormalIds;
 	DynamicNormalIds.Reserve(VertexCount);
+	TArray<int32> DynamicUVIds;
+	DynamicUVIds.Reserve(VertexCount);
+	TArray<int32> DynamicFeatureMaskUVIds;
+	DynamicFeatureMaskUVIds.Reserve(VertexCount);
 	TArray<int32> DynamicColorIds;
 	DynamicColorIds.Reserve(VertexCount);
 
@@ -220,6 +228,8 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 		}
 
 		DynamicNormalIds.Add(NormalOverlay->AppendElement(FVector3f(TargetNormal)));
+		DynamicUVIds.Add(UVOverlay ? UVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE);
+		DynamicFeatureMaskUVIds.Add(FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE);
 		DynamicColorIds.Add(ColorOverlay->AppendElement(FVector4f(TargetColor.R, TargetColor.G, TargetColor.B, TargetColor.A)));
 	}
 	const double FallbackVertexMs = SRCelestialElapsedMilliseconds(StageStart);
@@ -249,6 +259,24 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 					DynamicNormalIds[SourceVertexIndex0],
 					DynamicNormalIds[SourceVertexIndex1],
 					DynamicNormalIds[SourceVertexIndex2]));
+			if (UVOverlay)
+			{
+				UVOverlay->SetTriangle(
+					TriangleId,
+					UE::Geometry::FIndex3i(
+						DynamicUVIds[SourceVertexIndex0],
+						DynamicUVIds[SourceVertexIndex1],
+						DynamicUVIds[SourceVertexIndex2]));
+			}
+			if (FeatureMaskUVOverlay)
+			{
+				FeatureMaskUVOverlay->SetTriangle(
+					TriangleId,
+					UE::Geometry::FIndex3i(
+						DynamicFeatureMaskUVIds[SourceVertexIndex0],
+						DynamicFeatureMaskUVIds[SourceVertexIndex1],
+						DynamicFeatureMaskUVIds[SourceVertexIndex2]));
+			}
 			ColorOverlay->SetTriangle(
 				TriangleId,
 				UE::Geometry::FIndex3i(
@@ -273,6 +301,7 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 		{
 			CachedFaceDynamicMeshes[FaceIndex].EnableAttributes();
 			CachedFaceDynamicMeshes[FaceIndex].Attributes()->EnablePrimaryColors();
+			CachedFaceDynamicMeshes[FaceIndex].Attributes()->SetNumUVLayers(2);
 		}
 		FSRCelestialBodyDynamicMeshRuntimeCacheEntry GeneratedCacheEntry;
 		GeneratedCacheEntry.FaceDynamicMeshes = CachedFaceDynamicMeshes;
@@ -292,6 +321,7 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 			UE::Geometry::FDynamicMesh3 EmptyMesh;
 			EmptyMesh.EnableAttributes();
 			EmptyMesh.Attributes()->EnablePrimaryColors();
+			EmptyMesh.Attributes()->SetNumUVLayers(2);
 			FaceDynamicMeshComponent->SetMesh(MoveTemp(EmptyMesh));
 		}
 	}

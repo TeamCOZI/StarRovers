@@ -40,11 +40,29 @@ void USRLoadingScreenWidget::NativePreConstruct()
 
 FReply USRLoadingScreenWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
+	if (IsVisible())
+	{
+		const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: LoadingScreen NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
+			ScreenPosition.X,
+			ScreenPosition.Y);
+		return FReply::Handled();
+	}
+
 	return IsVisible() ? FReply::Handled() : Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
 
 FReply USRLoadingScreenWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
+	if (IsVisible())
+	{
+		const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: LoadingScreen NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
+			ScreenPosition.X,
+			ScreenPosition.Y);
+		return FReply::Handled();
+	}
+
 	return IsVisible() ? FReply::Handled() : Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 }
 

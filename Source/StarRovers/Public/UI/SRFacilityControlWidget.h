@@ -62,6 +62,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility")
 	bool IsPointerOverControlPanel() const;
 
+	bool TryHandleFacilityControlPointerClick();
+
 	bool AddDebugInputResourceToPort(int32 InputPortIndex, FName ResourceId);
 
 protected:

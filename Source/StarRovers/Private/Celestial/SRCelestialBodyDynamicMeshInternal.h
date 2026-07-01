@@ -76,12 +76,22 @@ namespace StarRovers::Celestial::DynamicMesh
 		FVector PointA = FVector::ZeroVector;
 		FVector PointB = FVector::ZeroVector;
 		FVector CellCenter = FVector::ZeroVector;
+		FVector CellNormal = FVector::UpVector;
 		uint32 SourceHashA = 0;
 		uint32 SourceHashB = 0;
 		float HeightOffset = 0.0f;
 		FLinearColor SurfaceColor = FLinearColor::White;
 		int32 MaterialId = 0;
 		FSRPlanetSurfaceGridCellId CellId;
+		FSRCelestialBodyDynamicMeshQuadFeatureMaskRef SurfaceFeatureMaskRef;
+		int32 SurfaceFeatureMaskEdgeIndex = INDEX_NONE;
+	};
+
+	struct FSRCelestialBodyDynamicMeshSideWallFeatureMaskEdge
+	{
+		FSRCelestialBodyDynamicMeshQuadFeatureMaskRef FeatureMaskRef;
+		int32 EdgeIndex = INDEX_NONE;
+		FVector WallNormal = FVector::ForwardVector;
 	};
 
 	struct FSRCelestialBodyDynamicMeshTerrainEdgeStats
@@ -89,6 +99,7 @@ namespace StarRovers::Celestial::DynamicMesh
 		int32 RegisterCount = 0;
 		int32 MatchCount = 0;
 		int32 SideWallCount = 0;
+		int32 FeatureEdgeMaskCount = 0;
 		int32 SideWallFailedTriangleCount = 0;
 		int32 SideWallFallbackTriangleCount = 0;
 		int32 MaxPendingEdgeCount = 0;
@@ -111,6 +122,7 @@ namespace StarRovers::Celestial::DynamicMesh
 			TArray<FSRPlanetSurfaceGridCell>& InPreparedSurfaceGridCells,
 			const TArray<int32>& InCachedCellIndexByFlatId,
 			TArray<FSRCelestialBodyDynamicMeshCellColorData>& InPreparedColorDataByFlatId,
+			const FSRToonOutlineSettings& InToonOutlineSettings,
 			int32 InFaceResolution,
 			float InBodyScale,
 			float InTerrainHeightStep,
@@ -124,27 +136,48 @@ namespace StarRovers::Celestial::DynamicMesh
 			const FVector& PointA,
 			const FVector& PointB,
 			const FVector& CellCenter,
+			const FVector& CellNormal,
 			float HeightOffset,
 			const FLinearColor& SurfaceColor,
+			const FSRCelestialBodyDynamicMeshQuadRenderData& SurfaceRenderData,
+			int32 SurfaceFeatureMaskEdgeIndex,
 			int32 MaterialId,
 			const FSRPlanetSurfaceGridCellId& CellId);
 		void RegisterCellEdges(
 			const FSRCelestialBodyDynamicMeshSurfaceCellGeometry& CellGeometry,
 			const FSRPlanetTerrainSample& TerrainSample,
+			const FSRCelestialBodyDynamicMeshQuadRenderData& SurfaceRenderData,
 			int32 MaterialId,
 			const FSRPlanetSurfaceGridCellId& CellId,
 			bool bProfileBuildBreakdown,
 			double& TerrainEdgeRegisterMs);
+		void FlushPendingSideWallFeatureMaskEdges();
 		int32 GetPendingEdgeCount() const;
 		const FSRCelestialBodyDynamicMeshTerrainEdgeStats& GetStats() const;
 
 	private:
+		bool ApplyFeatureEdgeMask(
+			const FSRCelestialBodyDynamicMeshQuadFeatureMaskRef& FeatureMaskRef,
+			int32 EdgeIndex);
+		void AppendSideWallFeatureMaskBoundaryEdge(
+			const FSRCelestialBodyDynamicMeshQuadFeatureMaskRef& FeatureMaskRef,
+			int32 EdgeIndex);
+		void RegisterSideWallFeatureMaskVerticalEdge(
+			uint32 SourceHash,
+			float HeightOffsetA,
+			float HeightOffsetB,
+			const FSRCelestialBodyDynamicMeshQuadFeatureMaskRef& FeatureMaskRef,
+			int32 EdgeIndex,
+			const FVector& WallNormal);
+
 		TArray<UE::Geometry::FDynamicMesh3>& FaceDynamicMeshes;
 		TMap<FSRTerrainVertexKey, int32>& WeldedVertexIds;
 		TArray<FSRPlanetSurfaceGridCell>& PreparedSurfaceGridCells;
 		const TArray<int32>& CachedCellIndexByFlatId;
 		TArray<FSRCelestialBodyDynamicMeshCellColorData>& PreparedColorDataByFlatId;
+		const FSRToonOutlineSettings& ToonOutlineSettings;
 		TMap<uint64, FSRCelestialBodyDynamicMeshTerrainEdge> PendingEdges;
+		TMap<uint64, FSRCelestialBodyDynamicMeshSideWallFeatureMaskEdge> PendingSideWallFeatureMaskEdges;
 		FSRCelestialBodyDynamicMeshTerrainEdgeStats Stats;
 		int32 FaceResolution = 0;
 		float BodyScale = 1.0f;

@@ -490,6 +490,13 @@ namespace
 		return Button;
 	}
 
+	bool IsWidgetUnderScreenPosition(const UWidget* Widget, const FVector2D& ScreenPosition)
+	{
+		return IsValid(Widget)
+			&& Widget->IsVisible()
+			&& Widget->GetCachedGeometry().IsUnderLocation(ScreenPosition);
+	}
+
 	void BindInputSlotDebugButton(
 		UButton* Button,
 		USRFacilityControlWidget* OwnerWidget,
@@ -615,6 +622,10 @@ void USRFacilityInputSlotDebugAction::Initialize(USRFacilityControlWidget* InOwn
 
 void USRFacilityInputSlotDebugAction::HandleClicked()
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl InputSlotDebug OnClicked InputPortIndex=%d ResourceId=%s"),
+		InputPortIndex,
+		*ResourceId.ToString());
+
 	if (IsValid(OwnerWidget))
 	{
 		OwnerWidget->AddDebugInputResourceToPort(InputPortIndex, ResourceId);
@@ -663,8 +674,12 @@ void USRFacilityControlWidget::NativeTick(const FGeometry& MyGeometry, float InD
 
 FReply USRFacilityControlWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (IsScreenPositionOverControlPanel(InMouseEvent.GetScreenSpacePosition()))
+	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+	if (IsScreenPositionOverControlPanel(ScreenPosition))
 	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
+			ScreenPosition.X,
+			ScreenPosition.Y);
 		return FReply::Handled();
 	}
 
@@ -673,8 +688,12 @@ FReply USRFacilityControlWidget::NativeOnMouseButtonDown(const FGeometry& InGeom
 
 FReply USRFacilityControlWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (IsScreenPositionOverControlPanel(InMouseEvent.GetScreenSpacePosition()))
+	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+	if (IsScreenPositionOverControlPanel(ScreenPosition))
 	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
+			ScreenPosition.X,
+			ScreenPosition.Y);
 		return FReply::Handled();
 	}
 
@@ -720,6 +739,73 @@ bool USRFacilityControlWidget::IsPointerOverControlPanel() const
 	}
 
 	return IsScreenPositionOverControlPanel(FSlateApplication::Get().GetCursorPos());
+}
+
+bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
+{
+	if (!IsVisible() || !FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+
+	const FVector2D ScreenPosition = FSlateApplication::Get().GetCursorPos();
+	if (!IsScreenPositionOverControlPanel(ScreenPosition))
+	{
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl TryHandleFacilityControlPointerClick Mouse=(%.1f, %.1f)"),
+		ScreenPosition.X,
+		ScreenPosition.Y);
+
+	if (IsWidgetUnderScreenPosition(CloseButton, ScreenPosition) && CloseButton->GetIsEnabled())
+	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved CloseButton"));
+		HandleCloseClicked();
+		return true;
+	}
+
+	if (IsWidgetUnderScreenPosition(ProcessCheckBox, ScreenPosition) && ProcessCheckBox->GetIsEnabled())
+	{
+		const bool bNewChecked = !ProcessCheckBox->IsChecked();
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved ProcessCheckBox bNewChecked=%s"),
+			bNewChecked ? TEXT("true") : TEXT("false"));
+		HandleProcessCheckStateChanged(bNewChecked);
+		return true;
+	}
+
+	if (IsWidgetUnderScreenPosition(DeliverCheckBox, ScreenPosition) && DeliverCheckBox->GetIsEnabled())
+	{
+		const bool bNewChecked = !DeliverCheckBox->IsChecked();
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DeliverCheckBox bNewChecked=%s"),
+			bNewChecked ? TEXT("true") : TEXT("false"));
+		HandleDeliverCheckStateChanged(bNewChecked);
+		return true;
+	}
+
+	if (IsWidgetUnderScreenPosition(DebugAddTerriteButton, ScreenPosition) && DebugAddTerriteButton->GetIsEnabled())
+	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddTerriteButton"));
+		HandleDebugAddTerriteClicked();
+		return true;
+	}
+
+	if (IsWidgetUnderScreenPosition(DebugAddAquidButton, ScreenPosition) && DebugAddAquidButton->GetIsEnabled())
+	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddAquidButton"));
+		HandleDebugAddAquidClicked();
+		return true;
+	}
+
+	if (IsWidgetUnderScreenPosition(DebugAddNitainButton, ScreenPosition) && DebugAddNitainButton->GetIsEnabled())
+	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddNitainButton"));
+		HandleDebugAddNitainClicked();
+		return true;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click consumed panel background."));
+	return true;
 }
 
 bool USRFacilityControlWidget::AddDebugInputResourceToPort(int32 InputPortIndex, FName ResourceId)
@@ -768,6 +854,8 @@ bool USRFacilityControlWidget::IsScreenPositionOverControlPanel(const FVector2D&
 
 void USRFacilityControlWidget::HandleCloseClicked()
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl CloseButton OnClicked"));
+
 	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetOwningPlayer()))
 	{
 		PlayerController->ClearFacilityFocus();
@@ -779,6 +867,9 @@ void USRFacilityControlWidget::HandleCloseClicked()
 
 void USRFacilityControlWidget::HandleProcessCheckStateChanged(bool bIsChecked)
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl ProcessCheckBox changed bIsChecked=%s"),
+		bIsChecked ? TEXT("true") : TEXT("false"));
+
 	if (bUpdatingControls)
 	{
 		return;
@@ -793,6 +884,9 @@ void USRFacilityControlWidget::HandleProcessCheckStateChanged(bool bIsChecked)
 
 void USRFacilityControlWidget::HandleDeliverCheckStateChanged(bool bIsChecked)
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DeliverCheckBox changed bIsChecked=%s"),
+		bIsChecked ? TEXT("true") : TEXT("false"));
+
 	if (bUpdatingControls)
 	{
 		return;
@@ -807,6 +901,8 @@ void USRFacilityControlWidget::HandleDeliverCheckStateChanged(bool bIsChecked)
 
 void USRFacilityControlWidget::HandleDebugAddTerriteClicked()
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DebugAddTerriteButton OnClicked"));
+
 	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
 	if (!IsValid(FacilityNetwork) || FocusedOccupantId.IsNone())
 	{
@@ -821,6 +917,8 @@ void USRFacilityControlWidget::HandleDebugAddTerriteClicked()
 
 void USRFacilityControlWidget::HandleDebugAddAquidClicked()
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DebugAddAquidButton OnClicked"));
+
 	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
 	if (!IsValid(FacilityNetwork) || FocusedOccupantId.IsNone())
 	{
@@ -835,6 +933,8 @@ void USRFacilityControlWidget::HandleDebugAddAquidClicked()
 
 void USRFacilityControlWidget::HandleDebugAddNitainClicked()
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DebugAddNitainButton OnClicked"));
+
 	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
 	if (!IsValid(FacilityNetwork) || FocusedOccupantId.IsNone())
 	{
@@ -1319,7 +1419,7 @@ void USRFacilityControlWidget::RefreshControlText()
 		return;
 	}
 
-	SetVisibility(ESlateVisibility::Visible);
+	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	const FString FacilityName = IsValid(FacilityDataAsset) && !FacilityDataAsset->DisplayName.IsEmpty()
 		? FacilityDataAsset->DisplayName.ToString()

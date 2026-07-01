@@ -184,6 +184,7 @@ void ASRPlayerController::CreateTimeControlWidget()
 	}
 
 	TimeControlWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::TimeControl));
+	TimeControlWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
 
 void ASRPlayerController::CreateStructureSelectionWidget()
@@ -235,7 +236,7 @@ void ASRPlayerController::RefreshStructureSelectionWidget()
 			SurfaceGrid->SetHoveredInteractionGridPatchVisible(false);
 		}
 	}
-	StructureSelectionWidget->SetVisibility(bShowStructureSelection ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	StructureSelectionWidget->SetVisibility(bShowStructureSelection ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	if (!bShowStructureSelection)
 	{
 		SelectedStructureBuildId = NAME_None;
@@ -298,7 +299,7 @@ void ASRPlayerController::RefreshFacilityControlWidget()
 		&& !StructureInfo.OccupantId.IsNone())
 	{
 		FacilityControlWidget->SetFocusedFacility(SelectedActor, StructureInfo.OccupantId);
-		FacilityControlWidget->SetVisibility(ESlateVisibility::Visible);
+		FacilityControlWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		return;
 	}
 

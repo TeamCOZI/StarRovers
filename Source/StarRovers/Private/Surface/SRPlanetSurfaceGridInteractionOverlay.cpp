@@ -21,6 +21,64 @@ namespace
 			CellId.CellY);
 	}
 
+	void AppendInteractionFilledQuad(
+		UE::Geometry::FDynamicMesh3& OverlayMesh,
+		const FVector& Point0,
+		const FVector& Point1,
+		const FVector& Point2,
+		const FVector& Point3,
+		FLinearColor FillColor)
+	{
+		FVector QuadPoints[4] = { Point0, Point1, Point2, Point3 };
+		FVector QuadNormal = FVector::CrossProduct(QuadPoints[1] - QuadPoints[0], QuadPoints[2] - QuadPoints[0]).GetSafeNormal();
+		const FVector OutwardDirection = ((Point0 + Point1 + Point2 + Point3) * 0.25f).GetSafeNormal();
+		if (!OutwardDirection.IsNearlyZero() && FVector::DotProduct(QuadNormal, OutwardDirection) < 0.0f)
+		{
+			Swap(QuadPoints[1], QuadPoints[3]);
+			QuadNormal *= -1.0f;
+		}
+		if (QuadNormal.IsNearlyZero())
+		{
+			QuadNormal = OutwardDirection.IsNearlyZero() ? FVector::UpVector : OutwardDirection;
+		}
+
+		FillColor.A = FMath::Clamp(FillColor.A * 0.55f, 0.0f, 1.0f);
+		const int32 Vertex0 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[0]));
+		const int32 Vertex1 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[1]));
+		const int32 Vertex2 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[2]));
+		const int32 Vertex3 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[3]));
+
+		const int32 Triangle0 = OverlayMesh.AppendTriangle(Vertex0, Vertex2, Vertex1);
+		const int32 Triangle1 = OverlayMesh.AppendTriangle(Vertex0, Vertex3, Vertex2);
+
+		UE::Geometry::FDynamicMeshNormalOverlay* NormalOverlay = OverlayMesh.Attributes()->PrimaryNormals();
+		auto* ColorOverlay = OverlayMesh.Attributes()->PrimaryColors();
+		if (!NormalOverlay || !ColorOverlay)
+		{
+			return;
+		}
+
+		const int32 Normal0 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 Normal1 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 Normal2 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 Normal3 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 Color0 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
+		const int32 Color1 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
+		const int32 Color2 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
+		const int32 Color3 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
+
+		if (Triangle0 >= 0)
+		{
+			NormalOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Normal0, Normal2, Normal1));
+			ColorOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Color0, Color2, Color1));
+		}
+		if (Triangle1 >= 0)
+		{
+			NormalOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Normal0, Normal3, Normal2));
+			ColorOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Color0, Color3, Color2));
+		}
+	}
+
 	bool IsContiguousRectangularCellRegion(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
 	{
 		if (CellIds.IsEmpty())
@@ -222,7 +280,6 @@ void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
 	float LineThickness,
 	TSet<uint64>& DrawnEdges) const
 {
-	TArray<FSRPlanetSurfaceGridCell> PatchCells;
 	TArray<FSRPlanetSurfaceGridCellId> PatchCellIds;
 	if (!GetInteractionGridPatchCellIds(CenterCellId, PatchCellIds))
 	{
@@ -233,7 +290,6 @@ void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
 			*FormatSurfacePatchCellId(CenterCellId));
 		return;
 	}
-	PatchCells.Reserve(PatchCellIds.Num());
 
 	FLinearColor PatchLineColor = BaseLineColor;
 	PatchLineColor.A = FMath::Clamp(BaseLineColor.A * DebugLineOpacity, 0.0f, 1.0f);
@@ -242,80 +298,17 @@ void USRPlanetSurfaceGrid::AppendInteractionGridPatch(
 		return;
 	}
 
-	for (const FSRPlanetSurfaceGridCellId& PatchCellId : PatchCellIds)
-	{
-		FSRPlanetSurfaceGridCell PatchCell;
-		if (GetCellById(PatchCellId, PatchCell))
-		{
-			PatchCells.Add(PatchCell);
-		}
-	}
 	if (!PatchCellIds.Contains(CenterCellId))
 	{
 		UE_LOG(
 			LogTemp,
 			Warning,
-			TEXT("[SR SurfacePatch] Result=CenterMissing Center={%s} PatchIds=%d PatchCells=%d"),
+			TEXT("[SR SurfacePatch] Result=CenterMissing Center={%s} PatchIds=%d"),
 			*FormatSurfacePatchCellId(CenterCellId),
-			PatchCellIds.Num(),
-			PatchCells.Num());
+			PatchCellIds.Num());
 	}
 
-	auto AppendDedupedSegment = [this, &OverlayMesh, &PatchLineColor, LineThickness, &DrawnEdges](
-		const FVector& PointA,
-		const FVector& PointB)
-	{
-		if (FVector::DistSquared(PointA, PointB) <= KINDA_SMALL_NUMBER)
-		{
-			return;
-		}
-
-		const uint64 EdgeKey = BuildGridEdgeKey(PointA, PointB);
-		if (DrawnEdges.Contains(EdgeKey))
-		{
-			return;
-		}
-
-		DrawnEdges.Add(EdgeKey);
-		if (bUsingGeneratedGridCells)
-		{
-			AppendGridWireVolumeSegment(
-				OverlayMesh,
-				OffsetGeneratedGridWirePoint(PointA, GridSurfaceOffset),
-				OffsetGeneratedGridWirePoint(PointB, GridSurfaceOffset),
-				PatchLineColor,
-				LineThickness);
-			return;
-		}
-
-		AppendGridWireEdge(OverlayMesh, PointA, PointB, PatchLineColor, LineThickness);
-	};
-
-	for (const FSRPlanetSurfaceGridCell& PatchCell : PatchCells)
-	{
-		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
-		{
-			FVector EdgePointA;
-			FVector EdgePointB;
-			if (GetGridCellEdgePoints(PatchCell, EdgeIndex, EdgePointA, EdgePointB))
-			{
-				AppendDedupedSegment(EdgePointA, EdgePointB);
-			}
-		}
-	}
-
-	for (const FSRPlanetSurfaceGridCell& PatchCell : PatchCells)
-	{
-		for (const FSRPlanetSurfaceGridLineSegment& SideLineSegment : PatchCell.SideLineSegments)
-		{
-			if (!SideLineSegment.bHasAdjacentCell || !PatchCellIds.Contains(SideLineSegment.AdjacentCellId))
-			{
-				continue;
-			}
-
-			AppendDedupedSegment(SideLineSegment.LocalPointA, SideLineSegment.LocalPointB);
-		}
-	}
+	AppendInteractionCellRegionBoundary(OverlayMesh, PatchCellIds, PatchLineColor, LineThickness, false, &DrawnEdges);
 }
 
 void USRPlanetSurfaceGrid::SetInteractionOverlayVisible(bool bNewVisible)
@@ -334,62 +327,11 @@ void USRPlanetSurfaceGrid::AppendInteractionCell(
 	float LineThickness) const
 {
 	const float HighlightOffset = FMath::Max(0.5f, LineThickness * 0.25f);
-	auto AppendFilledQuad = [&OverlayMesh](const FVector& Point0, const FVector& Point1, const FVector& Point2, const FVector& Point3, FLinearColor FillColor)
-	{
-		FVector QuadPoints[4] = { Point0, Point1, Point2, Point3 };
-		FVector QuadNormal = FVector::CrossProduct(QuadPoints[1] - QuadPoints[0], QuadPoints[2] - QuadPoints[0]).GetSafeNormal();
-		const FVector OutwardDirection = ((Point0 + Point1 + Point2 + Point3) * 0.25f).GetSafeNormal();
-		if (!OutwardDirection.IsNearlyZero() && FVector::DotProduct(QuadNormal, OutwardDirection) < 0.0f)
-		{
-			Swap(QuadPoints[1], QuadPoints[3]);
-			QuadNormal *= -1.0f;
-		}
-		if (QuadNormal.IsNearlyZero())
-		{
-			QuadNormal = OutwardDirection.IsNearlyZero() ? FVector::UpVector : OutwardDirection;
-		}
-
-		FillColor.A = FMath::Clamp(FillColor.A * 0.55f, 0.0f, 1.0f);
-		const int32 Vertex0 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[0]));
-		const int32 Vertex1 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[1]));
-		const int32 Vertex2 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[2]));
-		const int32 Vertex3 = OverlayMesh.AppendVertex(FVector3d(QuadPoints[3]));
-
-		const int32 Triangle0 = OverlayMesh.AppendTriangle(Vertex0, Vertex2, Vertex1);
-		const int32 Triangle1 = OverlayMesh.AppendTriangle(Vertex0, Vertex3, Vertex2);
-
-		UE::Geometry::FDynamicMeshNormalOverlay* NormalOverlay = OverlayMesh.Attributes()->PrimaryNormals();
-		auto* ColorOverlay = OverlayMesh.Attributes()->PrimaryColors();
-		if (!NormalOverlay || !ColorOverlay)
-		{
-			return;
-		}
-
-		const int32 Normal0 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
-		const int32 Normal1 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
-		const int32 Normal2 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
-		const int32 Normal3 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
-		const int32 Color0 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
-		const int32 Color1 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
-		const int32 Color2 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
-		const int32 Color3 = ColorOverlay->AppendElement(FVector4f(FillColor.R, FillColor.G, FillColor.B, FillColor.A));
-
-		if (Triangle0 >= 0)
-		{
-			NormalOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Normal0, Normal2, Normal1));
-			ColorOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Color0, Color2, Color1));
-		}
-		if (Triangle1 >= 0)
-		{
-			NormalOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Normal0, Normal3, Normal2));
-			ColorOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Color0, Color3, Color2));
-		}
-	};
 
 	if (bUsingGeneratedGridCells)
 	{
 		const FVector Offset = Cell.LocalNormal.GetSafeNormal() * HighlightOffset;
-		AppendFilledQuad(Cell.Corner00 + Offset, Cell.Corner10 + Offset, Cell.Corner11 + Offset, Cell.Corner01 + Offset, LineColor);
+		AppendInteractionFilledQuad(OverlayMesh, Cell.Corner00 + Offset, Cell.Corner10 + Offset, Cell.Corner11 + Offset, Cell.Corner01 + Offset, LineColor);
 		AppendGridWireSegment(OverlayMesh, Cell.Corner00 + Offset, Cell.Corner10 + Offset, LineColor, LineThickness);
 		AppendGridWireSegment(OverlayMesh, Cell.Corner10 + Offset, Cell.Corner11 + Offset, LineColor, LineThickness);
 		AppendGridWireSegment(OverlayMesh, Cell.Corner11 + Offset, Cell.Corner01 + Offset, LineColor, LineThickness);
@@ -401,8 +343,143 @@ void USRPlanetSurfaceGrid::AppendInteractionCell(
 	const FVector FillPoint10 = ResolveLocalSurfacePoint(Cell.Corner10.GetSafeNormal(), GridSurfaceOffset + HighlightOffset);
 	const FVector FillPoint11 = ResolveLocalSurfacePoint(Cell.Corner11.GetSafeNormal(), GridSurfaceOffset + HighlightOffset);
 	const FVector FillPoint01 = ResolveLocalSurfacePoint(Cell.Corner01.GetSafeNormal(), GridSurfaceOffset + HighlightOffset);
-	AppendFilledQuad(FillPoint00, FillPoint10, FillPoint11, FillPoint01, LineColor);
+	AppendInteractionFilledQuad(OverlayMesh, FillPoint00, FillPoint10, FillPoint11, FillPoint01, LineColor);
 	AppendGridWireCell(OverlayMesh, Cell, LineColor, LineThickness, false, nullptr);
+}
+
+void USRPlanetSurfaceGrid::AppendInteractionCellRegionBoundary(
+	UE::Geometry::FDynamicMesh3& OverlayMesh,
+	const TArray<FSRPlanetSurfaceGridCellId>& CellIds,
+	const FLinearColor& LineColor,
+	float LineThickness,
+	bool bIncludeFill,
+	TSet<uint64>* SharedDrawnEdges) const
+{
+	if (CellIds.IsEmpty())
+	{
+		return;
+	}
+
+	TSet<FSRPlanetSurfaceGridCellId> RegionCellIdSet;
+	RegionCellIdSet.Reserve(CellIds.Num());
+	TArray<FSRPlanetSurfaceGridCell> RegionCells;
+	RegionCells.Reserve(CellIds.Num());
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		RegionCellIdSet.Add(CellId);
+
+		FSRPlanetSurfaceGridCell Cell;
+		if (GetCellById(CellId, Cell))
+		{
+			RegionCells.Add(Cell);
+		}
+	}
+
+	if (RegionCells.IsEmpty())
+	{
+		return;
+	}
+
+	TSet<uint64> LocalDrawnEdges;
+	if (!SharedDrawnEdges)
+	{
+		LocalDrawnEdges.Reserve(RegionCells.Num() * 4);
+	}
+	TSet<uint64>& DrawnEdges = SharedDrawnEdges ? *SharedDrawnEdges : LocalDrawnEdges;
+	const float HighlightOffset = FMath::Max(0.5f, LineThickness * 0.25f);
+
+	auto AppendBoundarySegment = [this, &OverlayMesh, &LineColor, LineThickness, HighlightOffset, &DrawnEdges](
+		const FVector& PointA,
+		const FVector& PointB)
+	{
+		FVector DrawPointA = PointA;
+		FVector DrawPointB = PointB;
+		if (bUsingGeneratedGridCells)
+		{
+			DrawPointA = OffsetGeneratedGridWirePoint(DrawPointA, GridSurfaceOffset + HighlightOffset);
+			DrawPointB = OffsetGeneratedGridWirePoint(DrawPointB, GridSurfaceOffset + HighlightOffset);
+		}
+
+		if (FVector::DistSquared(DrawPointA, DrawPointB) <= KINDA_SMALL_NUMBER)
+		{
+			return;
+		}
+
+		const uint64 EdgeKey = BuildGridEdgeKey(DrawPointA, DrawPointB);
+		if (DrawnEdges.Contains(EdgeKey))
+		{
+			return;
+		}
+		DrawnEdges.Add(EdgeKey);
+
+		if (bUsingGeneratedGridCells)
+		{
+			AppendGridWireSegment(OverlayMesh, DrawPointA, DrawPointB, LineColor, LineThickness);
+			return;
+		}
+
+		AppendGridWireEdge(OverlayMesh, DrawPointA, DrawPointB, LineColor, LineThickness);
+	};
+
+	if (bIncludeFill)
+	{
+		for (const FSRPlanetSurfaceGridCell& Cell : RegionCells)
+		{
+			if (bUsingGeneratedGridCells)
+			{
+				AppendInteractionFilledQuad(
+					OverlayMesh,
+					OffsetGeneratedGridWirePoint(Cell.Corner00, GridSurfaceOffset + HighlightOffset),
+					OffsetGeneratedGridWirePoint(Cell.Corner10, GridSurfaceOffset + HighlightOffset),
+					OffsetGeneratedGridWirePoint(Cell.Corner11, GridSurfaceOffset + HighlightOffset),
+					OffsetGeneratedGridWirePoint(Cell.Corner01, GridSurfaceOffset + HighlightOffset),
+					LineColor);
+				continue;
+			}
+
+			AppendInteractionFilledQuad(
+				OverlayMesh,
+				ResolveLocalSurfacePoint(Cell.Corner00.GetSafeNormal(), GridSurfaceOffset + HighlightOffset),
+				ResolveLocalSurfacePoint(Cell.Corner10.GetSafeNormal(), GridSurfaceOffset + HighlightOffset),
+				ResolveLocalSurfacePoint(Cell.Corner11.GetSafeNormal(), GridSurfaceOffset + HighlightOffset),
+				ResolveLocalSurfacePoint(Cell.Corner01.GetSafeNormal(), GridSurfaceOffset + HighlightOffset),
+				LineColor);
+		}
+	}
+
+	for (const FSRPlanetSurfaceGridCell& Cell : RegionCells)
+	{
+		for (int32 EdgeIndex = 0; EdgeIndex < 4; ++EdgeIndex)
+		{
+			const FSRPlanetSurfaceGridCellId NeighborId = GetGridCellEdgeNeighborId(Cell, EdgeIndex);
+			if (!(NeighborId == Cell.CellId) && RegionCellIdSet.Contains(NeighborId))
+			{
+				continue;
+			}
+
+			FVector EdgePointA;
+			FVector EdgePointB;
+			if (GetGridCellEdgePoints(Cell, EdgeIndex, EdgePointA, EdgePointB))
+			{
+				AppendBoundarySegment(EdgePointA, EdgePointB);
+			}
+		}
+
+		if (!bUsingGeneratedGridCells)
+		{
+			continue;
+		}
+
+		for (const FSRPlanetSurfaceGridLineSegment& SideLineSegment : Cell.SideLineSegments)
+		{
+			if (SideLineSegment.bHasAdjacentCell && RegionCellIdSet.Contains(SideLineSegment.AdjacentCellId))
+			{
+				continue;
+			}
+
+			AppendBoundarySegment(SideLineSegment.LocalPointA, SideLineSegment.LocalPointB);
+		}
+	}
 }
 
 void USRPlanetSurfaceGrid::AppendInteractionCellRegion(
@@ -467,14 +544,7 @@ void USRPlanetSurfaceGrid::AppendInteractionCellRegion(
 		}
 	}
 
-	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
-	{
-		FSRPlanetSurfaceGridCell Cell;
-		if (GetCellById(CellId, Cell))
-		{
-			AppendInteractionCell(OverlayMesh, Cell, LineColor, LineThickness);
-		}
-	}
+	AppendInteractionCellRegionBoundary(OverlayMesh, CellIds, LineColor, LineThickness, true);
 }
 
 bool USRPlanetSurfaceGrid::TryAppendRectangularInteractionCellRegion(

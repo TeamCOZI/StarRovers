@@ -269,7 +269,7 @@ bool ASRPlanet::BuildShellDynamicMesh(
 	ShellMeshes.SetNum(1);
 	ShellMeshes[0].EnableAttributes();
 	ShellMeshes[0].Attributes()->EnablePrimaryColors();
-	ShellMeshes[0].Attributes()->SetNumUVLayers(1);
+	ShellMeshes[0].Attributes()->SetNumUVLayers(2);
 	ShellMeshes[0].Attributes()->EnableMaterialID();
 
 	TMap<FSRTerrainVertexKey, int32> WeldedVertexIds;

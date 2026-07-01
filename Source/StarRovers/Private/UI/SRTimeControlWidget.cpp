@@ -564,7 +564,10 @@ void USRTimeControlWidget::NativeConstruct()
 	RefreshTimeControlState();
 	RefreshProgressState();
 	RefreshFocusedBodyState();
-	RefreshMiniMapTextureFromFocusedBody(true);
+	if (bMiniMapEnabled)
+	{
+		RefreshMiniMapTextureFromFocusedBody(true);
+	}
 }
 
 void USRTimeControlWidget::NativePreConstruct()
@@ -577,7 +580,10 @@ void USRTimeControlWidget::NativePreConstruct()
 	RefreshTimeControlState();
 	RefreshProgressState();
 	RefreshFocusedBodyState();
-	RefreshMiniMapTextureFromFocusedBody(true);
+	if (bMiniMapEnabled)
+	{
+		RefreshMiniMapTextureFromFocusedBody(true);
+	}
 }
 
 void USRTimeControlWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -611,18 +617,25 @@ void USRTimeControlWidget::NativeTick(const FGeometry& MyGeometry, float InDelta
 		RefreshFocusedBodyState();
 	}
 
-	MiniMapRefreshAccumulator += SafeDeltaTime;
-	if (MiniMapRefreshInterval <= 0.0f || MiniMapRefreshAccumulator >= MiniMapRefreshInterval)
+	if (bMiniMapEnabled)
 	{
-		MiniMapRefreshAccumulator = 0.0f;
-		RefreshMiniMapTextureFromFocusedBody(false);
+		MiniMapRefreshAccumulator += SafeDeltaTime;
+		if (MiniMapRefreshInterval <= 0.0f || MiniMapRefreshAccumulator >= MiniMapRefreshInterval)
+		{
+			MiniMapRefreshAccumulator = 0.0f;
+			RefreshMiniMapTextureFromFocusedBody(false);
+		}
 	}
 }
 
 FReply USRTimeControlWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (IsScreenPositionOverTimeControlPanel(InMouseEvent.GetScreenSpacePosition()))
+	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+	if (IsScreenPositionOverTimeControlPanel(ScreenPosition))
 	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: TimeControl NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
+			ScreenPosition.X,
+			ScreenPosition.Y);
 		return FReply::Handled();
 	}
 
@@ -631,8 +644,12 @@ FReply USRTimeControlWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry
 
 FReply USRTimeControlWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (IsScreenPositionOverTimeControlPanel(InMouseEvent.GetScreenSpacePosition()))
+	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+	if (IsScreenPositionOverTimeControlPanel(ScreenPosition))
 	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: TimeControl NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
+			ScreenPosition.X,
+			ScreenPosition.Y);
 		return FReply::Handled();
 	}
 
@@ -984,6 +1001,7 @@ void USRTimeControlWidget::BuildTimeControlWidgetTree()
 	MiniMapContainerBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("MiniMapContainerBorder"));
 	MiniMapContainerBorder->SetPadding(FMargin(0.0f));
 	MiniMapContainerBorder->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.0f));
+	MiniMapContainerBorder->SetVisibility(bMiniMapEnabled ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	if (UCanvasPanelSlot* MiniMapContainerSlot = TimeControlCanvasPanel->AddChildToCanvas(MiniMapContainerBorder))
 	{
 		MiniMapContainerSlot->SetAnchors(FAnchors(0.0f, 1.0f, 0.0f, 1.0f));
@@ -993,14 +1011,14 @@ void USRTimeControlWidget::BuildTimeControlWidgetTree()
 	}
 
 	MiniMapCanvasPanel = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("MiniMapCanvasPanel"));
-	MiniMapCanvasPanel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	MiniMapCanvasPanel->SetVisibility(bMiniMapEnabled ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	MiniMapContainerBorder->SetContent(MiniMapCanvasPanel);
 
 	MiniMapImageSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("MiniMapImageSizeBox"));
 	MiniMapImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("MiniMapImage"));
 	if (MiniMapImageSizeBox && MiniMapImage)
 	{
-		MiniMapImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+		MiniMapImage->SetVisibility(bMiniMapEnabled ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 		MiniMapImageSizeBox->AddChild(MiniMapImage);
 		if (USizeBoxSlot* MiniMapImageSlot = Cast<USizeBoxSlot>(MiniMapImage->Slot))
 		{
@@ -1022,7 +1040,10 @@ void USRTimeControlWidget::BuildTimeControlWidgetTree()
 	SynchronizeTopBarLayout();
 	RefreshProgressState();
 	RefreshFocusedBodyState();
-	RefreshMiniMapTextureFromFocusedBody(true);
+	if (bMiniMapEnabled)
+	{
+		RefreshMiniMapTextureFromFocusedBody(true);
+	}
 }
 
 void USRTimeControlWidget::BindTimeControlButtonHandlers()
@@ -1129,9 +1150,41 @@ void USRTimeControlWidget::RefreshFocusedBodyState()
 
 void USRTimeControlWidget::RefreshMiniMapTextureFromFocusedBody(bool bForceRefresh)
 {
+	if (!bMiniMapEnabled)
+	{
+		MiniMapRefreshAccumulator = 0.0f;
+		LastMiniMapSourceActor = nullptr;
+		if (MiniMapContainerBorder)
+		{
+			MiniMapContainerBorder->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (MiniMapCanvasPanel)
+		{
+			MiniMapCanvasPanel->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (MiniMapImage)
+		{
+			MiniMapImage->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		return;
+	}
+
 	if (bForceRefresh)
 	{
 		MiniMapRefreshAccumulator = 0.0f;
+	}
+
+	if (MiniMapContainerBorder)
+	{
+		MiniMapContainerBorder->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+	if (MiniMapCanvasPanel)
+	{
+		MiniMapCanvasPanel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+	if (MiniMapImage)
+	{
+		MiniMapImage->SetVisibility(ESlateVisibility::HitTestInvisible);
 	}
 
 	AActor* FocusedActor = nullptr;
@@ -1141,7 +1194,7 @@ void USRTimeControlWidget::RefreshMiniMapTextureFromFocusedBody(bool bForceRefre
 		FocusedActor = FocusInfo.bIsValid ? FocusInfo.Actor.Get() : PlayerController->GetSelectedActor();
 	}
 
-	if (!DefaultMiniMapTexture)
+	if (bMiniMapEnabled && !DefaultMiniMapTexture)
 	{
 		DefaultMiniMapTexture = CreateMiniMapPlaceholderTexture(
 			TEXT("SR_TempMiniMap"),
@@ -1215,7 +1268,7 @@ void USRTimeControlWidget::RefreshButtonIconBrushes()
 		DefaultSettingsIconTexture = CreateIconTexture(ESRTimeControlIconShape::Settings, TEXT("SR_TempSettingsIcon"));
 	}
 
-	if (!DefaultMiniMapTexture)
+	if (bMiniMapEnabled && !DefaultMiniMapTexture)
 	{
 		DefaultMiniMapTexture = CreateMiniMapPlaceholderTexture(
 			TEXT("SR_TempMiniMap"),
@@ -1232,7 +1285,26 @@ void USRTimeControlWidget::RefreshButtonIconBrushes()
 	SetImageBrush(HelpButtonImage, HelpButtonIconBrush, DefaultHelpIconTexture);
 	SetImageBrush(CodexButtonImage, CodexButtonIconBrush, DefaultCodexIconTexture);
 	SetImageBrush(SettingsButtonImage, SettingsButtonIconBrush, DefaultSettingsIconTexture);
-	SetMiniMapImageBrush(MiniMapImage, MiniMapImageBrush, DefaultMiniMapTexture);
+
+	if (bMiniMapEnabled)
+	{
+		SetMiniMapImageBrush(MiniMapImage, MiniMapImageBrush, DefaultMiniMapTexture);
+	}
+	else
+	{
+		if (MiniMapContainerBorder)
+		{
+			MiniMapContainerBorder->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (MiniMapCanvasPanel)
+		{
+			MiniMapCanvasPanel->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (MiniMapImage)
+		{
+			MiniMapImage->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
 }
 
 void USRTimeControlWidget::SynchronizeTopBarLayout()
@@ -1398,40 +1470,56 @@ void USRTimeControlWidget::SynchronizeTopBarLayout()
 		BottomFocusNameTextBlock->SetFont(BottomFocusNameFont);
 	}
 
-	const float MiniMapLength = FMath::Max(1.0f, ViewportLocalSize.X * SafeBottomFocusWidthRatio);
-	const float MiniMapInnerLength = FMath::Max(1.0f, MiniMapLength * SafeMiniMapInnerRatio);
-	if (MiniMapContainerBorder)
+	if (!bMiniMapEnabled)
 	{
-		if (UCanvasPanelSlot* MiniMapContainerSlot = Cast<UCanvasPanelSlot>(MiniMapContainerBorder->Slot))
+		if (MiniMapContainerBorder)
 		{
-			MiniMapContainerSlot->SetAnchors(FAnchors(0.0f, 1.0f, 0.0f, 1.0f));
-			MiniMapContainerSlot->SetAlignment(FVector2D(0.0f, 1.0f));
-			MiniMapContainerSlot->SetPosition(FVector2D(0.0f, -BottomFocusNameHeight));
-			MiniMapContainerSlot->SetSize(FVector2D(MiniMapLength, MiniMapLength));
+			MiniMapContainerBorder->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (MiniMapImage)
+		{
+			MiniMapImage->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
-
-	if (MiniMapImageSizeBox)
+	else
 	{
-		MiniMapImageSizeBox->SetWidthOverride(MiniMapInnerLength);
-		MiniMapImageSizeBox->SetHeightOverride(MiniMapInnerLength);
-		MiniMapImageSizeBox->SetMinDesiredWidth(MiniMapInnerLength);
-		MiniMapImageSizeBox->SetMinDesiredHeight(MiniMapInnerLength);
-		MiniMapImageSizeBox->SetMaxDesiredWidth(MiniMapInnerLength);
-		MiniMapImageSizeBox->SetMaxDesiredHeight(MiniMapInnerLength);
-
-		if (UCanvasPanelSlot* MiniMapImageSizeBoxSlot = Cast<UCanvasPanelSlot>(MiniMapImageSizeBox->Slot))
+		const float MiniMapLength = FMath::Max(1.0f, ViewportLocalSize.X * SafeBottomFocusWidthRatio);
+		const float MiniMapInnerLength = FMath::Max(1.0f, MiniMapLength * SafeMiniMapInnerRatio);
+		if (MiniMapContainerBorder)
 		{
-			MiniMapImageSizeBoxSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-			MiniMapImageSizeBoxSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-			MiniMapImageSizeBoxSlot->SetPosition(FVector2D(0.0f, 0.0f));
-			MiniMapImageSizeBoxSlot->SetSize(FVector2D(MiniMapInnerLength, MiniMapInnerLength));
+			MiniMapContainerBorder->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			if (UCanvasPanelSlot* MiniMapContainerSlot = Cast<UCanvasPanelSlot>(MiniMapContainerBorder->Slot))
+			{
+				MiniMapContainerSlot->SetAnchors(FAnchors(0.0f, 1.0f, 0.0f, 1.0f));
+				MiniMapContainerSlot->SetAlignment(FVector2D(0.0f, 1.0f));
+				MiniMapContainerSlot->SetPosition(FVector2D(0.0f, -BottomFocusNameHeight));
+				MiniMapContainerSlot->SetSize(FVector2D(MiniMapLength, MiniMapLength));
+			}
 		}
-	}
 
-	if (MiniMapImage)
-	{
-		MiniMapImage->SetDesiredSizeOverride(FVector2D(MiniMapInnerLength, MiniMapInnerLength));
+		if (MiniMapImageSizeBox)
+		{
+			MiniMapImageSizeBox->SetWidthOverride(MiniMapInnerLength);
+			MiniMapImageSizeBox->SetHeightOverride(MiniMapInnerLength);
+			MiniMapImageSizeBox->SetMinDesiredWidth(MiniMapInnerLength);
+			MiniMapImageSizeBox->SetMinDesiredHeight(MiniMapInnerLength);
+			MiniMapImageSizeBox->SetMaxDesiredWidth(MiniMapInnerLength);
+			MiniMapImageSizeBox->SetMaxDesiredHeight(MiniMapInnerLength);
+
+			if (UCanvasPanelSlot* MiniMapImageSizeBoxSlot = Cast<UCanvasPanelSlot>(MiniMapImageSizeBox->Slot))
+			{
+				MiniMapImageSizeBoxSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+				MiniMapImageSizeBoxSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+				MiniMapImageSizeBoxSlot->SetPosition(FVector2D(0.0f, 0.0f));
+				MiniMapImageSizeBoxSlot->SetSize(FVector2D(MiniMapInnerLength, MiniMapInnerLength));
+			}
+		}
+
+		if (MiniMapImage)
+		{
+			MiniMapImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+			MiniMapImage->SetDesiredSizeOverride(FVector2D(MiniMapInnerLength, MiniMapInnerLength));
+		}
 	}
 
 	auto ApplyButtonLayout = [ButtonLength, IconLength](USizeBox* ButtonSizeBox, UImage* ButtonImage)
@@ -1532,6 +1620,8 @@ bool USRTimeControlWidget::IsScreenPositionOverTimeControlPanel(const FVector2D&
 
 void USRTimeControlWidget::HandlePauseClicked()
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: TimeControl PauseButton OnClicked"));
+
 	if (USRTimeControlSubsystem* TimeControlSubsystem = GetTimeControlSubsystem())
 	{
 		TimeControlSubsystem->PauseSimulation();
@@ -1542,6 +1632,8 @@ void USRTimeControlWidget::HandlePauseClicked()
 
 void USRTimeControlWidget::HandlePlayClicked()
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: TimeControl PlayButton OnClicked"));
+
 	if (USRTimeControlSubsystem* TimeControlSubsystem = GetTimeControlSubsystem())
 	{
 		TimeControlSubsystem->ResumeSimulation();
@@ -1552,6 +1644,8 @@ void USRTimeControlWidget::HandlePlayClicked()
 
 void USRTimeControlWidget::HandleFastForwardClicked()
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: TimeControl FastForwardButton OnClicked"));
+
 	if (USRTimeControlSubsystem* TimeControlSubsystem = GetTimeControlSubsystem())
 	{
 		TimeControlSubsystem->SetSimulationSpeedPreset(FMath::Max(0.0f, FastForwardTimeScale));

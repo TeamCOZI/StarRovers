@@ -10,7 +10,11 @@
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "UI/SRCelestialBodyFocusInfoWidget.h"
+#include "UI/SRCelestialBodyOverviewWidget.h"
+#include "UI/SRFacilityControlWidget.h"
 #include "UI/SRStructureSelectionWidget.h"
+#include "UI/SRTimeControlWidget.h"
 
 namespace
 {
@@ -314,13 +318,77 @@ void ASRPlayerController::HandleStructureSelectionTab()
 
 void ASRPlayerController::HandleLeftClick()
 {
-	if (StructureSelectionWidget && StructureSelectionWidget->TryHandleStructureSelectionPointerClick())
-	{
-		return;
-	}
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+	const bool bHasMousePosition = GetMousePosition(MouseX, MouseY);
+	const bool bOverFacilityControl = IsValid(FacilityControlWidget) && FacilityControlWidget->IsPointerOverControlPanel();
+	const bool bOverFocusInfo = IsValid(FocusInfoWidget) && FocusInfoWidget->IsPointerOverFocusInfoUi();
+	const bool bOverOverview = IsValid(OverviewWidget) && OverviewWidget->IsPointerOverOverviewUi();
+	const bool bOverTimeControl = IsValid(TimeControlWidget) && TimeControlWidget->IsPointerOverTimeControlPanel();
+	const bool bOverStructureSelection = IsValid(StructureSelectionWidget) && StructureSelectionWidget->IsPointerOverStructureSelectionPanel();
+	const bool bOverBlockingUi = bOverFacilityControl
+		|| bOverFocusInfo
+		|| bOverOverview
+		|| bOverTimeControl
+		|| bOverStructureSelection;
+	ESRPlayerUiLayer TopBlockingUiLayer = ESRPlayerUiLayer::FocusInfo;
+	const TCHAR* TopBlockingUiName = TEXT("None");
+	int32 TopBlockingUiZOrder = MIN_int32;
 
-	if (IsPointerOverBlockingUi())
+	const auto ConsiderBlockingUiLayer =
+		[this, &TopBlockingUiLayer, &TopBlockingUiName, &TopBlockingUiZOrder](bool bIsPointerOverLayer, ESRPlayerUiLayer Layer, const TCHAR* LayerName)
+		{
+			if (!bIsPointerOverLayer)
+			{
+				return;
+			}
+
+			const int32 LayerZOrder = ResolveWidgetLayerZOrder(Layer);
+			if (LayerZOrder >= TopBlockingUiZOrder)
+			{
+				TopBlockingUiLayer = Layer;
+				TopBlockingUiName = LayerName;
+				TopBlockingUiZOrder = LayerZOrder;
+			}
+		};
+
+	ConsiderBlockingUiLayer(bOverFacilityControl, ESRPlayerUiLayer::FacilityControl, TEXT("FacilityControl"));
+	ConsiderBlockingUiLayer(bOverFocusInfo, ESRPlayerUiLayer::FocusInfo, TEXT("FocusInfo"));
+	ConsiderBlockingUiLayer(bOverOverview, ESRPlayerUiLayer::Overview, TEXT("Overview"));
+	ConsiderBlockingUiLayer(bOverTimeControl, ESRPlayerUiLayer::TimeControl, TEXT("TimeControl"));
+	ConsiderBlockingUiLayer(bOverStructureSelection, ESRPlayerUiLayer::StructureSelection, TEXT("StructureSelection"));
+
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick Mouse=(%.1f, %.1f) HasMouse=%s FacilityControl=%s FocusInfo=%s Overview=%s TimeControl=%s StructureSelection=%s TopBlockingUi=%s TopZOrder=%d"),
+		MouseX,
+		MouseY,
+		bHasMousePosition ? TEXT("true") : TEXT("false"),
+		bOverFacilityControl ? TEXT("true") : TEXT("false"),
+		bOverFocusInfo ? TEXT("true") : TEXT("false"),
+		bOverOverview ? TEXT("true") : TEXT("false"),
+		bOverTimeControl ? TEXT("true") : TEXT("false"),
+		bOverStructureSelection ? TEXT("true") : TEXT("false"),
+		TopBlockingUiName,
+		TopBlockingUiZOrder);
+
+	if (bOverBlockingUi)
 	{
+		if (TopBlockingUiLayer == ESRPlayerUiLayer::FacilityControl
+			&& FacilityControlWidget
+			&& FacilityControlWidget->TryHandleFacilityControlPointerClick())
+		{
+			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick handled by top FacilityControl UI."));
+			return;
+		}
+
+		if (TopBlockingUiLayer == ESRPlayerUiLayer::StructureSelection
+			&& StructureSelectionWidget
+			&& StructureSelectionWidget->TryHandleStructureSelectionPointerClick())
+		{
+			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick handled by top StructureSelection UI."));
+			return;
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick blocked by top UI hit test: %s."), TopBlockingUiName);
 		return;
 	}
 

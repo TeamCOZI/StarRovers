@@ -66,6 +66,14 @@ uint32 ASRCelestialBody::ComputeDynamicMeshBuildHash() const
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.NoisePersistence));
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.OceanThreshold));
 	Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.AtmosphereThreshold));
+	Hash = HashCombine(Hash, ::GetTypeHash(ToonOutlineSettings.bEnableToonOutline ? 1 : 0));
+	Hash = HashCombine(Hash, ::GetTypeHash(ToonOutlineSettings.bUseFeatureEdgeToonOutline ? 1 : 0));
+	Hash = HashCombine(Hash, ::GetTypeHash(ToonOutlineSettings.ToonLineThickness));
+	Hash = HashCombine(Hash, ::GetTypeHash(ToonOutlineSettings.ToonLineColor.R));
+	Hash = HashCombine(Hash, ::GetTypeHash(ToonOutlineSettings.ToonLineColor.G));
+	Hash = HashCombine(Hash, ::GetTypeHash(ToonOutlineSettings.ToonLineColor.B));
+	Hash = HashCombine(Hash, ::GetTypeHash(ToonOutlineSettings.ToonLineColor.A));
+	Hash = HashCombine(Hash, ::GetTypeHash(ToonOutlineSettings.FeatureEdgeAngleThresholdDegrees));
 
 	for (const FSRBiomeMaterialEntry& BiomeMaterialEntry : DynamicMeshGeneration.BiomeMaterials)
 	{

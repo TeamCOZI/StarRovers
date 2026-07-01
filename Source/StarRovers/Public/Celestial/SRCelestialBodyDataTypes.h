@@ -29,6 +29,15 @@ struct STARROVERS_API FSRToonOutlineSettings
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Visual|Toon Outline", meta = (DisplayName = "ToonLineThickness", ClampMin = "0.0", ClampMax = "0.25", EditCondition = "bEnableToonOutline"))
 	float ToonLineThickness = 0.035f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Visual|Toon Outline", meta = (DisplayName = "bUseFeatureEdgeToonOutline", EditCondition = "bEnableToonOutline"))
+	bool bUseFeatureEdgeToonOutline = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Visual|Toon Outline", meta = (DisplayName = "bDrawMaterialCellGridToonOutline", EditCondition = "bEnableToonOutline"))
+	bool bDrawMaterialCellGridToonOutline = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Visual|Toon Outline", meta = (DisplayName = "FeatureEdgeAngleThresholdDegrees", ClampMin = "0.0", ClampMax = "90.0", EditCondition = "bEnableToonOutline && bUseFeatureEdgeToonOutline"))
+	float FeatureEdgeAngleThresholdDegrees = 8.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Visual|Toon Outline", meta = (DisplayName = "bApplyToonOutlineToOcean", EditCondition = "bEnableToonOutline"))
 	bool bApplyToonOutlineToOcean = true;
 

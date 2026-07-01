@@ -214,8 +214,12 @@ void USRCelestialBodyFocusInfoWidget::NativeTick(const FGeometry& MyGeometry, fl
 
 FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (IsScreenPositionOverFocusInfoUi(InMouseEvent.GetScreenSpacePosition()))
+	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+	if (IsScreenPositionOverFocusInfoUi(ScreenPosition))
 	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
+			ScreenPosition.X,
+			ScreenPosition.Y);
 		return FReply::Handled();
 	}
 
@@ -224,8 +228,12 @@ FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonDown(const FGeometry&
 
 FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (IsScreenPositionOverFocusInfoUi(InMouseEvent.GetScreenSpacePosition()))
+	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
+	if (IsScreenPositionOverFocusInfoUi(ScreenPosition))
 	{
+		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
+			ScreenPosition.X,
+			ScreenPosition.Y);
 		return FReply::Handled();
 	}
 
@@ -712,6 +720,7 @@ void USRCelestialBodyFocusInfoWidget::RefreshAssemblyModeButton()
 
 void USRCelestialBodyFocusInfoWidget::HandleAssemblyModeButtonClicked()
 {
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo AssemblyModeButton OnClicked"));
 	AssemblyModeRequestedEvent.Broadcast();
 }
 

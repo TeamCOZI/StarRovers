@@ -76,6 +76,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Bottom Bar", meta = (DisplayName = "Bottom Focus Width Viewport Ratio", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
 	float BottomFocusWidthViewportRatio = 0.15f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Bottom Bar", meta = (DisplayName = "Mini Map Enabled"))
+	bool bMiniMapEnabled = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Bottom Bar", meta = (DisplayName = "Mini Map Inner Size Ratio", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
 	float MiniMapInnerSizeRatio = 0.90f;
 

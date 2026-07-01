@@ -15,6 +15,7 @@ namespace
 {
 	const FName PlanetCenterMaterialParameterName(TEXT("PlanetCenterWS"));
 	const FName ToonLineEnabledMaterialParameterName(TEXT("ToonLineEnabled"));
+	const FName ToonCellGridLineEnabledMaterialParameterName(TEXT("ToonCellGridLineEnabled"));
 	const FName ToonLineColorMaterialParameterName(TEXT("ToonLineColor"));
 	const FName ToonLineThicknessMaterialParameterName(TEXT("ToonLineThickness"));
 
@@ -29,7 +30,11 @@ namespace
 		}
 
 		MaterialInstance->SetVectorParameterValue(PlanetCenterMaterialParameterName, FLinearColor(PlanetCenterWS));
-		MaterialInstance->SetScalarParameterValue(ToonLineEnabledMaterialParameterName, ToonOutlineSettings.bEnableToonOutline ? 1.0f : 0.0f);
+		const bool bEnableMaterialCellGridLine =
+			ToonOutlineSettings.bEnableToonOutline
+			&& (!ToonOutlineSettings.bUseFeatureEdgeToonOutline || ToonOutlineSettings.bDrawMaterialCellGridToonOutline);
+		MaterialInstance->SetScalarParameterValue(ToonLineEnabledMaterialParameterName, bEnableMaterialCellGridLine ? 1.0f : 0.0f);
+		MaterialInstance->SetScalarParameterValue(ToonCellGridLineEnabledMaterialParameterName, bEnableMaterialCellGridLine ? 1.0f : 0.0f);
 		MaterialInstance->SetVectorParameterValue(ToonLineColorMaterialParameterName, ToonOutlineSettings.ToonLineColor);
 		MaterialInstance->SetScalarParameterValue(ToonLineThicknessMaterialParameterName, FMath::Max(0.0f, ToonOutlineSettings.ToonLineThickness));
 	}

@@ -71,7 +71,7 @@ bool ASRCelestialBody::BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPre
 	{
 		FaceDynamicMesh.EnableAttributes();
 		FaceDynamicMesh.Attributes()->EnablePrimaryColors();
-		FaceDynamicMesh.Attributes()->SetNumUVLayers(1);
+		FaceDynamicMesh.Attributes()->SetNumUVLayers(2);
 		FaceDynamicMesh.Attributes()->EnableMaterialID();
 	}
 	PreBuildMeshSetupMs = SRCelestialElapsedMilliseconds(PreBuildStageStart);
@@ -93,6 +93,7 @@ bool ASRCelestialBody::BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPre
 		PreparedSurfaceGridCells,
 		CachedCellIndexByFlatId,
 		PreparedColorDataByFlatId,
+		ToonOutlineSettings,
 		FaceResolution,
 		Scale,
 		TerrainHeightStep,
@@ -253,12 +254,14 @@ bool ASRCelestialBody::BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPre
 		TerrainEdgeAccumulator.RegisterCellEdges(
 			CellGeometry,
 			TerrainSample,
+			SurfaceRenderData,
 			MaterialId,
 			CellId,
 			bProfileBuildBreakdown,
 			TerrainEdgeRegisterMs);
 		++ValidCellCount;
 	}
+	TerrainEdgeAccumulator.FlushPendingSideWallFeatureMaskEdges();
 	CompactPreparedSurfaceGridCells(PreparedSurfaceGridCells, CachedCellIndexByFlatId, ValidCellCount);
 	const double CellLoopMs = SRCelestialElapsedMilliseconds(BuildCellsStart);
 	const FSRCelestialBodyDynamicMeshTerrainEdgeStats& TerrainEdgeStats = TerrainEdgeAccumulator.GetStats();
@@ -275,6 +278,12 @@ bool ASRCelestialBody::BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPre
 		TerrainEdgeAccumulator.GetPendingEdgeCount(),
 		TerrainEdgeStats.MaxPendingEdgeCount,
 		PendingTerrainEdgeReserveCount));
+	FSRTimingLog::AddLine(FString::Printf(
+		TEXT("DynamicMesh '%s' BaseMetadata.ToonOutline FeatureMasks=%d AngleThreshold=%.2f Thickness=%.4f"),
+		*GetName(),
+		TerrainEdgeStats.FeatureEdgeMaskCount,
+		FMath::Clamp(ToonOutlineSettings.FeatureEdgeAngleThresholdDegrees, 0.0f, 90.0f),
+		FMath::Clamp(ToonOutlineSettings.ToonLineThickness, 0.0f, 0.25f)));
 	const int32 SideWallUnpatchedTriangleCount = FMath::Max(
 		0,
 		TerrainEdgeStats.SideWallFailedTriangleCount - TerrainEdgeStats.SideWallFallbackTriangleCount);
@@ -357,6 +366,7 @@ bool ASRCelestialBody::BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPre
 	OutPreparedMesh.bValid = true;
 	OutPreparedMesh.BuildHash = DynamicMeshBuildHash;
 	OutPreparedMesh.FaceDynamicMeshes = MoveTemp(FaceDynamicMeshes);
+	OutPreparedMesh.FeatureEdgeMaskCount = TerrainEdgeStats.FeatureEdgeMaskCount;
 	OutPreparedMesh.SurfaceGridCells = MoveTemp(PreparedSurfaceGridCells);
 	OutPreparedMesh.CellIndexByFlatId = MoveTemp(CachedCellIndexByFlatId);
 	OutPreparedMesh.ColorDataByFlatId = MoveTemp(PreparedColorDataByFlatId);
