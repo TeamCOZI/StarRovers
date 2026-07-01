@@ -8,6 +8,7 @@
 #include "GameFramework/Actor.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Structure/SRStructureInstanceManagerComponent.h"
+#include "Structure/SRStructureSurfacePortHelpers.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 namespace
@@ -84,45 +85,6 @@ namespace
 		return ESRConveyorPlacementEndpointRole::Ambiguous;
 	}
 
-	bool GetNeighborCellIdByStructurePortDirection(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRPlanetSurfaceGridCellId& CellId,
-		ESRStructurePortDirection Direction,
-		FSRPlanetSurfaceGridCellId& OutNeighborCellId)
-	{
-		OutNeighborCellId = FSRPlanetSurfaceGridCellId();
-		if (!IsValid(SurfaceGrid))
-		{
-			return false;
-		}
-
-		FSRPlanetSurfaceGridCellNeighbors Neighbors;
-		if (!SurfaceGrid->GetCellNeighbors(CellId, Neighbors))
-		{
-			return false;
-		}
-
-		switch (Direction)
-		{
-		case ESRStructurePortDirection::Left:
-			OutNeighborCellId = Neighbors.NegativeU;
-			break;
-		case ESRStructurePortDirection::Right:
-			OutNeighborCellId = Neighbors.PositiveU;
-			break;
-		case ESRStructurePortDirection::Top:
-			OutNeighborCellId = Neighbors.NegativeV;
-			break;
-		case ESRStructurePortDirection::Bottom:
-			OutNeighborCellId = Neighbors.PositiveV;
-			break;
-		default:
-			return false;
-		}
-
-		return true;
-	}
-
 	bool DoesPortConnectToConveyorCell(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlacedStructureInstance& PlacedStructure,
@@ -152,7 +114,7 @@ namespace
 		}
 
 		FSRPlanetSurfaceGridCellId ConnectionCellId;
-		if (!GetNeighborCellIdByStructurePortDirection(
+		if (!StarRovers::Structure::SurfacePorts::TryGetPortConnectionCellId(
 			SurfaceGrid,
 			PlacedStructure.FootprintCellIds[FootprintIndex],
 			PortSpec.Direction,
