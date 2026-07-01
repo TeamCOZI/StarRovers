@@ -8,19 +8,6 @@
 
 namespace
 {
-	bool GetNeighborCellIdByStructurePortDirection(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRPlanetSurfaceGridCellId& CellId,
-		ESRStructurePortDirection Direction,
-		FSRPlanetSurfaceGridCellId& OutNeighborCellId)
-	{
-		return StarRovers::Structure::SurfacePorts::TryGetPortConnectionCellId(
-			SurfaceGrid,
-			CellId,
-			Direction,
-			OutNeighborCellId);
-	}
-
 	bool GetStructurePortFootprintCellId(
 		const FSRFacilityInstance& FacilityInstance,
 		const FSRStructureData& StructureData,
@@ -289,7 +276,7 @@ bool USRFacilityNetworkComponent::IsConveyorCellConnectedToExplicitPort(
 	}
 
 	FSRPlanetSurfaceGridCellId NeighborCellId;
-	if (!GetNeighborCellIdByStructurePortDirection(SurfaceGrid, PortCellId, PortSpec.Direction, NeighborCellId))
+	if (!StarRovers::Structure::SurfacePorts::TryGetPortConnectionCellId(SurfaceGrid, PortCellId, PortSpec.Direction, NeighborCellId))
 	{
 		return false;
 	}
