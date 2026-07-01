@@ -49,7 +49,7 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 	ClearAreaDeletion();
 	CancelAreaCopyPlacement();
 	ClearPendingConveyorPathStart();
-	PendingStructurePlacementQueue.Reset();
+	PlacementQueue.Reset();
 	DestroyStructureGhostPreview();
 	DestroyConveyorGhostPreview();
 	DestroyConveyorDeletionGhostPreview();
@@ -76,7 +76,7 @@ void USRAssemblyComponent::ClearSurfaceHover()
 	ClearAreaSelection();
 	ClearAreaDeletion();
 	ClearPendingConveyorPathStart();
-	PendingStructurePlacementQueue.Reset();
+	PlacementQueue.Reset();
 	DestroyStructureGhostPreview();
 	DestroyConveyorGhostPreview();
 	DestroyConveyorDeletionGhostPreview();

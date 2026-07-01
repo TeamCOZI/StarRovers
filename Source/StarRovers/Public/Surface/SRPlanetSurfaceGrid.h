@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/DynamicMeshComponent.h"
+#include "Surface/SRPlanetSurfaceGridRuntimeState.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "Surface/SRPlanetTerrainTypes.h"
 #include "Visual/SRLineThicknessUtils.h"
@@ -312,19 +313,9 @@ protected:
     UPROPERTY()
     bool bCellsDirty;
 
-    int32 InteractionHighlightBatchDepth;
-    bool bHasBatchedInteractionHighlightRefresh;
+    FSRPlanetSurfaceGridInteractionBatchState InteractionBatch;
 
 private:
-    struct FSRSurfaceGridRaycastBucket
-    {
-        ESRCubeSphereFace Face = ESRCubeSphereFace::PositiveX;
-        int32 BucketX = 0;
-        int32 BucketY = 0;
-        FBox LocalBounds = FBox(ForceInit);
-        TArray<int32> CellIndices;
-    };
-
     bool RebuildCellsFromOwnerGeneratedGrid();
     void EnsureInteractionOverlay();
     void RequestInteractionHighlightRefresh();
@@ -358,11 +349,8 @@ private:
     FVector ComputeProceduralSurfaceNormal(FVector LocalUnitDirection) const;
     bool IntersectRayWithSurfaceSphere(const FVector& RayOrigin, const FVector& RayDirection, FVector& OutHitLocation) const;
 
-    TMap<FSRPlanetSurfaceGridCellId, int32> CellIndexById;
-    TMap<FSRPlanetSurfaceGridCellId, FSRPlanetSurfaceGridCellInfo> CellInfoById;
-    TArray<int32> CellIndexByFlatId;
-    TArray<FSRPlanetSurfaceGridCellInfo> CellInfoByFlatId;
-    TArray<FSRSurfaceGridRaycastBucket> RaycastBuckets;
+    FSRPlanetSurfaceGridCellIndexState CellIndexState;
+    FSRPlanetSurfaceGridRaycastState RaycastState;
 
     UPROPERTY(Transient)
     TObjectPtr<UDynamicMeshComponent> InteractionOverlayMesh;

@@ -90,8 +90,8 @@ void USRPlanetSurfaceGrid::ApplyGeneratedGridBuild(
 	const int32 ExpectedFlatCellCount = 6 * FaceResolution * FaceResolution;
 	if (NewCellIndexByFlatId.Num() == ExpectedFlatCellCount)
 	{
-		CellIndexById.Reset();
-		CellIndexByFlatId = MoveTemp(NewCellIndexByFlatId);
+		CellIndexState.IndexById.Reset();
+		CellIndexState.IndexByFlatId = MoveTemp(NewCellIndexByFlatId);
 	}
 	else
 	{

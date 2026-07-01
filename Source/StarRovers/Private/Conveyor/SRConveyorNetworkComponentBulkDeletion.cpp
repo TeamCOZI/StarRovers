@@ -278,7 +278,7 @@ bool USRConveyorNetworkComponent::TryRemoveConnectedConveyorsAtCell(
 	{
 		DeleteLaneKeySet.Add(LaneKey);
 		DeletedCellIds.AddUnique(LaneKey.CellId);
-		ConveyorItemsByLane.Remove(LaneKey);
+		TransportState.ItemsByLane.Remove(LaneKey);
 
 		if (const FSRConveyorSegment* Segment = Segments.Find(LaneKey))
 		{

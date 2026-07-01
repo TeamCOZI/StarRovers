@@ -174,7 +174,7 @@ bool USRPlanetSurfaceGrid::RaycastCell(const FVector& RayOrigin, const FVector& 
 				}
 			};
 
-			for (const FSRSurfaceGridRaycastBucket& Bucket : RaycastBuckets)
+			for (const FSRSurfaceGridRaycastBucket& Bucket : RaycastState.Buckets)
 			{
 				++RaycastStats.BucketTests;
 				float BucketHitDistance = 0.0f;
@@ -230,7 +230,7 @@ bool USRPlanetSurfaceGrid::RaycastCell(const FVector& RayOrigin, const FVector& 
 
 void USRPlanetSurfaceGrid::RebuildRaycastIndex()
 {
-	RaycastBuckets.Reset();
+	RaycastState.Buckets.Reset();
 	if (!bUsingGeneratedGridCells || Cells.IsEmpty())
 	{
 		return;
@@ -260,7 +260,7 @@ void USRPlanetSurfaceGrid::RebuildRaycastIndex()
 		return INDEX_NONE;
 	};
 
-	RaycastBuckets.SetNum(FaceCount * BucketResolution * BucketResolution);
+	RaycastState.Buckets.SetNum(FaceCount * BucketResolution * BucketResolution);
 	for (int32 FaceIndex = 0; FaceIndex < FaceCount; ++FaceIndex)
 	{
 		for (int32 BucketY = 0; BucketY < BucketResolution; ++BucketY)
@@ -268,7 +268,7 @@ void USRPlanetSurfaceGrid::RebuildRaycastIndex()
 			for (int32 BucketX = 0; BucketX < BucketResolution; ++BucketX)
 			{
 				const int32 BucketIndex = FaceIndex * BucketResolution * BucketResolution + BucketY * BucketResolution + BucketX;
-				FSRSurfaceGridRaycastBucket& Bucket = RaycastBuckets[BucketIndex];
+				FSRSurfaceGridRaycastBucket& Bucket = RaycastState.Buckets[BucketIndex];
 				Bucket.Face = Faces[FaceIndex];
 				Bucket.BucketX = BucketX;
 				Bucket.BucketY = BucketY;
@@ -291,12 +291,12 @@ void USRPlanetSurfaceGrid::RebuildRaycastIndex()
 		const int32 BucketX = FMath::Clamp(Cell.CellId.CellX / BucketCellSize, 0, BucketResolution - 1);
 		const int32 BucketY = FMath::Clamp(Cell.CellId.CellY / BucketCellSize, 0, BucketResolution - 1);
 		const int32 BucketIndex = FaceBucketOffset + BucketY * BucketResolution + BucketX;
-		if (!RaycastBuckets.IsValidIndex(BucketIndex))
+		if (!RaycastState.Buckets.IsValidIndex(BucketIndex))
 		{
 			continue;
 		}
 
-		FSRSurfaceGridRaycastBucket& Bucket = RaycastBuckets[BucketIndex];
+		FSRSurfaceGridRaycastBucket& Bucket = RaycastState.Buckets[BucketIndex];
 		Bucket.CellIndices.Add(CellIndex);
 		Bucket.LocalBounds += Cell.Corner00;
 		Bucket.LocalBounds += Cell.Corner10;
@@ -312,7 +312,7 @@ void USRPlanetSurfaceGrid::RebuildRaycastIndex()
 	}
 
 	const float BoundsPadding = FMath::Max(1.0f, GridSurfaceOffset + 1.0f);
-	for (FSRSurfaceGridRaycastBucket& Bucket : RaycastBuckets)
+	for (FSRSurfaceGridRaycastBucket& Bucket : RaycastState.Buckets)
 	{
 		if (Bucket.LocalBounds.IsValid)
 		{

@@ -94,9 +94,9 @@ void USRPlanetSurfaceGrid::EnsureInteractionOverlay()
 
 void USRPlanetSurfaceGrid::RequestInteractionHighlightRefresh()
 {
-	if (InteractionHighlightBatchDepth > 0)
+	if (InteractionBatch.IsActive())
 	{
-		bHasBatchedInteractionHighlightRefresh = true;
+		InteractionBatch.MarkHighlightRefreshPending();
 		return;
 	}
 

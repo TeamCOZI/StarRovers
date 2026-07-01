@@ -122,7 +122,10 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 				ExistingEdge->MaterialId != 0 ? ExistingEdge->MaterialId : MaterialId,
 				false,
 				WallVertexKeys,
-				&WallNormalReferenceDirection);
+				&WallNormalReferenceDirection,
+				true);
+			Stats.SideWallFailedTriangleCount += SideRenderData.FailedTriangleCount;
+			Stats.SideWallFallbackTriangleCount += SideRenderData.FallbackTriangleCount;
 			AddPreparedSurfaceGridSideWallOutline(
 				PreparedSurfaceGridCells,
 				CachedCellIndexByFlatId,

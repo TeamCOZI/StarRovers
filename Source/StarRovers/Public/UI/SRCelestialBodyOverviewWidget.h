@@ -162,6 +162,21 @@ protected:
 
 	TArray<FSRNameplateButtonLayout> NameplateButtonLayouts;
 
+	UPROPERTY(Transient)
+	FVector LastNameplateCameraLocation = FVector::ZeroVector;
+
+	UPROPERTY(Transient)
+	FRotator LastNameplateCameraRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(Transient)
+	FVector2D LastNameplateViewportSize = FVector2D::ZeroVector;
+
+	UPROPERTY(Transient)
+	float NameplateLayoutRefreshAccumulator = 0.0f;
+
+	UPROPERTY(Transient)
+	bool bHasNameplateLayoutState = false;
+
 private:
 	UFUNCTION()
 	void HandleNameplateToggleClicked();

@@ -1,6 +1,7 @@
 #include "Celestial/SRPlanetDataAsset.h"
 
 #include "Celestial/SRCelestialBodyCategory.h"
+#include "Celestial/SRPlanetShapeDataAsset.h"
 #include "Surface/SRPlanetTerrainProfileDataAsset.h"
 
 USRPlanetDataAsset::USRPlanetDataAsset()
@@ -39,17 +40,38 @@ void USRPlanetDataAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
 	{
 		TerrainProfileDataAsset->ApplyToDynamicMeshGeneration(DynamicMeshGeneration);
 	}
+	if (IsValid(ShapeDataAsset.Get()) && !ShapeDataAsset->IsDynamicMeshBaseShapeCompatible())
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("PlanetDataAsset '%s' uses ShapeDataAsset '%s' with an incompatible DynamicMeshBaseDataAsset shape."),
+			*GetName(),
+			*GetNameSafe(ShapeDataAsset.Get()));
+	}
 }
 #endif
 
 FSRCelestialBodyData USRPlanetDataAsset::BuildData() const
 {
+	const USRPlanetShapeDataAsset* ResolvedShapeDataAsset = ShapeDataAsset.Get();
+	USRDynamicMeshBaseDataAsset* ShapeDynamicMeshBaseDataAsset = nullptr;
+	USRDynamicMeshBaseDataAsset* ShapeOceanDynamicMeshBaseDataAsset = nullptr;
+	USRDynamicMeshBaseDataAsset* ShapeAtmosphereDynamicMeshBaseDataAsset = nullptr;
+	if (IsValid(ResolvedShapeDataAsset))
+	{
+		ShapeDynamicMeshBaseDataAsset = ResolvedShapeDataAsset->GetDynamicMeshBaseDataAsset();
+		ShapeOceanDynamicMeshBaseDataAsset = ResolvedShapeDataAsset->GetOceanDynamicMeshBaseDataAsset();
+		ShapeAtmosphereDynamicMeshBaseDataAsset = ResolvedShapeDataAsset->GetAtmosphereDynamicMeshBaseDataAsset();
+	}
+
 	FSRCelestialBodyData Result;
 	Result.VariableName = VariableName;
 	Result.BodyCategory = BodyCategory;
 	Result.Scale = FMath::Max(0.0f, Scale);
-	Result.DynamicMeshBaseDataAsset = DynamicMeshBaseDataAsset;
+	Result.DynamicMeshBaseDataAsset = ShapeDynamicMeshBaseDataAsset;
 	Result.Material = Material;
+	Result.ToonOutlineSettings = ToonOutlineSettings;
 	Result.Mass = FMath::Max(0.0f, Mass);
 	Result.GravityRatio = FMath::Max(0.0f, GravityRatio);
 	Result.GravityRadiusRatio = FMath::Max(0.0f, GravityRadiusRatio);
@@ -63,11 +85,11 @@ FSRCelestialBodyData USRPlanetDataAsset::BuildData() const
 	Result.GenerationSeed = Result.DynamicMeshGeneration.GenerationSeed;
 	Result.bRandomizeGenerationSeedEachRun = Result.DynamicMeshGeneration.bRandomizeGenerationSeedEachRun;
 	Result.bHasOcean = bHasOcean;
-	Result.OceanMesh = OceanMesh;
+	Result.OceanDynamicMeshBaseDataAsset = ShapeOceanDynamicMeshBaseDataAsset;
 	Result.OceanMaterial = OceanMaterial;
 	Result.OceanScaleMultiplier = FMath::Max(0.01f, OceanScaleMultiplier);
 	Result.bHasAtmosphere = bHasAtmosphere;
-	Result.AtmosphereMesh = AtmosphereMesh;
+	Result.AtmosphereDynamicMeshBaseDataAsset = ShapeAtmosphereDynamicMeshBaseDataAsset;
 	Result.AtmosphereMaterial = AtmosphereMaterial;
 	Result.AtmosphereScaleMultiplier = FMath::Max(0.01f, AtmosphereScaleMultiplier);
 	Result.SurfaceGridHeightOffset = FMath::Clamp(SurfaceGridHeightOffset, 0.0f, 1.0f);

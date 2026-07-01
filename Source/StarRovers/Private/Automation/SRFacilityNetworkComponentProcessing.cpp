@@ -260,7 +260,7 @@ namespace
 
 bool USRFacilityNetworkComponent::SetFacilityTemperatureState(FName OccupantId, ESRFacilityTemperatureState TemperatureState)
 {
-	FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	if (!FacilityInstance)
 	{
 		if (bLogFacilityNetworkEvents)
@@ -291,7 +291,7 @@ bool USRFacilityNetworkComponent::SetFacilityTemperatureState(FName OccupantId, 
 
 bool USRFacilityNetworkComponent::SetFacilityProcessEnabled(FName OccupantId, bool bEnabled)
 {
-	FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	if (!FacilityInstance)
 	{
 		return false;
@@ -307,7 +307,7 @@ bool USRFacilityNetworkComponent::SetFacilityProcessEnabled(FName OccupantId, bo
 
 bool USRFacilityNetworkComponent::SetFacilityDeliverEnabled(FName OccupantId, bool bEnabled)
 {
-	FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	if (!FacilityInstance)
 	{
 		return false;
@@ -329,13 +329,13 @@ bool USRFacilityNetworkComponent::SetFacilityDeliverEnabled(FName OccupantId, bo
 
 int32 USRFacilityNetworkComponent::ProcessFacilities(float DeltaTime)
 {
-	if (FacilityInstancesByOccupantId.IsEmpty())
+	if (RuntimeState.FacilityInstancesByOccupantId.IsEmpty())
 	{
 		return 0;
 	}
 
 	int32 ProcessedCount = 0;
-	for (TPair<FName, FSRFacilityInstance>& FacilityPair : FacilityInstancesByOccupantId)
+	for (TPair<FName, FSRFacilityInstance>& FacilityPair : RuntimeState.FacilityInstancesByOccupantId)
 	{
 		if (ProcessedCount >= MaxFacilitiesProcessedPerTick)
 		{
@@ -844,7 +844,7 @@ bool USRFacilityNetworkComponent::GetFacilityOutputPreview(
 	OutAdditionalOutputs.Reset();
 	OutOutputCount = 0;
 
-	const FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	if (!FacilityInstance || !IsValid(FacilityInstance->FacilityDataAsset.Get()))
 	{
 		return false;
@@ -896,7 +896,7 @@ bool USRFacilityNetworkComponent::GetFacilityMiningTarget(
 	FSRResourceDepositInstance& OutResourceDeposit) const
 {
 	OutResourceDeposit = FSRResourceDepositInstance();
-	const FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	if (!FacilityInstance
 		|| !IsValid(FacilityInstance->FacilityDataAsset.Get())
 		|| FacilityInstance->FacilityDataAsset->OperationKind != ESRFacilityOperationKind::Mine)

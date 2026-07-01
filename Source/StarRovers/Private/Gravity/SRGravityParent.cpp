@@ -1,64 +1,13 @@
 #include "Gravity/SRGravityParent.h"
 
-#include "Components/LineBatchComponent.h"
 #include "Components/SceneComponent.h"
 #include "GameFramework/Actor.h"
-#include "Visual/SRLineThicknessUtils.h"
+#include "Visual/SRCelestialRingMeshComponent.h"
 
 namespace
 {
 	const FName SRGravityParentLineTag(TEXT("StarRovers.GravityLine"));
 	const FName SRGravityParentLineRootTag(TEXT("StarRovers.GravityLineRoot"));
-	constexpr uint8 GravityLineDepthPriority = SDPG_World;
-
-	void AppendGravityCircleLines(
-		ULineBatchComponent* LineBatcher,
-		const FVector& Center,
-		const float Radius,
-		const int32 SegmentCount,
-		const FLinearColor& Color,
-		const float BaseThickness,
-		const FSRCameraInfo& CameraInfo,
-		const float ReferenceViewDepth,
-		const float ReferenceFieldOfViewDegrees)
-	{
-		if (!IsValid(LineBatcher) || Radius <= KINDA_SMALL_NUMBER)
-		{
-			return;
-		}
-
-		const int32 SafeSegmentCount = FMath::Max(3, SegmentCount);
-		const FColor SegmentColor = Color.ToFColor(true);
-		FVector PreviousPoint = Center + FVector(0.0f, Radius, 0.0f);
-
-		for (int32 SegmentIndex = 1; SegmentIndex <= SafeSegmentCount; ++SegmentIndex)
-		{
-			const float Alpha = static_cast<float>(SegmentIndex) / static_cast<float>(SafeSegmentCount);
-			const float AngleRadians = Alpha * 2.0f * PI;
-			const FVector CurrentPoint = Center + FVector(
-				0.0f,
-				FMath::Cos(AngleRadians) * Radius,
-				FMath::Sin(AngleRadians) * Radius);
-			const FVector SegmentMidpoint = (PreviousPoint + CurrentPoint) * 0.5f;
-			const float Thickness = FSRLineThicknessUtils::ComputeWorldThicknessAtLocation(
-				CameraInfo,
-				SegmentMidpoint,
-				BaseThickness,
-				ReferenceViewDepth,
-				ReferenceFieldOfViewDegrees);
-
-			LineBatcher->DrawLine(
-				PreviousPoint,
-				CurrentPoint,
-				SegmentColor,
-				GravityLineDepthPriority,
-				FMath::Max(0.0f, Thickness),
-				0.0f);
-
-			PreviousPoint = CurrentPoint;
-		}
-	}
-
 }
 
 TArray<TWeakObjectPtr<USRGravityParent>> USRGravityParent::RegisteredSources;
@@ -86,14 +35,14 @@ void USRGravityParent::OnRegister()
 {
 	Super::OnRegister();
 
-	EnsureGravityLineBatch();
+	EnsureGravityRingVisual();
 	RecomputeDerivedValues();
 	RegisteredSources.AddUnique(this);
 }
 
 void USRGravityParent::OnUnregister()
 {
-	ReleaseGravityLineBatch();
+	ReleaseGravityRingVisual();
 	RegisteredSources.RemoveSingleSwap(this);
 
 	Super::OnUnregister();
@@ -219,8 +168,8 @@ float USRGravityParent::GetGravityLineThickness() const
 
 void USRGravityParent::RefreshGravityLine()
 {
-	EnsureGravityLineBatch();
-	if (!IsValid(GravityLineBatch))
+	EnsureGravityRingVisual();
+	if (!IsValid(GravityRingVisual))
 	{
 		const AActor* Owner = GetOwner();
 		if (IsValid(Owner) && Owner->HasActorBegunPlay() && ShouldShowGravityLine())
@@ -228,7 +177,7 @@ void USRGravityParent::RefreshGravityLine()
 			UE_LOG(
 				LogTemp,
 				Error,
-				TEXT("USRGravityParent cannot draw gravity line for owner '%s': GravityLineBatch is null after lookup, ShowGravityLine=true, GravityRadius=%.2f, and no registered ULineBatchComponent named 'GravityLineBatch' was available."),
+				TEXT("USRGravityParent cannot draw gravity line for owner '%s': GravityRingVisual is null after lookup, ShowGravityLine=true, GravityRadius=%.2f, and no registered USRCelestialRingMeshComponent named 'GravityRingVisual' was available."),
 				*Owner->GetName(),
 				GravityRadius);
 		}
@@ -236,31 +185,19 @@ void USRGravityParent::RefreshGravityLine()
 		return;
 	}
 
-	GravityLineBatch->Flush();
-
 	if (!ShouldShowGravityLine() || !IsValid(GetOwner()))
 	{
+		GravityRingVisual->ClearRingVisual();
 		SetComponentTickEnabled(false);
 		return;
 	}
 
-	FSRCameraInfo CameraInfo;
-	FSRLineThicknessUtils::TryBuildPrimaryCameraInfo(GetWorld(), CameraInfo);
-
-	float ReferenceViewDepth = FSRLineThicknessUtils::DefaultReferenceViewDepth;
-	float ReferenceFieldOfViewDegrees = FSRLineThicknessUtils::DefaultReferenceFieldOfViewDegrees;
-	FSRLineThicknessUtils::ResolveReferenceView(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
-
-	AppendGravityCircleLines(
-		GravityLineBatch,
+	GravityRingVisual->UpdateRingVisual(
 		GetOwner()->GetActorLocation(),
 		GravityRadius,
-		GravityLineSegments,
 		FLinearColor(GravityLineColor.R, GravityLineColor.G, GravityLineColor.B, GetGravityLineOpacity()),
 		GetGravityLineThickness(),
-		CameraInfo,
-		ReferenceViewDepth,
-		ReferenceFieldOfViewDegrees);
+		GravityLineSegments);
 
 	SetComponentTickEnabled(true);
 }
@@ -287,46 +224,46 @@ void USRGravityParent::GetRegisteredSourcesForWorld(const UWorld* World, TArray<
 	}
 }
 
-void USRGravityParent::EnsureGravityLineBatch()
+void USRGravityParent::EnsureGravityRingVisual()
 {
 	AActor* Owner = GetOwner();
-	if (!IsValid(Owner) || IsValid(GravityLineBatch))
+	if (!IsValid(Owner) || IsValid(GravityRingVisual))
 	{
 		return;
 	}
 
-	TInlineComponentArray<ULineBatchComponent*> LineBatchComponents(Owner);
-	Owner->GetComponents(LineBatchComponents);
-	for (ULineBatchComponent* LineBatchComponent : LineBatchComponents)
+	TInlineComponentArray<USRCelestialRingMeshComponent*> RingComponents(Owner);
+	Owner->GetComponents(RingComponents);
+	for (USRCelestialRingMeshComponent* RingComponent : RingComponents)
 	{
-		if (IsValid(LineBatchComponent) && LineBatchComponent->GetFName() == TEXT("GravityLineBatch"))
+		if (IsValid(RingComponent) && RingComponent->GetFName() == TEXT("GravityRingVisual"))
 		{
-			GravityLineBatch = LineBatchComponent;
+			GravityRingVisual = RingComponent;
 			break;
 		}
 	}
 
-	if (IsValid(GravityLineBatch))
+	if (IsValid(GravityRingVisual))
 	{
-		GravityLineBatch->SetMobility(EComponentMobility::Movable);
-		GravityLineBatch->SetUsingAbsoluteLocation(true);
-		GravityLineBatch->SetUsingAbsoluteRotation(true);
-		GravityLineBatch->SetUsingAbsoluteScale(true);
-		GravityLineBatch->ComponentTags.AddUnique(SRGravityParentLineTag);
-		GravityLineBatch->ComponentTags.AddUnique(SRGravityParentLineRootTag);
+		GravityRingVisual->SetMobility(EComponentMobility::Movable);
+		GravityRingVisual->SetUsingAbsoluteLocation(true);
+		GravityRingVisual->SetUsingAbsoluteRotation(true);
+		GravityRingVisual->SetUsingAbsoluteScale(true);
+		GravityRingVisual->ComponentTags.AddUnique(SRGravityParentLineTag);
+		GravityRingVisual->ComponentTags.AddUnique(SRGravityParentLineRootTag);
 		return;
 	}
 
 	return;
 }
 
-void USRGravityParent::ReleaseGravityLineBatch()
+void USRGravityParent::ReleaseGravityRingVisual()
 {
-	if (!IsValid(GravityLineBatch))
+	if (!IsValid(GravityRingVisual))
 	{
 		return;
 	}
 
-	GravityLineBatch->Flush();
-	GravityLineBatch = nullptr;
+	GravityRingVisual->ClearRingVisual();
+	GravityRingVisual = nullptr;
 }

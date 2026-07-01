@@ -68,7 +68,7 @@ void USRFacilityNetworkComponent::TickComponent(float DeltaTime, ELevelTick Tick
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (!bAutoProcessFacilities || FacilityInstancesByOccupantId.IsEmpty())
+	if (!bAutoProcessFacilities || RuntimeState.FacilityInstancesByOccupantId.IsEmpty())
 	{
 		SetComponentTickEnabled(false);
 		return;
@@ -120,7 +120,7 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 		return false;
 	}
 
-	FSRFacilityInstance& FacilityInstance = FacilityInstancesByOccupantId.FindOrAdd(OccupantId);
+	FSRFacilityInstance& FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.FindOrAdd(OccupantId);
 	FacilityInstance.OccupantId = OccupantId;
 	FacilityInstance.StructureDataAsset = StructureDataAsset;
 	FacilityInstance.FacilityDataAsset = StructureData.FacilityDataAsset;
@@ -218,8 +218,8 @@ void USRFacilityNetworkComponent::RefreshFacilityAggregateInventories(FSRFacilit
 
 bool USRFacilityNetworkComponent::UnregisterFacility(FName OccupantId)
 {
-	const bool bRemoved = FacilityInstancesByOccupantId.Remove(OccupantId) > 0;
-	if (FacilityInstancesByOccupantId.IsEmpty())
+	const bool bRemoved = RuntimeState.FacilityInstancesByOccupantId.Remove(OccupantId) > 0;
+	if (RuntimeState.FacilityInstancesByOccupantId.IsEmpty())
 	{
 		SetComponentTickEnabled(false);
 	}
@@ -231,15 +231,15 @@ bool USRFacilityNetworkComponent::UnregisterFacility(FName OccupantId)
 			TEXT("[FacilityNetwork] Unregistered: OccupantId=%s Owner=%s RemainingFacilities=%d"),
 			*OccupantId.ToString(),
 			*GetNameSafe(GetOwner()),
-			FacilityInstancesByOccupantId.Num());
+			RuntimeState.FacilityInstancesByOccupantId.Num());
 	}
 	return bRemoved;
 }
 
 void USRFacilityNetworkComponent::ClearFacilities()
 {
-	const int32 RemovedFacilityCount = FacilityInstancesByOccupantId.Num();
-	FacilityInstancesByOccupantId.Reset();
+	const int32 RemovedFacilityCount = RuntimeState.FacilityInstancesByOccupantId.Num();
+	RuntimeState.FacilityInstancesByOccupantId.Reset();
 	SetComponentTickEnabled(false);
 	if (bLogFacilityNetworkEvents)
 	{
@@ -254,12 +254,12 @@ void USRFacilityNetworkComponent::ClearFacilities()
 
 bool USRFacilityNetworkComponent::HasFacilityInstance(FName OccupantId) const
 {
-	return FacilityInstancesByOccupantId.Contains(OccupantId);
+	return RuntimeState.FacilityInstancesByOccupantId.Contains(OccupantId);
 }
 
 bool USRFacilityNetworkComponent::GetFacilityInstance(FName OccupantId, FSRFacilityInstance& OutFacilityInstance) const
 {
-	if (const FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId))
+	if (const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId))
 	{
 		OutFacilityInstance = *FacilityInstance;
 		return true;
@@ -271,7 +271,7 @@ bool USRFacilityNetworkComponent::GetFacilityInstance(FName OccupantId, FSRFacil
 
 bool USRFacilityNetworkComponent::RefreshFacilityTemperatureFromSurface(FName OccupantId)
 {
-	FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	if (!FacilityInstance)
 	{
 		return false;
@@ -296,13 +296,13 @@ bool USRFacilityNetworkComponent::RefreshFacilityTemperatureFromSurface(FName Oc
 int32 USRFacilityNetworkComponent::RefreshFacilityTemperaturesFromSurface()
 {
 	const USRPlanetSurfaceGrid* SurfaceGrid = FindOwnerSurfaceGrid(this);
-	if (!IsValid(SurfaceGrid) || FacilityInstancesByOccupantId.IsEmpty())
+	if (!IsValid(SurfaceGrid) || RuntimeState.FacilityInstancesByOccupantId.IsEmpty())
 	{
 		return 0;
 	}
 
 	int32 ChangedTemperatureCount = 0;
-	for (TPair<FName, FSRFacilityInstance>& FacilityPair : FacilityInstancesByOccupantId)
+	for (TPair<FName, FSRFacilityInstance>& FacilityPair : RuntimeState.FacilityInstancesByOccupantId)
 	{
 		FSRFacilityInstance& FacilityInstance = FacilityPair.Value;
 		FSRPlanetSurfaceGridCellInfo OriginCellInfo;
@@ -337,15 +337,15 @@ void USRFacilityNetworkComponent::BindToTimeControlSubsystem()
 
 	TimeControlSubsystem->OnGameCycleAdvanced.RemoveDynamic(this, &USRFacilityNetworkComponent::HandleGameCycleAdvanced);
 	TimeControlSubsystem->OnGameCycleAdvanced.AddDynamic(this, &USRFacilityNetworkComponent::HandleGameCycleAdvanced);
-	BoundTimeControlSubsystem = TimeControlSubsystem;
+	RuntimeState.BoundTimeControlSubsystem = TimeControlSubsystem;
 }
 
 void USRFacilityNetworkComponent::UnbindFromTimeControlSubsystem()
 {
-	USRTimeControlSubsystem* TimeControlSubsystem = BoundTimeControlSubsystem.Get();
+	USRTimeControlSubsystem* TimeControlSubsystem = RuntimeState.BoundTimeControlSubsystem.Get();
 	if (IsValid(TimeControlSubsystem))
 	{
 		TimeControlSubsystem->OnGameCycleAdvanced.RemoveDynamic(this, &USRFacilityNetworkComponent::HandleGameCycleAdvanced);
 	}
-	BoundTimeControlSubsystem.Reset();
+	RuntimeState.BoundTimeControlSubsystem.Reset();
 }

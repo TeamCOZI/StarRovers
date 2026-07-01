@@ -13,29 +13,12 @@
 #include "Materials/MaterialInterface.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Surface/SRPlanetTerrainProfileDataAsset.h"
+#include "Visual/SRCelestialRingMeshComponent.h"
 #if WITH_EDITOR
 #include "UObject/UnrealType.h"
 #endif
 
 DEFINE_LOG_CATEGORY(LogStarRoversCelestial);
-
-FSRCelestialBodyData::FSRCelestialBodyData()
-{
-	VariableName = FText::FromString(TEXT("Primary Star"));
-	BodyCategory = ESRCelestialBodyCategory::Star;
-	OrbitPeriod = 0.0f;
-	DynamicMeshGeneration = FSRDynamicMeshGeneration();
-	DynamicMeshGeneration.bDynamicMeshGeneration = false;
-	DynamicMeshGeneration.DynamicMeshHeight = 0.0f;
-	bHasOcean = false;
-	OceanMesh = nullptr;
-	OceanMaterial = nullptr;
-	OceanScaleMultiplier = 1.0f;
-	bHasAtmosphere = false;
-	AtmosphereMesh = nullptr;
-	AtmosphereMaterial = nullptr;
-	AtmosphereScaleMultiplier = 1.0f;
-}
 
 ASRCelestialBody::ASRCelestialBody()
 {
@@ -78,8 +61,16 @@ ASRCelestialBody::ASRCelestialBody()
 	GravityLineBatch->SetUsingAbsoluteLocation(true);
 	GravityLineBatch->SetUsingAbsoluteRotation(true);
 	GravityLineBatch->SetUsingAbsoluteScale(true);
+	GravityLineBatch->SetVisibility(false);
+	GravityLineBatch->SetHiddenInGame(true);
+	GravityLineBatch->SetComponentTickEnabled(false);
 	GravityLineBatch->ComponentTags.AddUnique(TEXT("StarRovers.GravityLine"));
 	GravityLineBatch->ComponentTags.AddUnique(TEXT("StarRovers.GravityLineRoot"));
+
+	GravityRingVisual = CreateDefaultSubobject<USRCelestialRingMeshComponent>(TEXT("GravityRingVisual"));
+	GravityRingVisual->SetupAttachment(SceneRoot);
+	GravityRingVisual->ComponentTags.AddUnique(TEXT("StarRovers.GravityLine"));
+	GravityRingVisual->ComponentTags.AddUnique(TEXT("StarRovers.GravityLineRoot"));
 
 	VariableName = FText::FromString(TEXT("Celestial Body"));
 	BodyCategory = ESRCelestialBodyCategory::Unknown;
@@ -92,6 +83,7 @@ ASRCelestialBody::ASRCelestialBody()
 	DynamicMeshGeneration = FSRDynamicMeshGeneration();
 	DynamicMeshGeneration.bDynamicMeshGeneration = false;
 	DynamicMeshGeneration.DynamicMeshHeight = 0.0f;
+	ToonOutlineSettings = FSRToonOutlineSettings();
 	DynamicMeshBaseDataAsset = nullptr;
 	GravityRatio = 1.0f;
 	GravityRadiusRatio = 10.0f;
@@ -171,6 +163,7 @@ void ASRCelestialBody::SetData(const FSRCelestialBodyData& NewData)
 	TerrainProfileDataAsset = NewData.TerrainProfileDataAsset;
 	ProfileNaturalStructureSpawnRuleOverrides = NewData.ProfileNaturalStructureSpawnRuleOverrides;
 	DynamicMeshGeneration = NewData.DynamicMeshGeneration;
+	ToonOutlineSettings = NewData.ToonOutlineSettings;
 	if (IsValid(TerrainProfileDataAsset.Get()))
 	{
 		TerrainProfileDataAsset->ApplyToDynamicMeshGeneration(DynamicMeshGeneration);
@@ -240,7 +233,7 @@ void ASRCelestialBody::ApplyData()
 		CelestialBodyStaticMesh->SetRelativeScale3D(FVector(Scale));
 	}
 
-	if (bHasCachedDynamicMeshBuildHash && CachedDynamicMeshBuildHash != ComputeDynamicMeshBuildHash())
+	if (DynamicMeshState.HasBuild() && !DynamicMeshState.HasBuildHash(ComputeDynamicMeshBuildHash()))
 	{
 		ResetDynamicMeshCellColorData();
 	}
@@ -262,6 +255,7 @@ void ASRCelestialBody::ApplyData()
 		ClickSphereCollision->SetSphereRadius(FMath::Max(BodyRadius, 1.0f));
 	}
 	ApplyGravityLineSettings();
+	ApplyToonOutlineSettings();
 }
 
 FSRCelestialBodyData ASRCelestialBody::GetData() const
@@ -279,6 +273,7 @@ FSRCelestialBodyData ASRCelestialBody::GetData() const
 	CurrentData.StaticMesh = StaticMesh;
 	CurrentData.DynamicMeshBaseDataAsset = DynamicMeshBaseDataAsset;
 	CurrentData.Material = Material;
+	CurrentData.ToonOutlineSettings = ToonOutlineSettings;
 	CurrentData.Mass = Mass;
 	CurrentData.GravityRatio = GravityRatio;
 	CurrentData.GravityRadiusRatio = GravityRadiusRatio;

@@ -11,26 +11,6 @@
 #include "UI/SRStructureSelectionWidget.h"
 #include "UI/SRTimeControlWidget.h"
 
-namespace
-{
-	constexpr ESRPlayerUiLayer DefaultWidgetLayerOrder[] =
-	{
-		ESRPlayerUiLayer::FocusInfo,
-		ESRPlayerUiLayer::Overview,
-		ESRPlayerUiLayer::TimeControl,
-		ESRPlayerUiLayer::StructureSelection,
-		ESRPlayerUiLayer::FacilityControl
-	};
-
-	void AddUniqueWidgetLayer(TArray<ESRPlayerUiLayer>& OutLayers, ESRPlayerUiLayer WidgetLayer)
-	{
-		if (!OutLayers.Contains(WidgetLayer))
-		{
-			OutLayers.Add(WidgetLayer);
-		}
-	}
-}
-
 USRCelestialBodyFocusInfoWidget* ASRPlayerController::GetFocusInfoWidget() const
 {
 	return FocusInfoWidget;
@@ -72,21 +52,7 @@ bool ASRPlayerController::IsPointerOverBlockingUi() const
 
 int32 ASRPlayerController::ResolveWidgetLayerZOrder(ESRPlayerUiLayer WidgetLayer) const
 {
-	TArray<ESRPlayerUiLayer> ResolvedLayerOrder;
-	ResolvedLayerOrder.Reserve(UE_ARRAY_COUNT(DefaultWidgetLayerOrder));
-
-	for (const ESRPlayerUiLayer ConfiguredLayer : WidgetLayerOrder)
-	{
-		AddUniqueWidgetLayer(ResolvedLayerOrder, ConfiguredLayer);
-	}
-
-	for (const ESRPlayerUiLayer DefaultLayer : DefaultWidgetLayerOrder)
-	{
-		AddUniqueWidgetLayer(ResolvedLayerOrder, DefaultLayer);
-	}
-
-	const int32 LayerIndex = ResolvedLayerOrder.IndexOfByKey(WidgetLayer);
-	return LayerIndex != INDEX_NONE ? LayerIndex : ResolvedLayerOrder.Num();
+	return StarRovers::PlayerControllerUI::ResolveWidgetLayerZOrder(WidgetLayerOrder, WidgetLayer);
 }
 
 void ASRPlayerController::ClearFacilityFocus()
@@ -194,7 +160,7 @@ void ASRPlayerController::RefreshOverviewWidget()
 
 void ASRPlayerController::HandleOverviewCelestialBodyRequested(AActor* RequestedActor)
 {
-	bPendingInitialPrimaryStarFocus = false;
+	RuntimeState.bPendingInitialPrimaryStarFocus = false;
 	RequestFocusActor(RequestedActor);
 }
 
@@ -269,7 +235,7 @@ void ASRPlayerController::RefreshStructureSelectionWidget()
 			SurfaceGrid->SetHoveredInteractionGridPatchVisible(false);
 		}
 	}
-	StructureSelectionWidget->SetVisibility(bShowStructureSelection ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	StructureSelectionWidget->SetVisibility(bShowStructureSelection ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	if (!bShowStructureSelection)
 	{
 		SelectedStructureBuildId = NAME_None;

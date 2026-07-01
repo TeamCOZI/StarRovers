@@ -653,6 +653,11 @@ void USRFacilityControlWidget::NativeTick(const FGeometry& MyGeometry, float InD
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
+	if (!IsVisible() || !bHasFocusedFacility)
+	{
+		return;
+	}
+
 	RefreshControlText();
 }
 

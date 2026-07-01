@@ -10,8 +10,6 @@ USRAssemblyComponent::USRAssemblyComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
 	bAssemblyModeActive = false;
-	MaxStructurePlacementsPerFrame = 4;
-	MaxQueuedStructurePlacements = 256;
 	ActiveAssemblySurfaceGrid = nullptr;
 	LastHoveredSampleSurfaceGrid = nullptr;
 	LastPublishedHoveredSurfaceGrid = nullptr;
@@ -45,22 +43,6 @@ USRAssemblyComponent::USRAssemblyComponent()
 	StructurePlacementDragSurfaceGrid = nullptr;
 	StructurePlacementDragStartCellId = FSRPlanetSurfaceGridCellId();
 	StructurePlacementDragRotationSteps = 0;
-	bIsAreaSelectionDragActive = false;
-	AreaSelectionSurfaceGrid = nullptr;
-	AreaSelectionStartCellId = FSRPlanetSurfaceGridCellId();
-	LastAreaSelectionTargetCellId = FSRPlanetSurfaceGridCellId();
-	bHasAreaSelectionStartCell = false;
-	bHasLastAreaSelectionTargetCell = false;
-	bIsAreaDeletionDragActive = false;
-	AreaDeletionSurfaceGrid = nullptr;
-	AreaDeletionStartCellId = FSRPlanetSurfaceGridCellId();
-	LastAreaDeletionTargetCellId = FSRPlanetSurfaceGridCellId();
-	bHasAreaDeletionStartCell = false;
-	bHasLastAreaDeletionTargetCell = false;
-	bIsAreaCopyPlacementActive = false;
-	bHasLastAreaCopyPreviewHoverCell = false;
-	LastAreaCopyPreviewHoverCellId = FSRPlanetSurfaceGridCellId();
-	LastAreaCopyPreviewState = ESRAreaCopyPlacementPreviewState::Blocked;
 	PendingConveyorStartSurfaceGrid = nullptr;
 	PendingConveyorStartCellId = FSRPlanetSurfaceGridCellId();
 	bHasPendingConveyorStartCell = false;
@@ -83,7 +65,7 @@ void USRAssemblyComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 
 	UpdateSurfaceHover();
 	ProcessQueuedStructurePlacements();
-	if (bIsAreaCopyPlacementActive)
+	if (AreaCopy.IsPlacementActive())
 	{
 		ClearConveyorPlacementPortPreview();
 		ClearConveyorBulkDeletionPreview();
@@ -171,7 +153,7 @@ void USRAssemblyComponent::SetAssemblyModeActive(bool bNewAssemblyModeActive)
 		ClearAreaDeletion();
 		CancelAreaCopyPlacement();
 		ClearPendingConveyorPathStart();
-		PendingStructurePlacementQueue.Reset();
+		PlacementQueue.Reset();
 		StructurePlacementRotationSteps = 0;
 		ClearConveyorPlacementPortPreview();
 		ClearConveyorBulkDeletionPreview();
@@ -230,15 +212,14 @@ float USRAssemblyComponent::GetStructurePlacementAdditionalYawDegrees() const
 
 void USRAssemblyComponent::ConfigurePlacementPerformance(int32 NewMaxStructurePlacementsPerFrame, int32 NewMaxQueuedStructurePlacements)
 {
-	MaxStructurePlacementsPerFrame = FMath::Max(1, NewMaxStructurePlacementsPerFrame);
-	MaxQueuedStructurePlacements = FMath::Max(1, NewMaxQueuedStructurePlacements);
+	PlacementQueue.ConfigurePerformance(NewMaxStructurePlacementsPerFrame, NewMaxQueuedStructurePlacements);
 }
 
 void USRAssemblyComponent::CancelSelectedStructurePlacement()
 {
 	EndStructurePlacementDrag(false);
 	ClearPendingConveyorPathStart();
-	PendingStructurePlacementQueue.Reset();
+	PlacementQueue.Reset();
 	ClearConveyorPlacementPortPreview();
 	ClearConveyorInvalidPlacementPreview();
 	DestroyStructureGhostPreview();
@@ -261,7 +242,7 @@ bool USRAssemblyComponent::TryHandleAssemblyClick(AActor*& OutSelectedActor)
 		return false;
 	}
 
-	if (bIsAreaCopyPlacementActive)
+	if (AreaCopy.IsPlacementActive())
 	{
 		return TryCommitAreaCopyPlacement(OutSelectedActor);
 	}
@@ -324,7 +305,7 @@ bool USRAssemblyComponent::TryHandleAssemblyDelete(AActor*& OutSelectedActor)
 		return false;
 	}
 
-	if (bIsAreaCopyPlacementActive)
+	if (AreaCopy.IsPlacementActive())
 	{
 		CancelAreaCopyPlacement();
 		return true;
@@ -355,7 +336,7 @@ bool USRAssemblyComponent::TryHandleAssemblyDelete(AActor*& OutSelectedActor)
 
 	ClearConveyorBulkDeletionPreview();
 	ClearPendingConveyorPathStart();
-	PendingStructurePlacementQueue.Reset();
+	PlacementQueue.Reset();
 	DestroyStructureGhostPreview();
 	ClearSelectedStructureInfo();
 	FocusedSurfaceGrid->SetHoveredCell(HoveredCell.CellId);
@@ -371,7 +352,7 @@ bool USRAssemblyComponent::ShouldHandleStructurePlacementDrag() const
 {
 	const ASRPlayerController* PlayerController = GetOwnerController();
 	const USRStructureDataAsset* SelectedStructureDataAsset = PlayerController ? PlayerController->GetSelectedStructureDataAsset() : nullptr;
-	if (!bAssemblyModeActive || bIsAreaCopyPlacementActive || !IsValid(SelectedStructureDataAsset))
+	if (!bAssemblyModeActive || AreaCopy.IsPlacementActive() || !IsValid(SelectedStructureDataAsset))
 	{
 		return false;
 	}
@@ -382,7 +363,7 @@ bool USRAssemblyComponent::ShouldHandleStructurePlacementDrag() const
 bool USRAssemblyComponent::BeginStructurePlacementDrag(AActor*& OutSelectedActor)
 {
 	OutSelectedActor = nullptr;
-	if (bIsAreaCopyPlacementActive)
+	if (AreaCopy.IsPlacementActive())
 	{
 		return false;
 	}

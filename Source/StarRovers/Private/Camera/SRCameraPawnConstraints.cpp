@@ -10,9 +10,12 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 
 namespace
 {
+	constexpr double SpaceBoundaryFullScanIntervalSeconds = 1.0;
+
 	bool IsSpaceBoundaryActor(const AActor* Candidate)
 	{
 		if (!IsValid(Candidate))
@@ -30,6 +33,48 @@ namespace
 			|| CandidateClassName.Contains(TEXT("SpaceSphere"), ESearchCase::IgnoreCase)
 			|| CandidateClassName.Contains(TEXT("SpaceSkySphere"), ESearchCase::IgnoreCase)
 			|| CandidateClassName.Equals(TEXT("BP_Space_C"), ESearchCase::IgnoreCase);
+	}
+
+	bool TryResolveSpaceBoundaryActor(const AActor* Candidate, FVector& OutCenter, float& OutRadius)
+	{
+		OutCenter = FVector::ZeroVector;
+		OutRadius = 0.0f;
+
+		if (!IsSpaceBoundaryActor(Candidate))
+		{
+			return false;
+		}
+
+		TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(Candidate);
+		for (const UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+		{
+			if (!IsValid(PrimitiveComponent))
+			{
+				continue;
+			}
+
+			const float CandidateRadius = PrimitiveComponent->Bounds.SphereRadius;
+			if (CandidateRadius > OutRadius)
+			{
+				OutCenter = PrimitiveComponent->Bounds.Origin;
+				OutRadius = CandidateRadius;
+			}
+		}
+
+		if (OutRadius <= KINDA_SMALL_NUMBER)
+		{
+			FVector ActorOrigin = FVector::ZeroVector;
+			FVector ActorExtent = FVector::ZeroVector;
+			Candidate->GetActorBounds(false, ActorOrigin, ActorExtent);
+			const float ActorRadius = ActorExtent.Size();
+			if (ActorRadius > OutRadius)
+			{
+				OutCenter = ActorOrigin;
+				OutRadius = ActorRadius;
+			}
+		}
+
+		return OutRadius > KINDA_SMALL_NUMBER;
 	}
 }
 float ASRCameraPawn::GetMaxZoomDistance() const
@@ -116,12 +161,53 @@ bool ASRCameraPawn::ResolveSpaceBoundary(FVector& OutCenter, float& OutRadius) c
 	UWorld* World = GetWorld();
 	if (!World)
 	{
+		bHasCachedSpaceBoundaryResult = false;
+		bCachedSpaceBoundaryFound = false;
+		CachedSpaceBoundaryActor = nullptr;
+		CachedSpaceBoundaryCenter = FVector::ZeroVector;
+		CachedSpaceBoundaryRadius = 0.0f;
+		CachedSpaceBoundaryFrame = 0;
+		CachedSpaceBoundaryFullScanTime = -BIG_NUMBER;
 		return false;
 	}
 
 	OutCenter = FVector::ZeroVector;
 	OutRadius = 0.0f;
 
+	if (bHasCachedSpaceBoundaryResult && CachedSpaceBoundaryFrame == GFrameCounter)
+	{
+		if (!bCachedSpaceBoundaryFound)
+		{
+			return false;
+		}
+
+		OutCenter = CachedSpaceBoundaryCenter;
+		OutRadius = CachedSpaceBoundaryRadius;
+		return OutRadius > KINDA_SMALL_NUMBER;
+	}
+
+	if (bCachedSpaceBoundaryFound && IsValid(CachedSpaceBoundaryActor.Get()))
+	{
+		if (TryResolveSpaceBoundaryActor(CachedSpaceBoundaryActor.Get(), OutCenter, OutRadius))
+		{
+			CachedSpaceBoundaryCenter = OutCenter;
+			CachedSpaceBoundaryRadius = OutRadius;
+			CachedSpaceBoundaryFrame = GFrameCounter;
+			bHasCachedSpaceBoundaryResult = true;
+			return true;
+		}
+	}
+
+	const double CurrentTime = World->GetTimeSeconds();
+	if (bHasCachedSpaceBoundaryResult
+		&& !bCachedSpaceBoundaryFound
+		&& CurrentTime - CachedSpaceBoundaryFullScanTime < SpaceBoundaryFullScanIntervalSeconds)
+	{
+		CachedSpaceBoundaryFrame = GFrameCounter;
+		return false;
+	}
+
+	AActor* BestBoundaryActor = nullptr;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		const AActor* Candidate = *It;
@@ -130,43 +216,25 @@ bool ASRCameraPawn::ResolveSpaceBoundary(FVector& OutCenter, float& OutRadius) c
 			continue;
 		}
 
-		if (!IsSpaceBoundaryActor(Candidate))
+		FVector CandidateCenter = FVector::ZeroVector;
+		float CandidateRadius = 0.0f;
+		if (TryResolveSpaceBoundaryActor(Candidate, CandidateCenter, CandidateRadius)
+			&& CandidateRadius > OutRadius)
 		{
-			continue;
-		}
-
-		TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(Candidate);
-		Candidate->GetComponents(PrimitiveComponents);
-		for (const UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
-		{
-			if (!IsValid(PrimitiveComponent))
-			{
-				continue;
-			}
-
-			const float CandidateRadius = PrimitiveComponent->Bounds.SphereRadius;
-			if (CandidateRadius > OutRadius)
-			{
-				OutCenter = PrimitiveComponent->Bounds.Origin;
-				OutRadius = CandidateRadius;
-			}
-		}
-
-		if (OutRadius <= KINDA_SMALL_NUMBER)
-		{
-			FVector ActorOrigin = FVector::ZeroVector;
-			FVector ActorExtent = FVector::ZeroVector;
-			Candidate->GetActorBounds(false, ActorOrigin, ActorExtent);
-			const float ActorRadius = ActorExtent.Size();
-			if (ActorRadius > OutRadius)
-			{
-				OutCenter = ActorOrigin;
-				OutRadius = ActorRadius;
-			}
+			OutCenter = CandidateCenter;
+			OutRadius = CandidateRadius;
+			BestBoundaryActor = const_cast<AActor*>(Candidate);
 		}
 	}
 
-	return OutRadius > KINDA_SMALL_NUMBER;
+	CachedSpaceBoundaryActor = BestBoundaryActor;
+	CachedSpaceBoundaryCenter = OutCenter;
+	CachedSpaceBoundaryRadius = OutRadius;
+	CachedSpaceBoundaryFullScanTime = CurrentTime;
+	CachedSpaceBoundaryFrame = GFrameCounter;
+	bCachedSpaceBoundaryFound = OutRadius > KINDA_SMALL_NUMBER;
+	bHasCachedSpaceBoundaryResult = true;
+	return bCachedSpaceBoundaryFound;
 }
 
 FVector ASRCameraPawn::ClampPivotLocationInsideSpace(const FVector& CandidateLocation) const
@@ -295,8 +363,15 @@ FVector ASRCameraPawn::GetCameraDirectionFromPivot() const
 
 float ASRCameraPawn::ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance, const FVector& CandidatePawnLocation) const
 {
-	UWorld* World = GetWorld();
-	if (!World)
+	const USRCelestialBodyRegistrySubsystem* CelestialRegistry = FindCelestialRegistry();
+	if (!CelestialRegistry)
+	{
+		return ZoomDistance;
+	}
+
+	TArray<AActor*> CelestialBodies;
+	CelestialRegistry->GetCelestialBodies(CelestialBodies);
+	if (CelestialBodies.IsEmpty())
 	{
 		return ZoomDistance;
 	}
@@ -313,9 +388,8 @@ float ASRCameraPawn::ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance,
 	for (int32 PassIndex = 0; PassIndex < MaxAvoidancePasses; ++PassIndex)
 	{
 		bool bAdjustedThisPass = false;
-		for (TActorIterator<AActor> It(World); It; ++It)
+		for (const AActor* CandidateBody : CelestialBodies)
 		{
-			const AActor* CandidateBody = *It;
 			if (!IsValid(CandidateBody) || CandidateBody == this)
 			{
 				continue;
@@ -466,7 +540,7 @@ void ASRCameraPawn::ApplyZoomDrivenViewRotation(float ZoomDistance)
 	const FRotator BaseViewRotation = GetViewRotationForZoom(ZoomDistance);
 	if (ShouldAllowFocusSurface())
 	{
-		const FQuat SurfaceLookQuat = FocusSurfaceRotation.GetNormalized();
+		const FQuat SurfaceLookQuat = FocusSurface.Rotation.GetNormalized();
 		if (SpringArm)
 		{
 			SpringArm->SetWorldRotation(SurfaceLookQuat.Rotator().GetNormalized());

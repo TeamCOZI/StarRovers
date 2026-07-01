@@ -71,17 +71,17 @@ namespace
 
 void USRConveyorNetworkComponent::RefreshConveyorItemVisuals(USRPlanetSurfaceGrid* SurfaceGrid, float /*DeltaTime*/)
 {
-	if (!IsValid(SurfaceGrid) || ConveyorItemsByLane.IsEmpty())
+	if (!IsValid(SurfaceGrid) || !TransportState.HasItems())
 	{
 		DestroyConveyorItemVisuals();
 		return;
 	}
 
 	TSet<FSRConveyorLaneKey> ActiveLaneKeys;
-	ActiveLaneKeys.Reserve(ConveyorItemsByLane.Num());
+	ActiveLaneKeys.Reserve(TransportState.ItemsByLane.Num());
 
 	const float TimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
-	for (const TPair<FSRConveyorLaneKey, FSRConveyorItem>& ItemPair : ConveyorItemsByLane)
+	for (const TPair<FSRConveyorLaneKey, FSRConveyorItem>& ItemPair : TransportState.ItemsByLane)
 	{
 		const FSRConveyorLaneKey& LaneKey = ItemPair.Key;
 		const FSRConveyorItem& Item = ItemPair.Value;
@@ -137,7 +137,7 @@ void USRConveyorNetworkComponent::RefreshConveyorItemVisuals(USRPlanetSurfaceGri
 	}
 
 	TArray<FSRConveyorLaneKey> ExistingLabelLaneKeys;
-	ConveyorItemLabelsByLane.GetKeys(ExistingLabelLaneKeys);
+	TransportState.ItemLabelsByLane.GetKeys(ExistingLabelLaneKeys);
 	for (const FSRConveyorLaneKey& ExistingLaneKey : ExistingLabelLaneKeys)
 	{
 		if (ActiveLaneKeys.Contains(ExistingLaneKey))
@@ -145,38 +145,38 @@ void USRConveyorNetworkComponent::RefreshConveyorItemVisuals(USRPlanetSurfaceGri
 			continue;
 		}
 
-		if (TObjectPtr<UTextRenderComponent>* LabelComponentPtr = ConveyorItemLabelsByLane.Find(ExistingLaneKey))
+		if (TObjectPtr<UTextRenderComponent>* LabelComponentPtr = TransportState.ItemLabelsByLane.Find(ExistingLaneKey))
 		{
 			if (IsValid(*LabelComponentPtr))
 			{
 				(*LabelComponentPtr)->DestroyComponent();
 			}
 		}
-		ConveyorItemLabelsByLane.Remove(ExistingLaneKey);
+		TransportState.ItemLabelsByLane.Remove(ExistingLaneKey);
 	}
 }
 
 void USRConveyorNetworkComponent::DestroyConveyorItemVisuals()
 {
-	for (const TPair<FSRConveyorLaneKey, TObjectPtr<UTextRenderComponent>>& LabelPair : ConveyorItemLabelsByLane)
+	for (const TPair<FSRConveyorLaneKey, TObjectPtr<UTextRenderComponent>>& LabelPair : TransportState.ItemLabelsByLane)
 	{
 		if (IsValid(LabelPair.Value))
 		{
 			LabelPair.Value->DestroyComponent();
 		}
 	}
-	ConveyorItemLabelsByLane.Reset();
+	TransportState.ResetLabels();
 }
 
 UTextRenderComponent* USRConveyorNetworkComponent::EnsureConveyorItemLabelComponent(const FSRConveyorLaneKey& LaneKey)
 {
-	if (TObjectPtr<UTextRenderComponent>* ExistingComponent = ConveyorItemLabelsByLane.Find(LaneKey))
+	if (TObjectPtr<UTextRenderComponent>* ExistingComponent = TransportState.ItemLabelsByLane.Find(LaneKey))
 	{
 		if (IsValid(*ExistingComponent))
 		{
 			return *ExistingComponent;
 		}
-		ConveyorItemLabelsByLane.Remove(LaneKey);
+		TransportState.ItemLabelsByLane.Remove(LaneKey);
 	}
 
 	AActor* OwnerActor = GetOwner();
@@ -212,7 +212,7 @@ UTextRenderComponent* USRConveyorNetworkComponent::EnsureConveyorItemLabelCompon
 
 	OwnerActor->AddInstanceComponent(LabelComponent);
 	LabelComponent->RegisterComponent();
-	ConveyorItemLabelsByLane.Add(LaneKey, LabelComponent);
+	TransportState.ItemLabelsByLane.Add(LaneKey, LabelComponent);
 	return LabelComponent;
 }
 

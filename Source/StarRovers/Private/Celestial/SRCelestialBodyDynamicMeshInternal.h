@@ -89,6 +89,8 @@ namespace StarRovers::Celestial::DynamicMesh
 		int32 RegisterCount = 0;
 		int32 MatchCount = 0;
 		int32 SideWallCount = 0;
+		int32 SideWallFailedTriangleCount = 0;
+		int32 SideWallFallbackTriangleCount = 0;
 		int32 MaxPendingEdgeCount = 0;
 	};
 
@@ -233,7 +235,8 @@ namespace StarRovers::Celestial::DynamicMesh
 		int32 MaterialId,
 		bool bDoubleSided = false,
 		const FSRTerrainVertexKey* VertexKeys = nullptr,
-		const FVector* NormalReferenceDirectionOverride = nullptr);
+		const FVector* NormalReferenceDirectionOverride = nullptr,
+		bool bAllowUnweldedFallbackForFailedTriangles = false);
 	int32 ResolvePreparedSurfaceGridCellIndex(
 		const TArray<int32>& CachedCellIndexByFlatId,
 		int32 FaceResolution,

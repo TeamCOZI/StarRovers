@@ -7,163 +7,11 @@
 #include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
-namespace
-{
-	struct FSRAssemblyAreaFaceBridge
-	{
-		FSRPlanetSurfaceGridCellId StartFaceCellId;
-		FSRPlanetSurfaceGridCellId EndFaceCellId;
-	};
-
-	void AppendAssemblyAreaRectCellIds(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRPlanetSurfaceGridCellId& CornerA,
-		const FSRPlanetSurfaceGridCellId& CornerB,
-		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds)
-	{
-		if (!IsValid(SurfaceGrid) || CornerA.Face != CornerB.Face)
-		{
-			return;
-		}
-
-		const int32 MinX = FMath::Min(CornerA.CellX, CornerB.CellX);
-		const int32 MaxX = FMath::Max(CornerA.CellX, CornerB.CellX);
-		const int32 MinY = FMath::Min(CornerA.CellY, CornerB.CellY);
-		const int32 MaxY = FMath::Max(CornerA.CellY, CornerB.CellY);
-
-		for (int32 CellY = MinY; CellY <= MaxY; ++CellY)
-		{
-			for (int32 CellX = MinX; CellX <= MaxX; ++CellX)
-			{
-				FSRPlanetSurfaceGridCellId CellId;
-				CellId.Face = CornerA.Face;
-				CellId.CellX = CellX;
-				CellId.CellY = CellY;
-
-				FSRPlanetSurfaceGridCell Cell;
-				if (SurfaceGrid->GetCellById(CellId, Cell))
-				{
-					OutCellIds.AddUnique(CellId);
-				}
-			}
-		}
-	}
-
-	void CollectAssemblyAreaFaceBridges(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		ESRCubeSphereFace StartFace,
-		ESRCubeSphereFace EndFace,
-		TArray<FSRAssemblyAreaFaceBridge>& OutBridges)
-	{
-		OutBridges.Reset();
-		if (!IsValid(SurfaceGrid) || StartFace == EndFace)
-		{
-			return;
-		}
-
-		const int32 FaceResolution = SurfaceGrid->GetFaceResolution();
-		if (FaceResolution <= 0)
-		{
-			return;
-		}
-
-		for (int32 CellY = 0; CellY < FaceResolution; ++CellY)
-		{
-			for (int32 CellX = 0; CellX < FaceResolution; ++CellX)
-			{
-				FSRPlanetSurfaceGridCellId StartCellId;
-				StartCellId.Face = StartFace;
-				StartCellId.CellX = CellX;
-				StartCellId.CellY = CellY;
-
-				FSRPlanetSurfaceGridCellNeighbors Neighbors;
-				if (!SurfaceGrid->GetCellNeighbors(StartCellId, Neighbors))
-				{
-					continue;
-				}
-
-				const FSRPlanetSurfaceGridCellId NeighborCellIds[] =
-				{
-					Neighbors.NegativeU,
-					Neighbors.PositiveU,
-					Neighbors.NegativeV,
-					Neighbors.PositiveV,
-				};
-
-				for (const FSRPlanetSurfaceGridCellId& NeighborCellId : NeighborCellIds)
-				{
-					if (NeighborCellId.Face != EndFace)
-					{
-						continue;
-					}
-
-					FSRAssemblyAreaFaceBridge Bridge;
-					Bridge.StartFaceCellId = StartCellId;
-					Bridge.EndFaceCellId = NeighborCellId;
-					OutBridges.Add(Bridge);
-				}
-			}
-		}
-	}
-
-	bool AreAssemblyAreaBridgeCoordsConstant(
-		const TArray<FSRAssemblyAreaFaceBridge>& Bridges,
-		bool bUseStartFace,
-		bool bUseX)
-	{
-		if (Bridges.IsEmpty())
-		{
-			return false;
-		}
-
-		const FSRPlanetSurfaceGridCellId& FirstCellId = bUseStartFace ? Bridges[0].StartFaceCellId : Bridges[0].EndFaceCellId;
-		const int32 FirstCoord = bUseX ? FirstCellId.CellX : FirstCellId.CellY;
-		for (const FSRAssemblyAreaFaceBridge& Bridge : Bridges)
-		{
-			const FSRPlanetSurfaceGridCellId& CellId = bUseStartFace ? Bridge.StartFaceCellId : Bridge.EndFaceCellId;
-			const int32 Coord = bUseX ? CellId.CellX : CellId.CellY;
-			if (Coord != FirstCoord)
-			{
-				return false;
-			}
-		}
-
-		return true;
-	}
-
-	int32 GetAssemblyAreaBridgeAxisCoord(const FSRPlanetSurfaceGridCellId& CellId, bool bUseY)
-	{
-		return bUseY ? CellId.CellY : CellId.CellX;
-	}
-
-	const FSRAssemblyAreaFaceBridge* FindClosestAssemblyAreaBridgeByAxisCoord(
-		const TArray<FSRAssemblyAreaFaceBridge>& Bridges,
-		bool bUseStartFace,
-		bool bUseY,
-		int32 TargetCoord)
-	{
-		const FSRAssemblyAreaFaceBridge* BestBridge = nullptr;
-		int32 BestDistance = MAX_int32;
-		for (const FSRAssemblyAreaFaceBridge& Bridge : Bridges)
-		{
-			const FSRPlanetSurfaceGridCellId& CellId = bUseStartFace ? Bridge.StartFaceCellId : Bridge.EndFaceCellId;
-			const int32 Distance = FMath::Abs(GetAssemblyAreaBridgeAxisCoord(CellId, bUseY) - TargetCoord);
-			if (Distance < BestDistance)
-			{
-				BestBridge = &Bridge;
-				BestDistance = Distance;
-			}
-		}
-
-		return BestBridge;
-	}
-}
-
 bool USRAssemblyComponent::ShouldHandleAreaSelectionDrag() const
 {
 	const ASRPlayerController* PlayerController = GetOwnerController();
 	if (!bAssemblyModeActive
-		|| bIsAreaCopyPlacementActive
+		|| AreaCopy.IsPlacementActive()
 		|| !IsValid(PlayerController)
 		|| PlayerController->IsPointerOverBlockingUi())
 	{
@@ -195,12 +43,7 @@ bool USRAssemblyComponent::BeginAreaSelectionDrag(AActor*& OutSelectedActor)
 		return false;
 	}
 
-	bIsAreaSelectionDragActive = true;
-	AreaSelectionSurfaceGrid = SurfaceGrid;
-	AreaSelectionStartCellId = TargetCell.CellId;
-	LastAreaSelectionTargetCellId = FSRPlanetSurfaceGridCellId();
-	bHasAreaSelectionStartCell = true;
-	bHasLastAreaSelectionTargetCell = false;
+	AreaSelection.BeginSelectionDrag(SurfaceGrid, TargetCell.CellId);
 	OutSelectedActor = FocusedActor;
 	return UpdateAreaSelection(SurfaceGrid, TargetCell);
 }
@@ -208,7 +51,7 @@ bool USRAssemblyComponent::BeginAreaSelectionDrag(AActor*& OutSelectedActor)
 bool USRAssemblyComponent::ContinueAreaSelectionDrag(AActor*& OutSelectedActor)
 {
 	OutSelectedActor = nullptr;
-	if (!bIsAreaSelectionDragActive || !bHasAreaSelectionStartCell)
+	if (!AreaSelection.IsSelectionDragActive() || !AreaSelection.HasSelectionStartCell())
 	{
 		return false;
 	}
@@ -218,7 +61,7 @@ bool USRAssemblyComponent::ContinueAreaSelectionDrag(AActor*& OutSelectedActor)
 	FSRPlanetSurfaceGridCell TargetCell;
 	FVector HitLocation = FVector::ZeroVector;
 	if (!TryGetFocusedSurfaceGrid(FocusedActor, SurfaceGrid)
-		|| SurfaceGrid != AreaSelectionSurfaceGrid
+		|| SurfaceGrid != AreaSelection.GetSelectionSurfaceGrid()
 		|| !TryProjectCursorToSurfaceCell(SurfaceGrid, TargetCell, HitLocation))
 	{
 		return false;
@@ -230,18 +73,18 @@ bool USRAssemblyComponent::ContinueAreaSelectionDrag(AActor*& OutSelectedActor)
 
 void USRAssemblyComponent::EndAreaSelectionDrag()
 {
-	bIsAreaSelectionDragActive = false;
+	AreaSelection.EndSelectionDrag();
 }
 
 void USRAssemblyComponent::ClearAreaSelection()
 {
-	bIsAreaSelectionDragActive = false;
+	USRPlanetSurfaceGrid* SelectionSurfaceGrid = AreaSelection.GetSelectionSurfaceGrid();
 
-	if (IsValid(AreaSelectionSurfaceGrid))
+	if (IsValid(SelectionSurfaceGrid))
 	{
-		AreaSelectionSurfaceGrid->ClearAreaSelectionCells();
+		SelectionSurfaceGrid->ClearAreaSelectionCells();
 
-		if (AActor* SurfaceOwner = AreaSelectionSurfaceGrid->GetOwner())
+		if (AActor* SurfaceOwner = SelectionSurfaceGrid->GetOwner())
 		{
 			if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
 			{
@@ -250,22 +93,19 @@ void USRAssemblyComponent::ClearAreaSelection()
 		}
 	}
 
-	AreaSelectionSurfaceGrid = nullptr;
-	AreaSelectionStartCellId = FSRPlanetSurfaceGridCellId();
-	LastAreaSelectionTargetCellId = FSRPlanetSurfaceGridCellId();
-	bHasAreaSelectionStartCell = false;
-	bHasLastAreaSelectionTargetCell = false;
-	AreaSelectionCellIds.Reset();
+	AreaSelection.ClearSelection();
 }
 
 bool USRAssemblyComponent::TryDeleteAreaSelection()
 {
-	if (!bAssemblyModeActive || !IsValid(AreaSelectionSurfaceGrid) || AreaSelectionCellIds.IsEmpty())
+	USRPlanetSurfaceGrid* SelectionSurfaceGrid = AreaSelection.GetSelectionSurfaceGrid();
+	const TArray<FSRPlanetSurfaceGridCellId>& SelectionCellIds = AreaSelection.GetSelectionCellIds();
+	if (!bAssemblyModeActive || !IsValid(SelectionSurfaceGrid) || SelectionCellIds.IsEmpty())
 	{
 		return false;
 	}
 
-	if (!DeleteAreaCells(AreaSelectionSurfaceGrid, AreaSelectionCellIds))
+	if (!DeleteAreaCells(SelectionSurfaceGrid, SelectionCellIds))
 	{
 		return false;
 	}
@@ -280,82 +120,31 @@ bool USRAssemblyComponent::BuildAreaSelectionCellIds(
 	const FSRPlanetSurfaceGridCellId& EndCellId,
 	TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const
 {
-	OutCellIds.Reset();
-	if (!IsValid(SurfaceGrid))
-	{
-		return false;
-	}
-
-	if (StartCellId.Face == EndCellId.Face)
-	{
-		AppendAssemblyAreaRectCellIds(SurfaceGrid, StartCellId, EndCellId, OutCellIds);
-		return !OutCellIds.IsEmpty();
-	}
-
-	TArray<FSRAssemblyAreaFaceBridge> Bridges;
-	CollectAssemblyAreaFaceBridges(SurfaceGrid, StartCellId.Face, EndCellId.Face, Bridges);
-	if (Bridges.IsEmpty())
-	{
-		return false;
-	}
-
-	const bool bStartEdgeXConstant = AreAssemblyAreaBridgeCoordsConstant(Bridges, true, true);
-	const bool bStartEdgeYConstant = AreAssemblyAreaBridgeCoordsConstant(Bridges, true, false);
-	const bool bEndEdgeXConstant = AreAssemblyAreaBridgeCoordsConstant(Bridges, false, true);
-	const bool bEndEdgeYConstant = AreAssemblyAreaBridgeCoordsConstant(Bridges, false, false);
-	if ((!bStartEdgeXConstant && !bStartEdgeYConstant) || (!bEndEdgeXConstant && !bEndEdgeYConstant))
-	{
-		return false;
-	}
-
-	const bool bStartBridgeAxisUseY = bStartEdgeXConstant;
-	const bool bEndBridgeAxisUseY = bEndEdgeXConstant;
-	const int32 StartAxisCoord = GetAssemblyAreaBridgeAxisCoord(StartCellId, bStartBridgeAxisUseY);
-	const int32 EndAxisCoord = GetAssemblyAreaBridgeAxisCoord(EndCellId, bEndBridgeAxisUseY);
-
-	const FSRAssemblyAreaFaceBridge* BridgeForStartAxis = FindClosestAssemblyAreaBridgeByAxisCoord(
-		Bridges,
-		true,
-		bStartBridgeAxisUseY,
-		StartAxisCoord);
-	const FSRAssemblyAreaFaceBridge* BridgeForEndAxis = FindClosestAssemblyAreaBridgeByAxisCoord(
-		Bridges,
-		false,
-		bEndBridgeAxisUseY,
-		EndAxisCoord);
-	if (!BridgeForStartAxis || !BridgeForEndAxis)
-	{
-		return false;
-	}
-
-	AppendAssemblyAreaRectCellIds(SurfaceGrid, StartCellId, BridgeForEndAxis->StartFaceCellId, OutCellIds);
-	AppendAssemblyAreaRectCellIds(SurfaceGrid, BridgeForStartAxis->EndFaceCellId, EndCellId, OutCellIds);
-	return !OutCellIds.IsEmpty();
+	return AreaSelection.BuildCellIds(SurfaceGrid, StartCellId, EndCellId, OutCellIds);
 }
 
 bool USRAssemblyComponent::UpdateAreaSelection(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell)
 {
-	if (!IsValid(SurfaceGrid) || !bHasAreaSelectionStartCell)
+	if (!IsValid(SurfaceGrid) || !AreaSelection.HasSelectionStartCell())
 	{
 		return false;
 	}
 
-	if (bHasLastAreaSelectionTargetCell && LastAreaSelectionTargetCellId == TargetCell.CellId)
+	if (AreaSelection.IsLastSelectionTargetCell(TargetCell.CellId))
 	{
 		return true;
 	}
 
 	TArray<FSRPlanetSurfaceGridCellId> NewAreaSelectionCellIds;
-	if (!BuildAreaSelectionCellIds(SurfaceGrid, AreaSelectionStartCellId, TargetCell.CellId, NewAreaSelectionCellIds))
+	if (!BuildAreaSelectionCellIds(SurfaceGrid, AreaSelection.GetSelectionStartCellId(), TargetCell.CellId, NewAreaSelectionCellIds))
 	{
 		return false;
 	}
 
-	AreaSelectionCellIds = MoveTemp(NewAreaSelectionCellIds);
-	SurfaceGrid->SetAreaSelectionCells(AreaSelectionCellIds);
-	ApplyAreaSelectionGhosts(SurfaceGrid, AreaSelectionCellIds);
-	LastAreaSelectionTargetCellId = TargetCell.CellId;
-	bHasLastAreaSelectionTargetCell = true;
+	AreaSelection.SetSelectionCells(MoveTemp(NewAreaSelectionCellIds), TargetCell.CellId);
+	const TArray<FSRPlanetSurfaceGridCellId>& SelectionCellIds = AreaSelection.GetSelectionCellIds();
+	SurfaceGrid->SetAreaSelectionCells(SelectionCellIds);
+	ApplyAreaSelectionGhosts(SurfaceGrid, SelectionCellIds);
 	return true;
 }
 
@@ -389,19 +178,19 @@ bool USRAssemblyComponent::ShouldHandleAreaDeletionDrag() const
 {
 	const ASRPlayerController* PlayerController = GetOwnerController();
 	return bAssemblyModeActive
-		&& !bIsAreaCopyPlacementActive
+		&& !AreaCopy.IsPlacementActive()
 		&& IsValid(PlayerController)
 		&& !PlayerController->IsPointerOverBlockingUi();
 }
 
 bool USRAssemblyComponent::IsAreaSelectionDragActive() const
 {
-	return bIsAreaSelectionDragActive;
+	return AreaSelection.IsSelectionDragActive();
 }
 
 bool USRAssemblyComponent::IsAreaDeletionDragActive() const
 {
-	return bIsAreaDeletionDragActive;
+	return AreaSelection.IsDeletionDragActive();
 }
 
 bool USRAssemblyComponent::BeginAreaDeletionDrag(AActor*& OutSelectedActor)
@@ -427,12 +216,7 @@ bool USRAssemblyComponent::BeginAreaDeletionDrag(AActor*& OutSelectedActor)
 		return false;
 	}
 
-	bIsAreaDeletionDragActive = true;
-	AreaDeletionSurfaceGrid = SurfaceGrid;
-	AreaDeletionStartCellId = TargetCell.CellId;
-	LastAreaDeletionTargetCellId = FSRPlanetSurfaceGridCellId();
-	bHasAreaDeletionStartCell = true;
-	bHasLastAreaDeletionTargetCell = false;
+	AreaSelection.BeginDeletionDrag(SurfaceGrid, TargetCell.CellId);
 	OutSelectedActor = FocusedActor;
 	return UpdateAreaDeletion(SurfaceGrid, TargetCell);
 }
@@ -440,7 +224,7 @@ bool USRAssemblyComponent::BeginAreaDeletionDrag(AActor*& OutSelectedActor)
 bool USRAssemblyComponent::ContinueAreaDeletionDrag(AActor*& OutSelectedActor)
 {
 	OutSelectedActor = nullptr;
-	if (!bIsAreaDeletionDragActive || !bHasAreaDeletionStartCell)
+	if (!AreaSelection.IsDeletionDragActive() || !AreaSelection.HasDeletionStartCell())
 	{
 		return false;
 	}
@@ -450,7 +234,7 @@ bool USRAssemblyComponent::ContinueAreaDeletionDrag(AActor*& OutSelectedActor)
 	FSRPlanetSurfaceGridCell TargetCell;
 	FVector HitLocation = FVector::ZeroVector;
 	if (!TryGetFocusedSurfaceGrid(FocusedActor, SurfaceGrid)
-		|| SurfaceGrid != AreaDeletionSurfaceGrid
+		|| SurfaceGrid != AreaSelection.GetDeletionSurfaceGrid()
 		|| !TryProjectCursorToSurfaceCell(SurfaceGrid, TargetCell, HitLocation))
 	{
 		return false;
@@ -462,25 +246,25 @@ bool USRAssemblyComponent::ContinueAreaDeletionDrag(AActor*& OutSelectedActor)
 
 void USRAssemblyComponent::EndAreaDeletionDrag()
 {
-	if (!bIsAreaDeletionDragActive)
+	if (!AreaSelection.IsDeletionDragActive())
 	{
 		return;
 	}
 
-	bIsAreaDeletionDragActive = false;
+	AreaSelection.EndDeletionDrag();
 	CommitAreaDeletion();
 	ClearAreaDeletion();
 }
 
 void USRAssemblyComponent::ClearAreaDeletion()
 {
-	bIsAreaDeletionDragActive = false;
+	USRPlanetSurfaceGrid* DeletionSurfaceGrid = AreaSelection.GetDeletionSurfaceGrid();
 
-	if (IsValid(AreaDeletionSurfaceGrid))
+	if (IsValid(DeletionSurfaceGrid))
 	{
-		AreaDeletionSurfaceGrid->ClearDeletionPreviewCells();
+		DeletionSurfaceGrid->ClearDeletionPreviewCells();
 
-		if (AActor* SurfaceOwner = AreaDeletionSurfaceGrid->GetOwner())
+		if (AActor* SurfaceOwner = DeletionSurfaceGrid->GetOwner())
 		{
 			if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
 			{
@@ -489,37 +273,31 @@ void USRAssemblyComponent::ClearAreaDeletion()
 		}
 	}
 
-	AreaDeletionSurfaceGrid = nullptr;
-	AreaDeletionStartCellId = FSRPlanetSurfaceGridCellId();
-	LastAreaDeletionTargetCellId = FSRPlanetSurfaceGridCellId();
-	bHasAreaDeletionStartCell = false;
-	bHasLastAreaDeletionTargetCell = false;
-	AreaDeletionCellIds.Reset();
+	AreaSelection.ClearDeletion();
 }
 
 bool USRAssemblyComponent::UpdateAreaDeletion(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell)
 {
-	if (!IsValid(SurfaceGrid) || !bHasAreaDeletionStartCell)
+	if (!IsValid(SurfaceGrid) || !AreaSelection.HasDeletionStartCell())
 	{
 		return false;
 	}
 
-	if (bHasLastAreaDeletionTargetCell && LastAreaDeletionTargetCellId == TargetCell.CellId)
+	if (AreaSelection.IsLastDeletionTargetCell(TargetCell.CellId))
 	{
 		return true;
 	}
 
 	TArray<FSRPlanetSurfaceGridCellId> NewAreaDeletionCellIds;
-	if (!BuildAreaSelectionCellIds(SurfaceGrid, AreaDeletionStartCellId, TargetCell.CellId, NewAreaDeletionCellIds))
+	if (!BuildAreaSelectionCellIds(SurfaceGrid, AreaSelection.GetDeletionStartCellId(), TargetCell.CellId, NewAreaDeletionCellIds))
 	{
 		return false;
 	}
 
-	AreaDeletionCellIds = MoveTemp(NewAreaDeletionCellIds);
-	SurfaceGrid->SetDeletionPreviewCells(AreaDeletionCellIds);
-	ApplyAreaDeletionPreview(SurfaceGrid, AreaDeletionCellIds);
-	LastAreaDeletionTargetCellId = TargetCell.CellId;
-	bHasLastAreaDeletionTargetCell = true;
+	AreaSelection.SetDeletionCells(MoveTemp(NewAreaDeletionCellIds), TargetCell.CellId);
+	const TArray<FSRPlanetSurfaceGridCellId>& DeletionCellIds = AreaSelection.GetDeletionCellIds();
+	SurfaceGrid->SetDeletionPreviewCells(DeletionCellIds);
+	ApplyAreaDeletionPreview(SurfaceGrid, DeletionCellIds);
 	return true;
 }
 
@@ -543,12 +321,14 @@ void USRAssemblyComponent::ApplyAreaDeletionPreview(USRPlanetSurfaceGrid* Surfac
 
 bool USRAssemblyComponent::CommitAreaDeletion()
 {
-	if (!IsValid(AreaDeletionSurfaceGrid) || AreaDeletionCellIds.IsEmpty())
+	USRPlanetSurfaceGrid* DeletionSurfaceGrid = AreaSelection.GetDeletionSurfaceGrid();
+	const TArray<FSRPlanetSurfaceGridCellId>& DeletionCellIds = AreaSelection.GetDeletionCellIds();
+	if (!IsValid(DeletionSurfaceGrid) || DeletionCellIds.IsEmpty())
 	{
 		return false;
 	}
 
-	return DeleteAreaCells(AreaDeletionSurfaceGrid, AreaDeletionCellIds);
+	return DeleteAreaCells(DeletionSurfaceGrid, DeletionCellIds);
 }
 
 bool USRAssemblyComponent::DeleteAreaCells(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
@@ -586,7 +366,7 @@ bool USRAssemblyComponent::DeleteAreaCells(USRPlanetSurfaceGrid* SurfaceGrid, co
 	}
 
 	ClearPendingConveyorPathStart();
-	PendingStructurePlacementQueue.Reset();
+	PlacementQueue.Reset();
 	DestroyStructureGhostPreview();
 	ClearSelectedStructureInfo();
 	bHasLastPublishedHoveredCellInfo = false;

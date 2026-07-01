@@ -9,12 +9,17 @@
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
+#include "Structure/SRStructureDataAsset.h"
+#include "UI/SRStructureSelectionWidget.h"
 
 namespace
 {
 	constexpr int32 RuntimeAssemblyInputMappingPriority = 1;
 	constexpr TCHAR RuntimeAreaCopyMirrorActionName[] = TEXT("IA_RuntimeAssemblyAreaCopyMirrorAction");
 	constexpr TCHAR RuntimePickStructureActionName[] = TEXT("IA_RuntimeAssemblyPickStructureAction");
+	constexpr TCHAR RuntimeRotatePlacementCounterClockwiseActionName[] = TEXT("IA_RuntimeRotatePlacementCounterClockwiseAction");
+	constexpr TCHAR RuntimeRotatePlacementClockwiseActionName[] = TEXT("IA_RuntimeRotatePlacementClockwiseAction");
+	constexpr TCHAR RuntimeStructureSelectionTabActionName[] = TEXT("IA_RuntimeStructureSelectionTabAction");
 	constexpr TCHAR RuntimeAssemblyInputMappingContextName[] = TEXT("IMC_RuntimeAssemblyInput");
 }
 
@@ -50,15 +55,55 @@ void ASRPlayerController::EnsureAssemblyPickStructureInputAction()
 	}
 }
 
+void ASRPlayerController::EnsureRotatePlacementInputActions()
+{
+	if (!RotatePlacementCounterClockwiseAction)
+	{
+		RotatePlacementCounterClockwiseAction = NewObject<UInputAction>(this, RuntimeRotatePlacementCounterClockwiseActionName);
+		if (RotatePlacementCounterClockwiseAction)
+		{
+			RotatePlacementCounterClockwiseAction->ValueType = EInputActionValueType::Boolean;
+			RotatePlacementCounterClockwiseAction->ActionDescription = NSLOCTEXT("StarRovers", "RotatePlacementCounterClockwiseActionDescription", "Rotate placement counter-clockwise");
+		}
+	}
+
+	if (!RotatePlacementClockwiseAction)
+	{
+		RotatePlacementClockwiseAction = NewObject<UInputAction>(this, RuntimeRotatePlacementClockwiseActionName);
+		if (RotatePlacementClockwiseAction)
+		{
+			RotatePlacementClockwiseAction->ValueType = EInputActionValueType::Boolean;
+			RotatePlacementClockwiseAction->ActionDescription = NSLOCTEXT("StarRovers", "RotatePlacementClockwiseActionDescription", "Rotate placement clockwise");
+		}
+	}
+}
+
+void ASRPlayerController::EnsureStructureSelectionTabInputAction()
+{
+	if (StructureSelectionTabAction)
+	{
+		return;
+	}
+
+	StructureSelectionTabAction = NewObject<UInputAction>(this, RuntimeStructureSelectionTabActionName);
+	if (StructureSelectionTabAction)
+	{
+		StructureSelectionTabAction->ValueType = EInputActionValueType::Boolean;
+		StructureSelectionTabAction->ActionDescription = NSLOCTEXT("StarRovers", "StructureSelectionTabActionDescription", "Switch structure selection tab");
+	}
+}
+
 void ASRPlayerController::ApplyRuntimeAssemblyInputMapping()
 {
-	if (bRuntimeAssemblyInputMappingApplied)
+	if (RuntimeState.bRuntimeAssemblyInputMappingApplied)
 	{
 		return;
 	}
 
 	EnsureAssemblyAreaCopyMirrorInputAction();
 	EnsureAssemblyPickStructureInputAction();
+	EnsureRotatePlacementInputActions();
+	EnsureStructureSelectionTabInputAction();
 
 	ULocalPlayer* LocalPlayer = GetLocalPlayer();
 	if (!LocalPlayer)
@@ -83,10 +128,22 @@ void ASRPlayerController::ApplyRuntimeAssemblyInputMapping()
 		{
 			RuntimeAssemblyInputMappingContext->MapKey(AssemblyPickStructureAction.Get(), EKeys::Z);
 		}
+		if (RotatePlacementCounterClockwiseAction)
+		{
+			RuntimeAssemblyInputMappingContext->MapKey(RotatePlacementCounterClockwiseAction.Get(), EKeys::Q);
+		}
+		if (RotatePlacementClockwiseAction)
+		{
+			RuntimeAssemblyInputMappingContext->MapKey(RotatePlacementClockwiseAction.Get(), EKeys::E);
+		}
+		if (StructureSelectionTabAction)
+		{
+			RuntimeAssemblyInputMappingContext->MapKey(StructureSelectionTabAction.Get(), EKeys::Tab);
+		}
 	}
 
 	InputSubsystem->AddMappingContext(RuntimeAssemblyInputMappingContext, RuntimeAssemblyInputMappingPriority);
-	bRuntimeAssemblyInputMappingApplied = true;
+	RuntimeState.bRuntimeAssemblyInputMappingApplied = true;
 }
 
 void ASRPlayerController::SetupInputComponent()
@@ -95,6 +152,8 @@ void ASRPlayerController::SetupInputComponent()
 
 	EnsureAssemblyAreaCopyMirrorInputAction();
 	EnsureAssemblyPickStructureInputAction();
+	EnsureRotatePlacementInputActions();
+	EnsureStructureSelectionTabInputAction();
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
@@ -229,13 +288,37 @@ void ASRPlayerController::SetupInputComponent()
 		{
 			UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyUndoRedoAction before assembly undo/redo binding."));
 		}
+
+		if (StructureSelectionTabAction)
+		{
+			EnhancedInputComponent->BindAction(StructureSelectionTabAction, ETriggerEvent::Started, this, &ASRPlayerController::HandleStructureSelectionTab);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires StructureSelectionTabAction before structure selection tab binding."));
+		}
 	}
 
 	ApplyRuntimeAssemblyInputMapping();
 }
 
+void ASRPlayerController::HandleStructureSelectionTab()
+{
+	if (!IsAssemblyModeActive() || !StructureSelectionWidget)
+	{
+		return;
+	}
+
+	StructureSelectionWidget->AdvanceStructureSelectionTab();
+}
+
 void ASRPlayerController::HandleLeftClick()
 {
+	if (StructureSelectionWidget && StructureSelectionWidget->TryHandleStructureSelectionPointerClick())
+	{
+		return;
+	}
+
 	if (IsPointerOverBlockingUi())
 	{
 		return;
@@ -247,7 +330,7 @@ void ASRPlayerController::HandleLeftClick()
 		return;
 	}
 
-	bPendingInitialPrimaryStarFocus = false;
+	RuntimeState.bPendingInitialPrimaryStarFocus = false;
 
 	AActor* AssemblySelectedActor = nullptr;
 	if (AssemblyComponent && AssemblyComponent->TryHandleAssemblyClick(AssemblySelectedActor))
@@ -289,7 +372,7 @@ void ASRPlayerController::HandleRightClick()
 	}
 
 	if ((AssemblyComponent && AssemblyComponent->IsAreaSelectionDragActive())
-		|| bAssemblyAreaDeletionDragHoldActive
+		|| RuntimeState.bAssemblyAreaDeletionDragHoldActive
 		|| (AssemblyComponent && AssemblyComponent->IsAreaDeletionDragActive()))
 	{
 		return;
@@ -334,12 +417,12 @@ void ASRPlayerController::HandleAssemblyAreaDeletionDragStarted()
 		return;
 	}
 
-	bAssemblyAreaDeletionDragHoldActive = true;
+	RuntimeState.bAssemblyAreaDeletionDragHoldActive = true;
 }
 
 void ASRPlayerController::HandleAssemblyAreaDeletionDragCompleted()
 {
-	bAssemblyAreaDeletionDragHoldActive = false;
+	RuntimeState.bAssemblyAreaDeletionDragHoldActive = false;
 	EndAssemblyAreaDeletionDrag();
 }
 
@@ -429,7 +512,7 @@ void ASRPlayerController::HandleFocusParent()
 		return;
 	}
 
-	bPendingInitialPrimaryStarFocus = false;
+	RuntimeState.bPendingInitialPrimaryStarFocus = false;
 
 	ASRCameraPawn* CameraPawn = Cast<ASRCameraPawn>(GetPawn());
 	if (!CameraPawn)
@@ -492,48 +575,64 @@ void ASRPlayerController::HandleRotatePlacementClockwise()
 
 void ASRPlayerController::HandleBulkDeleteConveyorModifierStarted()
 {
-	bConveyorBulkDeleteModifierActive = true;
+	RuntimeState.bConveyorBulkDeleteModifierActive = true;
 }
 
 void ASRPlayerController::HandleBulkDeleteConveyorModifierEnded()
 {
-	bConveyorBulkDeleteModifierActive = false;
+	RuntimeState.bConveyorBulkDeleteModifierActive = false;
 }
 
 bool ASRPlayerController::IsConveyorBulkDeleteModifierActive() const
 {
-	return bConveyorBulkDeleteModifierActive;
+	return RuntimeState.bConveyorBulkDeleteModifierActive;
 }
 
 void ASRPlayerController::HandleAssemblyShiftModifierStarted()
 {
-	bAssemblyShiftModifierActive = true;
+	RuntimeState.bAssemblyShiftModifierActive = true;
 }
 
 void ASRPlayerController::HandleAssemblyShiftModifierEnded()
 {
-	bAssemblyShiftModifierActive = false;
+	RuntimeState.bAssemblyShiftModifierActive = false;
 }
 
 bool ASRPlayerController::IsAssemblyShiftModifierActive() const
 {
-	return bAssemblyShiftModifierActive;
+	return RuntimeState.bAssemblyShiftModifierActive;
 }
 
 bool ASRPlayerController::TryHandlePlacementRotationInput(int32 StepDelta)
 {
 	const uint64 CurrentFrame = GFrameCounter;
-	if (LastPlacementRotationInputFrame == CurrentFrame && LastPlacementRotationInputStepDelta == StepDelta)
+	if (RuntimeState.IsDuplicatePlacementRotationInput(CurrentFrame, StepDelta))
 	{
 		return true;
 	}
 
-	if (!RotateStructurePlacement(StepDelta))
+	if (!IsAssemblyModeActive() || IsPointerOverBlockingUi())
 	{
 		return false;
 	}
 
-	LastPlacementRotationInputFrame = CurrentFrame;
-	LastPlacementRotationInputStepDelta = StepDelta;
+	const bool bHasSelectedStructureForPlacement = IsValid(GetSelectedStructureDataAsset());
+	if (bHasSelectedStructureForPlacement)
+	{
+		if (!RotateStructurePlacement(StepDelta))
+		{
+			return false;
+		}
+	}
+	else
+	{
+		ASRCameraPawn* CameraPawn = Cast<ASRCameraPawn>(GetPawn());
+		if (!CameraPawn || !CameraPawn->RotateFocusSurfaceViewBySteps(StepDelta))
+		{
+			return false;
+		}
+	}
+
+	RuntimeState.StorePlacementRotationInput(CurrentFrame, StepDelta);
 	return true;
 }

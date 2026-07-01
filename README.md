@@ -55,23 +55,24 @@ Core flow:
 
 Feature owners:
 
-- Game / Player / Camera: [O] `ASRGameMode`; [O] `ASRPlayerController` for input, UI, and assembly coordination; [O] `ASRCameraPawn` for camera movement, focus, and focused-surface view control
+- Game / Player / Camera: [O] `ASRGameMode`; [O] `ASRPlayerController` for input, UI creation/visibility, selected build option state, and assembly coordination; [O] `ASRCameraPawn` for camera movement, focus, and focused-surface view control; small runtime/UI state lives in `FSRPlayerControllerRuntimeState`, `ESRPlayerUiLayer`, and `FSRCameraPawnRuntimeState`
 - Runtime System Generation: [O] `ASRSolarSystemGenerator`, `USRCelestialBodyRegistrySubsystem`
-- Celestial Runtime: [O] `ASRCelestialBody`, `ASRPlanet`, `ASRStar`; [H] `USRCelestialBodyRuntimeLibrary`
+- Celestial Runtime: [O] `ASRCelestialBody`, `ASRPlanet`, `ASRStar`; [H] `USRCelestialBodyRuntimeLibrary`; runtime/data helper types live in `FSRCelestialBodyDynamicMeshRuntimeState` and `FSRCelestialBodyData`
 - Celestial Data: [D] `USRStarDataAsset`, `USRPlanetDataAsset`, `USRMoonDataAsset`, `USRDynamicMeshBaseDataAsset`
 - Orbit / Time / Gravity: [O] `USROrbit`, `USRTimeControlSubsystem`, `USRGravityParent`, `USRGravityChild`
 - Terrain / Biome: [D] `FSRDynamicMeshGeneration`, `USRPlanetBiomeDataAsset`, `USRPlanetTerrainProfileDataAsset`; [H] `FSRPlanetTerrainGenerator`
-- Surface Grid: [O] `USRPlanetSurfaceGrid`; [H] `USRPlanetSurfaceGridLibrary`
-- Assembly / Structure: [O] `USRAssemblyComponent` for placement/editing workflow and placement history, `USRStructureInstanceManagerComponent` for placed structure truth, `ASRStructure`; [D] `USRStructureDataAsset`; [H] `USRStructurePlacementLibrary`; runtime structs `FSRPlacedStructureInstance`, `FSRResourceDepositInstance`, `FSRAssemblyPlacementHistoryEntry`; interface `ISRBuildableStructureInterface`
-- Conveyor: [O] `USRConveyorNetworkComponent` for graph/path/transport truth, `ASRConveyorBeltActor` for visual output; runtime structs `FSRConveyorLaneKey`, `FSRConveyorSegment`, `FSRConveyorVisualPath`, `FSRConveyorItem`
-- Resource / Facility Automation: [O] `USRFacilityNetworkComponent`; [D] `USRResourceDataAsset`, `USRFacilityDataAsset`; runtime structs `FSRResourceInstance`, `FSRFacilityInstance`, `FSRFacilityPortInventory`
+- Surface Grid: [O] `USRPlanetSurfaceGrid`; [H] `USRPlanetSurfaceGridLibrary`; runtime indexing/raycast/batch state lives in `FSRPlanetSurfaceGrid*State` helper structs
+- Assembly / Structure: [O] `USRAssemblyComponent` for placement/editing workflow, area selection/copy, placement queue, and placement history; [O] `USRStructureInstanceManagerComponent` for placed structure truth, `ASRStructure`; [D] `USRStructureDataAsset`; [H] `USRStructurePlacementLibrary`; runtime structs `FSRPlacedStructureInstance`, `FSRResourceDepositInstance`; interface `ISRBuildableStructureInterface`
+- Conveyor: [O] `USRConveyorNetworkComponent` for graph/path/transport truth, `ASRConveyorBeltActor` for visual output; runtime structs `FSRConveyorLaneKey`, `FSRConveyorSegment`, `FSRConveyorVisualPath`, `FSRConveyorItem`, with transport/cache state grouped in `FSRConveyorTransportRuntimeState`
+- Resource / Facility Automation: [O] `USRFacilityNetworkComponent`; [D] `USRResourceDataAsset`, `USRFacilityDataAsset`; runtime structs `FSRResourceInstance`, `FSRFacilityInstance`, `FSRFacilityPortInventory`, with facility network state grouped in `FSRFacilityNetworkRuntimeState`
 - Natural Structures: [O] `ASRSolarSystemGenerator` with `USRStructureInstanceManagerComponent`; [D] `FSRProfileNaturalStructureSpawnRule`, `FSRNaturalStructureSpawnRuleOverride`
-- UI: [UI] `USRCelestialBodyFocusInfoWidget`, `USRCelestialBodyOverviewWidget`, `USRStructureSelectionWidget`, `USRLoadingScreenWidget`, `USRTimeControlWidget`, `USRFacilityControlWidget`; [D] `ESRPlayerUiLayer` / `WidgetLayerOrder`
+- UI: [UI] `USRCelestialBodyFocusInfoWidget`, `USRCelestialBodyOverviewWidget`, `USRTimeControlWidget`, `USRStructureSelectionWidget`, `USRFacilityControlWidget`, `USRLoadingScreenWidget`; widgets mirror state or dispatch requests, and are created/refreshed by `ASRPlayerController`
 - Diagnostics / Visual Utilities: [H] `FSRLineThicknessUtils`, `FSRMemoryDiagnostics`, `FSRTimingLog`
 
 C++ implementation structure:
 
 - Major runtime owners are intentionally split across partial `.cpp` files by responsibility. Read the owner header first, then use `rg --files` or symbol search to open the relevant private implementation file.
+- Large owner headers may also delegate runtime state and shared data structs to small public helper headers named `*RuntimeState`, `*RuntimeTypes`, `*DataTypes`, or feature-specific helpers such as assembly history/selection/copy/queue.
 - Common split names are descriptive: `Input`, `Selection`, `UI`, `Focus`, `Surface`, `SurfaceInteraction`, `Placement`, `Deletion`, `AreaSelection`, `AreaCopy`, `History`, `Visuals`, `Path`, `Transport`, `PCG`, `Diagnostics`, `DynamicMesh`, `Biome`, `Noise`, and `ActorGroups`.
 - Private `*Internal.h` files are implementation-only helper declarations for large algorithms such as dynamic mesh generation, terrain generation, and solar system generation.
 - Widgets remain UI surfaces. Even when split across files, gameplay state still belongs to controller/component/subsystem owners.
@@ -83,6 +84,7 @@ Runtime ownership contract:
 - Runtime celestial spawning/tracking belongs to `ASRSolarSystemGenerator` and `USRCelestialBodyRegistrySubsystem`.
 - Celestial body runtime, mesh build/cache, material setup, and gravity setup belong to `ASRCelestialBody`; planet/moon component composition belongs to `ASRPlanet`.
 - Camera movement, focus tracking, and focused-surface view state belong to `ASRCameraPawn`; `ASRPlayerController` requests focus and owns input/UI coordination.
+- Extracted runtime state/helper structs are organizational only; the owning Actor/Component remains the runtime source of truth.
 - Surface cells, cell maps, raycast, hover/select, overlays, port highlights, and occupancy belong to `USRPlanetSurfaceGrid`.
 - Cell occupancy must go through `USRPlanetSurfaceGrid::SetCellOccupied` or `SetCellsOccupied`.
 - Assembly input, selected build option, automatic Assembly Mode activation, and UI coordination belong to `ASRPlayerController`.
@@ -101,7 +103,7 @@ Current C++ / BP / DA connection:
 - `BP_SolarSystemGenerator`, `BP_CelestialBody`, `BP_Star`, and `BP_Planet` are Blueprint surfaces for C++ runtime actors.
 - Star/Planet/Moon Data Assets feed celestial runtime data; Planet/Moon DAs also connect terrain profiles, biomes, and material mapping.
 - `ASRCameraPawn` owns focused camera movement and view rotation settings.
-- Structure selection, assembly input actions, Assembly Mode screen-size threshold references, UI widget classes, and UI layer order are owned by `ASRPlayerController`.
+- Structure selection UI is `USRStructureSelectionWidget` plus WBP subclasses; it receives available `USRStructureDataAsset` entries from `ASRPlayerController`, categorizes them for display, and dispatches selected build requests back to the controller.
 - `USRStructureDataAsset` configures structures and conveyors through `BuildKind`, placement data, construction flags, ports, optional deposits, and optional `FacilityDataAsset`.
 - `USRFacilityDataAsset` defines facility processing behavior. Structure DA ports define facility slots and conveyor connection positions.
 - `USRAssemblyComponent` enters/exits Assembly Mode from focused celestial screen size, places/removes structures and conveyors, then updates `USRStructureInstanceManagerComponent` and `USRConveyorNetworkComponent`.

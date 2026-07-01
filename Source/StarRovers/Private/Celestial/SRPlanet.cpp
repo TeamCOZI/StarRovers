@@ -2,16 +2,17 @@
 
 #include "Automation/SRFacilityNetworkComponent.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
+#include "Components/DynamicMeshComponent.h"
 #include "Components/LineBatchComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/SplineMeshComponent.h"
-#include "Components/StaticMeshComponent.h"
 #include "Conveyor/SRConveyorNetworkComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Simulation/SROrbit.h"
 #include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Visual/SRCelestialRingMeshComponent.h"
 
 namespace
 {
@@ -45,11 +46,11 @@ ASRPlanet::ASRPlanet()
 	CanConstruct = false;
 	SurfaceGridHeightOffset = 0.0f;
 	bHasOcean = false;
-	OceanMesh = nullptr;
+	OceanDynamicMeshBaseDataAsset = nullptr;
 	OceanMaterial = nullptr;
 	OceanScaleMultiplier = 1.0f;
 	bHasAtmosphere = false;
-	AtmosphereMesh = nullptr;
+	AtmosphereDynamicMeshBaseDataAsset = nullptr;
 	AtmosphereMaterial = nullptr;
 	AtmosphereScaleMultiplier = 1.0f;
 
@@ -67,8 +68,16 @@ ASRPlanet::ASRPlanet()
 	OrbitLineBatch->SetUsingAbsoluteLocation(true);
 	OrbitLineBatch->SetUsingAbsoluteRotation(true);
 	OrbitLineBatch->SetUsingAbsoluteScale(true);
+	OrbitLineBatch->SetVisibility(false);
+	OrbitLineBatch->SetHiddenInGame(true);
+	OrbitLineBatch->SetComponentTickEnabled(false);
 	OrbitLineBatch->ComponentTags.AddUnique(TEXT("StarRovers.OrbitLine"));
 	OrbitLineBatch->ComponentTags.AddUnique(TEXT("StarRovers.OrbitLineRoot"));
+
+	OrbitRingVisual = CreateDefaultSubobject<USRCelestialRingMeshComponent>(TEXT("OrbitRingVisual"));
+	OrbitRingVisual->SetupAttachment(SceneRoot);
+	OrbitRingVisual->ComponentTags.AddUnique(TEXT("StarRovers.OrbitLine"));
+	OrbitRingVisual->ComponentTags.AddUnique(TEXT("StarRovers.OrbitLineRoot"));
 
 	RotationAxisNorthSpline = CreateDefaultSubobject<USplineMeshComponent>(TEXT("RotationAxisNorthSpline"));
 	RotationAxisNorthSpline->SetupAttachment(SceneRoot);
@@ -84,17 +93,19 @@ ASRPlanet::ASRPlanet()
 	RotationAxisSouthSpline->ComponentTags.AddUnique(TEXT("StarRovers.RotationAxisLine"));
 	RotationAxisSouthSpline->ComponentTags.AddUnique(TEXT("StarRovers.RotationAxisLineRoot"));
 
-	OceanStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("OceanStaticMesh"));
-	OceanStaticMesh->SetupAttachment(SceneRoot);
-	OceanStaticMesh->SetMobility(EComponentMobility::Movable);
-	OceanStaticMesh->SetVisibility(false);
-	OceanStaticMesh->SetHiddenInGame(true);
+	OceanDynamicMesh = CreateDefaultSubobject<UDynamicMeshComponent>(TEXT("OceanDynamicMesh"));
+	OceanDynamicMesh->SetupAttachment(SceneRoot);
+	OceanDynamicMesh->SetMobility(EComponentMobility::Movable);
+	ConfigureShellDynamicMeshComponent(OceanDynamicMesh);
+	OceanDynamicMesh->SetVisibility(false);
+	OceanDynamicMesh->SetHiddenInGame(true);
 
-	AtmosphereStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AtmosphereStaticMesh"));
-	AtmosphereStaticMesh->SetupAttachment(SceneRoot);
-	AtmosphereStaticMesh->SetMobility(EComponentMobility::Movable);
-	AtmosphereStaticMesh->SetVisibility(false);
-	AtmosphereStaticMesh->SetHiddenInGame(true);
+	AtmosphereDynamicMesh = CreateDefaultSubobject<UDynamicMeshComponent>(TEXT("AtmosphereDynamicMesh"));
+	AtmosphereDynamicMesh->SetupAttachment(SceneRoot);
+	AtmosphereDynamicMesh->SetMobility(EComponentMobility::Movable);
+	ConfigureShellDynamicMeshComponent(AtmosphereDynamicMesh);
+	AtmosphereDynamicMesh->SetVisibility(false);
+	AtmosphereDynamicMesh->SetHiddenInGame(true);
 
 	SurfaceGrid = CreateDefaultSubobject<USRPlanetSurfaceGrid>(TEXT("SurfaceGrid"));
 	SurfaceGrid->SetupAttachment(SceneRoot);
@@ -120,11 +131,11 @@ void ASRPlanet::SetData(const FSRCelestialBodyData& NewData)
 	CanConstruct = NewData.bCanConstruct;
 	SurfaceGridHeightOffset = NewData.SurfaceGridHeightOffset;
 	bHasOcean = NewData.bHasOcean;
-	OceanMesh = NewData.OceanMesh;
+	OceanDynamicMeshBaseDataAsset = NewData.OceanDynamicMeshBaseDataAsset;
 	OceanMaterial = NewData.OceanMaterial;
 	OceanScaleMultiplier = NewData.OceanScaleMultiplier;
 	bHasAtmosphere = NewData.bHasAtmosphere;
-	AtmosphereMesh = NewData.AtmosphereMesh;
+	AtmosphereDynamicMeshBaseDataAsset = NewData.AtmosphereDynamicMeshBaseDataAsset;
 	AtmosphereMaterial = NewData.AtmosphereMaterial;
 	AtmosphereScaleMultiplier = NewData.AtmosphereScaleMultiplier;
 	ShowOrbitLine = NewData.ShowOrbitLine;
@@ -171,22 +182,22 @@ void ASRPlanet::ApplyData()
 	RotationAxisLineThickness = FMath::Max(0.0f, RotationAxisLineThickness);
 	RotationAxisLineLengthMultiplier = FMath::Max(0.0f, RotationAxisLineLengthMultiplier);
 
-	if (IsValid(OceanStaticMesh))
+	if (IsValid(OceanDynamicMesh))
 	{
-		OceanStaticMesh->SetRelativeLocation(FVector::ZeroVector);
-		OceanStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
-		OceanStaticMesh->SetRelativeScale3D(FVector(ResolveOceanScale()));
+		OceanDynamicMesh->SetRelativeLocation(FVector::ZeroVector);
+		OceanDynamicMesh->SetRelativeRotation(FRotator::ZeroRotator);
+		OceanDynamicMesh->SetRelativeScale3D(FVector(ResolveOceanDynamicMeshScale()));
 	}
 
-	if (IsValid(AtmosphereStaticMesh))
+	if (IsValid(AtmosphereDynamicMesh))
 	{
-		AtmosphereStaticMesh->SetRelativeLocation(FVector::ZeroVector);
-		AtmosphereStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
-		AtmosphereStaticMesh->SetRelativeScale3D(FVector(ResolveAtmosphereScale()));
+		AtmosphereDynamicMesh->SetRelativeLocation(FVector::ZeroVector);
+		AtmosphereDynamicMesh->SetRelativeRotation(FRotator::ZeroRotator);
+		AtmosphereDynamicMesh->SetRelativeScale3D(FVector(ResolveAtmosphereDynamicMeshScale()));
 	}
 
-	ApplyOceanStaticMeshSettings();
-	ApplyAtmosphereStaticMeshSettings();
+	ApplyOceanMeshSettings();
+	ApplyAtmosphereMeshSettings();
 	if (IsValid(ClickSphereCollision))
 	{
 		const float BodyRadius = IsValid(StaticMesh.Get())
@@ -194,12 +205,14 @@ void ASRPlanet::ApplyData()
 			: IsValid(DynamicMeshBaseDataAsset.Get())
 				? DynamicMeshBaseDataAsset->GetSafeBaseRadius() * Scale
 				: 0.0f;
-		const float OceanRadius = bHasOcean && IsValid(OceanMesh.Get())
-			? OceanMesh->GetBounds().SphereRadius * ResolveOceanScale()
+		const float OceanDynamicMeshRadius = bHasOcean && IsValid(OceanDynamicMeshBaseDataAsset.Get())
+			? OceanDynamicMeshBaseDataAsset->GetSafeBaseRadius() * ResolveOceanDynamicMeshScale()
 			: 0.0f;
-		const float AtmosphereRadius = bHasAtmosphere && IsValid(AtmosphereMesh.Get())
-			? AtmosphereMesh->GetBounds().SphereRadius * ResolveAtmosphereScale()
+		const float AtmosphereDynamicMeshRadius = bHasAtmosphere && IsValid(AtmosphereDynamicMeshBaseDataAsset.Get())
+			? AtmosphereDynamicMeshBaseDataAsset->GetSafeBaseRadius() * ResolveAtmosphereDynamicMeshScale()
 			: 0.0f;
+		const float OceanRadius = OceanDynamicMeshRadius;
+		const float AtmosphereRadius = AtmosphereDynamicMeshRadius;
 		const float VisualRadius = FMath::Max(FMath::Max(BodyRadius, OceanRadius), AtmosphereRadius);
 		ClickSphereCollision->SetSphereRadius(FMath::Max(VisualRadius, 1.0f));
 	}
@@ -271,11 +284,11 @@ FSRCelestialBodyData ASRPlanet::GetData() const
 	CurrentData.GenerationSeed = GenerationSeed;
 	CurrentData.DynamicMeshGeneration = DynamicMeshGeneration;
 	CurrentData.bHasOcean = bHasOcean;
-	CurrentData.OceanMesh = OceanMesh;
+	CurrentData.OceanDynamicMeshBaseDataAsset = OceanDynamicMeshBaseDataAsset;
 	CurrentData.OceanMaterial = OceanMaterial;
 	CurrentData.OceanScaleMultiplier = OceanScaleMultiplier;
 	CurrentData.bHasAtmosphere = bHasAtmosphere;
-	CurrentData.AtmosphereMesh = AtmosphereMesh;
+	CurrentData.AtmosphereDynamicMeshBaseDataAsset = AtmosphereDynamicMeshBaseDataAsset;
 	CurrentData.AtmosphereMaterial = AtmosphereMaterial;
 	CurrentData.AtmosphereScaleMultiplier = AtmosphereScaleMultiplier;
 	CurrentData.ShowOrbitLine = ShowOrbitLine;
@@ -320,18 +333,18 @@ void ASRPlanet::SetCelestialBodyMesh(bool bUseDynamicMesh)
 {
 	Super::SetCelestialBodyMesh(bUseDynamicMesh);
 
-	if (IsValid(OceanStaticMesh))
+	if (IsValid(OceanDynamicMesh))
 	{
-		const bool bEnableOcean = bUseDynamicMesh && bHasOcean && IsValid(OceanMesh.Get()) && IsValid(OceanMaterial.Get());
-		OceanStaticMesh->SetVisibility(bEnableOcean);
-		OceanStaticMesh->SetHiddenInGame(!bEnableOcean);
+		const bool bEnableOcean = bUseDynamicMesh && bHasOcean && IsValid(OceanDynamicMeshBaseDataAsset.Get()) && IsValid(OceanMaterial.Get());
+		OceanDynamicMesh->SetVisibility(bEnableOcean);
+		OceanDynamicMesh->SetHiddenInGame(!bEnableOcean);
 	}
 
-	if (IsValid(AtmosphereStaticMesh))
+	if (IsValid(AtmosphereDynamicMesh))
 	{
-		const bool bEnableAtmosphere = bUseDynamicMesh && bHasAtmosphere && IsValid(AtmosphereMesh.Get()) && IsValid(AtmosphereMaterial.Get());
-		AtmosphereStaticMesh->SetVisibility(bEnableAtmosphere);
-		AtmosphereStaticMesh->SetHiddenInGame(!bEnableAtmosphere);
+		const bool bEnableAtmosphere = bUseDynamicMesh && bHasAtmosphere && IsValid(AtmosphereDynamicMeshBaseDataAsset.Get()) && IsValid(AtmosphereMaterial.Get());
+		AtmosphereDynamicMesh->SetVisibility(bEnableAtmosphere);
+		AtmosphereDynamicMesh->SetHiddenInGame(!bEnableAtmosphere);
 	}
 
 	RefreshRotationAxisLineVisual();

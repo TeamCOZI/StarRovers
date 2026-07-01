@@ -34,8 +34,6 @@ USRPlanetSurfaceGrid::USRPlanetSurfaceGrid()
 	bUsingGeneratedGridCells = false;
 	bGridMeshDirty = true;
 	bCellsDirty = true;
-	InteractionHighlightBatchDepth = 0;
-	bHasBatchedInteractionHighlightRefresh = false;
 
 	SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SetGenerateOverlapEvents(false);

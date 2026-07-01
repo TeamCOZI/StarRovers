@@ -60,22 +60,19 @@ namespace
 
 void USRAssemblyComponent::ProcessQueuedStructurePlacements()
 {
-	if (PendingStructurePlacementQueue.IsEmpty())
+	if (PlacementQueue.IsEmpty())
 	{
 		return;
 	}
 
-	const int32 PlacementBudget = FMath::Max(1, MaxStructurePlacementsPerFrame);
+	TArray<FSRQueuedStructurePlacement> QueuedPlacements;
+	PlacementQueue.PopNextFrame(QueuedPlacements);
 	TSet<USRPlanetSurfaceGrid*> BatchedSurfaceGrids;
-	BatchedSurfaceGrids.Reserve(PlacementBudget);
+	BatchedSurfaceGrids.Reserve(QueuedPlacements.Num());
 	bool bPlacedAnyStructure = false;
 
-	const int32 PlacementCount = FMath::Min(PlacementBudget, PendingStructurePlacementQueue.Num());
-	for (int32 PlacementIndex = 0; PlacementIndex < PlacementCount; ++PlacementIndex)
+	for (const FSRQueuedStructurePlacement& QueuedPlacement : QueuedPlacements)
 	{
-		FSRQueuedStructurePlacement QueuedPlacement = PendingStructurePlacementQueue[0];
-		PendingStructurePlacementQueue.RemoveAt(0, 1, EAllowShrinking::No);
-
 		USRPlanetSurfaceGrid* SurfaceGrid = QueuedPlacement.SurfaceGrid.Get();
 		if (!IsValid(SurfaceGrid))
 		{
@@ -160,30 +157,7 @@ bool USRAssemblyComponent::TryGetFocusedConveyorNetwork(AActor*& OutFocusedActor
 
 void USRAssemblyComponent::EnqueueStructurePlacement(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& CellId)
 {
-	if (!IsValid(SurfaceGrid))
-	{
-		return;
-	}
-
-	for (const FSRQueuedStructurePlacement& PendingPlacement : PendingStructurePlacementQueue)
-	{
-		if (PendingPlacement.SurfaceGrid.Get() == SurfaceGrid && PendingPlacement.CellId == CellId)
-		{
-			return;
-		}
-	}
-
-	const int32 MaxQueueSize = FMath::Max(1, MaxQueuedStructurePlacements);
-	if (PendingStructurePlacementQueue.Num() >= MaxQueueSize)
-	{
-		PendingStructurePlacementQueue.RemoveAt(0, PendingStructurePlacementQueue.Num() - MaxQueueSize + 1, EAllowShrinking::No);
-	}
-
-	FSRQueuedStructurePlacement QueuedPlacement;
-	QueuedPlacement.SurfaceGrid = SurfaceGrid;
-	QueuedPlacement.CellId = CellId;
-	QueuedPlacement.PlacementRotationSteps = GetStructurePlacementRotationSteps();
-	PendingStructurePlacementQueue.Add(QueuedPlacement);
+	PlacementQueue.Enqueue(SurfaceGrid, CellId, GetStructurePlacementRotationSteps());
 }
 
 bool USRAssemblyComponent::TryPlaceStructureDragPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell)

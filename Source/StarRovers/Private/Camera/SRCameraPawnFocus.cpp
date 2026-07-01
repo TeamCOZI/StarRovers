@@ -19,16 +19,7 @@ void ASRCameraPawn::FocusActorWithTransition(AActor* NewFocusActor, bool bUseArc
 	AActor* PreviousFocusedActor = FocusedActor.Get();
 	FocusedActor = NewFocusActor;
 	FocusDragOffset = FVector::ZeroVector;
-	FocusSurfaceRotation = FQuat::Identity;
-	FocusSurfaceTargetRotation = FQuat::Identity;
-	FocusSurfaceRigAlignmentStartRotation = FQuat::Identity;
-	FocusSurfaceRigAlignmentStartOffset = FVector::ZeroVector;
-	FocusSurfaceRigAlignmentAxis = FVector::UpVector;
-	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
-	FocusSurfaceRigAlignmentCurrentAngleRadians = 0.0f;
-	FocusSurfaceRigAlignmentTargetAngleRadians = 0.0f;
-	bIsResettingFocusSurfaceRotation = false;
-	bIsAligningFocusSurfaceRig = false;
+	FocusSurface.ResetRotation();
 	StopFocusArcTransition();
 	ClearFocusSurfaceMotion();
 
@@ -74,16 +65,7 @@ void ASRCameraPawn::ClearFocusActor()
 	FocusDragOffset = FVector::ZeroVector;
 	FocusTrackingDelta = FVector::ZeroVector;
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
-	FocusSurfaceRotation = FQuat::Identity;
-	FocusSurfaceTargetRotation = FQuat::Identity;
-	FocusSurfaceRigAlignmentStartRotation = FQuat::Identity;
-	FocusSurfaceRigAlignmentStartOffset = FVector::ZeroVector;
-	FocusSurfaceRigAlignmentAxis = FVector::UpVector;
-	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
-	FocusSurfaceRigAlignmentCurrentAngleRadians = 0.0f;
-	FocusSurfaceRigAlignmentTargetAngleRadians = 0.0f;
-	bIsResettingFocusSurfaceRotation = false;
-	bIsAligningFocusSurfaceRig = false;
+	FocusSurface.ResetRotation();
 	StopFocusArcTransition();
 	ClearFocusSurfaceMotion();
 	BroadcastFocusedActorChangedIfNeeded(PreviousFocusedActor);
@@ -126,15 +108,15 @@ void ASRCameraPawn::ResetFocus()
 
 	FocusDragOffset = FVector::ZeroVector;
 	StopFocusArcTransition();
-	FocusSurfaceTargetRotation = FQuat::Identity;
-	FocusSurfaceRigAlignmentStartRotation = FocusSurfaceRotation.GetNormalized();
-	FocusSurfaceRigAlignmentStartOffset = FVector::ZeroVector;
-	FocusSurfaceRigAlignmentAxis = FVector::UpVector;
-	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
-	FocusSurfaceRigAlignmentCurrentAngleRadians = 0.0f;
-	FocusSurfaceRigAlignmentTargetAngleRadians = 0.0f;
-	bIsResettingFocusSurfaceRotation = true;
-	bIsAligningFocusSurfaceRig = false;
+	FocusSurface.TargetRotation = FQuat::Identity;
+	FocusSurface.RigAlignmentStartRotation = FocusSurface.Rotation.GetNormalized();
+	FocusSurface.RigAlignmentStartOffset = FVector::ZeroVector;
+	FocusSurface.RigAlignmentAxis = FVector::UpVector;
+	FocusSurface.RotationSmoothVelocity = FVector::ZeroVector;
+	FocusSurface.RigAlignmentCurrentAngleRadians = 0.0f;
+	FocusSurface.RigAlignmentTargetAngleRadians = 0.0f;
+	FocusSurface.bIsResettingRotation = true;
+	FocusSurface.bIsAligningRig = false;
 	ClearFocusSurfaceMotion();
 	bIsDragging = false;
 	bHasDragStartMousePosition = false;
@@ -189,32 +171,27 @@ void ASRCameraPawn::BeginFocusArcTransition(float FinalZoomDistance)
 		return;
 	}
 
-	FocusArcTransitionStartLocation = CurrentLocation;
-	FocusArcTransitionElapsed = 0.0f;
-	FocusArcTransitionStartZoomDistance = FMath::Max(0.0f, SpringArm->TargetArmLength);
-	FocusArcTransitionFinalZoomDistance = ClampZoomDistance(FinalZoomDistance);
+	FocusArcTransition.StartLocation = CurrentLocation;
+	FocusArcTransition.Elapsed = 0.0f;
+	FocusArcTransition.StartZoomDistance = FMath::Max(0.0f, SpringArm->TargetArmLength);
+	FocusArcTransition.FinalZoomDistance = ClampZoomDistance(FinalZoomDistance);
 	const float DesiredPeakZoomDistance = FMath::Max(
-		FMath::Max(FocusArcTransitionStartZoomDistance, FocusArcTransitionFinalZoomDistance),
+		FMath::Max(FocusArcTransition.StartZoomDistance, FocusArcTransition.FinalZoomDistance),
 		TravelDistance * FMath::Max(0.0f, FocusArcZoomOutDistanceMultiplier));
-	FocusArcTransitionPeakZoomDistance = ClampZoomDistance(DesiredPeakZoomDistance);
-	bIsFocusArcTransitionActive = true;
+	FocusArcTransition.PeakZoomDistance = ClampZoomDistance(DesiredPeakZoomDistance);
+	FocusArcTransition.bActive = true;
 	FocusTrackingDelta = FVector::ZeroVector;
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
 }
 
 void ASRCameraPawn::StopFocusArcTransition()
 {
-	bIsFocusArcTransitionActive = false;
-	FocusArcTransitionElapsed = 0.0f;
-	FocusArcTransitionStartLocation = FVector::ZeroVector;
-	FocusArcTransitionStartZoomDistance = 0.0f;
-	FocusArcTransitionFinalZoomDistance = 0.0f;
-	FocusArcTransitionPeakZoomDistance = 0.0f;
+	FocusArcTransition.Reset();
 }
 
 bool ASRCameraPawn::UpdateFocusArcTransition(float DeltaSeconds, FVector& OutNewLocation)
 {
-	if (!bIsFocusArcTransitionActive)
+	if (!FocusArcTransition.bActive)
 	{
 		return false;
 	}
@@ -225,33 +202,33 @@ bool ASRCameraPawn::UpdateFocusArcTransition(float DeltaSeconds, FVector& OutNew
 		return false;
 	}
 
-	FocusArcTransitionElapsed += DeltaSeconds;
+	FocusArcTransition.Elapsed += DeltaSeconds;
 	const float SafeDuration = FMath::Max(0.10f, FocusArcTransitionDuration);
-	const float Alpha = FMath::Clamp(FocusArcTransitionElapsed / SafeDuration, 0.0f, 1.0f);
+	const float Alpha = FMath::Clamp(FocusArcTransition.Elapsed / SafeDuration, 0.0f, 1.0f);
 	const float SmoothAlpha = Alpha * Alpha * (3.0f - (2.0f * Alpha));
 
 	const FVector TargetLocation = ClampPivotLocationInsideSpace(GetFocusLocation() + FocusDragOffset);
 	DragTargetLocation = TargetLocation;
-	const float TravelDistance = FVector::Dist(FocusArcTransitionStartLocation, TargetLocation);
+	const float TravelDistance = FVector::Dist(FocusArcTransition.StartLocation, TargetLocation);
 	const float ArcHeight = TravelDistance > KINDA_SMALL_NUMBER
 		? FMath::Max(FMath::Max(0.0f, FocusArcMinHeight), TravelDistance * FMath::Max(0.0f, FocusArcHeightMultiplier))
 		: 0.0f;
 	const float ArcAlpha = 4.0f * SmoothAlpha * (1.0f - SmoothAlpha);
-	OutNewLocation = FMath::Lerp(FocusArcTransitionStartLocation, TargetLocation, SmoothAlpha)
+	OutNewLocation = FMath::Lerp(FocusArcTransition.StartLocation, TargetLocation, SmoothAlpha)
 		- (FVector::XAxisVector * ArcHeight * ArcAlpha);
 
 	const float ZoomPhaseAlpha = SmoothAlpha < 0.5f
 		? SmoothAlpha * 2.0f
 		: (SmoothAlpha - 0.5f) * 2.0f;
 	ZoomDistanceTarget = SmoothAlpha < 0.5f
-		? FMath::Lerp(FocusArcTransitionStartZoomDistance, FocusArcTransitionPeakZoomDistance, ZoomPhaseAlpha)
-		: FMath::Lerp(FocusArcTransitionPeakZoomDistance, FocusArcTransitionFinalZoomDistance, ZoomPhaseAlpha);
+		? FMath::Lerp(FocusArcTransition.StartZoomDistance, FocusArcTransition.PeakZoomDistance, ZoomPhaseAlpha)
+		: FMath::Lerp(FocusArcTransition.PeakZoomDistance, FocusArcTransition.FinalZoomDistance, ZoomPhaseAlpha);
 	ZoomDistanceTarget = ClampZoomDistance(ZoomDistanceTarget);
 
 	if (Alpha >= 1.0f - UE_SMALL_NUMBER)
 	{
 		OutNewLocation = TargetLocation;
-		ZoomDistanceTarget = FocusArcTransitionFinalZoomDistance;
+		ZoomDistanceTarget = FocusArcTransition.FinalZoomDistance;
 		StopFocusArcTransition();
 	}
 

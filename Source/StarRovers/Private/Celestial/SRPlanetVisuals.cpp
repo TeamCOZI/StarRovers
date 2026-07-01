@@ -1,13 +1,19 @@
 #include "Celestial/SRPlanet.h"
 
+#include "SRCelestialBodyLog.h"
+#include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
+#include "Components/DynamicMeshComponent.h"
 #include "Components/SplineMeshComponent.h"
-#include "Components/StaticMeshComponent.h"
+#include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Surface/SRPlanetSurfaceGridLibrary.h"
 #include "Surface/SRPlanetTerrainGenerator.h"
 #include "Visual/SRLineThicknessUtils.h"
+
+using namespace StarRovers::Celestial::DynamicMesh;
 
 namespace
 {
@@ -205,68 +211,218 @@ void ASRPlanet::RefreshRotationAxisLineVisual()
 		ComputeAdaptiveThickness(SouthStart, SouthEnd));
 }
 
-void ASRPlanet::ApplyOceanStaticMeshSettings()
+uint32 ASRPlanet::ComputeShellDynamicMeshBuildHash(const USRDynamicMeshBaseDataAsset* ShellBaseDataAsset) const
 {
-	if (!IsValid(OceanStaticMesh))
+	if (!IsValid(ShellBaseDataAsset))
+	{
+		return 0;
+	}
+
+	uint32 Hash = PointerHash(ShellBaseDataAsset);
+	Hash = HashCombine(Hash, ::GetTypeHash(static_cast<uint8>(ShellBaseDataAsset->BaseShape)));
+	Hash = HashCombine(Hash, ::GetTypeHash(ShellBaseDataAsset->GetClampedFaceResolution()));
+	Hash = HashCombine(Hash, ::GetTypeHash(ShellBaseDataAsset->GetSafeBaseRadius()));
+	Hash = HashCombine(Hash, ::GetTypeHash(ShellBaseDataAsset->PrecomputedFaceResolution));
+	Hash = HashCombine(Hash, ::GetTypeHash(ShellBaseDataAsset->PrecomputedCells.Num()));
+	return Hash;
+}
+
+bool ASRPlanet::BuildShellDynamicMesh(
+	UDynamicMeshComponent* TargetComponent,
+	USRDynamicMeshBaseDataAsset* ShellBaseDataAsset,
+	TObjectPtr<USRDynamicMeshBaseDataAsset>& InOutCachedBaseDataAsset,
+	uint32& InOutCachedBuildHash,
+	const TCHAR* ShellName)
+{
+	if (!IsValid(TargetComponent) || !IsValid(ShellBaseDataAsset))
+	{
+		return false;
+	}
+	if (ShellBaseDataAsset->BaseShape != ESRDynamicMeshBaseShape::CubeSphere)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Planet '%s' cannot build %s shell from unsupported shape."), *GetName(), ShellName ? ShellName : TEXT("dynamic"));
+		return false;
+	}
+
+	const uint32 BuildHash = ComputeShellDynamicMeshBuildHash(ShellBaseDataAsset);
+	if (InOutCachedBaseDataAsset.Get() == ShellBaseDataAsset && InOutCachedBuildHash == BuildHash)
+	{
+		return true;
+	}
+
+	const int32 FaceResolution = ShellBaseDataAsset->GetClampedFaceResolution();
+	const float SourceBodyRadius = ShellBaseDataAsset->GetSafeBaseRadius();
+	const TArray<FSRDynamicMeshBasePrecomputedCell>* PrecomputedBaseCells = ShellBaseDataAsset->GetValidPrecomputedCells();
+	const bool bUsingPrecomputedBaseCells = PrecomputedBaseCells != nullptr;
+	const float PrecomputedBaseCellScale = bUsingPrecomputedBaseCells
+		? ShellBaseDataAsset->GetPrecomputedCellScale(SourceBodyRadius)
+		: 1.0f;
+
+	TArray<FSRPlanetSurfaceGridCell> GeneratedBaseCells;
+	if (!bUsingPrecomputedBaseCells)
+	{
+		GeneratedBaseCells = USRPlanetSurfaceGridLibrary::GenerateCubeSphereCells(FaceResolution, SourceBodyRadius);
+	}
+
+	const int32 BaseCellCount = bUsingPrecomputedBaseCells ? PrecomputedBaseCells->Num() : GeneratedBaseCells.Num();
+	TArray<UE::Geometry::FDynamicMesh3> ShellMeshes;
+	ShellMeshes.SetNum(1);
+	ShellMeshes[0].EnableAttributes();
+	ShellMeshes[0].Attributes()->EnablePrimaryColors();
+	ShellMeshes[0].Attributes()->SetNumUVLayers(1);
+	ShellMeshes[0].Attributes()->EnableMaterialID();
+
+	TMap<FSRTerrainVertexKey, int32> WeldedVertexIds;
+	WeldedVertexIds.Reserve((FaceResolution + 1) * (FaceResolution + 1) * CubeSphereFaceComponentCount);
+
+	for (int32 BaseCellIndex = 0; BaseCellIndex < BaseCellCount; ++BaseCellIndex)
+	{
+		const FSRCelestialBodyDynamicMeshBaseCellView BaseCell = MakeDynamicMeshBaseCellView(
+			BaseCellIndex,
+			PrecomputedBaseCells,
+			PrecomputedBaseCellScale,
+			GeneratedBaseCells);
+		if (!BaseCell.CellId.IsValid(FaceResolution))
+		{
+			continue;
+		}
+
+		const FVector NormalReferenceDirection = BaseCell.LocalCenter.GetSafeNormal();
+		AppendFlatColoredDynamicMeshQuad(
+			ShellMeshes,
+			WeldedVertexIds,
+			0,
+			BaseCell.Corner00,
+			BaseCell.Corner10,
+			BaseCell.Corner11,
+			BaseCell.Corner01,
+			FLinearColor::White,
+			0,
+			false,
+			nullptr,
+			&NormalReferenceDirection);
+	}
+
+	TargetComponent->SetMesh(MoveTemp(ShellMeshes[0]));
+	InOutCachedBaseDataAsset = ShellBaseDataAsset;
+	InOutCachedBuildHash = BuildHash;
+	return true;
+}
+
+void ASRPlanet::ApplyOceanMeshSettings()
+{
+	ApplyOceanDynamicMeshSettings();
+}
+
+void ASRPlanet::ApplyOceanDynamicMeshSettings()
+{
+	if (!IsValid(OceanDynamicMesh))
 	{
 		return;
 	}
 
-	UStaticMesh* DesiredOceanMesh = OceanMesh.Get();
-	if (!IsValid(DesiredOceanMesh) && bHasOcean)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires OceanMesh while ocean is enabled."), *GetName());
-	}
+	ConfigureShellDynamicMeshComponent(OceanDynamicMesh.Get());
 
-	const bool bEnableOcean = bHasOcean && IsValid(DesiredOceanMesh);
-	if (!bEnableOcean)
+	if (!bHasOcean)
 	{
-		OceanStaticMesh->SetVisibility(false);
-		OceanStaticMesh->SetHiddenInGame(true);
+		OceanDynamicMesh->SetVisibility(false);
+		OceanDynamicMesh->SetHiddenInGame(true);
 		return;
 	}
 
-	if (OceanStaticMesh->GetStaticMesh() != DesiredOceanMesh)
+	if (!IsValid(OceanDynamicMeshBaseDataAsset.Get()))
 	{
-		OceanStaticMesh->SetStaticMesh(DesiredOceanMesh);
+		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires OceanDynamicMeshBaseDataAsset while ocean is enabled."), *GetName());
+		OceanDynamicMesh->SetVisibility(false);
+		OceanDynamicMesh->SetHiddenInGame(true);
+		return;
 	}
 
 	UMaterialInterface* DesiredOceanMaterial = OceanMaterial.Get();
 	if (!IsValid(DesiredOceanMaterial))
 	{
 		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires OceanMaterial while ocean is enabled."), *GetName());
-		OceanStaticMesh->SetVisibility(false);
-		OceanStaticMesh->SetHiddenInGame(true);
+		OceanDynamicMesh->SetVisibility(false);
+		OceanDynamicMesh->SetHiddenInGame(true);
 		return;
 	}
 
-	OceanStaticMesh->SetMaterial(0, DesiredOceanMaterial);
-
-	const float OceanScale = ResolveOceanScale();
-	OceanStaticMesh->SetRelativeLocation(FVector::ZeroVector);
-	OceanStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
-	OceanStaticMesh->SetRelativeScale3D(FVector(OceanScale));
-	OceanStaticMesh->SetVisibility(true);
-	OceanStaticMesh->SetHiddenInGame(false);
-}
-
-float ASRPlanet::ResolveOceanScale() const
-{
-	const float AutoOceanScaleMultiplier = EstimateProceduralOceanScaleMultiplier();
-	const float ResolvedOceanScaleMultiplier = AutoOceanScaleMultiplier > KINDA_SMALL_NUMBER
-		? AutoOceanScaleMultiplier
-		: OceanScaleMultiplier;
-	return FMath::Max(0.01f, Scale * ResolvedOceanScaleMultiplier);
-}
-
-float ASRPlanet::EstimateProceduralOceanScaleMultiplier() const
-{
-	if (!DynamicMeshGeneration.bDynamicMeshGeneration || DynamicMeshGeneration.DynamicMeshHeight <= KINDA_SMALL_NUMBER)
+	if (!BuildShellDynamicMesh(
+			OceanDynamicMesh.Get(),
+			OceanDynamicMeshBaseDataAsset.Get(),
+			CachedOceanDynamicMeshBaseDataAsset,
+			CachedOceanDynamicMeshBuildHash,
+			TEXT("ocean")))
 	{
-		return 0.0f;
+		OceanDynamicMesh->SetVisibility(false);
+		OceanDynamicMesh->SetHiddenInGame(true);
+		return;
 	}
 
-	if (!IsValid(OceanMesh.Get()))
+	OceanDynamicMesh->SetMaterial(0, DesiredOceanMaterial);
+	OceanDynamicMesh->SetRelativeLocation(FVector::ZeroVector);
+	OceanDynamicMesh->SetRelativeRotation(FRotator::ZeroRotator);
+	OceanDynamicMesh->SetRelativeScale3D(FVector(ResolveOceanDynamicMeshScale()));
+	OceanDynamicMesh->SetVisibility(true);
+	OceanDynamicMesh->SetHiddenInGame(false);
+}
+
+void ASRPlanet::ConfigureShellDynamicMeshComponent(UDynamicMeshComponent* ShellMesh) const
+{
+	if (!IsValid(ShellMesh))
+	{
+		return;
+	}
+
+	ShellMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ShellMesh->SetGenerateOverlapEvents(false);
+	ShellMesh->SetCastShadow(false);
+	ShellMesh->bCastDynamicShadow = false;
+	ShellMesh->bCastStaticShadow = false;
+	ShellMesh->bCastVolumetricTranslucentShadow = false;
+	ShellMesh->bCastContactShadow = false;
+	ShellMesh->bSelfShadowOnly = false;
+	ShellMesh->bCastFarShadow = false;
+	ShellMesh->bCastInsetShadow = false;
+	ShellMesh->bCastCinematicShadow = false;
+	ShellMesh->bCastHiddenShadow = false;
+	ShellMesh->bAffectDynamicIndirectLighting = false;
+	ShellMesh->bAffectDistanceFieldLighting = false;
+	ShellMesh->bReceivesDecals = false;
+	ShellMesh->bVisibleInReflectionCaptures = false;
+	ShellMesh->bVisibleInRealTimeSkyCaptures = false;
+	ShellMesh->bVisibleInRayTracing = false;
+}
+
+float ASRPlanet::ResolveOceanDynamicMeshScale() const
+{
+	const USRDynamicMeshBaseDataAsset* ShellBase = OceanDynamicMeshBaseDataAsset.Get();
+	if (!IsValid(ShellBase))
+	{
+		return FMath::Max(0.01f, Scale * OceanScaleMultiplier);
+	}
+
+	const float ShellBaseRadius = ShellBase->GetSafeBaseRadius();
+	if (ShellBaseRadius <= KINDA_SMALL_NUMBER)
+	{
+		return FMath::Max(0.01f, Scale * OceanScaleMultiplier);
+	}
+
+	const float BodyMeshRadius = IsValid(StaticMesh.Get())
+		? StaticMesh->GetBounds().SphereRadius
+		: IsValid(DynamicMeshBaseDataAsset.Get())
+			? DynamicMeshBaseDataAsset->GetSafeBaseRadius()
+			: 0.0f;
+	const float ProceduralOceanRadius = ComputeProceduralOceanLocalRadius();
+	const float DesiredOceanRadius = ProceduralOceanRadius > KINDA_SMALL_NUMBER
+		? ProceduralOceanRadius
+		: BodyMeshRadius * OceanScaleMultiplier;
+	return FMath::Max(0.01f, Scale * (DesiredOceanRadius / ShellBaseRadius));
+}
+
+float ASRPlanet::ComputeProceduralOceanLocalRadius() const
+{
+	if (!DynamicMeshGeneration.bDynamicMeshGeneration || DynamicMeshGeneration.DynamicMeshHeight <= KINDA_SMALL_NUMBER)
 	{
 		return 0.0f;
 	}
@@ -276,8 +432,7 @@ float ASRPlanet::EstimateProceduralOceanScaleMultiplier() const
 		: IsValid(DynamicMeshBaseDataAsset.Get())
 			? DynamicMeshBaseDataAsset->GetSafeBaseRadius()
 			: 0.0f;
-	const float OceanMeshRadius = OceanMesh->GetBounds().SphereRadius;
-	if (BodyMeshRadius <= KINDA_SMALL_NUMBER || OceanMeshRadius <= KINDA_SMALL_NUMBER)
+	if (BodyMeshRadius <= KINDA_SMALL_NUMBER)
 	{
 		return 0.0f;
 	}
@@ -307,74 +462,121 @@ float ASRPlanet::EstimateProceduralOceanScaleMultiplier() const
 	}
 
 	const float SurfacePadding = FMath::Max(0.0f, DynamicMeshGeneration.DynamicMeshHeight) * OceanSurfacePaddingRatio;
-	const float DesiredOceanRadius = FMath::Max(1.0f, BodyMeshRadius + HighestWaterHeightOffset + SurfacePadding);
-	return DesiredOceanRadius / OceanMeshRadius;
+	return FMath::Max(1.0f, BodyMeshRadius + HighestWaterHeightOffset + SurfacePadding);
 }
 
-void ASRPlanet::ApplyAtmosphereStaticMeshSettings()
+void ASRPlanet::ApplyAtmosphereMeshSettings()
 {
-	if (!IsValid(AtmosphereStaticMesh))
+	ApplyAtmosphereDynamicMeshSettings();
+}
+
+void ASRPlanet::ApplyToonOutlineSettings()
+{
+	const int32 BodyMeshComponentCount = ApplyToonOutlineToBodyMeshComponents();
+	const bool bEnableOceanToonOutline =
+		ToonOutlineSettings.bEnableToonOutline
+		&& ToonOutlineSettings.bApplyToonOutlineToOcean
+		&& bHasOcean;
+	const bool bEnableAtmosphereToonOutline =
+		ToonOutlineSettings.bEnableToonOutline
+		&& ToonOutlineSettings.bApplyToonOutlineToAtmosphere
+		&& bHasAtmosphere;
+
+	const bool bAppliedOceanComponent = ApplyToonOutlineToPrimitive(OceanDynamicMesh.Get(), bEnableOceanToonOutline);
+	const bool bAppliedAtmosphereComponent = ApplyToonOutlineToPrimitive(AtmosphereDynamicMesh.Get(), bEnableAtmosphereToonOutline);
+	if (UWorld* World = GetWorld(); World && World->IsGameWorld())
+	{
+		UE_LOG(
+			LogStarRoversCelestial,
+			Log,
+			TEXT("ToonOutline Body='%s' Enabled=%s Stencil=%d BodyComponents=%d Ocean=%s OceanComponent=%s Atmosphere=%s AtmosphereComponent=%s"),
+			*GetName(),
+			ToonOutlineSettings.bEnableToonOutline ? TEXT("true") : TEXT("false"),
+			FMath::Clamp(ToonOutlineSettings.ToonOutlineStencilValue, 1, 255),
+			BodyMeshComponentCount,
+			bEnableOceanToonOutline ? TEXT("true") : TEXT("false"),
+			bAppliedOceanComponent ? TEXT("true") : TEXT("false"),
+			bEnableAtmosphereToonOutline ? TEXT("true") : TEXT("false"),
+			bAppliedAtmosphereComponent ? TEXT("true") : TEXT("false"));
+	}
+}
+
+void ASRPlanet::ApplyAtmosphereDynamicMeshSettings()
+{
+	if (!IsValid(AtmosphereDynamicMesh))
 	{
 		return;
 	}
 
-	UStaticMesh* DesiredAtmosphereMesh = AtmosphereMesh.Get();
-	if (!IsValid(DesiredAtmosphereMesh) && bHasAtmosphere)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires AtmosphereMesh while atmosphere is enabled."), *GetName());
-	}
+	ConfigureShellDynamicMeshComponent(AtmosphereDynamicMesh.Get());
 
-	const bool bEnableAtmosphere = bHasAtmosphere && IsValid(DesiredAtmosphereMesh);
-	if (!bEnableAtmosphere)
+	if (!bHasAtmosphere)
 	{
-		AtmosphereStaticMesh->SetVisibility(false);
-		AtmosphereStaticMesh->SetHiddenInGame(true);
+		AtmosphereDynamicMesh->SetVisibility(false);
+		AtmosphereDynamicMesh->SetHiddenInGame(true);
 		return;
 	}
 
-	if (AtmosphereStaticMesh->GetStaticMesh() != DesiredAtmosphereMesh)
+	if (!IsValid(AtmosphereDynamicMeshBaseDataAsset.Get()))
 	{
-		AtmosphereStaticMesh->SetStaticMesh(DesiredAtmosphereMesh);
+		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires AtmosphereDynamicMeshBaseDataAsset while atmosphere is enabled."), *GetName());
+		AtmosphereDynamicMesh->SetVisibility(false);
+		AtmosphereDynamicMesh->SetHiddenInGame(true);
+		return;
 	}
 
 	UMaterialInterface* DesiredAtmosphereMaterial = AtmosphereMaterial.Get();
 	if (!IsValid(DesiredAtmosphereMaterial))
 	{
 		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires AtmosphereMaterial while atmosphere is enabled."), *GetName());
-		AtmosphereStaticMesh->SetVisibility(false);
-		AtmosphereStaticMesh->SetHiddenInGame(true);
+		AtmosphereDynamicMesh->SetVisibility(false);
+		AtmosphereDynamicMesh->SetHiddenInGame(true);
 		return;
 	}
 
-	AtmosphereStaticMesh->SetMaterial(0, DesiredAtmosphereMaterial);
-
-	const float ResolvedAtmosphereScale = ResolveAtmosphereScale();
-	AtmosphereStaticMesh->SetRelativeLocation(FVector::ZeroVector);
-	AtmosphereStaticMesh->SetRelativeRotation(FRotator::ZeroRotator);
-	AtmosphereStaticMesh->SetRelativeScale3D(FVector(ResolvedAtmosphereScale));
-	AtmosphereStaticMesh->SetVisibility(true);
-	AtmosphereStaticMesh->SetHiddenInGame(false);
-}
-
-float ASRPlanet::ResolveAtmosphereScale() const
-{
-	const float AtmosphereThreshold = FMath::Max(0.01f, DynamicMeshGeneration.AtmosphereThreshold);
-	if (IsValid(AtmosphereMesh.Get()))
+	if (!BuildShellDynamicMesh(
+			AtmosphereDynamicMesh.Get(),
+			AtmosphereDynamicMeshBaseDataAsset.Get(),
+			CachedAtmosphereDynamicMeshBaseDataAsset,
+			CachedAtmosphereDynamicMeshBuildHash,
+			TEXT("atmosphere")))
 	{
-		const float BodyMeshRadius = IsValid(StaticMesh.Get())
-			? StaticMesh->GetBounds().SphereRadius
-			: IsValid(DynamicMeshBaseDataAsset.Get())
-				? DynamicMeshBaseDataAsset->GetSafeBaseRadius()
-				: 0.0f;
-		const float AtmosphereMeshRadius = AtmosphereMesh->GetBounds().SphereRadius;
-		if (BodyMeshRadius > KINDA_SMALL_NUMBER && AtmosphereMeshRadius > KINDA_SMALL_NUMBER)
-		{
-			const float DesiredAtmosphereRadius = BodyMeshRadius * AtmosphereThreshold;
-			return FMath::Max(0.01f, Scale * AtmosphereScaleMultiplier * (DesiredAtmosphereRadius / AtmosphereMeshRadius));
-		}
+		AtmosphereDynamicMesh->SetVisibility(false);
+		AtmosphereDynamicMesh->SetHiddenInGame(true);
+		return;
 	}
 
-	return FMath::Max(0.01f, Scale * AtmosphereScaleMultiplier * AtmosphereThreshold);
+	AtmosphereDynamicMesh->SetMaterial(0, DesiredAtmosphereMaterial);
+	AtmosphereDynamicMesh->SetRelativeLocation(FVector::ZeroVector);
+	AtmosphereDynamicMesh->SetRelativeRotation(FRotator::ZeroRotator);
+	AtmosphereDynamicMesh->SetRelativeScale3D(FVector(ResolveAtmosphereDynamicMeshScale()));
+	AtmosphereDynamicMesh->SetVisibility(true);
+	AtmosphereDynamicMesh->SetHiddenInGame(false);
+}
+
+float ASRPlanet::ResolveAtmosphereDynamicMeshScale() const
+{
+	const USRDynamicMeshBaseDataAsset* ShellBase = AtmosphereDynamicMeshBaseDataAsset.Get();
+	if (!IsValid(ShellBase))
+	{
+		const float AtmosphereThreshold = FMath::Max(0.01f, DynamicMeshGeneration.AtmosphereThreshold);
+		return FMath::Max(0.01f, Scale * AtmosphereScaleMultiplier * AtmosphereThreshold);
+	}
+
+	const float ShellBaseRadius = ShellBase->GetSafeBaseRadius();
+	const float BodyMeshRadius = IsValid(StaticMesh.Get())
+		? StaticMesh->GetBounds().SphereRadius
+		: IsValid(DynamicMeshBaseDataAsset.Get())
+			? DynamicMeshBaseDataAsset->GetSafeBaseRadius()
+			: 0.0f;
+	if (ShellBaseRadius <= KINDA_SMALL_NUMBER || BodyMeshRadius <= KINDA_SMALL_NUMBER)
+	{
+		return FMath::Max(0.01f, Scale * AtmosphereScaleMultiplier);
+	}
+
+	const float AtmosphereThreshold = FMath::Max(0.01f, DynamicMeshGeneration.AtmosphereThreshold);
+	const float DesiredAtmosphereRadius = BodyMeshRadius * AtmosphereThreshold;
+	return FMath::Max(0.01f, Scale * AtmosphereScaleMultiplier * (DesiredAtmosphereRadius / ShellBaseRadius));
 }
 
 float ASRPlanet::ComputeRotationAxisSurfaceRadius() const

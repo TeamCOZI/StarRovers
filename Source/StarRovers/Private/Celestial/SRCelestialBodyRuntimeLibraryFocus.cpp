@@ -20,6 +20,8 @@ namespace StarRovers::CelestialBodyRuntime
 		const FName GravityLine(TEXT("StarRovers.GravityLine"));
 		const FName GravityLineRoot(TEXT("StarRovers.GravityLineRoot"));
 		const FName GravityLineSegment(TEXT("StarRovers.GravityLineSegment"));
+		const FName OrbitLine(TEXT("StarRovers.OrbitLine"));
+		const FName OrbitLineRoot(TEXT("StarRovers.OrbitLineRoot"));
 		const FName RotationAxisLine(TEXT("StarRovers.RotationAxisLine"));
 		const FName RotationAxisLineRoot(TEXT("StarRovers.RotationAxisLineRoot"));
 	}
@@ -36,6 +38,8 @@ namespace StarRovers::CelestialBodyRuntime
 			return PrimitiveComponent->ComponentHasTag(ComponentTags::GravityLine)
 				|| PrimitiveComponent->ComponentHasTag(ComponentTags::GravityLineRoot)
 				|| PrimitiveComponent->ComponentHasTag(ComponentTags::GravityLineSegment)
+				|| PrimitiveComponent->ComponentHasTag(ComponentTags::OrbitLine)
+				|| PrimitiveComponent->ComponentHasTag(ComponentTags::OrbitLineRoot)
 				|| PrimitiveComponent->ComponentHasTag(ComponentTags::RotationAxisLine)
 				|| PrimitiveComponent->ComponentHasTag(ComponentTags::RotationAxisLineRoot);
 		}

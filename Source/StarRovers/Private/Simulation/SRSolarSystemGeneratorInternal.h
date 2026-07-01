@@ -2,6 +2,7 @@
 
 #include "Simulation/SRSolarSystemGenerator.h"
 
+#include "Celestial/SRCelestialBody.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Celestial/SRMoonDataAsset.h"
@@ -244,7 +245,7 @@ namespace StarRoversSolarSystemGeneratorInternal
 			|| OutRequest.BodyData.BodyCategory == ESRCelestialBodyCategory::Moon;
 		if (bRequiresDynamicMeshBase && !IsValid(OutRequest.BodyData.DynamicMeshBaseDataAsset.Get()))
 		{
-			LogGeneratorMissingData(DataAsset, TEXT("DynamicMeshBaseDataAsset"));
+			LogGeneratorMissingData(DataAsset, TEXT("ShapeDataAsset.DynamicMeshBaseDataAsset"));
 			return false;
 		}
 		if (!bRequiresDynamicMeshBase && !IsValid(OutRequest.BodyData.StaticMesh))
@@ -272,9 +273,9 @@ namespace StarRoversSolarSystemGeneratorInternal
 		}
 		if (OutRequest.BodyData.bHasOcean)
 		{
-			if (!IsValid(OutRequest.BodyData.OceanMesh.Get()))
+			if (!IsValid(OutRequest.BodyData.OceanDynamicMeshBaseDataAsset.Get()))
 			{
-				LogGeneratorMissingData(DataAsset, TEXT("OceanMesh"));
+				LogGeneratorMissingData(DataAsset, TEXT("ShapeDataAsset.OceanDynamicMeshBaseDataAsset or ShapeDataAsset.DynamicMeshBaseDataAsset"));
 				return false;
 			}
 			if (!IsValid(OutRequest.BodyData.OceanMaterial.Get()))
@@ -285,9 +286,9 @@ namespace StarRoversSolarSystemGeneratorInternal
 		}
 		if (OutRequest.BodyData.bHasAtmosphere)
 		{
-			if (!IsValid(OutRequest.BodyData.AtmosphereMesh.Get()))
+			if (!IsValid(OutRequest.BodyData.AtmosphereDynamicMeshBaseDataAsset.Get()))
 			{
-				LogGeneratorMissingData(DataAsset, TEXT("AtmosphereMesh"));
+				LogGeneratorMissingData(DataAsset, TEXT("ShapeDataAsset.AtmosphereDynamicMeshBaseDataAsset or ShapeDataAsset.DynamicMeshBaseDataAsset"));
 				return false;
 			}
 			if (!IsValid(OutRequest.BodyData.AtmosphereMaterial.Get()))

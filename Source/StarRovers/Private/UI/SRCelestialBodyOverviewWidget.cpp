@@ -1,10 +1,20 @@
 #include "UI/SRCelestialBodyOverviewWidget.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Framework/Application/SlateApplication.h"
+#include "GameFramework/PlayerController.h"
+
+namespace
+{
+	constexpr float NameplateLayoutRefreshIntervalSeconds = 0.20f;
+	constexpr float NameplateCameraMoveRefreshDistance = 25.0f;
+	constexpr float NameplateCameraRotationRefreshDegrees = 0.10f;
+	constexpr float NameplateViewportSizeRefreshTolerance = 0.5f;
+}
 
 void USRCelestialBodyOverviewEntryAction::Initialize(
 	USRCelestialBodyOverviewWidget* InOwnerWidget,
@@ -53,6 +63,45 @@ void USRCelestialBodyOverviewWidget::NativeTick(const FGeometry& MyGeometry,
 												float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!IsVisible() || !bShowNameplateButtons || NameplateButtons.IsEmpty())
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = GetOwningPlayer();
+	if (!IsValid(PlayerController) || !IsValid(PlayerController->PlayerCameraManager))
+	{
+		return;
+	}
+
+	int32 ViewportWidth = 0;
+	int32 ViewportHeight = 0;
+	PlayerController->GetViewportSize(ViewportWidth, ViewportHeight);
+	const FVector2D CurrentViewportSize(static_cast<float>(ViewportWidth), static_cast<float>(ViewportHeight));
+	const FVector CurrentCameraLocation = PlayerController->PlayerCameraManager->GetCameraLocation();
+	const FRotator CurrentCameraRotation = PlayerController->PlayerCameraManager->GetCameraRotation();
+
+	NameplateLayoutRefreshAccumulator += FMath::Max(0.0f, InDeltaTime);
+	const bool bCameraMoved = FVector::DistSquared(CurrentCameraLocation, LastNameplateCameraLocation)
+		>= FMath::Square(NameplateCameraMoveRefreshDistance);
+	const bool bCameraRotated = !CurrentCameraRotation.Equals(LastNameplateCameraRotation, NameplateCameraRotationRefreshDegrees);
+	const bool bViewportSizeChanged = !CurrentViewportSize.Equals(LastNameplateViewportSize, NameplateViewportSizeRefreshTolerance);
+	const bool bShouldRefresh = !bHasNameplateLayoutState
+		|| bCameraMoved
+		|| bCameraRotated
+		|| bViewportSizeChanged
+		|| NameplateLayoutRefreshAccumulator >= NameplateLayoutRefreshIntervalSeconds;
+	if (!bShouldRefresh)
+	{
+		return;
+	}
+
+	NameplateLayoutRefreshAccumulator = 0.0f;
+	LastNameplateCameraLocation = CurrentCameraLocation;
+	LastNameplateCameraRotation = CurrentCameraRotation;
+	LastNameplateViewportSize = CurrentViewportSize;
+	bHasNameplateLayoutState = true;
 	RefreshNameplateButtonLayout();
 }
 

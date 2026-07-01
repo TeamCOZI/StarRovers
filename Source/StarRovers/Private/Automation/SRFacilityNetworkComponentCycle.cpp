@@ -70,7 +70,7 @@ int32 USRFacilityNetworkComponent::DebugApplyGameCyclesToResources(int32 CycleCo
 int32 USRFacilityNetworkComponent::ApplyGameCycleToResources()
 {
 	int32 ChangedResourceCount = 0;
-	for (TPair<FName, FSRFacilityInstance>& FacilityPair : FacilityInstancesByOccupantId)
+	for (TPair<FName, FSRFacilityInstance>& FacilityPair : RuntimeState.FacilityInstancesByOccupantId)
 	{
 		FSRFacilityInstance& FacilityInstance = FacilityPair.Value;
 		for (FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)

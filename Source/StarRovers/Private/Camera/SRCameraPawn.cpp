@@ -84,11 +84,6 @@ ASRCameraPawn::ASRCameraPawn()
 	FocusSurfaceMinInertiaSpeed = 1.0f;
 	DragTargetLocation = FVector::ZeroVector;
 	ZoomDistanceTarget = SpringArm->TargetArmLength;
-	FocusArcTransitionStartLocation = FVector::ZeroVector;
-	FocusArcTransitionElapsed = 0.0f;
-	FocusArcTransitionStartZoomDistance = 0.0f;
-	FocusArcTransitionFinalZoomDistance = 0.0f;
-	FocusArcTransitionPeakZoomDistance = 0.0f;
 	bIsDragging = false;
 	bMappingContextApplied = false;
 	bIsFocusSurfaceActive = false;
@@ -102,27 +97,6 @@ ASRCameraPawn::ASRCameraPawn()
 	DragStartMouseScreenPosition = FVector2D::ZeroVector;
 	DragStartFocusDragOffset = FVector::ZeroVector;
 	DragStartTargetLocation = FVector::ZeroVector;
-	FocusSurfaceInput = FVector2D::ZeroVector;
-	FocusSurfaceAcceleratedInput = FVector2D::ZeroVector;
-	FocusSurfaceAngularVelocity = FVector2D::ZeroVector;
-	FocusSurfaceRotation = FQuat::Identity;
-	FocusSurfaceTargetRotation = FQuat::Identity;
-	FocusSurfaceRigAlignmentStartRotation = FQuat::Identity;
-	FocusSurfaceRigAlignmentStartOffset = FVector::ZeroVector;
-	FocusSurfaceRigAlignmentAxis = FVector::UpVector;
-	FocusSurfaceRotationSmoothVelocity = FVector::ZeroVector;
-	FocusSurfaceRigAlignmentCurrentAngleRadians = 0.0f;
-	FocusSurfaceRigAlignmentTargetAngleRadians = 0.0f;
-	LastDynamicMeshVisibilityCameraLocation = FVector::ZeroVector;
-	LastDynamicMeshVisibilityCameraRotation = FRotator::ZeroRotator;
-	LastDynamicMeshVisibilityFocusedActor = nullptr;
-	LastDynamicMeshVisibilityZoomDistance = 0.0f;
-	LastDynamicMeshVisibilityUpdateTime = -BIG_NUMBER;
-	bHasDynamicMeshVisibilityState = false;
-	bIsResettingFocusSurfaceRotation = false;
-	bIsAligningFocusSurfaceRig = false;
-	bIsFocusArcTransitionActive = false;
-	bPendingFocusSurfaceGridAutoAlignment = false;
 
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> DefaultMappingContextFinder(StarRoversInputPaths::DefaultMappingContext);
 	if (DefaultMappingContextFinder.Succeeded())
@@ -343,9 +317,9 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 	{
 		Camera->UpdateComponentToWorld();
 	}
-	if (!bIsFocusSurfaceActive && bPendingFocusSurfaceGridAutoAlignment)
+	if (!bIsFocusSurfaceActive && FocusSurface.bPendingGridAutoAlignment)
 	{
-		bPendingFocusSurfaceGridAutoAlignment = false;
+		FocusSurface.bPendingGridAutoAlignment = false;
 		TryStartFocusSurfaceGridAlignment();
 	}
 	UpdateDynamicMeshVisibility();

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
+#include "Conveyor/SRConveyorNetworkRuntimeState.h"
 #include "Conveyor/SRConveyorTypes.h"
 #include "UObject/UnrealType.h"
 #include "SRConveyorNetworkComponent.generated.h"
@@ -250,13 +251,6 @@ protected:
 	TWeakObjectPtr<USRPlanetSurfaceGrid> PendingConveyorActorRefreshSurfaceGrid;
 
 private:
-	struct FSRConveyorActorGroupState
-	{
-		TArray<FSRConveyorVisualPath> VisualPaths;
-		ASRConveyorBeltActor* Actor = nullptr;
-		bool bDirty = false;
-	};
-
 	static FSRConveyorLaneKey MakeLaneKey(const FSRPlanetSurfaceGridCellId& CellId, int32 Layer);
 	static FName MakeActorGroupKey(USRStructureDataAsset* StructureDataAsset, int32 Layer);
 	static ESRConveyorGridDirection GetOppositeDirection(ESRConveyorGridDirection Direction);
@@ -352,13 +346,8 @@ private:
 	void HandlePCGGraphGenerated(UPCGComponent* PCGComponent);
 	void RebaseGeneratedPCGSplineMeshes(UPCGComponent* PCGComponent);
 
-	TMap<FName, FSRConveyorActorGroupState> ConveyorActorGroupsByKey;
-	TSet<FName> PendingPlacementDiagnosticActorGroupKeys;
-	TSet<FName> PendingDeletionDiagnosticActorGroupKeys;
-
 	UPROPERTY(Transient)
-	TMap<FSRConveyorLaneKey, FSRConveyorItem> ConveyorItemsByLane;
+	FSRConveyorTransportRuntimeState TransportState;
 
-	UPROPERTY(Transient)
-	TMap<FSRConveyorLaneKey, TObjectPtr<UTextRenderComponent>> ConveyorItemLabelsByLane;
+	FSRConveyorActorGroupRuntimeState ActorGroupState;
 };

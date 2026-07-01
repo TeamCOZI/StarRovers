@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Camera/SRPlayerControllerRuntimeState.h"
+#include "Camera/SRPlayerControllerUiTypes.h"
 #include "UI/SRCelestialBodyFocusInfo.h"
 #include "SRPlayerController.generated.h"
 
@@ -16,16 +18,6 @@ class USRStructureDataAsset;
 class USRTimeControlWidget;
 class ASRCameraPawn;
 class USRCelestialBodyRegistrySubsystem;
-
-UENUM(BlueprintType)
-enum class ESRPlayerUiLayer : uint8
-{
-    FocusInfo UMETA(DisplayName = "Focus Info"),
-    Overview UMETA(DisplayName = "Overview"),
-    TimeControl UMETA(DisplayName = "Time Control"),
-    StructureSelection UMETA(DisplayName = "Structure Selection"),
-    FacilityControl UMETA(DisplayName = "Facility Control")
-};
 
 UCLASS(Blueprintable)
 class STARROVERS_API ASRPlayerController : public APlayerController
@@ -162,6 +154,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "AssemblyUndoRedoAction"))
     TObjectPtr<UInputAction> AssemblyUndoRedoAction;
 
+    UPROPERTY(Transient)
+    TObjectPtr<UInputAction> StructureSelectionTabAction;
+
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Selection", meta = (DisplayName = "SelectedActor"))
     TObjectPtr<AActor> SelectedActor;
 
@@ -271,7 +266,10 @@ private:
     void HandleAssemblyAreaCopyMirror();
     void EnsureAssemblyAreaCopyMirrorInputAction();
     void EnsureAssemblyPickStructureInputAction();
+    void EnsureRotatePlacementInputActions();
+    void EnsureStructureSelectionTabInputAction();
     void ApplyRuntimeAssemblyInputMapping();
+    void HandleStructureSelectionTab();
     void HandleAssemblyPickStructure();
     void HandleAssemblyUndoRedoAction();
     void HandleFocusParent();
@@ -288,11 +286,5 @@ private:
     bool TryHandlePlacementRotationInput(int32 StepDelta);
     void UpdateSelection(AActor* NewSelectedActor);
 
-    bool bPendingInitialPrimaryStarFocus;
-    uint64 LastPlacementRotationInputFrame;
-    int32 LastPlacementRotationInputStepDelta;
-    bool bConveyorBulkDeleteModifierActive;
-    bool bAssemblyShiftModifierActive;
-    bool bAssemblyAreaDeletionDragHoldActive;
-    bool bRuntimeAssemblyInputMappingApplied;
+    FSRPlayerControllerRuntimeState RuntimeState;
 };

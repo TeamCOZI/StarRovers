@@ -47,8 +47,8 @@ void USRConveyorNetworkComponent::LogConveyorMutationMemoryDiagnostics(const TCH
 		Segments.Num(),
 		VisualPaths.Num(),
 		PlacedConveyorActors.Num(),
-		ConveyorActorGroupsByKey.Num(),
-		PendingDeletionDiagnosticActorGroupKeys.Num(),
+		ActorGroupState.GroupsByKey.Num(),
+		ActorGroupState.PendingDeletionDiagnosticKeys.Num(),
 		bRequestGarbageCollection ? TEXT("true") : TEXT("false")));
 
 	if (bRequestGarbageCollection)

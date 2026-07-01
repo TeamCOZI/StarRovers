@@ -260,7 +260,7 @@ bool USRConveyorNetworkComponent::TryRemoveConveyorAtCell(
 		return false;
 	}
 	USRStructureDataAsset* RemovedStructureDataAsset = RemovedSegment->StructureDataAsset.Get();
-	ConveyorItemsByLane.Remove(TargetLaneKey);
+	TransportState.ItemsByLane.Remove(TargetLaneKey);
 	if (bShowTransportItemVisuals)
 	{
 		RefreshConveyorItemVisuals(SurfaceGrid, 0.0f);

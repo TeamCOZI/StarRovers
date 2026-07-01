@@ -109,49 +109,24 @@ namespace
 
 bool USRAssemblyComponent::IsAreaCopyPlacementActive() const
 {
-	return bIsAreaCopyPlacementActive;
+	return AreaCopy.IsPlacementActive();
 }
 
 bool USRAssemblyComponent::ResolveAreaSelectionCenterCellId(FSRPlanetSurfaceGridCellId& OutCenterCellId) const
 {
-	OutCenterCellId = FSRPlanetSurfaceGridCellId();
-	if (AreaSelectionCellIds.IsEmpty())
-	{
-		return false;
-	}
-
-	const ESRCubeSphereFace Face = AreaSelectionCellIds[0].Face;
-	int32 MinCellX = AreaSelectionCellIds[0].CellX;
-	int32 MaxCellX = AreaSelectionCellIds[0].CellX;
-	int32 MinCellY = AreaSelectionCellIds[0].CellY;
-	int32 MaxCellY = AreaSelectionCellIds[0].CellY;
-	for (const FSRPlanetSurfaceGridCellId& CellId : AreaSelectionCellIds)
-	{
-		if (CellId.Face != Face)
-		{
-			return false;
-		}
-
-		MinCellX = FMath::Min(MinCellX, CellId.CellX);
-		MaxCellX = FMath::Max(MaxCellX, CellId.CellX);
-		MinCellY = FMath::Min(MinCellY, CellId.CellY);
-		MaxCellY = FMath::Max(MaxCellY, CellId.CellY);
-	}
-
-	OutCenterCellId.Face = Face;
-	OutCenterCellId.CellX = MinCellX + (MaxCellX - MinCellX) / 2;
-	OutCenterCellId.CellY = MinCellY + (MaxCellY - MinCellY) / 2;
-	return true;
+	return AreaSelection.ResolveSelectionCenterCellId(OutCenterCellId);
 }
 
 bool USRAssemblyComponent::HasAreaCopyPayload() const
 {
-	return !AreaCopiedStructures.IsEmpty() || !AreaCopiedConveyorPaths.IsEmpty();
+	return AreaCopy.HasPayload();
 }
 
 bool USRAssemblyComponent::TryBeginAreaSelectionCopyPlacement()
 {
-	if (!bAssemblyModeActive || !IsValid(AreaSelectionSurfaceGrid) || AreaSelectionCellIds.IsEmpty())
+	USRPlanetSurfaceGrid* SelectionSurfaceGrid = AreaSelection.GetSelectionSurfaceGrid();
+	const TArray<FSRPlanetSurfaceGridCellId>& SelectionCellIds = AreaSelection.GetSelectionCellIds();
+	if (!bAssemblyModeActive || !IsValid(SelectionSurfaceGrid) || SelectionCellIds.IsEmpty())
 	{
 		return false;
 	}
@@ -162,7 +137,7 @@ bool USRAssemblyComponent::TryBeginAreaSelectionCopyPlacement()
 		return false;
 	}
 
-	AActor* SurfaceOwner = AreaSelectionSurfaceGrid->GetOwner();
+	AActor* SurfaceOwner = SelectionSurfaceGrid->GetOwner();
 	USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(SurfaceOwner)
 		? SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>()
 		: nullptr;
@@ -171,8 +146,8 @@ bool USRAssemblyComponent::TryBeginAreaSelectionCopyPlacement()
 		: nullptr;
 
 	TSet<FSRPlanetSurfaceGridCellId> SelectedCellIds;
-	SelectedCellIds.Reserve(AreaSelectionCellIds.Num());
-	for (const FSRPlanetSurfaceGridCellId& CellId : AreaSelectionCellIds)
+	SelectedCellIds.Reserve(SelectionCellIds.Num());
+	for (const FSRPlanetSurfaceGridCellId& CellId : SelectionCellIds)
 	{
 		SelectedCellIds.Add(CellId);
 	}
@@ -239,19 +214,13 @@ bool USRAssemblyComponent::TryBeginAreaSelectionCopyPlacement()
 	ClearConveyorInvalidPlacementPreview();
 	ClearConveyorPlacementPortPreview();
 	ClearPendingConveyorPathStart();
-	PendingStructurePlacementQueue.Reset();
+	PlacementQueue.Reset();
 	DestroyStructureGhostPreview();
 	DestroyConveyorGhostPreview();
 	DestroyConveyorDeletionGhostPreview();
 	DestroyAreaCopyPreviewActors();
 
-	AreaCopiedStructures = MoveTemp(NewCopiedStructures);
-	AreaCopiedConveyorPaths = MoveTemp(NewCopiedConveyorPaths);
-	bIsAreaCopyPlacementActive = true;
-	bHasLastAreaCopyPreviewHoverCell = false;
-	LastAreaCopyPreviewHoverCellId = FSRPlanetSurfaceGridCellId();
-	LastAreaCopyPreviewState = ESRAreaCopyPlacementPreviewState::Blocked;
-	LastAreaCopyReplaceableOccupantIds.Reset();
+	AreaCopy.BeginPlacement(MoveTemp(NewCopiedStructures), MoveTemp(NewCopiedConveyorPaths));
 
 	ClearAreaSelection();
 	RebuildAreaCopyPreviewActors();
@@ -261,12 +230,12 @@ bool USRAssemblyComponent::TryBeginAreaSelectionCopyPlacement()
 
 bool USRAssemblyComponent::MirrorAreaCopyPlacement(bool bMirrorLeftRight)
 {
-	if (!bIsAreaCopyPlacementActive || !HasAreaCopyPayload())
+	if (!AreaCopy.IsPlacementActive() || !HasAreaCopyPayload())
 	{
 		return false;
 	}
 
-	for (FSRAreaCopiedStructure& CopiedStructure : AreaCopiedStructures)
+	for (FSRAreaCopiedStructure& CopiedStructure : AreaCopy.CopiedStructures)
 	{
 		USRStructureDataAsset* StructureDataAsset = CopiedStructure.StructureDataAsset.Get();
 		if (!IsValid(StructureDataAsset))
@@ -298,7 +267,7 @@ bool USRAssemblyComponent::MirrorAreaCopyPlacement(bool bMirrorLeftRight)
 		CopiedStructure.PlacementRotationSteps = MirrorPlacementRotationSteps(CurrentRotationSteps, bMirrorLeftRight);
 	}
 
-	for (FSRAreaCopiedConveyorPath& CopiedConveyorPath : AreaCopiedConveyorPaths)
+	for (FSRAreaCopiedConveyorPath& CopiedConveyorPath : AreaCopy.CopiedConveyorPaths)
 	{
 		for (FIntPoint& AnchorOffset : CopiedConveyorPath.AnchorOffsets)
 		{
@@ -313,32 +282,25 @@ bool USRAssemblyComponent::MirrorAreaCopyPlacement(bool bMirrorLeftRight)
 		}
 	}
 
-	bHasLastAreaCopyPreviewHoverCell = false;
-	LastAreaCopyReplaceableOccupantIds.Reset();
+	AreaCopy.ClearPreviewHoverCache();
 	UpdateAreaCopyPlacementPreview();
 	return true;
 }
 
 void USRAssemblyComponent::CancelAreaCopyPlacement()
 {
-	if (!bIsAreaCopyPlacementActive && !HasAreaCopyPayload())
+	if (!AreaCopy.IsPlacementActive() && !HasAreaCopyPayload())
 	{
 		return;
 	}
 
-	bIsAreaCopyPlacementActive = false;
-	bHasLastAreaCopyPreviewHoverCell = false;
-	LastAreaCopyPreviewHoverCellId = FSRPlanetSurfaceGridCellId();
-	LastAreaCopyPreviewState = ESRAreaCopyPlacementPreviewState::Blocked;
-	LastAreaCopyReplaceableOccupantIds.Reset();
 	DestroyAreaCopyPreviewActors();
-	AreaCopiedStructures.Reset();
-	AreaCopiedConveyorPaths.Reset();
+	AreaCopy.Cancel();
 }
 
 void USRAssemblyComponent::DestroyAreaCopyPreviewActors()
 {
-	for (FSRAreaCopiedStructure& CopiedStructure : AreaCopiedStructures)
+	for (FSRAreaCopiedStructure& CopiedStructure : AreaCopy.CopiedStructures)
 	{
 		if (AActor* PreviewActor = CopiedStructure.PreviewActor.Get())
 		{
@@ -347,7 +309,7 @@ void USRAssemblyComponent::DestroyAreaCopyPreviewActors()
 		CopiedStructure.PreviewActor = nullptr;
 	}
 
-	for (FSRAreaCopiedConveyorPath& CopiedConveyorPath : AreaCopiedConveyorPaths)
+	for (FSRAreaCopiedConveyorPath& CopiedConveyorPath : AreaCopy.CopiedConveyorPaths)
 	{
 		if (ASRConveyorBeltActor* PreviewActor = CopiedConveyorPath.PreviewActor.Get())
 		{
@@ -369,12 +331,13 @@ void USRAssemblyComponent::RebuildAreaCopyPreviewActors()
 	}
 
 	AActor* SurfaceOwner = IsValid(HoveredSurfaceGrid) ? HoveredSurfaceGrid->GetOwner() : nullptr;
-	if (!IsValid(SurfaceOwner) && IsValid(AreaSelectionSurfaceGrid))
+	USRPlanetSurfaceGrid* SelectionSurfaceGrid = AreaSelection.GetSelectionSurfaceGrid();
+	if (!IsValid(SurfaceOwner) && IsValid(SelectionSurfaceGrid))
 	{
-		SurfaceOwner = AreaSelectionSurfaceGrid->GetOwner();
+		SurfaceOwner = SelectionSurfaceGrid->GetOwner();
 	}
 
-	for (FSRAreaCopiedStructure& CopiedStructure : AreaCopiedStructures)
+	for (FSRAreaCopiedStructure& CopiedStructure : AreaCopy.CopiedStructures)
 	{
 		USRStructureDataAsset* StructureDataAsset = CopiedStructure.StructureDataAsset.Get();
 		if (!IsValid(StructureDataAsset))
@@ -415,7 +378,7 @@ void USRAssemblyComponent::RebuildAreaCopyPreviewActors()
 		CopiedStructure.PreviewActor = PreviewActor;
 	}
 
-	for (FSRAreaCopiedConveyorPath& CopiedConveyorPath : AreaCopiedConveyorPaths)
+	for (FSRAreaCopiedConveyorPath& CopiedConveyorPath : AreaCopy.CopiedConveyorPaths)
 	{
 		USRStructureDataAsset* StructureDataAsset = CopiedConveyorPath.StructureDataAsset.Get();
 		if (!IsValid(StructureDataAsset) || CopiedConveyorPath.AnchorOffsets.IsEmpty())
@@ -450,14 +413,14 @@ void USRAssemblyComponent::RebuildAreaCopyPreviewActors()
 		}
 		PreviewActor->SetActorEnableCollision(false);
 		PreviewActor->SetActorHiddenInGame(true);
-		PreviewActor->SetConveyorGhostMode(true, ResolveAreaCopyPreviewMaterial(StructureDataAsset, LastAreaCopyPreviewState));
+		PreviewActor->SetConveyorGhostMode(true, ResolveAreaCopyPreviewMaterial(StructureDataAsset, AreaCopy.LastPreviewState));
 		CopiedConveyorPath.PreviewActor = PreviewActor;
 	}
 }
 
 void USRAssemblyComponent::UpdateAreaCopyPlacementPreview()
 {
-	if (!bIsAreaCopyPlacementActive || !HasAreaCopyPayload())
+	if (!AreaCopy.IsPlacementActive() || !HasAreaCopyPayload())
 	{
 		return;
 	}
@@ -469,19 +432,19 @@ void USRAssemblyComponent::UpdateAreaCopyPlacementPreview()
 		return;
 	}
 
-	if (bHasLastAreaCopyPreviewHoverCell && LastAreaCopyPreviewHoverCellId == HoveredCell.CellId)
+	if (AreaCopy.HasCachedPreviewForHover(HoveredCell.CellId))
 	{
-		ApplyAreaCopyPreviewState(LastAreaCopyPreviewState);
+		ApplyAreaCopyPreviewState(AreaCopy.LastPreviewState);
 		TArray<FSRPlanetSurfaceGridCellId> TargetOriginCellIds;
-		TargetOriginCellIds.SetNum(AreaCopiedStructures.Num());
-		for (int32 CopyIndex = 0; CopyIndex < AreaCopiedStructures.Num(); ++CopyIndex)
+		TargetOriginCellIds.SetNum(AreaCopy.CopiedStructures.Num());
+		for (int32 CopyIndex = 0; CopyIndex < AreaCopy.CopiedStructures.Num(); ++CopyIndex)
 		{
-			const FSRAreaCopiedStructure& CopiedStructure = AreaCopiedStructures[CopyIndex];
+			const FSRAreaCopiedStructure& CopiedStructure = AreaCopy.CopiedStructures[CopyIndex];
 			TargetOriginCellIds[CopyIndex].Face = HoveredCell.CellId.Face;
 			TargetOriginCellIds[CopyIndex].CellX = HoveredCell.CellId.CellX + CopiedStructure.AnchorOffset.X;
 			TargetOriginCellIds[CopyIndex].CellY = HoveredCell.CellId.CellY + CopiedStructure.AnchorOffset.Y;
 		}
-		UpdateAreaCopyStructurePreviewActors(SurfaceGrid, TargetOriginCellIds, LastAreaCopyPreviewState);
+		UpdateAreaCopyStructurePreviewActors(SurfaceGrid, TargetOriginCellIds, AreaCopy.LastPreviewState);
 		return;
 	}
 
@@ -492,24 +455,21 @@ void USRAssemblyComponent::UpdateAreaCopyPlacementPreview()
 		return;
 	}
 
-	LastAreaCopyPreviewHoverCellId = HoveredCell.CellId;
-	bHasLastAreaCopyPreviewHoverCell = true;
-	LastAreaCopyPreviewState = Evaluation.PreviewState;
-	LastAreaCopyReplaceableOccupantIds = Evaluation.ReplaceableOccupantIds;
+	AreaCopy.StorePreviewEvaluation(HoveredCell.CellId, Evaluation);
 	ApplyAreaCopyPreviewState(Evaluation.PreviewState);
 	UpdateAreaCopyStructurePreviewActors(SurfaceGrid, Evaluation.TargetOriginCellIds, Evaluation.PreviewState);
 
 	USRConveyorNetworkComponent* ConveyorNetwork = SurfaceGrid->GetOwner()
 		? SurfaceGrid->GetOwner()->FindComponentByClass<USRConveyorNetworkComponent>()
 		: nullptr;
-	for (int32 CopyIndex = 0; CopyIndex < AreaCopiedConveyorPaths.Num(); ++CopyIndex)
+	for (int32 CopyIndex = 0; CopyIndex < AreaCopy.CopiedConveyorPaths.Num(); ++CopyIndex)
 	{
 		if (!Evaluation.TargetConveyorVisualPaths.IsValidIndex(CopyIndex))
 		{
 			continue;
 		}
 
-		FSRAreaCopiedConveyorPath& CopiedConveyorPath = AreaCopiedConveyorPaths[CopyIndex];
+		FSRAreaCopiedConveyorPath& CopiedConveyorPath = AreaCopy.CopiedConveyorPaths[CopyIndex];
 		ASRConveyorBeltActor* PreviewActor = CopiedConveyorPath.PreviewActor.Get();
 		if (!IsValid(PreviewActor) || !IsValid(ConveyorNetwork))
 		{
@@ -545,14 +505,14 @@ void USRAssemblyComponent::UpdateAreaCopyStructurePreviewActors(
 		return;
 	}
 
-	for (int32 CopyIndex = 0; CopyIndex < AreaCopiedStructures.Num(); ++CopyIndex)
+	for (int32 CopyIndex = 0; CopyIndex < AreaCopy.CopiedStructures.Num(); ++CopyIndex)
 	{
 		if (!TargetOriginCellIds.IsValidIndex(CopyIndex))
 		{
 			continue;
 		}
 
-		FSRAreaCopiedStructure& CopiedStructure = AreaCopiedStructures[CopyIndex];
+		FSRAreaCopiedStructure& CopiedStructure = AreaCopy.CopiedStructures[CopyIndex];
 		AActor* PreviewActor = CopiedStructure.PreviewActor.Get();
 		USRStructureDataAsset* StructureDataAsset = CopiedStructure.StructureDataAsset.Get();
 		if (!IsValid(PreviewActor) || !IsValid(StructureDataAsset))
@@ -712,8 +672,8 @@ bool USRAssemblyComponent::BuildAreaCopyPlacementEvaluation(
 	FSRAreaCopyPlacementEvaluation& OutEvaluation) const
 {
 	OutEvaluation = FSRAreaCopyPlacementEvaluation();
-	OutEvaluation.TargetOriginCellIds.SetNum(AreaCopiedStructures.Num());
-	OutEvaluation.TargetConveyorVisualPaths.SetNum(AreaCopiedConveyorPaths.Num());
+	OutEvaluation.TargetOriginCellIds.SetNum(AreaCopy.CopiedStructures.Num());
+	OutEvaluation.TargetConveyorVisualPaths.SetNum(AreaCopy.CopiedConveyorPaths.Num());
 	if (!IsValid(SurfaceGrid) || !HasAreaCopyPayload())
 	{
 		return false;
@@ -729,14 +689,14 @@ bool USRAssemblyComponent::BuildAreaCopyPlacementEvaluation(
 
 	bool bBlocked = false;
 	TSet<FSRPlanetSurfaceGridCellId> ProposedFootprintCellIds;
-	if (!AreaCopiedStructures.IsEmpty() && !IsValid(StructureInstanceManager))
+	if (!AreaCopy.CopiedStructures.IsEmpty() && !IsValid(StructureInstanceManager))
 	{
 		bBlocked = true;
 	}
 
-	for (int32 CopyIndex = 0; CopyIndex < AreaCopiedStructures.Num(); ++CopyIndex)
+	for (int32 CopyIndex = 0; CopyIndex < AreaCopy.CopiedStructures.Num(); ++CopyIndex)
 	{
-		const FSRAreaCopiedStructure& CopiedStructure = AreaCopiedStructures[CopyIndex];
+		const FSRAreaCopiedStructure& CopiedStructure = AreaCopy.CopiedStructures[CopyIndex];
 		USRStructureDataAsset* StructureDataAsset = CopiedStructure.StructureDataAsset.Get();
 		if (!IsValid(StructureDataAsset))
 		{
@@ -818,14 +778,14 @@ bool USRAssemblyComponent::BuildAreaCopyPlacementEvaluation(
 		OutEvaluation.ReplaceableOccupantIds,
 		OutEvaluation.ReplaceableOccupiedCellIds);
 
-	if (!AreaCopiedConveyorPaths.IsEmpty() && !IsValid(ConveyorNetwork))
+	if (!AreaCopy.CopiedConveyorPaths.IsEmpty() && !IsValid(ConveyorNetwork))
 	{
 		bBlocked = true;
 	}
 
-	for (int32 CopyIndex = 0; CopyIndex < AreaCopiedConveyorPaths.Num(); ++CopyIndex)
+	for (int32 CopyIndex = 0; CopyIndex < AreaCopy.CopiedConveyorPaths.Num(); ++CopyIndex)
 	{
-		const FSRAreaCopiedConveyorPath& CopiedConveyorPath = AreaCopiedConveyorPaths[CopyIndex];
+		const FSRAreaCopiedConveyorPath& CopiedConveyorPath = AreaCopy.CopiedConveyorPaths[CopyIndex];
 		USRStructureDataAsset* StructureDataAsset = CopiedConveyorPath.StructureDataAsset.Get();
 		if (!IsValid(StructureDataAsset) || CopiedConveyorPath.AnchorOffsets.IsEmpty())
 		{
@@ -944,7 +904,7 @@ bool USRAssemblyComponent::BuildAreaCopyPlacementEvaluation(
 bool USRAssemblyComponent::TryCommitAreaCopyPlacement(AActor*& OutSelectedActor)
 {
 	OutSelectedActor = nullptr;
-	if (!bIsAreaCopyPlacementActive || !HasAreaCopyPayload())
+	if (!AreaCopy.IsPlacementActive() || !HasAreaCopyPayload())
 	{
 		return false;
 	}
@@ -970,8 +930,8 @@ bool USRAssemblyComponent::TryCommitAreaCopyPlacement(AActor*& OutSelectedActor)
 	USRConveyorNetworkComponent* ConveyorNetwork = IsValid(SurfaceOwner)
 		? SurfaceOwner->FindComponentByClass<USRConveyorNetworkComponent>()
 		: nullptr;
-	if ((!AreaCopiedStructures.IsEmpty() && !IsValid(StructureInstanceManager))
-		|| (!AreaCopiedConveyorPaths.IsEmpty() && !IsValid(ConveyorNetwork)))
+	if ((!AreaCopy.CopiedStructures.IsEmpty() && !IsValid(StructureInstanceManager))
+		|| (!AreaCopy.CopiedConveyorPaths.IsEmpty() && !IsValid(ConveyorNetwork)))
 	{
 		return true;
 	}
@@ -984,21 +944,21 @@ bool USRAssemblyComponent::TryCommitAreaCopyPlacement(AActor*& OutSelectedActor)
 
 	bool bPlacedAny = false;
 	TArray<FSRAssemblyPlacementHistoryEntry> AreaCopyHistoryEntries;
-	for (int32 CopyIndex = 0; CopyIndex < AreaCopiedStructures.Num(); ++CopyIndex)
+	for (int32 CopyIndex = 0; CopyIndex < AreaCopy.CopiedStructures.Num(); ++CopyIndex)
 	{
 		if (!Evaluation.TargetOriginCellIds.IsValidIndex(CopyIndex))
 		{
 			continue;
 		}
 
-		USRStructureDataAsset* StructureDataAsset = AreaCopiedStructures[CopyIndex].StructureDataAsset.Get();
+		USRStructureDataAsset* StructureDataAsset = AreaCopy.CopiedStructures[CopyIndex].StructureDataAsset.Get();
 		if (!IsValid(StructureDataAsset))
 		{
 			continue;
 		}
 
 		FName NewOccupantId = NAME_None;
-		const int32 PlacementRotationSteps = AreaCopiedStructures[CopyIndex].PlacementRotationSteps;
+		const int32 PlacementRotationSteps = AreaCopy.CopiedStructures[CopyIndex].PlacementRotationSteps;
 		if (StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(
 			SurfaceGrid,
 			Evaluation.TargetOriginCellIds[CopyIndex],
@@ -1021,7 +981,7 @@ bool USRAssemblyComponent::TryCommitAreaCopyPlacement(AActor*& OutSelectedActor)
 		}
 	}
 
-	for (int32 CopyIndex = 0; CopyIndex < AreaCopiedConveyorPaths.Num(); ++CopyIndex)
+	for (int32 CopyIndex = 0; CopyIndex < AreaCopy.CopiedConveyorPaths.Num(); ++CopyIndex)
 	{
 		if (!Evaluation.TargetConveyorVisualPaths.IsValidIndex(CopyIndex))
 		{
@@ -1083,8 +1043,7 @@ bool USRAssemblyComponent::TryCommitAreaCopyPlacement(AActor*& OutSelectedActor)
 
 	RecordAssemblyPlacementHistoryBatch(SurfaceGrid, AreaCopyHistoryEntries);
 	OutSelectedActor = SurfaceOwner;
-	bHasLastAreaCopyPreviewHoverCell = false;
-	LastAreaCopyReplaceableOccupantIds.Reset();
+	AreaCopy.ClearPreviewHoverCache();
 	UpdateAreaCopyPlacementPreview();
 	bHasLastPublishedHoveredCellInfo = false;
 	LastPublishedHoveredSurfaceGrid = nullptr;
@@ -1095,8 +1054,8 @@ bool USRAssemblyComponent::TryCommitAreaCopyPlacement(AActor*& OutSelectedActor)
 
 void USRAssemblyComponent::ApplyAreaCopyPreviewState(ESRAreaCopyPlacementPreviewState PreviewState)
 {
-	LastAreaCopyPreviewState = PreviewState;
-	for (const FSRAreaCopiedStructure& CopiedStructure : AreaCopiedStructures)
+	AreaCopy.SetPreviewState(PreviewState);
+	for (const FSRAreaCopiedStructure& CopiedStructure : AreaCopy.CopiedStructures)
 	{
 		AActor* PreviewActor = CopiedStructure.PreviewActor.Get();
 		USRStructureDataAsset* StructureDataAsset = CopiedStructure.StructureDataAsset.Get();
@@ -1113,7 +1072,7 @@ void USRAssemblyComponent::ApplyAreaCopyPreviewState(ESRAreaCopyPlacementPreview
 		ApplyAreaCopyPreviewMaterial(PreviewActor, ResolveAreaCopyPreviewMaterial(StructureDataAsset, PreviewState));
 	}
 
-	for (const FSRAreaCopiedConveyorPath& CopiedConveyorPath : AreaCopiedConveyorPaths)
+	for (const FSRAreaCopiedConveyorPath& CopiedConveyorPath : AreaCopy.CopiedConveyorPaths)
 	{
 		ASRConveyorBeltActor* PreviewActor = CopiedConveyorPath.PreviewActor.Get();
 		USRStructureDataAsset* StructureDataAsset = CopiedConveyorPath.StructureDataAsset.Get();

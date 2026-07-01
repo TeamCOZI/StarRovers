@@ -1,64 +1,14 @@
 #include "Simulation/SROrbit.h"
 
 #include "Celestial/SRCelestialBody.h"
-#include "Components/LineBatchComponent.h"
 #include "Components/SceneComponent.h"
 #include "Simulation/SRTimeControlSubsystem.h"
-#include "Visual/SRLineThicknessUtils.h"
+#include "Visual/SRCelestialRingMeshComponent.h"
 
 namespace
 {
 	const FName SROrbitLineTag(TEXT("StarRovers.OrbitLine"));
 	const FName SROrbitLineRootTag(TEXT("StarRovers.OrbitLineRoot"));
-	constexpr uint8 OrbitLineDepthPriority = SDPG_World;
-
-	void AppendOrbitCircleLines(
-		ULineBatchComponent* LineBatcher,
-		const FVector& Center,
-		const float Radius,
-		const int32 SegmentCount,
-		const FLinearColor& Color,
-		const float BaseThickness,
-		const FSRCameraInfo& CameraInfo,
-		const float ReferenceViewDepth,
-		const float ReferenceFieldOfViewDegrees)
-	{
-		if (!IsValid(LineBatcher) || Radius <= KINDA_SMALL_NUMBER)
-		{
-			return;
-		}
-
-		const int32 SafeSegmentCount = FMath::Max(3, SegmentCount);
-		const FColor SegmentColor = Color.ToFColor(true);
-		FVector PreviousPoint = Center + FVector(0.0f, Radius, 0.0f);
-
-		for (int32 SegmentIndex = 1; SegmentIndex <= SafeSegmentCount; ++SegmentIndex)
-		{
-			const float Alpha = static_cast<float>(SegmentIndex) / static_cast<float>(SafeSegmentCount);
-			const float AngleRadians = Alpha * 2.0f * PI;
-			const FVector CurrentPoint = Center + FVector(
-				0.0f,
-				FMath::Cos(AngleRadians) * Radius,
-				FMath::Sin(AngleRadians) * Radius);
-			const FVector SegmentMidpoint = (PreviousPoint + CurrentPoint) * 0.5f;
-			const float Thickness = FSRLineThicknessUtils::ComputeWorldThicknessAtLocation(
-				CameraInfo,
-				SegmentMidpoint,
-				BaseThickness,
-				ReferenceViewDepth,
-				ReferenceFieldOfViewDegrees);
-
-			LineBatcher->DrawLine(
-				PreviousPoint,
-				CurrentPoint,
-				SegmentColor,
-				OrbitLineDepthPriority,
-				FMath::Max(0.0f, Thickness),
-				0.0f);
-
-			PreviousPoint = CurrentPoint;
-		}
-	}
 }
 
 USROrbit::USROrbit()
@@ -72,7 +22,7 @@ void USROrbit::OnRegister()
 {
 	Super::OnRegister();
 
-	EnsureOrbitLineBatcher();
+	EnsureOrbitRingVisual();
 	RefreshDerivedState();
 	UpdateTickDependency();
 	RefreshOrbitLineVisual();
@@ -90,7 +40,7 @@ void USROrbit::BeginPlay()
 
 void USROrbit::OnUnregister()
 {
-	ReleaseOrbitLineBatcher();
+	ReleaseOrbitRingVisual();
 
 	if (AActor* Owner = GetOwner())
 	{
@@ -108,11 +58,11 @@ void USROrbit::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorCo
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	RefreshDerivedState();
-	RefreshOrbitLineVisual();
 
 	AActor* Owner = GetOwner();
 	if (!IsValid(Owner) || !HasOrbit())
 	{
+		RefreshOrbitLineVisual();
 		return;
 	}
 
@@ -127,6 +77,8 @@ void USROrbit::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorCo
 			CelestialBody->RefreshRotationAxisLineVisual();
 		}
 	}
+
+	RefreshOrbitLineVisual();
 }
 
 void USROrbit::ConfigureOrbit(AActor* NewParentBody, float NewOrbitRadius, float NewOrbitPeriod, float NewInitialAngleDegrees)
@@ -200,8 +152,8 @@ float USROrbit::GetOrbitLineThickness() const
 
 void USROrbit::RefreshOrbitLineVisual()
 {
-	EnsureOrbitLineBatcher();
-	if (!IsValid(OrbitLineBatcher))
+	EnsureOrbitRingVisual();
+	if (!IsValid(OrbitRingVisual))
 	{
 		const AActor* Owner = GetOwner();
 		if (IsValid(Owner) && Owner->HasActorBegunPlay() && ShouldShowOrbitLine())
@@ -209,7 +161,7 @@ void USROrbit::RefreshOrbitLineVisual()
 			UE_LOG(
 				LogTemp,
 				Error,
-				TEXT("USROrbit cannot draw orbit line for owner '%s': OrbitLineBatcher is null after lookup, ShowOrbitLine=true, OrbitRadius=%.2f, OrbitPeriodSeconds=%.2f, and no registered ULineBatchComponent named 'OrbitLineBatch' was available."),
+				TEXT("USROrbit cannot draw orbit line for owner '%s': OrbitRingVisual is null after lookup, ShowOrbitLine=true, OrbitRadius=%.2f, OrbitPeriodSeconds=%.2f, and no registered USRCelestialRingMeshComponent named 'OrbitRingVisual' was available."),
 				*Owner->GetName(),
 				OrbitRadius,
 				OrbitPeriodSeconds);
@@ -217,30 +169,19 @@ void USROrbit::RefreshOrbitLineVisual()
 		return;
 	}
 
-	OrbitLineBatcher->Flush();
 	if (!ShouldShowOrbitLine())
 	{
+		OrbitRingVisual->ClearRingVisual();
 		return;
 	}
 
-	FSRCameraInfo CameraInfo;
-	FSRLineThicknessUtils::TryBuildPrimaryCameraInfo(GetWorld(), CameraInfo);
-
-	float ReferenceViewDepth = FSRLineThicknessUtils::DefaultReferenceViewDepth;
-	float ReferenceFieldOfViewDegrees = FSRLineThicknessUtils::DefaultReferenceFieldOfViewDegrees;
-	FSRLineThicknessUtils::ResolveReferenceView(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
-
 	const FLinearColor LineColor(OrbitLineColor.R, OrbitLineColor.G, OrbitLineColor.B, GetOrbitLineOpacity());
-	AppendOrbitCircleLines(
-		OrbitLineBatcher,
+	OrbitRingVisual->UpdateRingVisual(
 		ComputeOrbitCenterLocation(),
 		OrbitRadius,
-		GetOrbitLineSegments(),
 		LineColor,
 		GetOrbitLineThickness(),
-		CameraInfo,
-		ReferenceViewDepth,
-		ReferenceFieldOfViewDegrees);
+		GetOrbitLineSegments());
 }
 
 AActor* USROrbit::GetParentBody() const
@@ -374,46 +315,46 @@ FVector USROrbit::ComputeOrbitLocationAtAngle(float AngleRadians) const
 		OrbitCenter.Z + (FMath::Sin(AngleRadians) * OrbitRadius));
 }
 
-void USROrbit::EnsureOrbitLineBatcher()
+void USROrbit::EnsureOrbitRingVisual()
 {
 	AActor* Owner = GetOwner();
-	if (!IsValid(Owner) || IsValid(OrbitLineBatcher))
+	if (!IsValid(Owner) || IsValid(OrbitRingVisual))
 	{
 		return;
 	}
 
-	TInlineComponentArray<ULineBatchComponent*> LineBatchComponents(Owner);
-	Owner->GetComponents(LineBatchComponents);
-	for (ULineBatchComponent* LineBatchComponent : LineBatchComponents)
+	TInlineComponentArray<USRCelestialRingMeshComponent*> RingComponents(Owner);
+	Owner->GetComponents(RingComponents);
+	for (USRCelestialRingMeshComponent* RingComponent : RingComponents)
 	{
-		if (IsValid(LineBatchComponent) && LineBatchComponent->GetFName() == TEXT("OrbitLineBatch"))
+		if (IsValid(RingComponent) && RingComponent->GetFName() == TEXT("OrbitRingVisual"))
 		{
-			OrbitLineBatcher = LineBatchComponent;
+			OrbitRingVisual = RingComponent;
 			break;
 		}
 	}
 
-	if (IsValid(OrbitLineBatcher))
+	if (IsValid(OrbitRingVisual))
 	{
-		OrbitLineBatcher->SetMobility(EComponentMobility::Movable);
-		OrbitLineBatcher->SetUsingAbsoluteLocation(true);
-		OrbitLineBatcher->SetUsingAbsoluteRotation(true);
-		OrbitLineBatcher->SetUsingAbsoluteScale(true);
-		OrbitLineBatcher->ComponentTags.AddUnique(SROrbitLineTag);
-		OrbitLineBatcher->ComponentTags.AddUnique(SROrbitLineRootTag);
+		OrbitRingVisual->SetMobility(EComponentMobility::Movable);
+		OrbitRingVisual->SetUsingAbsoluteLocation(true);
+		OrbitRingVisual->SetUsingAbsoluteRotation(true);
+		OrbitRingVisual->SetUsingAbsoluteScale(true);
+		OrbitRingVisual->ComponentTags.AddUnique(SROrbitLineTag);
+		OrbitRingVisual->ComponentTags.AddUnique(SROrbitLineRootTag);
 		return;
 	}
 
 	return;
 }
 
-void USROrbit::ReleaseOrbitLineBatcher()
+void USROrbit::ReleaseOrbitRingVisual()
 {
-	if (!IsValid(OrbitLineBatcher))
+	if (!IsValid(OrbitRingVisual))
 	{
 		return;
 	}
 
-	OrbitLineBatcher->Flush();
-	OrbitLineBatcher = nullptr;
+	OrbitRingVisual->ClearRingVisual();
+	OrbitRingVisual = nullptr;
 }

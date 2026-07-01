@@ -82,9 +82,7 @@ void USRConveyorNetworkComponent::DestroyPlacedConveyorActors()
 	}
 
 	PlacedConveyorActors.Reset();
-	ConveyorActorGroupsByKey.Reset();
-	PendingPlacementDiagnosticActorGroupKeys.Reset();
-	PendingDeletionDiagnosticActorGroupKeys.Reset();
+	ActorGroupState.Reset();
 	PendingConveyorActorRefreshSurfaceGrid.Reset();
 	SetComponentTickEnabled(ShouldKeepTransportTickEnabled() || bShowPathDebugLine || bShowConnectionDebugLine);
 }
@@ -97,7 +95,7 @@ void USRConveyorNetworkComponent::MarkConveyorActorGroupDirty(USRStructureDataAs
 		return;
 	}
 
-	FSRConveyorActorGroupState& ActorGroup = ConveyorActorGroupsByKey.FindOrAdd(ActorGroupKey);
+	FSRConveyorActorGroupState& ActorGroup = ActorGroupState.GroupsByKey.FindOrAdd(ActorGroupKey);
 	ActorGroup.bDirty = true;
 }
 
@@ -106,7 +104,7 @@ void USRConveyorNetworkComponent::MarkConveyorActorGroupPlacementDiagnosticPendi
 	const FName ActorGroupKey = MakeActorGroupKey(StructureDataAsset, Layer);
 	if (!ActorGroupKey.IsNone())
 	{
-		PendingPlacementDiagnosticActorGroupKeys.Add(ActorGroupKey);
+		ActorGroupState.PendingPlacementDiagnosticKeys.Add(ActorGroupKey);
 	}
 }
 
@@ -115,7 +113,7 @@ void USRConveyorNetworkComponent::MarkConveyorActorGroupDeletionDiagnosticPendin
 	const FName ActorGroupKey = MakeActorGroupKey(StructureDataAsset, Layer);
 	if (!ActorGroupKey.IsNone())
 	{
-		PendingDeletionDiagnosticActorGroupKeys.Add(ActorGroupKey);
+		ActorGroupState.PendingDeletionDiagnosticKeys.Add(ActorGroupKey);
 	}
 }
 
@@ -145,9 +143,9 @@ bool USRConveyorNetworkComponent::RefreshConveyorActorGroup(USRPlanetSurfaceGrid
 		return false;
 	}
 
-	FSRConveyorActorGroupState& ActorGroup = ConveyorActorGroupsByKey.FindOrAdd(ActorGroupKey);
-	const bool bLogPlacementDiagnostics = PendingPlacementDiagnosticActorGroupKeys.Remove(ActorGroupKey) > 0;
-	const bool bLogDeletionDiagnostics = PendingDeletionDiagnosticActorGroupKeys.Remove(ActorGroupKey) > 0;
+	FSRConveyorActorGroupState& ActorGroup = ActorGroupState.GroupsByKey.FindOrAdd(ActorGroupKey);
+	const bool bLogPlacementDiagnostics = ActorGroupState.PendingPlacementDiagnosticKeys.Remove(ActorGroupKey) > 0;
+	const bool bLogDeletionDiagnostics = ActorGroupState.PendingDeletionDiagnosticKeys.Remove(ActorGroupKey) > 0;
 	ActorGroup.VisualPaths.Reset();
 	for (const FSRConveyorVisualPath& VisualPath : VisualPaths)
 	{
@@ -168,7 +166,7 @@ bool USRConveyorNetworkComponent::RefreshConveyorActorGroup(USRPlanetSurfaceGrid
 			ActorGroup.Actor->Destroy();
 		}
 
-		ConveyorActorGroupsByKey.Remove(ActorGroupKey);
+		ActorGroupState.GroupsByKey.Remove(ActorGroupKey);
 		if (bLogDeletionDiagnostics)
 		{
 			LogConveyorMutationMemoryDiagnostics(TEXT("ConveyorDelete.ActorGroupRemoved"), ActorGroupKey, StarRovers::Conveyor::ShouldForceGCOnConveyorDelete());
@@ -217,7 +215,7 @@ bool USRConveyorNetworkComponent::RefreshDirtyConveyorActorGroups(USRPlanetSurfa
 	const int32 GroupBudget = MaxGroupCount == INDEX_NONE
 		? TNumericLimits<int32>::Max()
 		: FMath::Max(1, MaxGroupCount);
-	for (const TPair<FName, FSRConveyorActorGroupState>& ActorGroupPair : ConveyorActorGroupsByKey)
+	for (const TPair<FName, FSRConveyorActorGroupState>& ActorGroupPair : ActorGroupState.GroupsByKey)
 	{
 		if (ActorGroupPair.Value.bDirty)
 		{
@@ -243,15 +241,7 @@ bool USRConveyorNetworkComponent::RefreshDirtyConveyorActorGroups(USRPlanetSurfa
 
 bool USRConveyorNetworkComponent::HasDirtyConveyorActorGroups() const
 {
-	for (const TPair<FName, FSRConveyorActorGroupState>& ActorGroupPair : ConveyorActorGroupsByKey)
-	{
-		if (ActorGroupPair.Value.bDirty)
-		{
-			return true;
-		}
-	}
-
-	return false;
+	return ActorGroupState.HasDirtyGroups();
 }
 
 void USRConveyorNetworkComponent::RebuildSegmentsFromVisualPaths(USRPlanetSurfaceGrid* SurfaceGrid)

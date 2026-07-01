@@ -71,12 +71,16 @@ void ASRCameraPawn::UpdateDynamicMeshVisibility()
 	const float CurrentZoomDistance = SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget;
 	AActor* CurrentFocusedActor = FocusedActor.Get();
 
-	const bool bFocusChanged = LastDynamicMeshVisibilityFocusedActor.Get() != CurrentFocusedActor;
-	const bool bMovedEnough = FVector::DistSquared(CameraLocation, LastDynamicMeshVisibilityCameraLocation) >= FMath::Square(MinCameraMoveDistance);
-	const bool bZoomedEnough = FMath::Abs(CurrentZoomDistance - LastDynamicMeshVisibilityZoomDistance) >= MinZoomDelta;
-	const bool bRotatedEnough = !CameraRotation.Equals(LastDynamicMeshVisibilityCameraRotation, MinRotationDeltaDegrees);
-	const bool bIntervalElapsed = (CurrentTime - LastDynamicMeshVisibilityUpdateTime) >= MinRefreshIntervalSeconds;
-	if (bHasDynamicMeshVisibilityState && !bFocusChanged && !bMovedEnough && !bZoomedEnough && !bRotatedEnough && !bIntervalElapsed)
+	if (!DynamicMeshVisibility.ShouldRefresh(
+		CameraLocation,
+		CameraRotation,
+		CurrentZoomDistance,
+		CurrentFocusedActor,
+		CurrentTime,
+		MinRefreshIntervalSeconds,
+		MinCameraMoveDistance,
+		MinZoomDelta,
+		MinRotationDeltaDegrees))
 	{
 		return;
 	}
@@ -91,12 +95,12 @@ void ASRCameraPawn::UpdateDynamicMeshVisibility()
 		ConfigureDirectionalLight(nullptr);
 	}
 
-	LastDynamicMeshVisibilityCameraLocation = CameraLocation;
-	LastDynamicMeshVisibilityCameraRotation = CameraRotation;
-	LastDynamicMeshVisibilityFocusedActor = CurrentFocusedActor;
-	LastDynamicMeshVisibilityZoomDistance = CurrentZoomDistance;
-	LastDynamicMeshVisibilityUpdateTime = CurrentTime;
-	bHasDynamicMeshVisibilityState = true;
+	DynamicMeshVisibility.Store(
+		CameraLocation,
+		CameraRotation,
+		CurrentZoomDistance,
+		CurrentFocusedActor,
+		CurrentTime);
 }
 
 bool ASRCameraPawn::ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLightTarget)
@@ -158,19 +162,47 @@ bool ASRCameraPawn::ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLigh
 	}
 
 	ASRCelestialBody* DynamicBody = FocusedDynamicBody ? FocusedDynamicBody : BestNonFocusedDynamicBody;
-	bool bHasStaticMeshBody = false;
-	for (ASRCelestialBody* CelestialBody : ValidCelestialBodies)
+	const bool bNeedsFullMeshApply =
+		!DynamicMeshVisibility.bHasAppliedMeshVisibility
+		|| DynamicMeshVisibility.AppliedCelestialBodyCount != ValidCelestialBodies.Num();
+	ASRCelestialBody* PreviousDynamicBody = Cast<ASRCelestialBody>(DynamicMeshVisibility.DynamicMeshBody.Get());
+	if (bNeedsFullMeshApply)
 	{
-		const bool bUseDynamicMesh = CelestialBody == DynamicBody;
-		CelestialBody->SetCelestialBodyMesh(bUseDynamicMesh);
-		bHasStaticMeshBody |= !bUseDynamicMesh;
+		if (IsValid(PreviousDynamicBody) && PreviousDynamicBody != DynamicBody && !ValidCelestialBodies.Contains(PreviousDynamicBody))
+		{
+			PreviousDynamicBody->SetCelestialBodyMesh(false);
+		}
+		for (ASRCelestialBody* CelestialBody : ValidCelestialBodies)
+		{
+			CelestialBody->SetCelestialBodyMesh(CelestialBody == DynamicBody);
+		}
+	}
+	else if (PreviousDynamicBody != DynamicBody)
+	{
+		if (IsValid(PreviousDynamicBody))
+		{
+			PreviousDynamicBody->SetCelestialBodyMesh(false);
+		}
+		if (IsValid(DynamicBody))
+		{
+			DynamicBody->SetCelestialBodyMesh(true);
+		}
 	}
 
+	DynamicMeshVisibility.DynamicMeshBody = DynamicBody;
+	DynamicMeshVisibility.AppliedCelestialBodyCount = ValidCelestialBodies.Num();
+	DynamicMeshVisibility.bHasAppliedMeshVisibility = true;
+
+	const bool bHasStaticMeshBody = ValidCelestialBodies.Num() > (DynamicBody ? 1 : 0);
 	if (AActor* PrimaryStarActor = CelestialRegistry->GetPrimaryStarActor())
 	{
 		if (UPointLightComponent* StarPointLight = PrimaryStarActor->FindComponentByClass<UPointLightComponent>())
 		{
-			StarPointLight->SetVisibility(bHasStaticMeshBody || !IsValid(OutDirectionalLightTarget));
+			const bool bShouldShowStarPointLight = bHasStaticMeshBody || !IsValid(OutDirectionalLightTarget);
+			if (StarPointLight->IsVisible() != bShouldShowStarPointLight)
+			{
+				StarPointLight->SetVisibility(bShouldShowStarPointLight);
+			}
 		}
 	}
 
@@ -258,7 +290,10 @@ void ASRCameraPawn::ConfigureDirectionalLight(AActor* LightingTarget)
 	USRCelestialBodyRegistrySubsystem* CelestialRegistry = FindCelestialRegistry();
 	const AActor* PrimaryStarActor = CelestialRegistry ? CelestialRegistry->GetPrimaryStarActor() : nullptr;
 	const bool bCanUseDirectionalLight = IsValid(PrimaryStarActor) && IsValid(LightingTarget);
-	DirectionalLightComponent->SetVisibility(bCanUseDirectionalLight);
+	if (DirectionalLightComponent->IsVisible() != bCanUseDirectionalLight)
+	{
+		DirectionalLightComponent->SetVisibility(bCanUseDirectionalLight);
+	}
 	if (!bCanUseDirectionalLight)
 	{
 		return;
@@ -270,11 +305,23 @@ void ASRCameraPawn::ConfigureDirectionalLight(AActor* LightingTarget)
 		return;
 	}
 
-	DirectionalLightActor->SetActorRotation(StarToTargetDirection.Rotation());
+	const FRotator DesiredLightRotation = StarToTargetDirection.Rotation();
+	if (!DirectionalLightActor->GetActorRotation().Equals(DesiredLightRotation, 0.01f))
+	{
+		DirectionalLightActor->SetActorRotation(DesiredLightRotation);
+	}
 }
 
 ADirectionalLight* ASRCameraPawn::FindDirectionalLightActor() const
 {
+	if (ADirectionalLight* CachedLight = CachedDirectionalLightActor.Get())
+	{
+		if (IsValid(CachedLight))
+		{
+			return CachedLight;
+		}
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -286,6 +333,7 @@ ADirectionalLight* ASRCameraPawn::FindDirectionalLightActor() const
 		ADirectionalLight* CandidateLight = *It;
 		if (IsValid(CandidateLight))
 		{
+			CachedDirectionalLightActor = CandidateLight;
 			return CandidateLight;
 		}
 	}

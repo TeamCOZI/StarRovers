@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "InputActionValue.h"
+#include "Camera/SRCameraPawnRuntimeState.h"
 #include "SRCameraPawn.generated.h"
 
 class UCameraComponent;
@@ -53,6 +54,9 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Focus")
     void ResetFocus();
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
+    bool RotateFocusSurfaceViewBySteps(int32 StepDelta);
 
     FSRFocusedActorChangedSignature& OnFocusedActorChanged();
 
@@ -250,37 +254,22 @@ private:
     FVector GetFocusLocation() const;
 
     FSRFocusedActorChangedSignature FocusedActorChangedEvent;
+    mutable TWeakObjectPtr<ADirectionalLight> CachedDirectionalLightActor;
+    mutable TWeakObjectPtr<AActor> CachedSpaceBoundaryActor;
+    mutable FVector CachedSpaceBoundaryCenter = FVector::ZeroVector;
+    mutable float CachedSpaceBoundaryRadius = 0.0f;
+    mutable double CachedSpaceBoundaryFullScanTime = -BIG_NUMBER;
+    mutable uint64 CachedSpaceBoundaryFrame = 0;
+    mutable bool bHasCachedSpaceBoundaryResult = false;
+    mutable bool bCachedSpaceBoundaryFound = false;
     FVector DragTargetLocation;
     float ZoomDistanceTarget;
-    FVector FocusArcTransitionStartLocation;
-    float FocusArcTransitionElapsed;
-    float FocusArcTransitionStartZoomDistance;
-    float FocusArcTransitionFinalZoomDistance;
-    float FocusArcTransitionPeakZoomDistance;
+    FSRCameraFocusArcTransitionState FocusArcTransition;
     float ScreenSpaceThicknessReferenceZoomDistance;
     float ScreenSpaceThicknessReferenceFieldOfView;
     FVector2D DragStartMouseScreenPosition;
     FVector DragStartFocusDragOffset;
     FVector DragStartTargetLocation;
-    FVector2D FocusSurfaceInput;
-    FVector2D FocusSurfaceAcceleratedInput;
-    FVector2D FocusSurfaceAngularVelocity;
-    FQuat FocusSurfaceRotation;
-    FQuat FocusSurfaceTargetRotation;
-    FQuat FocusSurfaceRigAlignmentStartRotation;
-    FVector FocusSurfaceRigAlignmentStartOffset;
-    FVector FocusSurfaceRigAlignmentAxis;
-    FVector FocusSurfaceRotationSmoothVelocity;
-    float FocusSurfaceRigAlignmentCurrentAngleRadians;
-    float FocusSurfaceRigAlignmentTargetAngleRadians;
-    FVector LastDynamicMeshVisibilityCameraLocation;
-    FRotator LastDynamicMeshVisibilityCameraRotation;
-    TWeakObjectPtr<AActor> LastDynamicMeshVisibilityFocusedActor;
-    float LastDynamicMeshVisibilityZoomDistance;
-    double LastDynamicMeshVisibilityUpdateTime;
-    bool bHasDynamicMeshVisibilityState;
-    bool bIsResettingFocusSurfaceRotation;
-    bool bIsAligningFocusSurfaceRig;
-    bool bIsFocusArcTransitionActive;
-    bool bPendingFocusSurfaceGridAutoAlignment;
+    FSRCameraFocusSurfaceRuntimeState FocusSurface;
+    FSRCameraDynamicMeshVisibilityState DynamicMeshVisibility;
 };

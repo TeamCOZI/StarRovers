@@ -33,7 +33,7 @@ FSRFacilityPortInventory* USRFacilityNetworkComponent::FindInputPortInventoryFor
 
 bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRResourceInstance& ResourceInstance)
 {
-	FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	FSRFacilityPortInventory* InputPortInventory = FacilityInstance
 		? FindInputPortInventoryForDirectAdd(*FacilityInstance)
 		: nullptr;
@@ -75,7 +75,7 @@ bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRRe
 
 bool USRFacilityNetworkComponent::AddInputResourceToPort(FName OccupantId, int32 InputPortIndex, const FSRResourceInstance& ResourceInstance)
 {
-	FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	FSRFacilityPortInventory* InputPortInventory = FacilityInstance && FacilityInstance->InputPortInventories.IsValidIndex(InputPortIndex)
 		? &FacilityInstance->InputPortInventories[InputPortIndex]
 		: nullptr;
@@ -96,7 +96,7 @@ bool USRFacilityNetworkComponent::AddInputResourceToPort(FName OccupantId, int32
 
 bool USRFacilityNetworkComponent::ExtractOutputResource(FName OccupantId, FSRResourceInstance& OutResourceInstance)
 {
-	FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	FSRFacilityPortInventory* OutputPortInventory = nullptr;
 	if (FacilityInstance)
 	{

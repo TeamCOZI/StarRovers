@@ -3,6 +3,8 @@
 #include "SRCelestialBodyLog.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/DynamicMeshComponent.h"
+#include "Components/MeshComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstance.h"
@@ -12,22 +14,76 @@
 namespace
 {
 	const FName PlanetCenterMaterialParameterName(TEXT("PlanetCenterWS"));
+	const FName ToonLineEnabledMaterialParameterName(TEXT("ToonLineEnabled"));
+	const FName ToonLineColorMaterialParameterName(TEXT("ToonLineColor"));
+	const FName ToonLineThicknessMaterialParameterName(TEXT("ToonLineThickness"));
+
+	void ApplyCelestialBodyMaterialParameters(
+		UMaterialInstanceDynamic* MaterialInstance,
+		const FSRToonOutlineSettings& ToonOutlineSettings,
+		const FVector& PlanetCenterWS)
+	{
+		if (!IsValid(MaterialInstance))
+		{
+			return;
+		}
+
+		MaterialInstance->SetVectorParameterValue(PlanetCenterMaterialParameterName, FLinearColor(PlanetCenterWS));
+		MaterialInstance->SetScalarParameterValue(ToonLineEnabledMaterialParameterName, ToonOutlineSettings.bEnableToonOutline ? 1.0f : 0.0f);
+		MaterialInstance->SetVectorParameterValue(ToonLineColorMaterialParameterName, ToonOutlineSettings.ToonLineColor);
+		MaterialInstance->SetScalarParameterValue(ToonLineThicknessMaterialParameterName, FMath::Max(0.0f, ToonOutlineSettings.ToonLineThickness));
+	}
+
+	UMaterialInstanceDynamic* ResolveComponentMaterialInstance(
+		UObject* Outer,
+		UMeshComponent* MeshComponent,
+		int32 MaterialSlotIndex,
+		UMaterialInterface* DesiredBaseMaterial)
+	{
+		if (!IsValid(Outer) || !IsValid(MeshComponent) || !IsValid(DesiredBaseMaterial))
+		{
+			return nullptr;
+		}
+
+		UMaterialInstanceDynamic* DynamicMaterial = Cast<UMaterialInstanceDynamic>(MeshComponent->GetMaterial(MaterialSlotIndex));
+		const UMaterialInstance* DynamicMaterialInstance = DynamicMaterial;
+		if (!IsValid(DynamicMaterial) || DynamicMaterialInstance->Parent != DesiredBaseMaterial)
+		{
+			DynamicMaterial = UMaterialInstanceDynamic::Create(DesiredBaseMaterial, Outer);
+			MeshComponent->SetMaterial(MaterialSlotIndex, DynamicMaterial);
+		}
+		return DynamicMaterial;
+	}
+
+	void RefreshComponentMaterialParameters(
+		UMeshComponent* MeshComponent,
+		const FSRToonOutlineSettings& ToonOutlineSettings,
+		const FVector& PlanetCenterWS)
+	{
+		if (!IsValid(MeshComponent))
+		{
+			return;
+		}
+
+		const int32 MaterialCount = MeshComponent->GetNumMaterials();
+		for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
+		{
+			ApplyCelestialBodyMaterialParameters(
+				Cast<UMaterialInstanceDynamic>(MeshComponent->GetMaterial(MaterialIndex)),
+				ToonOutlineSettings,
+				PlanetCenterWS);
+		}
+	}
 }
 
 void ASRCelestialBody::RefreshMaterialParameters()
 {
 	const FVector PlanetCenterWS = GetActorLocation();
-	if (UMaterialInstanceDynamic* ActiveDynamicMaterial = GetActiveBodyDynamicMaterial())
+	for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
 	{
-		ActiveDynamicMaterial->SetVectorParameterValue(PlanetCenterMaterialParameterName, FLinearColor(PlanetCenterWS));
+		RefreshComponentMaterialParameters(DynamicMeshComponent, ToonOutlineSettings, PlanetCenterWS);
 	}
-	if (IsValid(CelestialBodyStaticMesh.Get()))
-	{
-		if (UMaterialInstanceDynamic* StaticDynamicMaterial = Cast<UMaterialInstanceDynamic>(CelestialBodyStaticMesh->GetMaterial(0)))
-		{
-			StaticDynamicMaterial->SetVectorParameterValue(PlanetCenterMaterialParameterName, FLinearColor(PlanetCenterWS));
-		}
-	}
+	RefreshComponentMaterialParameters(CelestialBodyStaticMesh.Get(), ToonOutlineSettings, PlanetCenterWS);
 }
 
 void ASRCelestialBody::SetCelestialBodyMesh(bool bUseDynamicMesh)
@@ -90,7 +146,7 @@ bool ASRCelestialBody::PrepareCelestialBodyDynamicMesh()
 
 bool ASRCelestialBody::HasCelestialBodyDynamicMeshBuild() const
 {
-	return bHasCachedDynamicMeshBuildHash;
+	return DynamicMeshState.HasBuild();
 }
 
 void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicMesh)
@@ -140,16 +196,9 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicM
 		return;
 	}
 
-	UMaterialInstanceDynamic* ActiveDynamicMaterial = GetActiveBodyDynamicMaterial();
-	const UMaterialInstance* ActiveMaterialInstance = ActiveDynamicMaterial;
-	if (!IsValid(ActiveDynamicMaterial) || ActiveMaterialInstance->Parent != DesiredBaseMaterial)
-	{
-		ActiveDynamicMaterial = UMaterialInstanceDynamic::Create(DesiredBaseMaterial, this);
-	}
-
 	if (IsValid(CelestialBodyStaticMesh.Get()))
 	{
-		CelestialBodyStaticMesh->SetMaterial(0, IsValid(ActiveDynamicMaterial) ? ActiveDynamicMaterial : DesiredBaseMaterial);
+		ResolveComponentMaterialInstance(this, CelestialBodyStaticMesh.Get(), 0, DesiredBaseMaterial);
 	}
 
 	for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
@@ -159,7 +208,7 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicM
 			continue;
 		}
 
-		DynamicMeshComponent->SetMaterial(0, IsValid(ActiveDynamicMaterial) ? ActiveDynamicMaterial : DesiredBaseMaterial);
+		ResolveComponentMaterialInstance(this, DynamicMeshComponent, 0, DesiredBaseMaterial);
 	}
 
 	for (const FSRBiomeMaterialEntry& BiomeMaterialEntry : DynamicMeshGeneration.BiomeMaterials)
@@ -172,7 +221,7 @@ void ASRCelestialBody::EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicM
 			{
 				if (IsValid(DynamicMeshComponent))
 				{
-					DynamicMeshComponent->SetMaterial(MaterialSlotIndex, BiomeMaterial);
+					ResolveComponentMaterialInstance(this, DynamicMeshComponent, MaterialSlotIndex, BiomeMaterial);
 				}
 			}
 		}
@@ -244,11 +293,7 @@ void ASRCelestialBody::SyncDynamicMeshFaceComponentSettings()
 
 void ASRCelestialBody::ResetDynamicMeshCellColorData()
 {
-	DynamicMeshColorDataByFlatId.Reset();
-	HighlightedDynamicMeshColorElements.Reset();
-	HighlightedDynamicMeshBaseColorByElement.Reset();
-	CachedSurfaceGridCells.Reset();
-	bHasCachedDynamicMeshBuildHash = false;
+	DynamicMeshState.Reset();
 }
 
 UMaterialInstanceDynamic* ASRCelestialBody::GetActiveBodyDynamicMaterial() const
@@ -256,4 +301,55 @@ UMaterialInstanceDynamic* ASRCelestialBody::GetActiveBodyDynamicMaterial() const
 	return IsValid(CelestialBodyDynamicMesh.Get())
 		? Cast<UMaterialInstanceDynamic>(CelestialBodyDynamicMesh->GetMaterial(0))
 		: nullptr;
+}
+
+bool ASRCelestialBody::ApplyToonOutlineToPrimitive(
+	UPrimitiveComponent* PrimitiveComponent,
+	bool bEnableToonOutline) const
+{
+	if (!IsValid(PrimitiveComponent))
+	{
+		return false;
+	}
+
+	const int32 StencilValue = FMath::Clamp(ToonOutlineSettings.ToonOutlineStencilValue, 1, 255);
+	PrimitiveComponent->SetRenderCustomDepth(bEnableToonOutline);
+	PrimitiveComponent->SetCustomDepthStencilValue(StencilValue);
+	return true;
+}
+
+int32 ASRCelestialBody::ApplyToonOutlineToBodyMeshComponents()
+{
+	int32 AppliedComponentCount = 0;
+	const bool bEnableToonOutline = ToonOutlineSettings.bEnableToonOutline;
+	if (ApplyToonOutlineToPrimitive(CelestialBodyStaticMesh.Get(), bEnableToonOutline))
+	{
+		++AppliedComponentCount;
+	}
+
+	for (UDynamicMeshComponent* DynamicMeshComponent : CelestialBodyDynamicMeshFaces)
+	{
+		if (ApplyToonOutlineToPrimitive(DynamicMeshComponent, bEnableToonOutline))
+		{
+			++AppliedComponentCount;
+		}
+	}
+
+	return AppliedComponentCount;
+}
+
+void ASRCelestialBody::ApplyToonOutlineSettings()
+{
+	const int32 BodyMeshComponentCount = ApplyToonOutlineToBodyMeshComponents();
+	if (UWorld* World = GetWorld(); World && World->IsGameWorld())
+	{
+		UE_LOG(
+			LogStarRoversCelestial,
+			Log,
+			TEXT("ToonOutline Body='%s' Enabled=%s Stencil=%d BodyComponents=%d Ocean=false Atmosphere=false"),
+			*GetName(),
+			ToonOutlineSettings.bEnableToonOutline ? TEXT("true") : TEXT("false"),
+			FMath::Clamp(ToonOutlineSettings.ToonOutlineStencilValue, 1, 255),
+			BodyMeshComponentCount);
+	}
 }

@@ -29,25 +29,12 @@ const FSRCelestialBodyDynamicMeshCellColorData* ASRCelestialBody::FindDynamicMes
 	}
 
 	const int32 FaceResolution = DynamicMeshBaseDataAsset->GetClampedFaceResolution();
-	if (!CellId.IsValid(FaceResolution))
-	{
-		return nullptr;
-	}
-
-	const int32 FlatIndex = ((static_cast<int32>(CellId.Face) * FaceResolution) + CellId.CellY) * FaceResolution + CellId.CellX;
-	return DynamicMeshColorDataByFlatId.IsValidIndex(FlatIndex) ? &DynamicMeshColorDataByFlatId[FlatIndex] : nullptr;
+	return DynamicMeshState.FindCellColorData(CellId, FaceResolution);
 }
 
 bool ASRCelestialBody::GetCachedSurfaceGridCells(TArray<FSRPlanetSurfaceGridCell>& OutCells) const
 {
-	if (!bHasCachedDynamicMeshBuildHash || CachedSurfaceGridCells.IsEmpty())
-	{
-		OutCells.Reset();
-		return false;
-	}
-
-	OutCells = CachedSurfaceGridCells;
-	return true;
+	return DynamicMeshState.GetSurfaceGridCells(OutCells);
 }
 
 bool ASRCelestialBody::ApplySurfaceCellHighlights(
@@ -58,7 +45,7 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 	const FLinearColor& HoveredCellColor,
 	const FLinearColor& SelectedCellColor)
 {
-	if (!IsValid(CelestialBodyDynamicMesh.Get()) || DynamicMeshColorDataByFlatId.IsEmpty())
+	if (!IsValid(CelestialBodyDynamicMesh.Get()) || DynamicMeshState.ColorDataByFlatId.IsEmpty())
 	{
 		return false;
 	}
@@ -116,7 +103,7 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 		NextHighlightedElements.Add(TargetColorPair.Key);
 	}
 	bool bHasAnyColorChange = false;
-	for (const uint64 PreviousElementKey : HighlightedDynamicMeshColorElements)
+	for (const uint64 PreviousElementKey : DynamicMeshState.HighlightedColorElements)
 	{
 		if (!NextHighlightedElements.Contains(PreviousElementKey))
 		{
@@ -128,7 +115,7 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 	{
 		for (const uint64 NextElementKey : NextHighlightedElements)
 		{
-			if (!HighlightedDynamicMeshColorElements.Contains(NextElementKey))
+			if (!DynamicMeshState.HighlightedColorElements.Contains(NextElementKey))
 			{
 				bHasAnyColorChange = true;
 				break;
@@ -157,7 +144,7 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 	}
 
 	TSet<int32> MeshIndicesToEdit;
-	for (const uint64 PreviousElementKey : HighlightedDynamicMeshColorElements)
+	for (const uint64 PreviousElementKey : DynamicMeshState.HighlightedColorElements)
 	{
 		MeshIndicesToEdit.Add(static_cast<int32>(PreviousElementKey >> 32));
 	}
@@ -198,7 +185,7 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 
 				if (ColorOverlay)
 				{
-					for (const uint64 PreviousElementKey : HighlightedDynamicMeshColorElements)
+					for (const uint64 PreviousElementKey : DynamicMeshState.HighlightedColorElements)
 					{
 						if (static_cast<int32>(PreviousElementKey >> 32) != MeshComponentIndex)
 						{
@@ -211,7 +198,7 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 							continue;
 						}
 
-						if (const FLinearColor* BaseColor = HighlightedDynamicMeshBaseColorByElement.Find(PreviousElementKey))
+						if (const FLinearColor* BaseColor = DynamicMeshState.HighlightedBaseColorByElement.Find(PreviousElementKey))
 						{
 							ColorOverlay->SetElement(PreviousElementId, ToVectorColor(*BaseColor));
 						}
@@ -231,22 +218,22 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 			false);
 	}
 
-	HighlightedDynamicMeshColorElements = MoveTemp(NextHighlightedElements);
-	HighlightedDynamicMeshBaseColorByElement = MoveTemp(NextHighlightedBaseColorByElement);
+	DynamicMeshState.HighlightedColorElements = MoveTemp(NextHighlightedElements);
+	DynamicMeshState.HighlightedBaseColorByElement = MoveTemp(NextHighlightedBaseColorByElement);
 	return !TargetColorsByElement.IsEmpty() || bHasAnyColorChange;
 }
 
 void ASRCelestialBody::ClearSurfaceCellHighlights()
 {
-	if (HighlightedDynamicMeshColorElements.IsEmpty())
+	if (DynamicMeshState.HighlightedColorElements.IsEmpty())
 	{
-		HighlightedDynamicMeshColorElements.Reset();
-		HighlightedDynamicMeshBaseColorByElement.Reset();
+		DynamicMeshState.HighlightedColorElements.Reset();
+		DynamicMeshState.HighlightedBaseColorByElement.Reset();
 		return;
 	}
 
 	TMap<int32, TArray<uint64>> HighlightedElementsByMesh;
-	for (const uint64 ElementKey : HighlightedDynamicMeshColorElements)
+	for (const uint64 ElementKey : DynamicMeshState.HighlightedColorElements)
 	{
 		HighlightedElementsByMesh.FindOrAdd(static_cast<int32>(ElementKey >> 32)).Add(ElementKey);
 	}
@@ -280,7 +267,7 @@ void ASRCelestialBody::ClearSurfaceCellHighlights()
 					for (const uint64 ElementKey : MeshHighlightedElements)
 					{
 						const int32 ElementId = static_cast<int32>(ElementKey & 0xffffffff);
-						if (const FLinearColor* BaseColor = HighlightedDynamicMeshBaseColorByElement.Find(ElementKey))
+						if (const FLinearColor* BaseColor = DynamicMeshState.HighlightedBaseColorByElement.Find(ElementKey))
 						{
 							ColorOverlay->SetElement(ElementId, FVector4f(BaseColor->R, BaseColor->G, BaseColor->B, BaseColor->A));
 						}
@@ -292,6 +279,6 @@ void ASRCelestialBody::ClearSurfaceCellHighlights()
 			false);
 	}
 
-	HighlightedDynamicMeshColorElements.Reset();
-	HighlightedDynamicMeshBaseColorByElement.Reset();
+	DynamicMeshState.HighlightedColorElements.Reset();
+	DynamicMeshState.HighlightedBaseColorByElement.Reset();
 }

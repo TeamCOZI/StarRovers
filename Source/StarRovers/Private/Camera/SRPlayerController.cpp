@@ -13,6 +13,8 @@ namespace StarRoversControllerInputPaths
 	static constexpr TCHAR AssemblyAreaSelectionCopyAction[] = TEXT("/Game/BlueprintClasses/Core/IA_AssemblyAreaSelectionCopyAction.IA_AssemblyAreaSelectionCopyAction");
 	static constexpr TCHAR AssemblyAreaCopyMirrorAction[] = TEXT("/Game/BlueprintClasses/Core/IA_AssemblyAreaCopyMirrorAction.IA_AssemblyAreaCopyMirrorAction");
 	static constexpr TCHAR AssemblyPickStructureAction[] = TEXT("/Game/BlueprintClasses/Core/IA_AssemblyPickStructureAction.IA_AssemblyPickStructureAction");
+	static constexpr TCHAR RotatePlacementCounterClockwiseAction[] = TEXT("/Game/BlueprintClasses/Core/IA_RotatePlacementCounterClockwiseAction.IA_RotatePlacementCounterClockwiseAction");
+	static constexpr TCHAR RotatePlacementClockwiseAction[] = TEXT("/Game/BlueprintClasses/Core/IA_RotatePlacementClockwiseAction.IA_RotatePlacementClockwiseAction");
 }
 
 ASRPlayerController::ASRPlayerController()
@@ -94,14 +96,27 @@ ASRPlayerController::ASRPlayerController()
 		UE_LOG(LogTemp, Log, TEXT("ASRPlayerController did not find AssemblyPickStructureAction at '%s'; a runtime Z-key input action will be created."), StarRoversControllerInputPaths::AssemblyPickStructureAction);
 	}
 
-	WidgetLayerOrder =
+	static ConstructorHelpers::FObjectFinder<UInputAction> RotatePlacementCounterClockwiseActionFinder(StarRoversControllerInputPaths::RotatePlacementCounterClockwiseAction);
+	if (RotatePlacementCounterClockwiseActionFinder.Succeeded())
 	{
-		ESRPlayerUiLayer::FocusInfo,
-		ESRPlayerUiLayer::Overview,
-		ESRPlayerUiLayer::TimeControl,
-		ESRPlayerUiLayer::StructureSelection,
-		ESRPlayerUiLayer::FacilityControl
-	};
+		RotatePlacementCounterClockwiseAction = RotatePlacementCounterClockwiseActionFinder.Object;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("ASRPlayerController did not find RotatePlacementCounterClockwiseAction at '%s'; a runtime Q-key input action will be created."), StarRoversControllerInputPaths::RotatePlacementCounterClockwiseAction);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UInputAction> RotatePlacementClockwiseActionFinder(StarRoversControllerInputPaths::RotatePlacementClockwiseAction);
+	if (RotatePlacementClockwiseActionFinder.Succeeded())
+	{
+		RotatePlacementClockwiseAction = RotatePlacementClockwiseActionFinder.Object;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("ASRPlayerController did not find RotatePlacementClockwiseAction at '%s'; a runtime E-key input action will be created."), StarRoversControllerInputPaths::RotatePlacementClockwiseAction);
+	}
+
+	WidgetLayerOrder = StarRovers::PlayerControllerUI::MakeDefaultWidgetLayerOrder();
 	MaxStructurePlacementsPerFrame = 4;
 	MaxQueuedStructurePlacements = 256;
 	AssemblyModeScreenSizeThreshold = 0.30f;
@@ -110,18 +125,9 @@ ASRPlayerController::ASRPlayerController()
 	SelectedStructureDataAsset = nullptr;
 	AssemblyAreaDeletionDragHoldAction = nullptr;
 	AssemblyAreaSelectionDeleteAction = nullptr;
-	RotatePlacementCounterClockwiseAction = nullptr;
-	RotatePlacementClockwiseAction = nullptr;
 	ConveyorWaypointAction = nullptr;
 	BulkDeleteConveyorModifierAction = nullptr;
 	AssemblyShiftModifierAction = nullptr;
-	bPendingInitialPrimaryStarFocus = true;
-	LastPlacementRotationInputFrame = MAX_uint64;
-	LastPlacementRotationInputStepDelta = 0;
-	bConveyorBulkDeleteModifierActive = false;
-	bAssemblyShiftModifierActive = false;
-	bAssemblyAreaDeletionDragHoldActive = false;
-	bRuntimeAssemblyInputMappingApplied = false;
 
 	AssemblyComponent = CreateDefaultSubobject<USRAssemblyComponent>(TEXT("AssemblyComponent"));
 	AssemblyComponent->ConfigurePlacementPerformance(MaxStructurePlacementsPerFrame, MaxQueuedStructurePlacements);
@@ -164,7 +170,7 @@ void ASRPlayerController::Tick(float DeltaSeconds)
 	UpdateHitResultTraceDistance();
 	TryBindCameraPawnFocusEvents();
 	TryBindCelestialBodyRegistryEvents();
-	if (!bRuntimeAssemblyInputMappingApplied)
+	if (!RuntimeState.bRuntimeAssemblyInputMappingApplied)
 	{
 		ApplyRuntimeAssemblyInputMapping();
 	}

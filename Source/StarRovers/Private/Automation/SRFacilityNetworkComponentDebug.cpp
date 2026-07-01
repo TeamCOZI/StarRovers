@@ -16,7 +16,7 @@ bool USRFacilityNetworkComponent::IsFacilityDebugLoggingEnabled() const
 void USRFacilityNetworkComponent::GetRegisteredFacilityOccupantIds(TArray<FName>& OutOccupantIds) const
 {
 	OutOccupantIds.Reset();
-	FacilityInstancesByOccupantId.GetKeys(OutOccupantIds);
+	RuntimeState.FacilityInstancesByOccupantId.GetKeys(OutOccupantIds);
 	OutOccupantIds.Sort([](const FName& Left, const FName& Right)
 	{
 		return Left.LexicalLess(Right);
@@ -115,13 +115,13 @@ bool USRFacilityNetworkComponent::DebugStepFacilities(float DeltaTime, int32 Ste
 		SafeDeltaTime,
 		SafeStepCount,
 		TotalProcessedCount,
-		FacilityInstancesByOccupantId.Num());
+		RuntimeState.FacilityInstancesByOccupantId.Num());
 	return TotalProcessedCount > 0;
 }
 
 bool USRFacilityNetworkComponent::DebugDumpFacilityState(FName OccupantId) const
 {
-	const FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	if (!FacilityInstance)
 	{
 		UE_LOG(

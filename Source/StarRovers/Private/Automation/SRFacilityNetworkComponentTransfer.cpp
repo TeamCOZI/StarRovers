@@ -66,7 +66,7 @@ bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 		return false;
 	}
 
-	for (TPair<FName, FSRFacilityInstance>& FacilityPair : FacilityInstancesByOccupantId)
+	for (TPair<FName, FSRFacilityInstance>& FacilityPair : RuntimeState.FacilityInstancesByOccupantId)
 	{
 		FSRFacilityInstance& FacilityInstance = FacilityPair.Value;
 		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
@@ -114,7 +114,7 @@ bool USRFacilityNetworkComponent::TryPullOutputResourceToConveyorCell(
 		return false;
 	}
 
-	for (TPair<FName, FSRFacilityInstance>& FacilityPair : FacilityInstancesByOccupantId)
+	for (TPair<FName, FSRFacilityInstance>& FacilityPair : RuntimeState.FacilityInstancesByOccupantId)
 	{
 		FSRFacilityInstance& FacilityInstance = FacilityPair.Value;
 		FSRFacilityPortInventory* OutputPortInventory = FindConnectedOutputPortInventory(SurfaceGrid, FacilityInstance, ConveyorCellId);
@@ -153,7 +153,7 @@ bool USRFacilityNetworkComponent::TryPullOutputResourceToConveyorCell(
 
 bool USRFacilityNetworkComponent::HasConnectedConveyorForFacilityPort(FName OccupantId, ESRFacilityPortKind PortKind) const
 {
-	const FSRFacilityInstance* FacilityInstance = FacilityInstancesByOccupantId.Find(OccupantId);
+	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	if (!FacilityInstance)
 	{
 		return false;

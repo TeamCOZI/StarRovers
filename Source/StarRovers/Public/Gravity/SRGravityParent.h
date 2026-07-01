@@ -8,7 +8,7 @@
 struct FPropertyChangedEvent;
 #endif
 
-class ULineBatchComponent;
+class USRCelestialRingMeshComponent;
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
 class STARROVERS_API USRGravityParent : public UActorComponent
@@ -103,11 +103,11 @@ protected:
 	float GravityLineThickness;
 
 private:
-	void EnsureGravityLineBatch();
-	void ReleaseGravityLineBatch();
+	void EnsureGravityRingVisual();
+	void ReleaseGravityRingVisual();
 
 	static TArray<TWeakObjectPtr<USRGravityParent>> RegisteredSources;
 
 	UPROPERTY(Transient)
-	TObjectPtr<ULineBatchComponent> GravityLineBatch;
+	TObjectPtr<USRCelestialRingMeshComponent> GravityRingVisual;
 };

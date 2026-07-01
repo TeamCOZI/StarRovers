@@ -2,6 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Assembly/SRAssemblyAreaCopy.h"
+#include "Assembly/SRAssemblyAreaSelection.h"
+#include "Assembly/SRAssemblyPlacementHistory.h"
+#include "Assembly/SRAssemblyPlacementQueue.h"
 #include "Conveyor/SRConveyorTypes.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "SRAssemblyComponent.generated.h"
@@ -76,8 +80,6 @@ protected:
 	TObjectPtr<USRPlanetSurfaceGrid> HoveredSurfaceGrid;
 
 	bool bAssemblyModeActive;
-	int32 MaxStructurePlacementsPerFrame;
-	int32 MaxQueuedStructurePlacements;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USRPlanetSurfaceGrid> ActiveAssemblySurfaceGrid;
@@ -151,27 +153,6 @@ protected:
 	FSRPlanetSurfaceGridCellId StructurePlacementDragStartCellId;
 	int32 StructurePlacementDragRotationSteps;
 	TArray<FSRPlanetSurfaceGridCellId> StructurePlacementDragCellIds;
-	bool bIsAreaSelectionDragActive;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> AreaSelectionSurfaceGrid;
-
-	FSRPlanetSurfaceGridCellId AreaSelectionStartCellId;
-	FSRPlanetSurfaceGridCellId LastAreaSelectionTargetCellId;
-	bool bHasAreaSelectionStartCell;
-	bool bHasLastAreaSelectionTargetCell;
-	TArray<FSRPlanetSurfaceGridCellId> AreaSelectionCellIds;
-	bool bIsAreaDeletionDragActive;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> AreaDeletionSurfaceGrid;
-
-	FSRPlanetSurfaceGridCellId AreaDeletionStartCellId;
-	FSRPlanetSurfaceGridCellId LastAreaDeletionTargetCellId;
-	bool bHasAreaDeletionStartCell;
-	bool bHasLastAreaDeletionTargetCell;
-	TArray<FSRPlanetSurfaceGridCellId> AreaDeletionCellIds;
-
 	UPROPERTY(Transient)
 	TObjectPtr<USRPlanetSurfaceGrid> PendingConveyorStartSurfaceGrid;
 
@@ -193,88 +174,21 @@ protected:
 	int32 ConveyorDeletionGhostLayer;
 
 private:
-	struct FSRQueuedStructurePlacement
-	{
-		TWeakObjectPtr<USRPlanetSurfaceGrid> SurfaceGrid;
-		FSRPlanetSurfaceGridCellId CellId;
-		int32 PlacementRotationSteps = 0;
-	};
+	friend class StarRovers::Assembly::FSRAssemblyPlacementHistory;
+
+	using ESRAssemblyPlacementHistoryKind = StarRovers::Assembly::ESRAssemblyPlacementHistoryKind;
+	using FSRAssemblyPlacementHistoryEntry = StarRovers::Assembly::FSRAssemblyPlacementHistoryEntry;
+	using FSRRestorableNaturalStructure = StarRovers::Assembly::FSRRestorableNaturalStructure;
+	using ESRAreaCopyPlacementPreviewState = StarRovers::Assembly::ESRAreaCopyPlacementPreviewState;
+	using FSRAreaCopiedStructure = StarRovers::Assembly::FSRAreaCopiedStructure;
+	using FSRAreaCopiedConveyorPath = StarRovers::Assembly::FSRAreaCopiedConveyorPath;
+	using FSRAreaCopyPlacementEvaluation = StarRovers::Assembly::FSRAreaCopyPlacementEvaluation;
+	using FSRQueuedStructurePlacement = StarRovers::Assembly::FSRQueuedStructurePlacement;
 
 	struct FSRStructurePlacementDragPreviewActor
 	{
 		FSRPlanetSurfaceGridCellId CellId;
 		TWeakObjectPtr<AActor> PreviewActor;
-	};
-
-	enum class ESRAssemblyPlacementHistoryKind : uint8
-	{
-		Structure,
-		Conveyor,
-		Batch,
-	};
-
-	struct FSRRestorableNaturalStructure
-	{
-		TWeakObjectPtr<USRStructureDataAsset> StructureDataAsset;
-		FSRPlanetSurfaceGridCellId OriginCellId;
-		int32 PlacementRotationSteps = 0;
-	};
-
-	struct FSRAssemblyPlacementHistoryEntry
-	{
-		ESRAssemblyPlacementHistoryKind Kind = ESRAssemblyPlacementHistoryKind::Structure;
-		TWeakObjectPtr<USRPlanetSurfaceGrid> SurfaceGrid;
-		TWeakObjectPtr<USRStructureInstanceManagerComponent> StructureInstanceManager;
-		TWeakObjectPtr<USRConveyorNetworkComponent> ConveyorNetwork;
-		TWeakObjectPtr<USRStructureDataAsset> StructureDataAsset;
-		FSRPlanetSurfaceGridCellId OriginCellId;
-		int32 PlacementRotationSteps = 0;
-		FName OccupantId = NAME_None;
-		FSRConveyorVisualPath ConveyorVisualPath;
-		TArray<FSRPlanetSurfaceGridCellId> ConveyorPlacedCellIds;
-		TArray<FSRRestorableNaturalStructure> RemovedNaturalStructures;
-		TArray<FSRAssemblyPlacementHistoryEntry> ChildEntries;
-	};
-
-	struct FSRAssemblyPlacementHistoryState
-	{
-		TArray<FSRAssemblyPlacementHistoryEntry> UndoStack;
-		TArray<FSRAssemblyPlacementHistoryEntry> RedoStack;
-	};
-
-	enum class ESRAreaCopyPlacementPreviewState : uint8
-	{
-		Placeable,
-		Replaceable,
-		Blocked,
-	};
-
-	struct FSRAreaCopiedStructure
-	{
-		TWeakObjectPtr<USRStructureDataAsset> StructureDataAsset;
-		FIntPoint AnchorOffset = FIntPoint::ZeroValue;
-		int32 PlacementRotationSteps = 0;
-		TWeakObjectPtr<AActor> PreviewActor;
-	};
-
-	struct FSRAreaCopiedConveyorPath
-	{
-		TWeakObjectPtr<USRStructureDataAsset> StructureDataAsset;
-		TArray<FIntPoint> AnchorOffsets;
-		int32 Layer = 0;
-		float LayerHeight = 0.0f;
-		FName NetworkId = NAME_None;
-		TWeakObjectPtr<ASRConveyorBeltActor> PreviewActor;
-	};
-
-	struct FSRAreaCopyPlacementEvaluation
-	{
-		ESRAreaCopyPlacementPreviewState PreviewState = ESRAreaCopyPlacementPreviewState::Blocked;
-		TArray<FSRPlanetSurfaceGridCellId> TargetOriginCellIds;
-		TArray<FSRConveyorVisualPath> TargetConveyorVisualPaths;
-		TSet<FName> ReplaceableOccupantIds;
-		TSet<FSRPlanetSurfaceGridCellId> ReplaceableOccupiedCellIds;
-		bool bCanPlace = false;
 	};
 
 	ASRPlayerController* GetOwnerController() const;
@@ -404,36 +318,9 @@ private:
 		FSRConveyorVisualPath& OutVisualPath,
 		TArray<FSRPlanetSurfaceGridCellId>& OutPlacedCellIds,
 		TArray<FSRRestorableNaturalStructure>& OutRemovedNaturalStructures) const;
-	bool TryUndoAssemblyPlacementEntry(FSRAssemblyPlacementHistoryEntry& Entry);
-	bool TryRedoAssemblyPlacementEntry(FSRAssemblyPlacementHistoryEntry& Entry);
-	bool TryUndoStructurePlacement(FSRAssemblyPlacementHistoryEntry& Entry);
-	bool TryRedoStructurePlacement(FSRAssemblyPlacementHistoryEntry& Entry);
-	bool TryUndoConveyorPlacement(FSRAssemblyPlacementHistoryEntry& Entry);
-	bool TryRedoConveyorPlacement(FSRAssemblyPlacementHistoryEntry& Entry);
-	bool TryUndoAssemblyPlacementBatch(FSRAssemblyPlacementHistoryEntry& Entry);
-	bool TryRedoAssemblyPlacementBatch(FSRAssemblyPlacementHistoryEntry& Entry);
-	void CollectConstructionDestructibleNaturalStructures(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		USRStructureInstanceManagerComponent* StructureInstanceManager,
-		const TArray<FSRPlanetSurfaceGridCellId>& CellIds,
-		TArray<FSRRestorableNaturalStructure>& OutNaturalStructures) const;
-	void RestoreNaturalStructures(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		USRStructureInstanceManagerComponent* StructureInstanceManager,
-		const TArray<FSRRestorableNaturalStructure>& NaturalStructures) const;
-	void RefreshAssemblyPlacementHistorySurfaceState(USRPlanetSurfaceGrid* SurfaceGrid);
-	USRPlanetSurfaceGrid* ResolveAssemblyPlacementHistorySurfaceGrid() const;
-	FSRAssemblyPlacementHistoryState* FindAssemblyPlacementHistoryState(USRPlanetSurfaceGrid* SurfaceGrid);
-	FSRAssemblyPlacementHistoryState& FindOrAddAssemblyPlacementHistoryState(USRPlanetSurfaceGrid* SurfaceGrid);
-
-	TArray<FSRQueuedStructurePlacement> PendingStructurePlacementQueue;
 	TArray<FSRStructurePlacementDragPreviewActor> StructurePlacementDragPreviewActors;
-	TMap<TObjectKey<USRPlanetSurfaceGrid>, FSRAssemblyPlacementHistoryState> PlacementHistoryBySurfaceGrid;
-	bool bIsAreaCopyPlacementActive = false;
-	bool bHasLastAreaCopyPreviewHoverCell = false;
-	FSRPlanetSurfaceGridCellId LastAreaCopyPreviewHoverCellId;
-	ESRAreaCopyPlacementPreviewState LastAreaCopyPreviewState = ESRAreaCopyPlacementPreviewState::Blocked;
-	TArray<FSRAreaCopiedStructure> AreaCopiedStructures;
-	TArray<FSRAreaCopiedConveyorPath> AreaCopiedConveyorPaths;
-	TSet<FName> LastAreaCopyReplaceableOccupantIds;
+	StarRovers::Assembly::FSRAssemblyAreaSelection AreaSelection;
+	StarRovers::Assembly::FSRAssemblyAreaCopy AreaCopy;
+	StarRovers::Assembly::FSRAssemblyPlacementHistory PlacementHistory;
+	StarRovers::Assembly::FSRAssemblyPlacementQueue PlacementQueue;
 };

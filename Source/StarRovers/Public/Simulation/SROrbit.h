@@ -5,7 +5,7 @@
 #include "SROrbit.generated.h"
 
 class USRTimeControlSubsystem;
-class ULineBatchComponent;
+class USRCelestialRingMeshComponent;
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
 class STARROVERS_API USROrbit : public UActorComponent
@@ -72,8 +72,8 @@ public:
 	FVector ComputeOrbitLocationAtCurrentPhase() const;
 
 private:
-	void EnsureOrbitLineBatcher();
-	void ReleaseOrbitLineBatcher();
+	void EnsureOrbitRingVisual();
+	void ReleaseOrbitRingVisual();
 	USRTimeControlSubsystem* FindTimeControlSubsystem() const;
 	float ResolveSecondsPerPeriod() const;
 	void RefreshDerivedState();
@@ -122,7 +122,7 @@ private:
 	TObjectPtr<AActor> OrbitTickDependencyActor = nullptr;
 
 	UPROPERTY(Transient)
-	TObjectPtr<ULineBatchComponent> OrbitLineBatcher;
+	TObjectPtr<USRCelestialRingMeshComponent> OrbitRingVisual;
 
 	mutable TWeakObjectPtr<USRTimeControlSubsystem> CachedTimeControlSubsystem;
 };

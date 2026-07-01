@@ -22,8 +22,8 @@ bool ASRCelestialBody::ApplyPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPre
 	}
 
 	ResetDynamicMeshCellColorData();
-	DynamicMeshColorDataByFlatId = MoveTemp(PreparedMesh.ColorDataByFlatId);
-	CachedSurfaceGridCells = MoveTemp(PreparedMesh.SurfaceGridCells);
+	DynamicMeshState.ColorDataByFlatId = MoveTemp(PreparedMesh.ColorDataByFlatId);
+	DynamicMeshState.SurfaceGridCells = MoveTemp(PreparedMesh.SurfaceGridCells);
 
 	double StageStart = SRCelestialNowSeconds();
 	for (int32 FaceIndex = 0; FaceIndex < PreparedMesh.FaceDynamicMeshes.Num(); ++FaceIndex)
@@ -39,7 +39,7 @@ bool ASRCelestialBody::ApplyPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPre
 	if (USRPlanetSurfaceGrid* SurfaceGrid = GetSurfaceGrid())
 	{
 		StageStart = SRCelestialNowSeconds();
-		TArray<FSRPlanetSurfaceGridCell> GeneratedGridCells = CachedSurfaceGridCells;
+		TArray<FSRPlanetSurfaceGridCell> GeneratedGridCells = DynamicMeshState.SurfaceGridCells;
 		UE::Geometry::FDynamicMesh3 GeneratedGridMesh;
 		GeneratedGridMesh.EnableAttributes();
 		GeneratedGridMesh.Attributes()->EnablePrimaryColors();
@@ -47,8 +47,7 @@ bool ASRCelestialBody::ApplyPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPre
 		SurfaceGridApplyMs = SRCelestialElapsedMilliseconds(StageStart);
 	}
 
-	CachedDynamicMeshBuildHash = PreparedMesh.BuildHash;
-	bHasCachedDynamicMeshBuildHash = true;
+	DynamicMeshState.MarkBuilt(PreparedMesh.BuildHash);
 	FSRTimingLog::AddLine(FString::Printf(
 		TEXT("DynamicMesh '%s' BaseMetadata.Total %.2f ms Build=%.2f ms RuntimeCache=0.00 ms SetMesh=%.2f ms SurfaceGrid=%.2f ms"),
 		*GetName(),
@@ -81,7 +80,7 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 	}
 
 	const uint32 DynamicMeshBuildHash = ComputeDynamicMeshBuildHash();
-	if (bHasCachedDynamicMeshBuildHash && CachedDynamicMeshBuildHash == DynamicMeshBuildHash)
+	if (DynamicMeshState.HasBuildHash(DynamicMeshBuildHash))
 	{
 		FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' AlreadyBuilt %.2f ms"), *GetName(), SRCelestialElapsedMilliseconds(TotalStart)));
 		return true;
@@ -92,8 +91,8 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 		const double ApplyStart = SRCelestialNowSeconds();
 		ResetDynamicMeshCellColorData();
 
-		DynamicMeshColorDataByFlatId = CacheEntry.ColorDataByFlatId;
-		CachedSurfaceGridCells = CacheEntry.SurfaceGridCells;
+		DynamicMeshState.ColorDataByFlatId = CacheEntry.ColorDataByFlatId;
+		DynamicMeshState.SurfaceGridCells = CacheEntry.SurfaceGridCells;
 
 		for (int32 FaceIndex = 0; FaceIndex < CubeSphereFaceComponentCount; ++FaceIndex)
 		{
@@ -116,10 +115,10 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 		double SurfaceGridApplyMs = 0.0;
 		if (USRPlanetSurfaceGrid* SurfaceGrid = GetSurfaceGrid())
 		{
-			if (!CachedSurfaceGridCells.IsEmpty())
+			if (!DynamicMeshState.SurfaceGridCells.IsEmpty())
 			{
 				const double SurfaceGridApplyStart = SRCelestialNowSeconds();
-				TArray<FSRPlanetSurfaceGridCell> GeneratedGridCells = CachedSurfaceGridCells;
+				TArray<FSRPlanetSurfaceGridCell> GeneratedGridCells = DynamicMeshState.SurfaceGridCells;
 				UE::Geometry::FDynamicMesh3 EmptyGridMesh;
 				EmptyGridMesh.EnableAttributes();
 				EmptyGridMesh.Attributes()->EnablePrimaryColors();
@@ -128,8 +127,7 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 			}
 		}
 
-		CachedDynamicMeshBuildHash = DynamicMeshBuildHash;
-		bHasCachedDynamicMeshBuildHash = true;
+		DynamicMeshState.MarkBuilt(DynamicMeshBuildHash);
 		FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh.ApplyCache '%s' %.2f ms SurfaceGrid=%.2f ms Meshes=%d Cells=%d"), *GetName(), SRCelestialElapsedMilliseconds(ApplyStart), SurfaceGridApplyMs, CacheEntry.FaceDynamicMeshes.Num(), CacheEntry.SurfaceGridCells.Num()));
 		return true;
 	};
@@ -278,8 +276,8 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 		}
 		FSRCelestialBodyDynamicMeshRuntimeCacheEntry GeneratedCacheEntry;
 		GeneratedCacheEntry.FaceDynamicMeshes = CachedFaceDynamicMeshes;
-		GeneratedCacheEntry.SurfaceGridCells = CachedSurfaceGridCells;
-		GeneratedCacheEntry.ColorDataByFlatId = DynamicMeshColorDataByFlatId;
+		GeneratedCacheEntry.SurfaceGridCells = DynamicMeshState.SurfaceGridCells;
+		GeneratedCacheEntry.ColorDataByFlatId = DynamicMeshState.ColorDataByFlatId;
 		StageStart = SRCelestialNowSeconds();
 		StoreCelestialBodyDynamicMeshRuntimeCache(DynamicMeshBuildHash, MoveTemp(GeneratedCacheEntry));
 		RuntimeCacheStoreMs = SRCelestialElapsedMilliseconds(StageStart);
@@ -298,8 +296,7 @@ bool ASRCelestialBody::BuildCelestialBodyDynamicMesh()
 		}
 	}
 	const double SetMeshMs = SRCelestialElapsedMilliseconds(StageStart);
-	CachedDynamicMeshBuildHash = DynamicMeshBuildHash;
-	bHasCachedDynamicMeshBuildHash = true;
+	DynamicMeshState.MarkBuilt(DynamicMeshBuildHash);
 	FSRTimingLog::AddLine(FString::Printf(TEXT("DynamicMesh '%s' FallbackTriangle Total=%.2f ms Vertices=%.2f ms Triangles=%.2f ms RuntimeCache=%.2f ms SetMesh=%.2f ms"), *GetName(), SRCelestialElapsedMilliseconds(TotalStart), FallbackVertexMs, FallbackTriangleMs, RuntimeCacheStoreMs, SetMeshMs));
 	return true;
 }

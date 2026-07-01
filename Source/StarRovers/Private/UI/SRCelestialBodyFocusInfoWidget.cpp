@@ -201,6 +201,11 @@ void USRCelestialBodyFocusInfoWidget::NativeTick(const FGeometry& MyGeometry, fl
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
+	if (!IsVisible())
+	{
+		return;
+	}
+
 	if (RefreshStarFuelInfoFromFocusedActor())
 	{
 		RefreshFocusInfoText();

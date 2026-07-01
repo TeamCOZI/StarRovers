@@ -17,7 +17,8 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	int32 MaterialId,
 	bool bDoubleSided,
 	const FSRTerrainVertexKey* VertexKeys,
-	const FVector* NormalReferenceDirectionOverride)
+	const FVector* NormalReferenceDirectionOverride,
+	bool bAllowUnweldedFallbackForFailedTriangles)
 {
 	FSRCelestialBodyDynamicMeshQuadRenderData RenderData;
 	MeshComponentIndex = 0;
@@ -28,6 +29,7 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 
 	UE::Geometry::FDynamicMesh3& TargetDynamicMesh = FaceDynamicMeshes[MeshComponentIndex];
 	UE::Geometry::FDynamicMeshNormalOverlay* NormalOverlay = TargetDynamicMesh.Attributes()->PrimaryNormals();
+	UE::Geometry::FDynamicMeshUVOverlay* UVOverlay = TargetDynamicMesh.Attributes()->PrimaryUV();
 	auto* ColorOverlay = TargetDynamicMesh.Attributes()->PrimaryColors();
 	auto* MaterialIdAttribute = TargetDynamicMesh.Attributes()->GetMaterialID();
 	if (!NormalOverlay || !ColorOverlay)
@@ -90,6 +92,10 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	const int32 Color1 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
 	const int32 Color2 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
 	const int32 Color3 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
+	const int32 UV0 = UVOverlay ? UVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
+	const int32 UV1 = UVOverlay ? UVOverlay->AppendElement(FVector2f(1.0f, 0.0f)) : INDEX_NONE;
+	const int32 UV2 = UVOverlay ? UVOverlay->AppendElement(FVector2f(1.0f, 1.0f)) : INDEX_NONE;
+	const int32 UV3 = UVOverlay ? UVOverlay->AppendElement(FVector2f(0.0f, 1.0f)) : INDEX_NONE;
 
 	auto TrackColorElement = [&RenderData, &SurfaceColor, MeshComponentIndex](int32 ColorElementId)
 	{
@@ -109,24 +115,114 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	TrackColorElement(Color2);
 	TrackColorElement(Color3);
 
+	auto AppendUnweldedTriangleWithAttributes = [
+		&TargetDynamicMesh,
+		NormalOverlay,
+		UVOverlay,
+		ColorOverlay,
+		MaterialIdAttribute,
+		&RenderData,
+		&TrackColorElement,
+		&SurfaceColor,
+		MaterialId,
+		&QuadNormal](
+			const FVector& Position0,
+			const FVector& Position1,
+			const FVector& Position2,
+			const FVector2f& UVPosition0,
+			const FVector2f& UVPosition1,
+			const FVector2f& UVPosition2)
+	{
+		const int32 FallbackVertex0 = TargetDynamicMesh.AppendVertex(FVector3d(Position0));
+		const int32 FallbackVertex1 = TargetDynamicMesh.AppendVertex(FVector3d(Position1));
+		const int32 FallbackVertex2 = TargetDynamicMesh.AppendVertex(FVector3d(Position2));
+		const int32 FallbackTriangle = TargetDynamicMesh.AppendTriangle(FallbackVertex0, FallbackVertex1, FallbackVertex2);
+		if (FallbackTriangle < 0)
+		{
+			return false;
+		}
+
+		const int32 FallbackNormal0 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 FallbackNormal1 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 FallbackNormal2 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
+		const int32 FallbackColor0 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
+		const int32 FallbackColor1 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
+		const int32 FallbackColor2 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
+		const int32 FallbackUV0 = UVOverlay ? UVOverlay->AppendElement(UVPosition0) : INDEX_NONE;
+		const int32 FallbackUV1 = UVOverlay ? UVOverlay->AppendElement(UVPosition1) : INDEX_NONE;
+		const int32 FallbackUV2 = UVOverlay ? UVOverlay->AppendElement(UVPosition2) : INDEX_NONE;
+		TrackColorElement(FallbackColor0);
+		TrackColorElement(FallbackColor1);
+		TrackColorElement(FallbackColor2);
+
+		NormalOverlay->SetTriangle(FallbackTriangle, UE::Geometry::FIndex3i(FallbackNormal0, FallbackNormal1, FallbackNormal2));
+		if (UVOverlay)
+		{
+			UVOverlay->SetTriangle(FallbackTriangle, UE::Geometry::FIndex3i(FallbackUV0, FallbackUV1, FallbackUV2));
+		}
+		ColorOverlay->SetTriangle(FallbackTriangle, UE::Geometry::FIndex3i(FallbackColor0, FallbackColor1, FallbackColor2));
+		if (MaterialIdAttribute)
+		{
+			MaterialIdAttribute->SetValue(FallbackTriangle, MaterialId);
+		}
+		++RenderData.FallbackTriangleCount;
+		return true;
+	};
+
 	const int32 Triangle0 = TargetDynamicMesh.AppendTriangle(Vertex0, Vertex2, Vertex1);
 	const int32 Triangle1 = TargetDynamicMesh.AppendTriangle(Vertex0, Vertex3, Vertex2);
 	if (Triangle0 >= 0)
 	{
 		NormalOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Normal0, Normal2, Normal1));
+		if (UVOverlay)
+		{
+			UVOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(UV0, UV2, UV1));
+		}
 		ColorOverlay->SetTriangle(Triangle0, UE::Geometry::FIndex3i(Color0, Color2, Color1));
 		if (MaterialIdAttribute)
 		{
 			MaterialIdAttribute->SetValue(Triangle0, MaterialId);
 		}
 	}
+	else
+	{
+		++RenderData.FailedTriangleCount;
+		if (bAllowUnweldedFallbackForFailedTriangles)
+		{
+			AppendUnweldedTriangleWithAttributes(
+				QuadPoints[0],
+				QuadPoints[2],
+				QuadPoints[1],
+				FVector2f(0.0f, 0.0f),
+				FVector2f(1.0f, 1.0f),
+				FVector2f(1.0f, 0.0f));
+		}
+	}
 	if (Triangle1 >= 0)
 	{
 		NormalOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Normal0, Normal3, Normal2));
+		if (UVOverlay)
+		{
+			UVOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(UV0, UV3, UV2));
+		}
 		ColorOverlay->SetTriangle(Triangle1, UE::Geometry::FIndex3i(Color0, Color3, Color2));
 		if (MaterialIdAttribute)
 		{
 			MaterialIdAttribute->SetValue(Triangle1, MaterialId);
+		}
+	}
+	else
+	{
+		++RenderData.FailedTriangleCount;
+		if (bAllowUnweldedFallbackForFailedTriangles)
+		{
+			AppendUnweldedTriangleWithAttributes(
+				QuadPoints[0],
+				QuadPoints[3],
+				QuadPoints[2],
+				FVector2f(0.0f, 0.0f),
+				FVector2f(0.0f, 1.0f),
+				FVector2f(1.0f, 1.0f));
 		}
 	}
 
@@ -151,6 +247,10 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		if (BackTriangle0 >= 0)
 		{
 			NormalOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(BackNormal0, BackNormal1, BackNormal2));
+			if (UVOverlay)
+			{
+				UVOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(UV0, UV1, UV2));
+			}
 			ColorOverlay->SetTriangle(BackTriangle0, UE::Geometry::FIndex3i(BackColor0, BackColor1, BackColor2));
 			if (MaterialIdAttribute)
 			{
@@ -160,6 +260,10 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		if (BackTriangle1 >= 0)
 		{
 			NormalOverlay->SetTriangle(BackTriangle1, UE::Geometry::FIndex3i(BackNormal0, BackNormal2, BackNormal3));
+			if (UVOverlay)
+			{
+				UVOverlay->SetTriangle(BackTriangle1, UE::Geometry::FIndex3i(UV0, UV2, UV3));
+			}
 			ColorOverlay->SetTriangle(BackTriangle1, UE::Geometry::FIndex3i(BackColor0, BackColor2, BackColor3));
 			if (MaterialIdAttribute)
 			{

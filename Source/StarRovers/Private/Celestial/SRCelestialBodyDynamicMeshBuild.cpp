@@ -71,6 +71,7 @@ bool ASRCelestialBody::BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPre
 	{
 		FaceDynamicMesh.EnableAttributes();
 		FaceDynamicMesh.Attributes()->EnablePrimaryColors();
+		FaceDynamicMesh.Attributes()->SetNumUVLayers(1);
 		FaceDynamicMesh.Attributes()->EnableMaterialID();
 	}
 	PreBuildMeshSetupMs = SRCelestialElapsedMilliseconds(PreBuildStageStart);
@@ -274,6 +275,28 @@ bool ASRCelestialBody::BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPre
 		TerrainEdgeAccumulator.GetPendingEdgeCount(),
 		TerrainEdgeStats.MaxPendingEdgeCount,
 		PendingTerrainEdgeReserveCount));
+	const int32 SideWallUnpatchedTriangleCount = FMath::Max(
+		0,
+		TerrainEdgeStats.SideWallFailedTriangleCount - TerrainEdgeStats.SideWallFallbackTriangleCount);
+	const TCHAR* SideWallPatchStatus = SideWallUnpatchedTriangleCount > 0
+		? TEXT("UnpatchedTriangles")
+		: (TerrainEdgeStats.SideWallFailedTriangleCount > 0 ? TEXT("FallbackPatched") : TEXT("NoFallbackNeeded"));
+	FSRTimingLog::AddLine(FString::Printf(
+		TEXT("DynamicMesh '%s' BaseMetadata.SideWallPatch FailedTriangles=%d FallbackTriangles=%d UnpatchedTriangles=%d Status=%s"),
+		*GetName(),
+		TerrainEdgeStats.SideWallFailedTriangleCount,
+		TerrainEdgeStats.SideWallFallbackTriangleCount,
+		SideWallUnpatchedTriangleCount,
+		SideWallPatchStatus));
+	if (SideWallUnpatchedTriangleCount > 0)
+	{
+		UE_LOG(
+			LogStarRoversCelestial,
+			Warning,
+			TEXT("Dynamic mesh '%s' left %d side-wall triangles unpatched after fallback."),
+			*GetName(),
+			SideWallUnpatchedTriangleCount);
+	}
 	FSRTimingLog::AddLine(FString::Printf(
 		TEXT("DynamicMesh '%s' BaseMetadata.BuildBreakdown Profile=%s BaseGridSource=%s BaseSourceMetaSource=%s BiomeMap=%.2f ms Snapshot=%.2f ms BaseGrid=%.2f ms BaseSourceMeta=%.2f ms CellLoop=%.2f ms TerrainSample=%.2f ms Transform=%.2f ms SourceHash=%.2f ms SurfaceAppend=%.2f ms ColorData=%.2f ms CacheCell=%.2f ms EdgeRegister=%.2f ms"),
 		*GetName(),

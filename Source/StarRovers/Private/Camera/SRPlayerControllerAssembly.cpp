@@ -187,7 +187,7 @@ bool ASRPlayerController::BeginAssemblyAreaDeletionDrag()
 
 bool ASRPlayerController::ContinueAssemblyAreaDeletionDrag()
 {
-	if (bAssemblyAreaDeletionDragHoldActive
+	if (RuntimeState.bAssemblyAreaDeletionDragHoldActive
 		&& AssemblyComponent
 		&& !AssemblyComponent->IsAreaSelectionDragActive()
 		&& !AssemblyComponent->IsAreaDeletionDragActive())

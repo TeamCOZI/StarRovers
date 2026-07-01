@@ -176,7 +176,7 @@ void ASRPlayerController::RequestFocusActor(AActor* NewFocusedActor, bool bSnapI
 
 void ASRPlayerController::TryAutoFocusPrimaryStar()
 {
-	if (!bPendingInitialPrimaryStarFocus)
+	if (!RuntimeState.bPendingInitialPrimaryStarFocus)
 	{
 		return;
 	}
@@ -189,7 +189,7 @@ void ASRPlayerController::TryAutoFocusPrimaryStar()
 
 	if (IsValid(CameraPawn->GetFocusedActor()) || IsValid(SelectedActor))
 	{
-		bPendingInitialPrimaryStarFocus = false;
+		RuntimeState.bPendingInitialPrimaryStarFocus = false;
 		return;
 	}
 
@@ -212,7 +212,7 @@ void ASRPlayerController::TryAutoFocusPrimaryStar()
 	}
 
 	RequestFocusActor(PrimaryStarActor, true);
-	bPendingInitialPrimaryStarFocus = false;
+	RuntimeState.bPendingInitialPrimaryStarFocus = false;
 }
 
 void ASRPlayerController::TryBindCameraPawnFocusEvents()
@@ -286,7 +286,7 @@ void ASRPlayerController::HandleCelestialBodiesChanged()
 
 void ASRPlayerController::HandlePrimaryStarActorChanged(AActor* NewPrimaryStarActor)
 {
-	if (!bPendingInitialPrimaryStarFocus)
+	if (!RuntimeState.bPendingInitialPrimaryStarFocus)
 	{
 		return;
 	}
@@ -297,7 +297,7 @@ void ASRPlayerController::HandlePrimaryStarActorChanged(AActor* NewPrimaryStarAc
 	}
 
 	RequestFocusActor(NewPrimaryStarActor, true);
-	bPendingInitialPrimaryStarFocus = false;
+	RuntimeState.bPendingInitialPrimaryStarFocus = false;
 }
 
 void ASRPlayerController::UpdateSelection(AActor* NewSelectedActor)

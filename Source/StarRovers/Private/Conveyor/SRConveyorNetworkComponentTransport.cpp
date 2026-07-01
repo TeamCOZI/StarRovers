@@ -31,7 +31,7 @@ namespace
 
 int32 USRConveyorNetworkComponent::GetConveyorItemCount() const
 {
-	return ConveyorItemsByLane.Num();
+	return TransportState.GetItemCount();
 }
 
 void USRConveyorNetworkComponent::ProcessConveyorTransport(USRPlanetSurfaceGrid* SurfaceGrid, float DeltaTime)
@@ -52,7 +52,7 @@ void USRConveyorNetworkComponent::ProcessConveyorTransport(USRPlanetSurfaceGrid*
 	}
 
 	TArray<FSRConveyorLaneKey> ItemLaneKeys;
-	ConveyorItemsByLane.GetKeys(ItemLaneKeys);
+	TransportState.ItemsByLane.GetKeys(ItemLaneKeys);
 	SortConveyorLaneKeys(ItemLaneKeys);
 
 	int32 TransferCount = 0;
@@ -60,7 +60,7 @@ void USRConveyorNetworkComponent::ProcessConveyorTransport(USRPlanetSurfaceGrid*
 	const float ProgressDelta = ClampedDeltaTime * FMath::Max(0.01f, ItemSpeedCellsPerSecond);
 	for (const FSRConveyorLaneKey& LaneKey : ItemLaneKeys)
 	{
-		const FSRConveyorItem* ExistingItem = ConveyorItemsByLane.Find(LaneKey);
+		const FSRConveyorItem* ExistingItem = TransportState.ItemsByLane.Find(LaneKey);
 		FSRConveyorSegment* Segment = Segments.Find(LaneKey);
 		if (!ExistingItem || !Segment)
 		{
@@ -139,7 +139,7 @@ void USRConveyorNetworkComponent::ProcessConveyorTransport(USRPlanetSurfaceGrid*
 		}
 	}
 
-	ConveyorItemsByLane = MoveTemp(NextItemsByLane);
+	TransportState.ItemsByLane = MoveTemp(NextItemsByLane);
 }
 
 bool USRConveyorNetworkComponent::TryResolveNextLane(
@@ -201,7 +201,7 @@ bool USRConveyorNetworkComponent::TryResolveNextTransferLane(
 		const int32 OutputIndex = (StartIndex + AttemptIndex) % OutputCount;
 		FSRConveyorLaneKey CandidateLaneKey;
 		if (!TryResolveNextLaneByDirection(SurfaceGrid, Segment, OutputDirections[OutputIndex], CandidateLaneKey)
-			|| ConveyorItemsByLane.Contains(CandidateLaneKey)
+			|| TransportState.ItemsByLane.Contains(CandidateLaneKey)
 			|| NextItemsByLane.Contains(CandidateLaneKey))
 		{
 			continue;
@@ -266,7 +266,7 @@ bool USRConveyorNetworkComponent::CanTransferIntoMergeConveyorSegment(
 		bool bInputReady = InputDirection == IncomingInputDirection;
 		if (!bInputReady)
 		{
-			if (const FSRConveyorItem* SourceItem = ConveyorItemsByLane.Find(SourceLaneKey))
+			if (const FSRConveyorItem* SourceItem = TransportState.ItemsByLane.Find(SourceLaneKey))
 			{
 				bInputReady = SourceItem->Progress >= 1.0f;
 			}
@@ -324,6 +324,6 @@ bool USRConveyorNetworkComponent::TryPullFacilityOutputToConveyor(
 
 bool USRConveyorNetworkComponent::ShouldKeepTransportTickEnabled() const
 {
-	return (bAutoTransportItems && (!Segments.IsEmpty() || !ConveyorItemsByLane.IsEmpty()))
-		|| (bShowTransportItemVisuals && !ConveyorItemsByLane.IsEmpty());
+	return (bAutoTransportItems && (!Segments.IsEmpty() || TransportState.HasItems()))
+		|| (bShowTransportItemVisuals && TransportState.HasItems());
 }

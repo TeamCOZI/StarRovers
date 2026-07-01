@@ -3,9 +3,10 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
-#include "Celestial/SRCelestialBody.h"
+#include "Celestial/SRCelestialBodyDataTypes.h"
 #include "SRSolarSystemGenerator.generated.h"
 
+class ASRCelestialBody;
 class USRMoonDataAsset;
 class USRPlanetDataAsset;
 class USRStarDataAsset;

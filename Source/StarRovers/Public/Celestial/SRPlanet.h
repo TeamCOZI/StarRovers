@@ -7,14 +7,16 @@
 class ULineBatchComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UDynamicMeshComponent;
+class USRDynamicMeshBaseDataAsset;
 class USRPlanetSurfaceGrid;
 class USRConveyorNetworkComponent;
 class USRStructureInstanceManagerComponent;
 class USROrbit;
 class USplineMeshComponent;
 class UStaticMesh;
-class UStaticMeshComponent;
 class USRFacilityNetworkComponent;
+class USRCelestialRingMeshComponent;
 
 UCLASS(Blueprintable)
 class STARROVERS_API ASRPlanet : public ASRCelestialBody
@@ -40,11 +42,11 @@ public:
 	virtual void RefreshRotationAxisLineVisual() override;
 
 protected:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "OceanStaticMesh"))
-	TObjectPtr<UStaticMeshComponent> OceanStaticMesh;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "OceanDynamicMesh"))
+	TObjectPtr<UDynamicMeshComponent> OceanDynamicMesh;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "AtmosphereStaticMesh"))
-	TObjectPtr<UStaticMeshComponent> AtmosphereStaticMesh;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "AtmosphereDynamicMesh"))
+	TObjectPtr<UDynamicMeshComponent> AtmosphereDynamicMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "Orbit"))
 	TObjectPtr<USROrbit> Orbit;
@@ -119,19 +121,33 @@ protected:
 	TObjectPtr<UMaterialInterface> RotationAxisMaterial;
 
 private:
-	void ApplyOceanStaticMeshSettings();
-	float ResolveOceanScale() const;
-	float EstimateProceduralOceanScaleMultiplier() const;
-	void ApplyAtmosphereStaticMeshSettings();
-	float ResolveAtmosphereScale() const;
+	void ApplyOceanMeshSettings();
+	void ApplyOceanDynamicMeshSettings();
+	float ResolveOceanDynamicMeshScale() const;
+	float ComputeProceduralOceanLocalRadius() const;
+	void ApplyAtmosphereMeshSettings();
+	void ApplyAtmosphereDynamicMeshSettings();
+	virtual void ApplyToonOutlineSettings() override;
+	void ConfigureShellDynamicMeshComponent(UDynamicMeshComponent* ShellMesh) const;
+	float ResolveAtmosphereDynamicMeshScale() const;
 	float ComputeRotationAxisSurfaceRadius() const;
 	float ComputeRotationAxisLineRadius() const;
+	bool BuildShellDynamicMesh(
+		UDynamicMeshComponent* TargetComponent,
+		USRDynamicMeshBaseDataAsset* ShellBaseDataAsset,
+		TObjectPtr<USRDynamicMeshBaseDataAsset>& InOutCachedBaseDataAsset,
+		uint32& InOutCachedBuildHash,
+		const TCHAR* ShellName);
+	uint32 ComputeShellDynamicMeshBuildHash(const USRDynamicMeshBaseDataAsset* ShellBaseDataAsset) const;
 	void EnsureSurfaceGrid();
 	void HideSurfaceGrid();
 	bool SupportsSurfaceGrid() const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "OrbitLineBatch", AllowPrivateAccess = "true"))
 	TObjectPtr<ULineBatchComponent> OrbitLineBatch;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "OrbitRingVisual", AllowPrivateAccess = "true"))
+	TObjectPtr<USRCelestialRingMeshComponent> OrbitRingVisual;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "RotationAxisNorthSpline", AllowPrivateAccess = "true"))
 	TObjectPtr<USplineMeshComponent> RotationAxisNorthSpline;
@@ -154,8 +170,8 @@ private:
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "bHasOcean", AllowPrivateAccess = "true"))
 	bool bHasOcean;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "OceanMesh", AllowPrivateAccess = "true"))
-	TObjectPtr<UStaticMesh> OceanMesh;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "OceanDynamicMeshBaseDataAsset", AllowPrivateAccess = "true"))
+	TObjectPtr<USRDynamicMeshBaseDataAsset> OceanDynamicMeshBaseDataAsset;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "OceanMaterial", AllowPrivateAccess = "true"))
 	TObjectPtr<UMaterialInterface> OceanMaterial;
@@ -166,13 +182,22 @@ private:
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "bHasAtmosphere", AllowPrivateAccess = "true"))
 	bool bHasAtmosphere;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "AtmosphereMesh", AllowPrivateAccess = "true"))
-	TObjectPtr<UStaticMesh> AtmosphereMesh;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "AtmosphereDynamicMeshBaseDataAsset", AllowPrivateAccess = "true"))
+	TObjectPtr<USRDynamicMeshBaseDataAsset> AtmosphereDynamicMeshBaseDataAsset;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "AtmosphereMaterial", AllowPrivateAccess = "true"))
 	TObjectPtr<UMaterialInterface> AtmosphereMaterial;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Runtime", meta = (DisplayName = "AtmosphereScaleMultiplier", AllowPrivateAccess = "true"))
 	float AtmosphereScaleMultiplier;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRDynamicMeshBaseDataAsset> CachedOceanDynamicMeshBaseDataAsset;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRDynamicMeshBaseDataAsset> CachedAtmosphereDynamicMeshBaseDataAsset;
+
+	uint32 CachedOceanDynamicMeshBuildHash = 0;
+	uint32 CachedAtmosphereDynamicMeshBuildHash = 0;
 
 };

@@ -308,13 +308,13 @@ bool USRPlanetSurfaceGrid::ProjectWorldLocationToCell(const FVector& WorldLocati
 bool USRPlanetSurfaceGrid::GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const
 {
 	const int32 FlatIndex = GetFlatCellIndex(CellId);
-	if (CellIndexByFlatId.IsValidIndex(FlatIndex))
+	if (CellIndexState.IndexByFlatId.IsValidIndex(FlatIndex))
 	{
-		OutIndex = CellIndexByFlatId[FlatIndex];
+		OutIndex = CellIndexState.IndexByFlatId[FlatIndex];
 		return Cells.IsValidIndex(OutIndex);
 	}
 
-	if (const int32* FoundIndex = CellIndexById.Find(CellId))
+	if (const int32* FoundIndex = CellIndexState.IndexById.Find(CellId))
 	{
 		OutIndex = *FoundIndex;
 		return Cells.IsValidIndex(OutIndex);
@@ -336,19 +336,19 @@ int32 USRPlanetSurfaceGrid::GetFlatCellIndex(const FSRPlanetSurfaceGridCellId& C
 
 void USRPlanetSurfaceGrid::RebuildCellIndex()
 {
-	CellIndexById.Reset();
-	CellIndexByFlatId.Init(INDEX_NONE, 6 * FaceResolution * FaceResolution);
+	CellIndexState.IndexById.Reset();
+	CellIndexState.IndexByFlatId.Init(INDEX_NONE, 6 * FaceResolution * FaceResolution);
 
 	for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
 	{
 		const int32 FlatIndex = GetFlatCellIndex(Cells[CellIndex].CellId);
-		if (CellIndexByFlatId.IsValidIndex(FlatIndex))
+		if (CellIndexState.IndexByFlatId.IsValidIndex(FlatIndex))
 		{
-			CellIndexByFlatId[FlatIndex] = CellIndex;
+			CellIndexState.IndexByFlatId[FlatIndex] = CellIndex;
 		}
 		else
 		{
-			CellIndexById.Add(Cells[CellIndex].CellId, CellIndex);
+			CellIndexState.IndexById.Add(Cells[CellIndex].CellId, CellIndex);
 		}
 	}
 }
@@ -411,9 +411,9 @@ FSRPlanetSurfaceGridCellInfo USRPlanetSurfaceGrid::ResolveRuntimeCellInfo(const 
 
 void USRPlanetSurfaceGrid::RebuildCellInfoIndex()
 {
-	CellInfoById.Reset();
-	CellInfoByFlatId.Reset();
-	CellInfoByFlatId.SetNum(6 * FaceResolution * FaceResolution);
+	CellIndexState.InfoById.Reset();
+	CellIndexState.InfoByFlatId.Reset();
+	CellIndexState.InfoByFlatId.SetNum(6 * FaceResolution * FaceResolution);
 
 	int32 FaceCellCounts[6] = {};
 	for (const FSRPlanetSurfaceGridCell& Cell : Cells)
@@ -429,16 +429,16 @@ void USRPlanetSurfaceGrid::RebuildCellInfoIndex()
 bool USRPlanetSurfaceGrid::GetStoredCellInfoById(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCellInfo& OutCellInfo) const
 {
 	const int32 FlatIndex = GetFlatCellIndex(CellId);
-	if (CellInfoByFlatId.IsValidIndex(FlatIndex)
-		&& CellIndexByFlatId.IsValidIndex(FlatIndex)
-		&& Cells.IsValidIndex(CellIndexByFlatId[FlatIndex])
-		&& CellInfoByFlatId[FlatIndex].CellId == CellId)
+	if (CellIndexState.InfoByFlatId.IsValidIndex(FlatIndex)
+		&& CellIndexState.IndexByFlatId.IsValidIndex(FlatIndex)
+		&& Cells.IsValidIndex(CellIndexState.IndexByFlatId[FlatIndex])
+		&& CellIndexState.InfoByFlatId[FlatIndex].CellId == CellId)
 	{
-		OutCellInfo = CellInfoByFlatId[FlatIndex];
+		OutCellInfo = CellIndexState.InfoByFlatId[FlatIndex];
 		return true;
 	}
 
-	if (const FSRPlanetSurfaceGridCellInfo* FoundCellInfo = CellInfoById.Find(CellId))
+	if (const FSRPlanetSurfaceGridCellInfo* FoundCellInfo = CellIndexState.InfoById.Find(CellId))
 	{
 		OutCellInfo = *FoundCellInfo;
 		return true;
@@ -450,12 +450,12 @@ bool USRPlanetSurfaceGrid::GetStoredCellInfoById(const FSRPlanetSurfaceGridCellI
 void USRPlanetSurfaceGrid::StoreCellInfo(const FSRPlanetSurfaceGridCellInfo& CellInfo)
 {
 	const int32 FlatIndex = GetFlatCellIndex(CellInfo.CellId);
-	if (CellInfoByFlatId.IsValidIndex(FlatIndex))
+	if (CellIndexState.InfoByFlatId.IsValidIndex(FlatIndex))
 	{
-		CellInfoByFlatId[FlatIndex] = CellInfo;
+		CellIndexState.InfoByFlatId[FlatIndex] = CellInfo;
 	}
 	else
 	{
-		CellInfoById.Add(CellInfo.CellId, CellInfo);
+		CellIndexState.InfoById.Add(CellInfo.CellId, CellInfo);
 	}
 }

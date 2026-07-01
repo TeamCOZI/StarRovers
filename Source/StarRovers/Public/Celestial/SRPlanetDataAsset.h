@@ -2,13 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Celestial/SRCelestialBody.h"
+#include "Celestial/SRCelestialBodyDataTypes.h"
 #include "SRPlanetDataAsset.generated.h"
 
 class UMaterialInterface;
-class USRDynamicMeshBaseDataAsset;
+class USRPlanetShapeDataAsset;
 class USRPlanetTerrainProfileDataAsset;
-class UStaticMesh;
 
 UCLASS(BlueprintType)
 class STARROVERS_API USRPlanetDataAsset : public UDataAsset
@@ -34,11 +33,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "Scale", ClampMin = "0.0"))
 	float Scale = 20.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "DynamicMeshBaseDataAsset"))
-	TObjectPtr<USRDynamicMeshBaseDataAsset> DynamicMeshBaseDataAsset = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Shape", meta = (DisplayName = "ShapeDataAsset", ToolTip = "Required shared shape source for terrain, ocean, and atmosphere meshes. Referenced assets should be editor-baked and only assigned at runtime."))
+	TObjectPtr<USRPlanetShapeDataAsset> ShapeDataAsset = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "Material"))
 	TObjectPtr<UMaterialInterface> Material = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Visual", meta = (DisplayName = "ToonOutlineSettings"))
+	FSRToonOutlineSettings ToonOutlineSettings;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "Mass", ClampMin = "0.0"))
 	float Mass = 200.0f;
@@ -70,9 +72,6 @@ public:
 	UPROPERTY()
 	float OceanScaleMultiplier = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "OceanMesh", EditCondition = "bHasOcean"))
-	TObjectPtr<UStaticMesh> OceanMesh = nullptr;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Ocean", meta = (DisplayName = "OceanMaterial", EditCondition = "bHasOcean"))
 	TObjectPtr<UMaterialInterface> OceanMaterial = nullptr;
 
@@ -81,9 +80,6 @@ public:
 
 	UPROPERTY()
 	float AtmosphereScaleMultiplier = 1.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Atmosphere", meta = (DisplayName = "AtmosphereMesh", EditCondition = "bHasAtmosphere"))
-	TObjectPtr<UStaticMesh> AtmosphereMesh = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Atmosphere", meta = (DisplayName = "AtmosphereMaterial", EditCondition = "bHasAtmosphere"))
 	TObjectPtr<UMaterialInterface> AtmosphereMaterial = nullptr;

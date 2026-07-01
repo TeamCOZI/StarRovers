@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Celestial/SRCelestialBody.h"
+#include "Celestial/SRCelestialBodyDataTypes.h"
 #include "SRStarDataAsset.generated.h"
 
 class UMaterialInterface;

@@ -201,7 +201,7 @@ void USRConveyorNetworkComponent::ClearConveyors()
 
 	Segments.Reset();
 	VisualPaths.Reset();
-	ConveyorItemsByLane.Reset();
+	TransportState.ResetItems();
 	DestroyConveyorItemVisuals();
 	DestroyPlacedConveyorActors();
 	PendingConveyorActorRefreshSurfaceGrid.Reset();

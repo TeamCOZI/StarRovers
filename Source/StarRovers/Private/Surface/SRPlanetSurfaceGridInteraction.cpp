@@ -5,15 +5,13 @@ using StarRovers::Surface::Interaction::FSRSurfaceGridInteractionPatchBuilder;
 
 void USRPlanetSurfaceGrid::BeginInteractionHighlightBatch()
 {
-	++InteractionHighlightBatchDepth;
+	InteractionBatch.Begin();
 }
 
 void USRPlanetSurfaceGrid::EndInteractionHighlightBatch()
 {
-	InteractionHighlightBatchDepth = FMath::Max(0, InteractionHighlightBatchDepth - 1);
-	if (InteractionHighlightBatchDepth == 0 && bHasBatchedInteractionHighlightRefresh)
+	if (InteractionBatch.EndAndShouldRefresh())
 	{
-		bHasBatchedInteractionHighlightRefresh = false;
 		RefreshInteractionHighlight();
 	}
 }

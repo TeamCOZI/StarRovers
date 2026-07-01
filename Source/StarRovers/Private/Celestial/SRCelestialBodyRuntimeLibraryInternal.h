@@ -24,6 +24,8 @@ namespace StarRovers::CelestialBodyRuntime
 		extern const FName GravityLine;
 		extern const FName GravityLineRoot;
 		extern const FName GravityLineSegment;
+		extern const FName OrbitLine;
+		extern const FName OrbitLineRoot;
 		extern const FName RotationAxisLine;
 		extern const FName RotationAxisLineRoot;
 	}
