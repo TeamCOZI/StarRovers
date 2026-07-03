@@ -16,6 +16,12 @@ AActor* ASRPlayerController::GetSelectedActor() const
 	return SelectedActor;
 }
 
+void ASRPlayerController::RequestActorFocus(AActor* NewFocusedActor, bool bSnapImmediately)
+{
+	RuntimeState.bPendingInitialPrimaryStarFocus = false;
+	RequestFocusActor(NewFocusedActor, bSnapImmediately);
+}
+
 void ASRPlayerController::ClearSelection()
 {
 	UpdateSelection(nullptr);

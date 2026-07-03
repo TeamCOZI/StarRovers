@@ -225,6 +225,11 @@ FVector USROrbit::ComputeOrbitCenterLocation() const
 	return FVector(OrbitAnchorLocation.X, ParentLocation.Y, ParentLocation.Z);
 }
 
+FVector USROrbit::ComputeOrbitPlaneNormal() const
+{
+	return FVector::XAxisVector;
+}
+
 FVector USROrbit::ComputeOrbitLocationAtCurrentPhase() const
 {
 	return ComputeOrbitLocationAtAngle(ComputeOrbitAngleRadians());

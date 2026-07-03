@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Logistics/SRSpaceLogisticsTypes.h"
 #include "SRFacilityControlWidget.generated.h"
 
 class AActor;
@@ -36,6 +37,129 @@ private:
 	FName ResourceId = NAME_None;
 };
 
+UCLASS()
+class STARROVERS_API USRHubRouteDestinationAction : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	void Initialize(USRFacilityControlWidget* InOwnerWidget, const FSRHubEndpoint& InDestinationHub, UButton* InButton);
+
+	UFUNCTION()
+	void HandleClicked();
+
+	bool TryHandleManualClick(const FVector2D& ScreenPosition);
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<USRFacilityControlWidget> OwnerWidget;
+
+	UPROPERTY(Transient)
+	FSRHubEndpoint DestinationHub;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> Button;
+};
+
+UCLASS()
+class STARROVERS_API USRHubRouteLaunchAction : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	void Initialize(USRFacilityControlWidget* InOwnerWidget, const FSRHubEndpoint& InDestinationHub, UButton* InButton);
+
+	UFUNCTION()
+	void HandleClicked();
+
+	bool TryHandleManualClick(const FVector2D& ScreenPosition);
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<USRFacilityControlWidget> OwnerWidget;
+
+	UPROPERTY(Transient)
+	FSRHubEndpoint DestinationHub;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> Button;
+};
+
+UCLASS()
+class STARROVERS_API USRHubRouteRemovalAction : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	void Initialize(USRFacilityControlWidget* InOwnerWidget, FName InRouteId, UButton* InButton);
+
+	UFUNCTION()
+	void HandleClicked();
+
+	bool TryHandleManualClick(const FVector2D& ScreenPosition);
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<USRFacilityControlWidget> OwnerWidget;
+
+	FName RouteId = NAME_None;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> Button;
+};
+
+UCLASS()
+class STARROVERS_API USRHubRouteDebugOrbitAction : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	void Initialize(USRFacilityControlWidget* InOwnerWidget, UButton* InButton);
+
+	UFUNCTION()
+	void HandleClicked();
+
+	bool TryHandleManualClick(const FVector2D& ScreenPosition);
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<USRFacilityControlWidget> OwnerWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> Button;
+};
+
+UCLASS()
+class STARROVERS_API USRHubRouteSettingAction : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	void InitializeMaxCargoStackCount(USRFacilityControlWidget* InOwnerWidget, FName InRouteId, int32 InMaxCargoStackCount, UButton* InButton);
+	void InitializeReturnEmptyWhenNoCargo(USRFacilityControlWidget* InOwnerWidget, FName InRouteId, bool bInReturnEmptyWhenNoCargo, UButton* InButton);
+	void InitializeCargoResourceId(USRFacilityControlWidget* InOwnerWidget, FName InRouteId, FName InCargoResourceId, UButton* InButton);
+
+	UFUNCTION()
+	void HandleClicked();
+
+	bool TryHandleManualClick(const FVector2D& ScreenPosition);
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<USRFacilityControlWidget> OwnerWidget;
+
+	FName RouteId = NAME_None;
+	int32 MaxCargoStackCount = 1;
+	bool bReturnEmptyWhenNoCargo = true;
+	FName CargoResourceId = NAME_None;
+	bool bSetMaxCargoStackCount = false;
+	bool bSetReturnEmptyWhenNoCargo = false;
+	bool bSetCargoResourceId = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> Button;
+};
+
 UCLASS(Blueprintable)
 class STARROVERS_API USRFacilityControlWidget : public UUserWidget
 {
@@ -66,6 +190,27 @@ public:
 
 	bool AddDebugInputResourceToPort(int32 InputPortIndex, FName ResourceId);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool CreateRouteToHubEndpoint(const FSRHubEndpoint& DestinationHub);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool SelectRouteDestinationHubEndpoint(const FSRHubEndpoint& DestinationHub);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool LaunchDebugLocalOrbitRoute();
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool RemoveHubRoute(FName RouteId);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool SetHubRouteMaxCargoStackCount(FName RouteId, int32 MaxCargoStackCount);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool SetHubRouteReturnEmptyWhenNoCargo(FName RouteId, bool bReturnEmptyWhenNoCargo);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool SetHubRouteCargoResourceId(FName RouteId, FName CargoResourceId);
+
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "FocusedActor"))
 	TWeakObjectPtr<AActor> FocusedActor;
@@ -95,7 +240,7 @@ protected:
 	TObjectPtr<UTextBlock> InputResourceTextBlock;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UVerticalBox> InputResourceSlotBox;
+	TObjectPtr<UHorizontalBox> InputResourceSlotBox;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> EffectsTextBlock;
@@ -110,13 +255,19 @@ protected:
 	TObjectPtr<UTextBlock> OutputPreviewTextBlock;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UVerticalBox> OutputResourceSlotBox;
+	TObjectPtr<UHorizontalBox> OutputResourceSlotBox;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> InputInventoryTextBlock;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UHorizontalBox> InputInventorySlotBox;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> OutputInventoryTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UHorizontalBox> OutputInventorySlotBox;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> DebugAddTerriteButton;
@@ -134,7 +285,31 @@ protected:
 	TObjectPtr<UTextBlock> DeliverStatusTextBlock;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> HubRouteTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UHorizontalBox> HubDestinationButtonBox;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> HubRouteStatusTextBlock;
+
+	UPROPERTY(Transient)
 	TArray<TObjectPtr<USRFacilityInputSlotDebugAction>> InputSlotDebugActions;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USRHubRouteDestinationAction>> HubRouteDestinationActions;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USRHubRouteLaunchAction>> HubRouteLaunchActions;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USRHubRouteRemovalAction>> HubRouteRemovalActions;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USRHubRouteDebugOrbitAction>> HubRouteDebugOrbitActions;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USRHubRouteSettingAction>> HubRouteSettingActions;
 
 private:
 	UFUNCTION()
@@ -160,10 +335,22 @@ private:
 	void RefreshControlText();
 	void RefreshInputResourceSlots(USRFacilityNetworkComponent* FacilityNetwork, const FSRFacilityInstance& FacilityInstance);
 	void RefreshOutputResourceSlots(USRFacilityNetworkComponent* FacilityNetwork, const FSRFacilityInstance& FacilityInstance);
+	void RefreshInputInventorySlots(USRFacilityNetworkComponent* FacilityNetwork, const FSRFacilityInstance& FacilityInstance, bool bIsMiningFacility);
+	void RefreshOutputInventorySlots(const FSRFacilityInstance& FacilityInstance);
+	void RefreshHubRouteSection(USRFacilityNetworkComponent* FacilityNetwork, const FSRFacilityInstance& FacilityInstance);
 	USRFacilityNetworkComponent* GetFocusedFacilityNetwork() const;
 	bool IsScreenPositionOverControlPanel(const FVector2D& ScreenPosition) const;
 
 	bool bUpdatingControls = false;
 	FString InputResourcePanelSignature;
 	FString OutputResourcePanelSignature;
+	FString InputInventoryPanelSignature;
+	FString OutputInventoryPanelSignature;
+	FString HubRoutePanelSignature;
+	FString LastHubRouteStatus;
+
+	UPROPERTY(Transient)
+	FSRHubEndpoint SelectedHubRouteDestination;
+
+	bool bHasSelectedHubRouteDestination = false;
 };

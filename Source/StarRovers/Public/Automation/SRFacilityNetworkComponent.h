@@ -49,6 +49,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility")
 	bool ExtractOutputResource(FName OccupantId, FSRResourceInstance& OutResourceInstance);
 
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Hub")
+	bool IsHubFacility(FName OccupantId) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool TryTakeHubOutboundCargo(FName OccupantId, int32 MaxStackCount, FSRResourceInstance& OutCargo);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool TryTakeHubOutboundCargoByResource(FName OccupantId, FName ResourceId, int32 MaxStackCount, FSRResourceInstance& OutCargo);
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Hub")
+	void GetHubOutboundCargoResourceIds(FName OccupantId, TArray<FName>& OutResourceIds) const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Hub")
+	bool CanStoreHubInboundCargo(FName OccupantId, const FSRResourceInstance& Cargo) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool TryStoreHubInboundCargo(FName OccupantId, const FSRResourceInstance& Cargo);
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility")
 	bool SetFacilityTemperatureState(FName OccupantId, ESRFacilityTemperatureState TemperatureState);
 
@@ -150,15 +168,16 @@ private:
 	void InitializeFacilityPortInventories(FSRFacilityInstance& FacilityInstance);
 	void RefreshFacilityAggregateInventories(FSRFacilityInstance& FacilityInstance) const;
 	bool GatherPendingInputResources(const FSRFacilityInstance& FacilityInstance, TArray<FSRResourceInstance>& OutInputResources) const;
-	bool CanStoreOutputResources(const FSRFacilityInstance& FacilityInstance, int32 OutputResourceCount) const;
+	bool CanStoreOutputResources(const FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& OutputResources) const;
 	void StoreOutputResources(FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& OutputResources);
-	FSRFacilityPortInventory* FindInputPortInventoryForDirectAdd(FSRFacilityInstance& FacilityInstance, int32 PreferredPortIndex = INDEX_NONE);
+	FSRFacilityPortInventory* FindInputPortInventoryForDirectAdd(FSRFacilityInstance& FacilityInstance, const FSRResourceInstance& ResourceInstance, int32 PreferredPortIndex = INDEX_NONE);
 
 	int32 ProcessFacilities(float DeltaTime);
 	FSRFacilityPortInventory* FindConnectedInputPortInventory(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		FSRFacilityInstance& FacilityInstance,
-		const FSRPlanetSurfaceGridCellId& ConveyorCellId);
+		const FSRPlanetSurfaceGridCellId& ConveyorCellId,
+		const FSRResourceInstance& ResourceInstance);
 	FSRFacilityPortInventory* FindConnectedOutputPortInventory(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		FSRFacilityInstance& FacilityInstance,
@@ -190,6 +209,7 @@ private:
 	int32 CountProducedOutputResources(const USRFacilityDataAsset* FacilityDataAsset) const;
 	int32 ResolvePrimaryOutputCount(const FSRFacilityInstance& FacilityInstance) const;
 	int32 ResolveRequiredOutputSlots(const FSRFacilityInstance& FacilityInstance) const;
+	void BuildFacilityOutputResources(const FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& InputResources, TArray<FSRResourceInstance>& OutOutputResources) const;
 	float ResolveProcessSeconds(const FSRFacilityInstance& FacilityInstance) const;
 	bool TryStartProcessing(FSRFacilityInstance& FacilityInstance);
 	bool TryCompleteProcessing(FSRFacilityInstance& FacilityInstance);

@@ -2,6 +2,7 @@
 
 #include "Conveyor/SRConveyorNetworkComponent.h"
 #include "GameFramework/Actor.h"
+#include "SRFacilityNetworkComponentInternal.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Structure/SRStructureSurfacePortHelpers.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
@@ -70,16 +71,21 @@ bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 	{
 		FSRFacilityInstance& FacilityInstance = FacilityPair.Value;
 		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-		FSRFacilityPortInventory* InputPortInventory = FindConnectedInputPortInventory(SurfaceGrid, FacilityInstance, ConveyorCellId);
+		FSRFacilityPortInventory* InputPortInventory = FindConnectedInputPortInventory(SurfaceGrid, FacilityInstance, ConveyorCellId, ResourceInstance);
 		if (!IsValid(FacilityDataAsset)
 			|| !InputPortInventory
-			|| (!SourceFacilityOccupantId.IsNone() && FacilityInstance.OccupantId == SourceFacilityOccupantId)
-			|| InputPortInventory->Inventory.Num() >= FMath::Max(1, InputPortInventory->Capacity))
+			|| (!SourceFacilityOccupantId.IsNone() && FacilityInstance.OccupantId == SourceFacilityOccupantId))
 		{
 			continue;
 		}
 
-		InputPortInventory->Inventory.Add(ResourceInstance);
+		FSRFacilityPortInventory SimulatedInputPortInventory = *InputPortInventory;
+		const int32 RequiredStackCount = StarRovers::FacilityNetwork::GetResourceStackCount(ResourceInstance);
+		if (StarRovers::FacilityNetwork::TryAddResourceToInventorySlot(SimulatedInputPortInventory, ResourceInstance) != RequiredStackCount
+			|| StarRovers::FacilityNetwork::TryAddResourceToInventorySlot(*InputPortInventory, ResourceInstance) != RequiredStackCount)
+		{
+			continue;
+		}
 		RefreshFacilityAggregateInventories(FacilityInstance);
 		SetComponentTickEnabled(bAutoProcessFacilities);
 		if (bLogFacilityNetworkEvents)
@@ -91,7 +97,7 @@ bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 				*FacilityInstance.OccupantId.ToString(),
 				*InputPortInventory->PortId.ToString(),
 				*ResourceInstance.ResourceId.ToString(),
-				InputPortInventory->Inventory.Num(),
+				StarRovers::FacilityNetwork::GetInventorySlotStackCount(*InputPortInventory),
 				FacilityInstance.InputInventory.Num(),
 				*GetNameSafe(GetOwner()));
 		}
@@ -119,16 +125,18 @@ bool USRFacilityNetworkComponent::TryPullOutputResourceToConveyorCell(
 		FSRFacilityInstance& FacilityInstance = FacilityPair.Value;
 		FSRFacilityPortInventory* OutputPortInventory = FindConnectedOutputPortInventory(SurfaceGrid, FacilityInstance, ConveyorCellId);
 		if (!OutputPortInventory
-			|| OutputPortInventory->Inventory.IsEmpty()
+			|| StarRovers::FacilityNetwork::GetInventorySlotStackCount(*OutputPortInventory) <= 0
 			|| !FacilityInstance.bDeliverEnabled
 			|| !IsConveyorCellConnectedToPortInventory(SurfaceGrid, FacilityInstance, *OutputPortInventory, ConveyorCellId))
 		{
 			continue;
 		}
 
-		OutResourceInstance = OutputPortInventory->Inventory[0];
+		if (!StarRovers::FacilityNetwork::TryTakeSingleResourceFromInventorySlot(*OutputPortInventory, OutResourceInstance))
+		{
+			continue;
+		}
 		OutSourceFacilityOccupantId = FacilityInstance.OccupantId;
-		OutputPortInventory->Inventory.RemoveAt(0);
 		RefreshFacilityAggregateInventories(FacilityInstance);
 		if (bLogFacilityNetworkEvents)
 		{
@@ -139,7 +147,7 @@ bool USRFacilityNetworkComponent::TryPullOutputResourceToConveyorCell(
 				*FacilityInstance.OccupantId.ToString(),
 				*OutputPortInventory->PortId.ToString(),
 				*OutResourceInstance.ResourceId.ToString(),
-				OutputPortInventory->Inventory.Num(),
+				StarRovers::FacilityNetwork::GetInventorySlotStackCount(*OutputPortInventory),
 				FacilityInstance.OutputInventory.Num(),
 				*GetNameSafe(GetOwner()));
 		}
@@ -191,7 +199,8 @@ bool USRFacilityNetworkComponent::HasConnectedConveyorForFacilityPort(FName Occu
 FSRFacilityPortInventory* USRFacilityNetworkComponent::FindConnectedInputPortInventory(
 	USRPlanetSurfaceGrid* SurfaceGrid,
 	FSRFacilityInstance& FacilityInstance,
-	const FSRPlanetSurfaceGridCellId& ConveyorCellId)
+	const FSRPlanetSurfaceGridCellId& ConveyorCellId,
+	const FSRResourceInstance& ResourceInstance)
 {
 	FSRFacilityPortInventory* FirstConnectedPortInventory = nullptr;
 	for (FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
@@ -202,7 +211,7 @@ FSRFacilityPortInventory* USRFacilityNetworkComponent::FindConnectedInputPortInv
 			{
 				FirstConnectedPortInventory = &InputPortInventory;
 			}
-			if (InputPortInventory.Inventory.Num() < FMath::Max(1, InputPortInventory.Capacity))
+			if (StarRovers::FacilityNetwork::CanInventorySlotAcceptResource(InputPortInventory, ResourceInstance))
 			{
 				return &InputPortInventory;
 			}
@@ -226,7 +235,7 @@ FSRFacilityPortInventory* USRFacilityNetworkComponent::FindConnectedOutputPortIn
 			{
 				FirstConnectedPortInventory = &OutputPortInventory;
 			}
-			if (!OutputPortInventory.Inventory.IsEmpty())
+			if (StarRovers::FacilityNetwork::GetInventorySlotStackCount(OutputPortInventory) > 0)
 			{
 				return &OutputPortInventory;
 			}

@@ -1,8 +1,10 @@
 #include "UI/SRFacilityControlWidget.h"
 
 #include "Automation/SRFacilityNetworkComponent.h"
+#include "Automation/SRFacilityNetworkComponentInternal.h"
 #include "Blueprint/WidgetTree.h"
 #include "Camera/SRPlayerController.h"
+#include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
@@ -12,6 +14,7 @@
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ProgressBar.h"
 #include "Components/ScrollBox.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -19,6 +22,8 @@
 #include "Fonts/SlateFontInfo.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/Actor.h"
+#include "Logistics/SRSpaceLogisticsSubsystem.h"
+#include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 
 namespace
 {
@@ -72,6 +77,25 @@ namespace
 		}
 	}
 
+	const TCHAR* GetResourceProcessTagLabel(ESRResourceProcessTag ResourceTag)
+	{
+		switch (ResourceTag)
+		{
+		case ESRResourceProcessTag::Responsive:
+			return TEXT("Responsive");
+		case ESRResourceProcessTag::HalfLife:
+			return TEXT("HalfLife");
+		case ESRResourceProcessTag::Volatile:
+			return TEXT("Volatile");
+		case ESRResourceProcessTag::Singularity:
+			return TEXT("Singularity");
+		case ESRResourceProcessTag::Waste:
+			return TEXT("Waste");
+		default:
+			return TEXT("Tag");
+		}
+	}
+
 	const TCHAR* GetEffectKindLabel(ESRFacilityEffectKind EffectKind)
 	{
 		switch (EffectKind)
@@ -105,6 +129,210 @@ namespace
 		default:
 			return TEXT("Effect");
 		}
+	}
+
+	const TCHAR* GetHubRoutePhaseLabel(ESRHubRoutePhase Phase)
+	{
+		switch (Phase)
+		{
+		case ESRHubRoutePhase::Idle:
+			return TEXT("Idle");
+		case ESRHubRoutePhase::WaitingForCargo:
+			return TEXT("Waiting");
+		case ESRHubRoutePhase::TravelingToDestination:
+			return TEXT("Outbound");
+		case ESRHubRoutePhase::UnloadingAtDestination:
+			return TEXT("Unload Dest");
+		case ESRHubRoutePhase::TravelingToSource:
+			return TEXT("Return");
+		case ESRHubRoutePhase::UnloadingAtSource:
+			return TEXT("Unload Source");
+		case ESRHubRoutePhase::Blocked:
+			return TEXT("Blocked");
+		default:
+			return TEXT("Unknown");
+		}
+	}
+
+	bool AreHubEndpointKeysEqual(const FSRHubEndpoint& Left, const FSRHubEndpoint& Right)
+	{
+		return Left.BodyActor == Right.BodyActor && Left.HubOccupantId == Right.HubOccupantId;
+	}
+
+	bool DoesHubRouteConnectEndpoints(
+		const FSRHubRoute& Route,
+		const FSRHubEndpoint& SourceHub,
+		const FSRHubEndpoint& DestinationHub)
+	{
+		return (AreHubEndpointKeysEqual(Route.SourceHub, SourceHub) && AreHubEndpointKeysEqual(Route.DestinationHub, DestinationHub))
+			|| (AreHubEndpointKeysEqual(Route.SourceHub, DestinationHub) && AreHubEndpointKeysEqual(Route.DestinationHub, SourceHub));
+	}
+
+	FString BuildCelestialBodyDisplayName(const AActor* BodyActor)
+	{
+		if (!IsValid(BodyActor))
+		{
+			return TEXT("Unknown Body");
+		}
+
+		const FText BodyName = USRCelestialBodyRuntimeLibrary::GetCelestialVariableName(BodyActor);
+		return BodyName.IsEmpty()
+			? GetNameSafe(BodyActor)
+			: BodyName.ToString();
+	}
+
+	AActor* ResolvePrimaryStarOrbitBody(const AActor* BodyActor, const AActor* PrimaryStarActor)
+	{
+		if (!IsValid(BodyActor) || !IsValid(PrimaryStarActor) || BodyActor == PrimaryStarActor)
+		{
+			return nullptr;
+		}
+
+		AActor* CurrentBody = const_cast<AActor*>(BodyActor);
+		for (int32 ParentDepth = 0; ParentDepth < 16 && IsValid(CurrentBody); ++ParentDepth)
+		{
+			AActor* ParentBody = nullptr;
+			if (!USRCelestialBodyRuntimeLibrary::GetCelestialParentBody(CurrentBody, ParentBody) || !IsValid(ParentBody))
+			{
+				return nullptr;
+			}
+
+			if (ParentBody == PrimaryStarActor)
+			{
+				return CurrentBody;
+			}
+
+			CurrentBody = ParentBody;
+		}
+
+		return nullptr;
+	}
+
+	float ResolveStarOrbitSortValue(const AActor* BodyActor, const AActor* PrimaryStarActor)
+	{
+		float OrbitRadius = 0.0f;
+		if (USRCelestialBodyRuntimeLibrary::GetCelestialOrbitRadius(BodyActor, OrbitRadius) && OrbitRadius > KINDA_SMALL_NUMBER)
+		{
+			return OrbitRadius;
+		}
+
+		return IsValid(BodyActor) && IsValid(PrimaryStarActor)
+			? FVector::DistSquared(BodyActor->GetActorLocation(), PrimaryStarActor->GetActorLocation())
+			: BIG_NUMBER;
+	}
+
+	int32 ResolveStarOrbitOrdinal(const AActor* BodyActor, UWorld* World, bool& bOutIsSatellite)
+	{
+		bOutIsSatellite = false;
+		if (!IsValid(BodyActor) || !IsValid(World) || USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(BodyActor))
+		{
+			return INDEX_NONE;
+		}
+
+		const USRCelestialBodyRegistrySubsystem* CelestialRegistry = World->GetSubsystem<USRCelestialBodyRegistrySubsystem>();
+		if (!IsValid(CelestialRegistry))
+		{
+			return INDEX_NONE;
+		}
+
+		AActor* PrimaryStarActor = CelestialRegistry->GetPrimaryStarActor();
+		if (!IsValid(PrimaryStarActor))
+		{
+			return INDEX_NONE;
+		}
+
+		AActor* TargetStarOrbitBody = ResolvePrimaryStarOrbitBody(BodyActor, PrimaryStarActor);
+		if (!IsValid(TargetStarOrbitBody))
+		{
+			return INDEX_NONE;
+		}
+		bOutIsSatellite = TargetStarOrbitBody != BodyActor;
+
+		TArray<AActor*> CelestialBodies;
+		CelestialRegistry->GetCelestialBodies(CelestialBodies);
+
+		TArray<AActor*> StarOrbitBodies;
+		for (AActor* CelestialBody : CelestialBodies)
+		{
+			if (!IsValid(CelestialBody) || CelestialBody == PrimaryStarActor)
+			{
+				continue;
+			}
+
+			AActor* StarOrbitBody = ResolvePrimaryStarOrbitBody(CelestialBody, PrimaryStarActor);
+			if (IsValid(StarOrbitBody))
+			{
+				StarOrbitBodies.AddUnique(StarOrbitBody);
+			}
+		}
+
+		StarOrbitBodies.Sort(
+			[PrimaryStarActor](const AActor& LeftBody, const AActor& RightBody)
+			{
+				const float LeftSortValue = ResolveStarOrbitSortValue(&LeftBody, PrimaryStarActor);
+				const float RightSortValue = ResolveStarOrbitSortValue(&RightBody, PrimaryStarActor);
+				if (!FMath::IsNearlyEqual(LeftSortValue, RightSortValue))
+				{
+					return LeftSortValue < RightSortValue;
+				}
+
+				return LeftBody.GetFName().LexicalLess(RightBody.GetFName());
+			});
+
+		for (int32 BodyIndex = 0; BodyIndex < StarOrbitBodies.Num(); ++BodyIndex)
+		{
+			if (StarOrbitBodies[BodyIndex] == TargetStarOrbitBody)
+			{
+				return BodyIndex + 1;
+			}
+		}
+
+		return INDEX_NONE;
+	}
+
+	FString BuildHubEndpointUiLabel(const FSRHubEndpoint& HubEndpoint, UWorld* World)
+	{
+		const FString HubName = HubEndpoint.DisplayName.IsEmpty()
+			? HubEndpoint.HubOccupantId.ToString()
+			: HubEndpoint.DisplayName.ToString();
+		const FString BodyName = BuildCelestialBodyDisplayName(HubEndpoint.BodyActor.Get());
+		FString OrbitOrderLabel = TEXT("Orbit order unknown");
+		if (USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(HubEndpoint.BodyActor.Get()))
+		{
+			OrbitOrderLabel = TEXT("Primary Star");
+		}
+		else
+		{
+			bool bIsSatellite = false;
+			const int32 StarOrbitOrdinal = ResolveStarOrbitOrdinal(HubEndpoint.BodyActor.Get(), World, bIsSatellite);
+			if (StarOrbitOrdinal != INDEX_NONE)
+			{
+				OrbitOrderLabel = bIsSatellite
+					? FString::Printf(TEXT("#%d from star / satellite"), StarOrbitOrdinal)
+					: FString::Printf(TEXT("#%d from star"), StarOrbitOrdinal);
+			}
+		}
+
+		return FString::Printf(
+			TEXT("%s\n%s\n%s"),
+			*BodyName,
+			*OrbitOrderLabel,
+			*HubName);
+	}
+
+	FString BuildCompactResourceIdLabel(FName ResourceId)
+	{
+		if (ResourceId.IsNone())
+		{
+			return TEXT("Any");
+		}
+
+		FString Label = ResourceId.ToString();
+		if (Label.Len() > 10)
+		{
+			Label = Label.Left(9) + TEXT(".");
+		}
+		return Label;
 	}
 
 	FString BuildResourceDisplayName(const FSRResourceInstance& ResourceInstance)
@@ -217,6 +445,112 @@ namespace
 		return FString::Printf(TEXT("%s %d\n%s\n%s"), Label, SlotIndex + 1, *PortLabel, *ResourceText);
 	}
 
+	FString BuildResourceTagCardLabel(const FSRResourceInstance& ResourceInstance)
+	{
+		int32 VisibleTagCount = 0;
+		FString Label;
+		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
+		{
+			if (TagStack.StackCount <= 0)
+			{
+				continue;
+			}
+
+			if (VisibleTagCount == 0)
+			{
+				Label = GetResourceProcessTagLabel(TagStack.Tag);
+			}
+			++VisibleTagCount;
+		}
+
+		if (VisibleTagCount <= 0)
+		{
+			return TEXT("No Tag");
+		}
+		if (VisibleTagCount > 1)
+		{
+			Label += FString::Printf(TEXT(" +%d"), VisibleTagCount - 1);
+		}
+		return Label;
+	}
+
+	FString BuildInventoryCardPortLabel(const FSRFacilityPortInventory& PortInventory, int32 SlotIndex, const TCHAR* FallbackLabel)
+	{
+		return PortInventory.PortId.IsNone()
+			? FString::Printf(TEXT("%s_%02d"), FallbackLabel, SlotIndex + 1)
+			: PortInventory.PortId.ToString();
+	}
+
+	FString BuildInventorySlotSignature(const FSRFacilityPortInventory& PortInventory)
+	{
+		FString Signature = FString::Printf(
+			TEXT("%s:%d:%d"),
+			*PortInventory.PortId.ToString(),
+			PortInventory.Capacity,
+			StarRovers::FacilityNetwork::GetInventorySlotStackCount(PortInventory));
+		for (const FSRResourceInstance& ResourceInstance : PortInventory.Inventory)
+		{
+			Signature += FString::Printf(
+				TEXT("|%s:%d:%.3f:%d:%d:%d:%d"),
+				*ResourceInstance.ResourceId.ToString(),
+				static_cast<int32>(ResourceInstance.ResourceKind),
+				ResourceInstance.EnergyValue,
+				static_cast<int32>(ResourceInstance.CatalystOperator),
+				ResourceInstance.RemainingProcessLimit,
+				ResourceInstance.ProcessCount,
+				ResourceInstance.StackCount);
+			for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
+			{
+				Signature += FString::Printf(
+					TEXT(":T%d/%d/%d"),
+					static_cast<int32>(TagStack.Tag),
+					TagStack.StackCount,
+					TagStack.RemainingCycles);
+			}
+		}
+		return Signature;
+	}
+
+	FString BuildInventoryPanelSignature(const TCHAR* Label, const TArray<FSRFacilityPortInventory>& PortInventories, const FString& EmptyText)
+	{
+		FString Signature = FString::Printf(TEXT("%s:%d:%s"), Label, PortInventories.Num(), *EmptyText);
+		for (const FSRFacilityPortInventory& PortInventory : PortInventories)
+		{
+			Signature += TEXT("|");
+			Signature += BuildInventorySlotSignature(PortInventory);
+		}
+		return Signature;
+	}
+
+	void BuildNextInputPreviewResources(const FSRFacilityInstance& FacilityInstance, TArray<FSRResourceInstance>& OutPreviewInputs)
+	{
+		OutPreviewInputs.Reset();
+		if (!FacilityInstance.ProcessingInventory.IsEmpty())
+		{
+			for (const FSRResourceInstance& ResourceInstance : FacilityInstance.ProcessingInventory)
+			{
+				if (ResourceInstance.ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
+				{
+					continue;
+				}
+
+				FSRResourceInstance PreviewResource = ResourceInstance;
+				PreviewResource.StackCount = 1;
+				OutPreviewInputs.Add(PreviewResource);
+			}
+			return;
+		}
+
+		for (const FSRFacilityPortInventory& PortInventory : FacilityInstance.InputPortInventories)
+		{
+			FSRResourceInstance PreviewResource = StarRovers::FacilityNetwork::PeekSingleResourceFromInventorySlot(PortInventory);
+			if (!PreviewResource.ResourceId.IsNone() && PreviewResource.StackCount > 0)
+			{
+				OutPreviewInputs.Add(PreviewResource);
+			}
+		}
+	}
+
 	FString BuildInlineResourceSummary(const FSRResourceInstance& ResourceInstance)
 	{
 		FString Summary = BuildResourceDisplayName(ResourceInstance);
@@ -259,7 +593,7 @@ namespace
 			Summary += FString::Printf(
 				TEXT("\n%s (%d/%d)"),
 				*PortInventory.PortId.ToString(),
-				PortInventory.Inventory.Num(),
+				StarRovers::FacilityNetwork::GetInventorySlotStackCount(PortInventory),
 				FMath::Max(1, PortInventory.Capacity));
 
 			if (PortInventory.Inventory.IsEmpty())
@@ -304,7 +638,7 @@ namespace
 	{
 		for (const FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
 		{
-			if (InputPortInventory.Inventory.Num() < FMath::Max(1, InputPortInventory.Capacity))
+			if (StarRovers::FacilityNetwork::GetInventorySlotStackCount(InputPortInventory) < FMath::Max(1, InputPortInventory.Capacity))
 			{
 				return true;
 			}
@@ -474,6 +808,181 @@ namespace
 		}
 	}
 
+	void AddInventoryCardText(
+		UWidgetTree* WidgetTree,
+		UCanvasPanel* CardCanvas,
+		const FString& Text,
+		const FVector2D& Position,
+		const FVector2D& Size,
+		int32 FontSize,
+		const FLinearColor& Color,
+		ETextJustify::Type Justification = ETextJustify::Left)
+	{
+		if (!WidgetTree || !CardCanvas)
+		{
+			return;
+		}
+
+		UTextBlock* TextBlock = ConstructTextBlock(WidgetTree, NAME_None, FontSize, Color);
+		TextBlock->SetText(FText::FromString(Text));
+		TextBlock->SetJustification(Justification);
+		TextBlock->SetAutoWrapText(false);
+		AddWidgetToCanvas(CardCanvas, TextBlock, Position, Size);
+	}
+
+	void AddInventorySlotCard(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* SlotBox,
+		const FSRFacilityPortInventory& PortInventory,
+		int32 SlotIndex,
+		const TCHAR* FallbackLabel,
+		const FLinearColor& AccentColor)
+	{
+		if (!WidgetTree || !SlotBox)
+		{
+			return;
+		}
+
+		const int32 Capacity = FMath::Max(1, PortInventory.Capacity);
+		const int32 SlotStackCount = StarRovers::FacilityNetwork::GetInventorySlotStackCount(PortInventory);
+		const FSRResourceInstance* ResourceInstance = PortInventory.Inventory.IsEmpty()
+			? nullptr
+			: &PortInventory.Inventory[0];
+
+		FString TopLeft = BuildInventoryCardPortLabel(PortInventory, SlotIndex, FallbackLabel);
+		FString TopRight = FString::Printf(TEXT("%d/%d"), SlotStackCount, Capacity);
+		FString Center = TEXT("Empty");
+		FString BottomLeft;
+		FString BottomRight;
+		FLinearColor CardColor = FLinearColor(0.145f, 0.170f, 0.190f, 0.98f);
+		FLinearColor MainTextColor = FLinearColor(0.90f, 0.94f, 0.96f, 1.0f);
+
+		if (ResourceInstance && !ResourceInstance->ResourceId.IsNone())
+		{
+			Center = BuildResourceDisplayName(*ResourceInstance);
+			CardColor = ResourceInstance->ResourceKind == ESRResourceKind::Catalyst
+				? FLinearColor(0.165f, 0.155f, 0.120f, 0.98f)
+				: FLinearColor(0.125f, 0.175f, 0.160f, 0.98f);
+
+			if (ResourceInstance->ResourceKind == ESRResourceKind::Catalyst)
+			{
+				TopLeft = GetCatalystOperatorLabel(ResourceInstance->CatalystOperator);
+				BottomLeft = BuildInventoryCardPortLabel(PortInventory, SlotIndex, FallbackLabel);
+				BottomRight = FString::Printf(TEXT("x%d"), SlotStackCount);
+			}
+			else
+			{
+				TopLeft = BuildResourceTagCardLabel(*ResourceInstance);
+				TopRight = FString::Printf(TEXT("E:%.0f"), ResourceInstance->EnergyValue);
+				BottomLeft = FString::Printf(TEXT("L:%d"), ResourceInstance->RemainingProcessLimit);
+				BottomRight = FString::Printf(TEXT("%d/%d"), SlotStackCount, Capacity);
+			}
+		}
+
+		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
+		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(7.0f, 5.0f), FVector2D(60.0f, 18.0f), 9, AccentColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, TopRight, FVector2D(58.0f, 5.0f), FVector2D(46.0f, 18.0f), 9, AccentColor, ETextJustify::Right);
+		AddInventoryCardText(WidgetTree, CardCanvas, Center, FVector2D(8.0f, 34.0f), FVector2D(96.0f, 24.0f), 12, MainTextColor, ETextJustify::Center);
+		AddInventoryCardText(WidgetTree, CardCanvas, BottomLeft, FVector2D(7.0f, 68.0f), FVector2D(54.0f, 18.0f), 9, MainTextColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, BottomRight, FVector2D(55.0f, 68.0f), FVector2D(49.0f, 18.0f), 9, MainTextColor, ETextJustify::Right);
+
+		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		CardSizeBox->SetWidthOverride(112.0f);
+		CardSizeBox->SetHeightOverride(90.0f);
+		CardSizeBox->AddChild(CardCanvas);
+
+		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, CardColor, FMargin(0.0f));
+		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, InnerBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(3.0f));
+		if (UHorizontalBoxSlot* Slot = SlotBox->AddChildToHorizontalBox(OuterBorder))
+		{
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddPreviewResourceCard(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* SlotBox,
+		const FSRResourceInstance& ResourceInstance,
+		const FLinearColor& AccentColor)
+	{
+		if (!WidgetTree || !SlotBox)
+		{
+			return;
+		}
+
+		const bool bHasResource = !ResourceInstance.ResourceId.IsNone();
+		const bool bIsCatalyst = bHasResource && ResourceInstance.ResourceKind == ESRResourceKind::Catalyst;
+		const FString TopLeft = bHasResource ? BuildResourceTagCardLabel(ResourceInstance) : TEXT("-");
+		const FString TopRight = bHasResource
+			? FString::Printf(TEXT("E:%.0f"), ResourceInstance.EnergyValue)
+			: TEXT("-");
+		const FString Center = bHasResource ? BuildResourceDisplayName(ResourceInstance) : TEXT("Empty");
+		const FString BottomLeft = bHasResource
+			? FString::Printf(TEXT("L:%d"), ResourceInstance.RemainingProcessLimit)
+			: FString();
+		const FString BottomRight = bHasResource ? GetResourceKindLabel(ResourceInstance.ResourceKind) : FString();
+		const FLinearColor CardColor = !bHasResource
+			? FLinearColor(0.145f, 0.170f, 0.190f, 0.98f)
+			: (bIsCatalyst
+				? FLinearColor(0.165f, 0.155f, 0.120f, 0.98f)
+				: FLinearColor(0.125f, 0.175f, 0.160f, 0.98f));
+		const FLinearColor MainTextColor = FLinearColor(0.90f, 0.94f, 0.96f, 1.0f);
+
+		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
+		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(7.0f, 5.0f), FVector2D(60.0f, 18.0f), 9, AccentColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, TopRight, FVector2D(58.0f, 5.0f), FVector2D(46.0f, 18.0f), 9, AccentColor, ETextJustify::Right);
+		AddInventoryCardText(WidgetTree, CardCanvas, Center, FVector2D(8.0f, 34.0f), FVector2D(96.0f, 24.0f), 12, MainTextColor, ETextJustify::Center);
+		AddInventoryCardText(WidgetTree, CardCanvas, BottomLeft, FVector2D(7.0f, 68.0f), FVector2D(54.0f, 18.0f), 9, MainTextColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, BottomRight, FVector2D(43.0f, 68.0f), FVector2D(61.0f, 18.0f), 9, MainTextColor, ETextJustify::Right);
+
+		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		CardSizeBox->SetWidthOverride(112.0f);
+		CardSizeBox->SetHeightOverride(90.0f);
+		CardSizeBox->AddChild(CardCanvas);
+
+		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, CardColor, FMargin(0.0f));
+		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, InnerBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(3.0f));
+		if (UHorizontalBoxSlot* Slot = SlotBox->AddChildToHorizontalBox(OuterBorder))
+		{
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddInventoryInfoCard(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* SlotBox,
+		const FString& Text,
+		const FLinearColor& AccentColor)
+	{
+		if (!WidgetTree || !SlotBox)
+		{
+			return;
+		}
+
+		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
+		AddInventoryCardText(WidgetTree, CardCanvas, TEXT("Info"), FVector2D(7.0f, 5.0f), FVector2D(98.0f, 18.0f), 9, AccentColor);
+
+		UTextBlock* CenterTextBlock = ConstructTextBlock(WidgetTree, NAME_None, 11, FLinearColor(0.90f, 0.94f, 0.96f, 1.0f));
+		CenterTextBlock->SetText(FText::FromString(Text));
+		CenterTextBlock->SetJustification(ETextJustify::Center);
+		AddWidgetToCanvas(CardCanvas, CenterTextBlock, FVector2D(8.0f, 30.0f), FVector2D(96.0f, 46.0f));
+
+		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		CardSizeBox->SetWidthOverride(112.0f);
+		CardSizeBox->SetHeightOverride(90.0f);
+		CardSizeBox->AddChild(CardCanvas);
+
+		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, FLinearColor(0.145f, 0.170f, 0.190f, 0.98f), FMargin(0.0f));
+		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, InnerBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(3.0f));
+		if (UHorizontalBoxSlot* Slot = SlotBox->AddChildToHorizontalBox(OuterBorder))
+		{
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
 	UButton* ConstructDebugInputButton(UWidgetTree* WidgetTree, const FName& ButtonName, const FText& Label)
 	{
 		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), ButtonName);
@@ -513,6 +1022,272 @@ namespace
 		Action->Initialize(OwnerWidget, InputPortIndex, ResourceId);
 		OutActions.Add(Action);
 		Button->OnClicked.AddDynamic(Action, &USRFacilityInputSlotDebugAction::HandleClicked);
+	}
+
+	void AddHubDestinationButton(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ButtonBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubRouteDestinationAction>>& OutActions,
+		const FSRHubEndpoint& DestinationHub,
+		const FString& Label,
+		bool bSelected,
+		bool bEnabled)
+	{
+		if (!WidgetTree || !ButtonBox || !OwnerWidget)
+		{
+			return;
+		}
+
+		UButton* Button = ConstructDebugInputButton(WidgetTree, NAME_None, FText::FromString(Label));
+		Button->SetBackgroundColor(bSelected
+			? FLinearColor(0.095f, 0.220f, 0.180f, 0.95f)
+			: bEnabled
+			? FLinearColor(0.105f, 0.165f, 0.210f, 0.95f)
+			: FLinearColor(0.060f, 0.066f, 0.072f, 0.95f));
+		Button->SetIsEnabled(bEnabled);
+
+		USRHubRouteDestinationAction* Action = NewObject<USRHubRouteDestinationAction>(OwnerWidget);
+		Action->Initialize(OwnerWidget, DestinationHub, Button);
+		OutActions.Add(Action);
+		Button->OnClicked.AddDynamic(Action, &USRHubRouteDestinationAction::HandleClicked);
+
+		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		ButtonSizeBox->SetWidthOverride(176.0f);
+		ButtonSizeBox->SetHeightOverride(64.0f);
+		ButtonSizeBox->AddChild(Button);
+
+		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
+		{
+			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddHubRouteLaunchButton(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ButtonBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubRouteLaunchAction>>& OutActions,
+		const FSRHubEndpoint& DestinationHub,
+		bool bEnabled)
+	{
+		if (!WidgetTree || !ButtonBox || !OwnerWidget)
+		{
+			return;
+		}
+
+		UButton* Button = ConstructDebugInputButton(
+			WidgetTree,
+			NAME_None,
+			NSLOCTEXT("StarRoversFacilityControl", "HubRouteLaunchButton", "Launch\nRoute"));
+		Button->SetBackgroundColor(bEnabled
+			? FLinearColor(0.070f, 0.180f, 0.115f, 0.95f)
+			: FLinearColor(0.060f, 0.066f, 0.072f, 0.95f));
+		Button->SetIsEnabled(bEnabled);
+
+		USRHubRouteLaunchAction* Action = NewObject<USRHubRouteLaunchAction>(OwnerWidget);
+		Action->Initialize(OwnerWidget, DestinationHub, Button);
+		OutActions.Add(Action);
+		Button->OnClicked.AddDynamic(Action, &USRHubRouteLaunchAction::HandleClicked);
+
+		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		ButtonSizeBox->SetWidthOverride(104.0f);
+		ButtonSizeBox->SetHeightOverride(64.0f);
+		ButtonSizeBox->AddChild(Button);
+
+		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
+		{
+			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 12.0f, 0.0f));
+			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddHubRouteRemoveButton(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ButtonBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubRouteRemovalAction>>& OutActions,
+		FName RouteId)
+	{
+		if (!WidgetTree || !ButtonBox || !OwnerWidget || RouteId.IsNone())
+		{
+			return;
+		}
+
+		UButton* Button = ConstructDebugInputButton(
+			WidgetTree,
+			NAME_None,
+			NSLOCTEXT("StarRoversFacilityControl", "HubRouteRemoveButton", "Remove\nRoute"));
+		Button->SetBackgroundColor(FLinearColor(0.240f, 0.075f, 0.070f, 0.95f));
+
+		USRHubRouteRemovalAction* Action = NewObject<USRHubRouteRemovalAction>(OwnerWidget);
+		Action->Initialize(OwnerWidget, RouteId, Button);
+		OutActions.Add(Action);
+		Button->OnClicked.AddDynamic(Action, &USRHubRouteRemovalAction::HandleClicked);
+
+		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		ButtonSizeBox->SetWidthOverride(88.0f);
+		ButtonSizeBox->SetHeightOverride(54.0f);
+		ButtonSizeBox->AddChild(Button);
+
+		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
+		{
+			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 12.0f, 0.0f));
+			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddHubRouteDebugOrbitButton(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ButtonBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubRouteDebugOrbitAction>>& OutActions,
+		bool bEnabled)
+	{
+		if (!WidgetTree || !ButtonBox || !OwnerWidget)
+		{
+			return;
+		}
+
+		UButton* Button = ConstructDebugInputButton(
+			WidgetTree,
+			NAME_None,
+			NSLOCTEXT("StarRoversFacilityControl", "HubRouteDebugOrbitButton", "Debug\nOrbit"));
+		Button->SetBackgroundColor(bEnabled
+			? FLinearColor(0.120f, 0.090f, 0.190f, 0.95f)
+			: FLinearColor(0.060f, 0.066f, 0.072f, 0.95f));
+		Button->SetIsEnabled(bEnabled);
+
+		USRHubRouteDebugOrbitAction* Action = NewObject<USRHubRouteDebugOrbitAction>(OwnerWidget);
+		Action->Initialize(OwnerWidget, Button);
+		OutActions.Add(Action);
+		Button->OnClicked.AddDynamic(Action, &USRHubRouteDebugOrbitAction::HandleClicked);
+
+		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		ButtonSizeBox->SetWidthOverride(104.0f);
+		ButtonSizeBox->SetHeightOverride(54.0f);
+		ButtonSizeBox->AddChild(Button);
+
+		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
+		{
+			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 10.0f, 0.0f));
+			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddHubRouteMaxCargoStackCountButton(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ButtonBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubRouteSettingAction>>& OutActions,
+		FName RouteId,
+		int32 NewMaxCargoStackCount)
+	{
+		if (!WidgetTree || !ButtonBox || !OwnerWidget || RouteId.IsNone())
+		{
+			return;
+		}
+
+		UButton* Button = ConstructDebugInputButton(
+			WidgetTree,
+			NAME_None,
+			FText::FromString(FString::Printf(TEXT("Set\nx%d"), FMath::Max(1, NewMaxCargoStackCount))));
+		Button->SetBackgroundColor(FLinearColor(0.080f, 0.130f, 0.165f, 0.95f));
+
+		USRHubRouteSettingAction* Action = NewObject<USRHubRouteSettingAction>(OwnerWidget);
+		Action->InitializeMaxCargoStackCount(OwnerWidget, RouteId, NewMaxCargoStackCount, Button);
+		OutActions.Add(Action);
+		Button->OnClicked.AddDynamic(Action, &USRHubRouteSettingAction::HandleClicked);
+
+		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		ButtonSizeBox->SetWidthOverride(74.0f);
+		ButtonSizeBox->SetHeightOverride(54.0f);
+		ButtonSizeBox->AddChild(Button);
+
+		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
+		{
+			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddHubRouteReturnEmptyButton(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ButtonBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubRouteSettingAction>>& OutActions,
+		FName RouteId,
+		bool bNewReturnEmptyWhenNoCargo)
+	{
+		if (!WidgetTree || !ButtonBox || !OwnerWidget || RouteId.IsNone())
+		{
+			return;
+		}
+
+		UButton* Button = ConstructDebugInputButton(
+			WidgetTree,
+			NAME_None,
+			bNewReturnEmptyWhenNoCargo
+				? NSLOCTEXT("StarRoversFacilityControl", "HubRouteReturnEmptyOnButton", "Set\nON")
+				: NSLOCTEXT("StarRoversFacilityControl", "HubRouteReturnEmptyOffButton", "Set\nOFF"));
+		Button->SetBackgroundColor(bNewReturnEmptyWhenNoCargo
+			? FLinearColor(0.070f, 0.145f, 0.105f, 0.95f)
+			: FLinearColor(0.145f, 0.105f, 0.070f, 0.95f));
+
+		USRHubRouteSettingAction* Action = NewObject<USRHubRouteSettingAction>(OwnerWidget);
+		Action->InitializeReturnEmptyWhenNoCargo(OwnerWidget, RouteId, bNewReturnEmptyWhenNoCargo, Button);
+		OutActions.Add(Action);
+		Button->OnClicked.AddDynamic(Action, &USRHubRouteSettingAction::HandleClicked);
+
+		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		ButtonSizeBox->SetWidthOverride(78.0f);
+		ButtonSizeBox->SetHeightOverride(54.0f);
+		ButtonSizeBox->AddChild(Button);
+
+		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
+		{
+			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddHubRouteCargoResourceButton(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ButtonBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubRouteSettingAction>>& OutActions,
+		FName RouteId,
+		FName CargoResourceId)
+	{
+		if (!WidgetTree || !ButtonBox || !OwnerWidget || RouteId.IsNone())
+		{
+			return;
+		}
+
+		const FString Label = CargoResourceId.IsNone()
+			? FString(TEXT("Any\nCargo"))
+			: FString::Printf(TEXT("Only\n%s"), *BuildCompactResourceIdLabel(CargoResourceId));
+		UButton* Button = ConstructDebugInputButton(WidgetTree, NAME_None, FText::FromString(Label));
+		Button->SetBackgroundColor(CargoResourceId.IsNone()
+			? FLinearColor(0.095f, 0.095f, 0.135f, 0.95f)
+			: FLinearColor(0.120f, 0.105f, 0.165f, 0.95f));
+
+		USRHubRouteSettingAction* Action = NewObject<USRHubRouteSettingAction>(OwnerWidget);
+		Action->InitializeCargoResourceId(OwnerWidget, RouteId, CargoResourceId, Button);
+		OutActions.Add(Action);
+		Button->OnClicked.AddDynamic(Action, &USRHubRouteSettingAction::HandleClicked);
+
+		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		ButtonSizeBox->SetWidthOverride(86.0f);
+		ButtonSizeBox->SetHeightOverride(54.0f);
+		ButtonSizeBox->AddChild(Button);
+
+		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
+		{
+			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
 	}
 
 	void AddInputResourceSlotCard(
@@ -632,6 +1407,224 @@ void USRFacilityInputSlotDebugAction::HandleClicked()
 	}
 }
 
+void USRHubRouteDestinationAction::Initialize(
+	USRFacilityControlWidget* InOwnerWidget,
+	const FSRHubEndpoint& InDestinationHub,
+	UButton* InButton)
+{
+	OwnerWidget = InOwnerWidget;
+	DestinationHub = InDestinationHub;
+	Button = InButton;
+}
+
+void USRHubRouteDestinationAction::HandleClicked()
+{
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteDestination OnClicked Destination=%s/%s"),
+		*GetNameSafe(DestinationHub.BodyActor.Get()),
+		*DestinationHub.HubOccupantId.ToString());
+
+	if (IsValid(OwnerWidget))
+	{
+		OwnerWidget->SelectRouteDestinationHubEndpoint(DestinationHub);
+	}
+}
+
+bool USRHubRouteDestinationAction::TryHandleManualClick(const FVector2D& ScreenPosition)
+{
+	if (!IsValid(Button.Get())
+		|| !Button->GetIsEnabled()
+		|| !IsWidgetUnderScreenPosition(Button.Get(), ScreenPosition))
+	{
+		return false;
+	}
+
+	HandleClicked();
+	return true;
+}
+
+void USRHubRouteLaunchAction::Initialize(
+	USRFacilityControlWidget* InOwnerWidget,
+	const FSRHubEndpoint& InDestinationHub,
+	UButton* InButton)
+{
+	OwnerWidget = InOwnerWidget;
+	DestinationHub = InDestinationHub;
+	Button = InButton;
+}
+
+void USRHubRouteLaunchAction::HandleClicked()
+{
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteLaunch OnClicked Destination=%s/%s"),
+		*GetNameSafe(DestinationHub.BodyActor.Get()),
+		*DestinationHub.HubOccupantId.ToString());
+
+	if (IsValid(OwnerWidget))
+	{
+		OwnerWidget->CreateRouteToHubEndpoint(DestinationHub);
+	}
+}
+
+bool USRHubRouteLaunchAction::TryHandleManualClick(const FVector2D& ScreenPosition)
+{
+	if (!IsValid(Button.Get())
+		|| !Button->GetIsEnabled()
+		|| !IsWidgetUnderScreenPosition(Button.Get(), ScreenPosition))
+	{
+		return false;
+	}
+
+	HandleClicked();
+	return true;
+}
+
+void USRHubRouteRemovalAction::Initialize(USRFacilityControlWidget* InOwnerWidget, FName InRouteId, UButton* InButton)
+{
+	OwnerWidget = InOwnerWidget;
+	RouteId = InRouteId;
+	Button = InButton;
+}
+
+void USRHubRouteRemovalAction::HandleClicked()
+{
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteRemoval OnClicked RouteId=%s"),
+		*RouteId.ToString());
+
+	if (IsValid(OwnerWidget))
+	{
+		OwnerWidget->RemoveHubRoute(RouteId);
+	}
+}
+
+bool USRHubRouteRemovalAction::TryHandleManualClick(const FVector2D& ScreenPosition)
+{
+	if (!IsValid(Button.Get())
+		|| !Button->GetIsEnabled()
+		|| !IsWidgetUnderScreenPosition(Button.Get(), ScreenPosition))
+	{
+		return false;
+	}
+
+	HandleClicked();
+	return true;
+}
+
+void USRHubRouteDebugOrbitAction::Initialize(USRFacilityControlWidget* InOwnerWidget, UButton* InButton)
+{
+	OwnerWidget = InOwnerWidget;
+	Button = InButton;
+}
+
+void USRHubRouteDebugOrbitAction::HandleClicked()
+{
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteDebugOrbit OnClicked"));
+
+	if (IsValid(OwnerWidget))
+	{
+		OwnerWidget->LaunchDebugLocalOrbitRoute();
+	}
+}
+
+bool USRHubRouteDebugOrbitAction::TryHandleManualClick(const FVector2D& ScreenPosition)
+{
+	if (!IsValid(Button.Get())
+		|| !Button->GetIsEnabled()
+		|| !IsWidgetUnderScreenPosition(Button.Get(), ScreenPosition))
+	{
+		return false;
+	}
+
+	HandleClicked();
+	return true;
+}
+
+void USRHubRouteSettingAction::InitializeMaxCargoStackCount(
+	USRFacilityControlWidget* InOwnerWidget,
+	FName InRouteId,
+	int32 InMaxCargoStackCount,
+	UButton* InButton)
+{
+	OwnerWidget = InOwnerWidget;
+	RouteId = InRouteId;
+	MaxCargoStackCount = FMath::Max(1, InMaxCargoStackCount);
+	bSetMaxCargoStackCount = true;
+	bSetReturnEmptyWhenNoCargo = false;
+	bSetCargoResourceId = false;
+	Button = InButton;
+}
+
+void USRHubRouteSettingAction::InitializeReturnEmptyWhenNoCargo(
+	USRFacilityControlWidget* InOwnerWidget,
+	FName InRouteId,
+	bool bInReturnEmptyWhenNoCargo,
+	UButton* InButton)
+{
+	OwnerWidget = InOwnerWidget;
+	RouteId = InRouteId;
+	bReturnEmptyWhenNoCargo = bInReturnEmptyWhenNoCargo;
+	bSetMaxCargoStackCount = false;
+	bSetReturnEmptyWhenNoCargo = true;
+	bSetCargoResourceId = false;
+	Button = InButton;
+}
+
+void USRHubRouteSettingAction::InitializeCargoResourceId(
+	USRFacilityControlWidget* InOwnerWidget,
+	FName InRouteId,
+	FName InCargoResourceId,
+	UButton* InButton)
+{
+	OwnerWidget = InOwnerWidget;
+	RouteId = InRouteId;
+	CargoResourceId = InCargoResourceId;
+	bSetMaxCargoStackCount = false;
+	bSetReturnEmptyWhenNoCargo = false;
+	bSetCargoResourceId = true;
+	Button = InButton;
+}
+
+void USRHubRouteSettingAction::HandleClicked()
+{
+	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteSetting OnClicked RouteId=%s SetStack=%s Stack=%d SetReturnEmpty=%s ReturnEmpty=%s SetCargoResource=%s CargoResourceId=%s"),
+		*RouteId.ToString(),
+		bSetMaxCargoStackCount ? TEXT("true") : TEXT("false"),
+		MaxCargoStackCount,
+		bSetReturnEmptyWhenNoCargo ? TEXT("true") : TEXT("false"),
+		bReturnEmptyWhenNoCargo ? TEXT("true") : TEXT("false"),
+		bSetCargoResourceId ? TEXT("true") : TEXT("false"),
+		CargoResourceId.IsNone() ? TEXT("Any") : *CargoResourceId.ToString());
+
+	if (!IsValid(OwnerWidget))
+	{
+		return;
+	}
+
+	if (bSetMaxCargoStackCount)
+	{
+		OwnerWidget->SetHubRouteMaxCargoStackCount(RouteId, MaxCargoStackCount);
+	}
+	else if (bSetReturnEmptyWhenNoCargo)
+	{
+		OwnerWidget->SetHubRouteReturnEmptyWhenNoCargo(RouteId, bReturnEmptyWhenNoCargo);
+	}
+	else if (bSetCargoResourceId)
+	{
+		OwnerWidget->SetHubRouteCargoResourceId(RouteId, CargoResourceId);
+	}
+}
+
+bool USRHubRouteSettingAction::TryHandleManualClick(const FVector2D& ScreenPosition)
+{
+	if (!IsValid(Button.Get())
+		|| !Button->GetIsEnabled()
+		|| !IsWidgetUnderScreenPosition(Button.Get(), ScreenPosition))
+	{
+		return false;
+	}
+
+	HandleClicked();
+	return true;
+}
+
 TSharedRef<SWidget> USRFacilityControlWidget::RebuildWidget()
 {
 	if (!WidgetTree)
@@ -712,9 +1705,17 @@ FReply USRFacilityControlWidget::NativeOnMouseWheel(const FGeometry& InGeometry,
 
 void USRFacilityControlWidget::SetFocusedFacility(AActor* NewFocusedActor, FName NewOccupantId)
 {
+	const bool bFocusChanged = FocusedActor.Get() != NewFocusedActor || FocusedOccupantId != NewOccupantId;
 	FocusedActor = NewFocusedActor;
 	FocusedOccupantId = NewOccupantId;
 	bHasFocusedFacility = IsValid(NewFocusedActor) && !NewOccupantId.IsNone();
+	if (bFocusChanged)
+	{
+		LastHubRouteStatus.Reset();
+		HubRoutePanelSignature.Reset();
+		SelectedHubRouteDestination = FSRHubEndpoint();
+		bHasSelectedHubRouteDestination = false;
+	}
 	RefreshControlText();
 }
 
@@ -723,6 +1724,10 @@ void USRFacilityControlWidget::ClearFocusedFacility()
 	FocusedActor.Reset();
 	FocusedOccupantId = NAME_None;
 	bHasFocusedFacility = false;
+	LastHubRouteStatus.Reset();
+	HubRoutePanelSignature.Reset();
+	SelectedHubRouteDestination = FSRHubEndpoint();
+	bHasSelectedHubRouteDestination = false;
 	RefreshControlText();
 }
 
@@ -804,6 +1809,51 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 		return true;
 	}
 
+	for (USRHubRouteDestinationAction* HubRouteDestinationAction : HubRouteDestinationActions)
+	{
+		if (IsValid(HubRouteDestinationAction) && HubRouteDestinationAction->TryHandleManualClick(ScreenPosition))
+		{
+			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteDestinationButton"));
+			return true;
+		}
+	}
+
+	for (USRHubRouteLaunchAction* HubRouteLaunchAction : HubRouteLaunchActions)
+	{
+		if (IsValid(HubRouteLaunchAction) && HubRouteLaunchAction->TryHandleManualClick(ScreenPosition))
+		{
+			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteLaunchButton"));
+			return true;
+		}
+	}
+
+	for (USRHubRouteRemovalAction* HubRouteRemovalAction : HubRouteRemovalActions)
+	{
+		if (IsValid(HubRouteRemovalAction) && HubRouteRemovalAction->TryHandleManualClick(ScreenPosition))
+		{
+			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteRemoveButton"));
+			return true;
+		}
+	}
+
+	for (USRHubRouteDebugOrbitAction* HubRouteDebugOrbitAction : HubRouteDebugOrbitActions)
+	{
+		if (IsValid(HubRouteDebugOrbitAction) && HubRouteDebugOrbitAction->TryHandleManualClick(ScreenPosition))
+		{
+			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteDebugOrbitButton"));
+			return true;
+		}
+	}
+
+	for (USRHubRouteSettingAction* HubRouteSettingAction : HubRouteSettingActions)
+	{
+		if (IsValid(HubRouteSettingAction) && HubRouteSettingAction->TryHandleManualClick(ScreenPosition))
+		{
+			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteSettingButton"));
+			return true;
+		}
+	}
+
 	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click consumed panel background."));
 	return true;
 }
@@ -837,6 +1887,266 @@ bool USRFacilityControlWidget::AddDebugInputResourceToPort(int32 InputPortIndex,
 	const bool bAdded = FacilityNetwork->AddInputResourceToPort(FocusedOccupantId, InputPortIndex, ResourceInstance);
 	RefreshControlText();
 	return bAdded;
+}
+
+bool USRFacilityControlWidget::SelectRouteDestinationHubEndpoint(const FSRHubEndpoint& DestinationHub)
+{
+	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
+	if (!IsValid(FacilityNetwork) || !FacilityNetwork->IsHubFacility(FocusedOccupantId))
+	{
+		LastHubRouteStatus = TEXT("Destination select failed: selected facility is not a Hub.");
+		RefreshControlText();
+		return false;
+	}
+
+	if (!DestinationHub.IsValid())
+	{
+		LastHubRouteStatus = TEXT("Destination select failed: invalid Hub endpoint.");
+		RefreshControlText();
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
+		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
+		: nullptr;
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		LastHubRouteStatus = TEXT("Destination select failed: logistics subsystem unavailable.");
+		RefreshControlText();
+		return false;
+	}
+
+	FSRHubEndpoint SourceHub;
+	if (!SpaceLogisticsSubsystem->GetHubEndpoint(FocusedActor.Get(), FocusedOccupantId, SourceHub))
+	{
+		LastHubRouteStatus = TEXT("Destination select failed: source Hub endpoint not found.");
+		RefreshControlText();
+		return false;
+	}
+
+	if (AreHubEndpointKeysEqual(SourceHub, DestinationHub))
+	{
+		LastHubRouteStatus = TEXT("Destination select failed: select a different Hub.");
+		RefreshControlText();
+		return false;
+	}
+
+	SelectedHubRouteDestination = DestinationHub;
+	bHasSelectedHubRouteDestination = true;
+	LastHubRouteStatus = FString::Printf(
+		TEXT("Destination selected: %s. Press Launch Route."),
+		*BuildCelestialBodyDisplayName(DestinationHub.BodyActor.Get()));
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return true;
+}
+
+bool USRFacilityControlWidget::CreateRouteToHubEndpoint(const FSRHubEndpoint& DestinationHub)
+{
+	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
+	if (!IsValid(FacilityNetwork) || !FacilityNetwork->IsHubFacility(FocusedOccupantId))
+	{
+		LastHubRouteStatus = TEXT("Route failed: selected facility is not a Hub.");
+		RefreshControlText();
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
+		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
+		: nullptr;
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		LastHubRouteStatus = TEXT("Route failed: logistics subsystem unavailable.");
+		RefreshControlText();
+		return false;
+	}
+
+	FSRHubEndpoint SourceHub;
+	if (!SpaceLogisticsSubsystem->GetHubEndpoint(FocusedActor.Get(), FocusedOccupantId, SourceHub))
+	{
+		LastHubRouteStatus = TEXT("Route failed: source Hub endpoint not found.");
+		RefreshControlText();
+		return false;
+	}
+
+	FName RouteId = NAME_None;
+	const bool bCreated = SpaceLogisticsSubsystem->CreateHubRoute(
+		SourceHub,
+		DestinationHub,
+		RouteId,
+		true,
+		1);
+	LastHubRouteStatus = bCreated
+		? FString::Printf(TEXT("Route created: %s"), *RouteId.ToString())
+		: TEXT("Route failed: endpoint invalid or route already exists.");
+	if (bCreated)
+	{
+		SelectedHubRouteDestination = FSRHubEndpoint();
+		bHasSelectedHubRouteDestination = false;
+	}
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return bCreated;
+}
+
+bool USRFacilityControlWidget::LaunchDebugLocalOrbitRoute()
+{
+	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
+	if (!IsValid(FacilityNetwork) || !FacilityNetwork->IsHubFacility(FocusedOccupantId))
+	{
+		LastHubRouteStatus = TEXT("Debug orbit failed: selected facility is not a Hub.");
+		RefreshControlText();
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
+		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
+		: nullptr;
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		LastHubRouteStatus = TEXT("Debug orbit failed: logistics subsystem unavailable.");
+		RefreshControlText();
+		return false;
+	}
+
+	FSRHubEndpoint SourceHub;
+	if (!SpaceLogisticsSubsystem->GetHubEndpoint(FocusedActor.Get(), FocusedOccupantId, SourceHub))
+	{
+		LastHubRouteStatus = TEXT("Debug orbit failed: source Hub endpoint not found.");
+		RefreshControlText();
+		return false;
+	}
+
+	FName RouteId = NAME_None;
+	const bool bCreated = SpaceLogisticsSubsystem->CreateDebugLocalOrbitRoute(
+		SourceHub,
+		RouteId);
+	LastHubRouteStatus = bCreated
+		? FString::Printf(TEXT("Debug orbit launched: %s"), *RouteId.ToString())
+		: TEXT("Debug orbit failed: already active or endpoint invalid.");
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return bCreated;
+}
+
+bool USRFacilityControlWidget::RemoveHubRoute(FName RouteId)
+{
+	if (RouteId.IsNone())
+	{
+		LastHubRouteStatus = TEXT("Remove failed: invalid route.");
+		RefreshControlText();
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
+		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
+		: nullptr;
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		LastHubRouteStatus = TEXT("Remove failed: logistics subsystem unavailable.");
+		RefreshControlText();
+		return false;
+	}
+
+	const bool bRemoved = SpaceLogisticsSubsystem->RemoveHubRoute(RouteId);
+	LastHubRouteStatus = bRemoved
+		? FString::Printf(TEXT("Route removed: %s"), *RouteId.ToString())
+		: FString::Printf(TEXT("Remove failed: %s"), *RouteId.ToString());
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return bRemoved;
+}
+
+bool USRFacilityControlWidget::SetHubRouteMaxCargoStackCount(FName RouteId, int32 MaxCargoStackCount)
+{
+	if (RouteId.IsNone())
+	{
+		LastHubRouteStatus = TEXT("Stack update failed: invalid route.");
+		RefreshControlText();
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
+		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
+		: nullptr;
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		LastHubRouteStatus = TEXT("Stack update failed: logistics subsystem unavailable.");
+		RefreshControlText();
+		return false;
+	}
+
+	const int32 ClampedMaxCargoStackCount = FMath::Max(1, MaxCargoStackCount);
+	const bool bUpdated = SpaceLogisticsSubsystem->SetHubRouteMaxCargoStackCount(RouteId, ClampedMaxCargoStackCount);
+	LastHubRouteStatus = bUpdated
+		? FString::Printf(TEXT("Route stack updated: x%d"), ClampedMaxCargoStackCount)
+		: FString::Printf(TEXT("Stack update failed: %s"), *RouteId.ToString());
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return bUpdated;
+}
+
+bool USRFacilityControlWidget::SetHubRouteReturnEmptyWhenNoCargo(FName RouteId, bool bReturnEmptyWhenNoCargo)
+{
+	if (RouteId.IsNone())
+	{
+		LastHubRouteStatus = TEXT("Return setting failed: invalid route.");
+		RefreshControlText();
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
+		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
+		: nullptr;
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		LastHubRouteStatus = TEXT("Return setting failed: logistics subsystem unavailable.");
+		RefreshControlText();
+		return false;
+	}
+
+	const bool bUpdated = SpaceLogisticsSubsystem->SetHubRouteReturnEmptyWhenNoCargo(RouteId, bReturnEmptyWhenNoCargo);
+	LastHubRouteStatus = bUpdated
+		? FString::Printf(TEXT("Empty return: %s"), bReturnEmptyWhenNoCargo ? TEXT("ON") : TEXT("OFF"))
+		: FString::Printf(TEXT("Return setting failed: %s"), *RouteId.ToString());
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return bUpdated;
+}
+
+bool USRFacilityControlWidget::SetHubRouteCargoResourceId(FName RouteId, FName CargoResourceId)
+{
+	if (RouteId.IsNone())
+	{
+		LastHubRouteStatus = TEXT("Cargo filter failed: invalid route.");
+		RefreshControlText();
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
+		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
+		: nullptr;
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		LastHubRouteStatus = TEXT("Cargo filter failed: logistics subsystem unavailable.");
+		RefreshControlText();
+		return false;
+	}
+
+	const bool bUpdated = SpaceLogisticsSubsystem->SetHubRouteCargoResourceId(RouteId, CargoResourceId);
+	LastHubRouteStatus = bUpdated
+		? FString::Printf(TEXT("Cargo filter: %s"), CargoResourceId.IsNone() ? TEXT("Any") : *CargoResourceId.ToString())
+		: FString::Printf(TEXT("Cargo filter failed: %s"), *RouteId.ToString());
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return bUpdated;
 }
 
 USRFacilityNetworkComponent* USRFacilityControlWidget::GetFocusedFacilityNetwork() const
@@ -962,19 +2272,24 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		ProcessCheckBox = Cast<UCheckBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessCheckBox"))));
 		ProcessStatusTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessStatusTextBlock"))));
 		InputResourceTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputResourceTextBlock"))));
-		InputResourceSlotBox = Cast<UVerticalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputResourceSlotBox"))));
+		InputResourceSlotBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputResourceSlotBox"))));
 		EffectsTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlEffectsTextBlock"))));
 		ProcessProgressBar = Cast<UProgressBar>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessProgressBar"))));
 		ProcessTimeTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessTimeTextBlock"))));
 		OutputPreviewTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputPreviewTextBlock"))));
-		OutputResourceSlotBox = Cast<UVerticalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputResourceSlotBox"))));
+		OutputResourceSlotBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputResourceSlotBox"))));
 		InputInventoryTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputInventoryTextBlock"))));
+		InputInventorySlotBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputInventorySlotBox"))));
 		OutputInventoryTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputInventoryTextBlock"))));
+		OutputInventorySlotBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputInventorySlotBox"))));
 		DebugAddTerriteButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDebugAddTerriteButton"))));
 		DebugAddAquidButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDebugAddAquidButton"))));
 		DebugAddNitainButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDebugAddNitainButton"))));
 		DeliverCheckBox = Cast<UCheckBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDeliverCheckBox"))));
 		DeliverStatusTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDeliverStatusTextBlock"))));
+		HubRouteTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubRouteTextBlock"))));
+		HubDestinationButtonBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubDestinationButtonBox"))));
+		HubRouteStatusTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubRouteStatusTextBlock"))));
 		return;
 	}
 
@@ -990,7 +2305,7 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		PanelSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
 		PanelSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 		PanelSlot->SetPosition(FVector2D(0.0f, 18.0f));
-		PanelSlot->SetSize(FVector2D(920.0f, 660.0f));
+		PanelSlot->SetSize(FVector2D(920.0f, 780.0f));
 	}
 
 	UCanvasPanel* PanelCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("FacilityControlPanelCanvas"));
@@ -1043,8 +2358,11 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		InputResourceTitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 7.0f));
 		InputResourceTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 	}
-	InputResourceSlotBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlInputResourceSlotBox"));
-	if (UVerticalBoxSlot* InputResourceSlotBoxSlot = InputResourceSectionBox->AddChildToVerticalBox(InputResourceSlotBox))
+	UScrollBox* InputResourceScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("FacilityControlInputResourceScrollBox"));
+	InputResourceScrollBox->SetOrientation(Orient_Horizontal);
+	InputResourceSlotBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FacilityControlInputResourceSlotBox"));
+	InputResourceScrollBox->AddChild(InputResourceSlotBox);
+	if (UVerticalBoxSlot* InputResourceSlotBoxSlot = InputResourceSectionBox->AddChildToVerticalBox(InputResourceScrollBox))
 	{
 		InputResourceSlotBoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
@@ -1057,8 +2375,11 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		OutputResourceTitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 7.0f));
 		OutputResourceTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 	}
-	OutputResourceSlotBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlOutputResourceSlotBox"));
-	if (UVerticalBoxSlot* OutputResourceSlotBoxSlot = OutputResourceSectionBox->AddChildToVerticalBox(OutputResourceSlotBox))
+	UScrollBox* OutputResourceScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("FacilityControlOutputResourceScrollBox"));
+	OutputResourceScrollBox->SetOrientation(Orient_Horizontal);
+	OutputResourceSlotBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FacilityControlOutputResourceSlotBox"));
+	OutputResourceScrollBox->AddChild(OutputResourceSlotBox);
+	if (UVerticalBoxSlot* OutputResourceSlotBoxSlot = OutputResourceSectionBox->AddChildToVerticalBox(OutputResourceScrollBox))
 	{
 		OutputResourceSlotBoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
@@ -1100,20 +2421,45 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		FVector2D(332.0f, 306.0f),
 		FVector2D(216.0f, 58.0f));
 
-	InputInventoryTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlInputInventoryTextBlock"), 13, FLinearColor(0.82f, 0.88f, 1.0f, 1.0f));
-	OutputInventoryTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlOutputInventoryTextBlock"), 13, FLinearColor(0.82f, 1.0f, 0.88f, 1.0f));
+	UVerticalBox* InputInventorySectionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlInputInventorySectionBox"));
+	InputInventoryTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlInputInventoryTextBlock"), 12, FLinearColor(0.82f, 0.88f, 1.0f, 1.0f));
+	if (UVerticalBoxSlot* InputInventoryTitleSlot = InputInventorySectionBox->AddChildToVerticalBox(InputInventoryTextBlock))
+	{
+		InputInventoryTitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 7.0f));
+		InputInventoryTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
 	UScrollBox* InputInventoryScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("FacilityControlInputInventoryScrollBox"));
-	InputInventoryScrollBox->AddChild(InputInventoryTextBlock);
+	InputInventoryScrollBox->SetOrientation(Orient_Horizontal);
+	InputInventorySlotBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FacilityControlInputInventorySlotBox"));
+	InputInventoryScrollBox->AddChild(InputInventorySlotBox);
+	if (UVerticalBoxSlot* InputInventorySlotsSlot = InputInventorySectionBox->AddChildToVerticalBox(InputInventoryScrollBox))
+	{
+		InputInventorySlotsSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+
+	UVerticalBox* OutputInventorySectionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlOutputInventorySectionBox"));
+	OutputInventoryTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlOutputInventoryTextBlock"), 12, FLinearColor(0.82f, 1.0f, 0.88f, 1.0f));
+	if (UVerticalBoxSlot* OutputInventoryTitleSlot = OutputInventorySectionBox->AddChildToVerticalBox(OutputInventoryTextBlock))
+	{
+		OutputInventoryTitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 7.0f));
+		OutputInventoryTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
 	UScrollBox* OutputInventoryScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("FacilityControlOutputInventoryScrollBox"));
-	OutputInventoryScrollBox->AddChild(OutputInventoryTextBlock);
+	OutputInventoryScrollBox->SetOrientation(Orient_Horizontal);
+	OutputInventorySlotBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FacilityControlOutputInventorySlotBox"));
+	OutputInventoryScrollBox->AddChild(OutputInventorySlotBox);
+	if (UVerticalBoxSlot* OutputInventorySlotsSlot = OutputInventorySectionBox->AddChildToVerticalBox(OutputInventoryScrollBox))
+	{
+		OutputInventorySlotsSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
 	AddWidgetToCanvas(
 		PanelCanvas,
-		ConstructSectionBorder(WidgetTree, TEXT("FacilityControlInputInventoryBorder"), InputInventoryScrollBox),
+		ConstructSectionBorder(WidgetTree, TEXT("FacilityControlInputInventoryBorder"), InputInventorySectionBox),
 		FVector2D(18.0f, 386.0f),
 		FVector2D(390.0f, 154.0f));
 	AddWidgetToCanvas(
 		PanelCanvas,
-		ConstructSectionBorder(WidgetTree, TEXT("FacilityControlOutputInventoryBorder"), OutputInventoryScrollBox),
+		ConstructSectionBorder(WidgetTree, TEXT("FacilityControlOutputInventoryBorder"), OutputInventorySectionBox),
 		FVector2D(472.0f, 386.0f),
 		FVector2D(390.0f, 154.0f));
 
@@ -1190,6 +2536,46 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 			FMargin(14.0f)),
 		FVector2D(554.0f, 552.0f),
 		FVector2D(254.0f, 58.0f));
+
+	UVerticalBox* HubRouteSectionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlHubRouteSectionBox"));
+	HubRouteTextBlock = ConstructTextBlock(
+		WidgetTree,
+		TEXT("FacilityControlHubRouteTextBlock"),
+		12,
+		FLinearColor(0.78f, 0.92f, 1.0f, 1.0f));
+	if (UVerticalBoxSlot* HubRouteTitleSlot = HubRouteSectionBox->AddChildToVerticalBox(HubRouteTextBlock))
+	{
+		HubRouteTitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+		HubRouteTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
+
+	UScrollBox* HubDestinationScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("FacilityControlHubDestinationScrollBox"));
+	HubDestinationScrollBox->SetOrientation(Orient_Horizontal);
+	HubDestinationButtonBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FacilityControlHubDestinationButtonBox"));
+	HubDestinationScrollBox->AddChild(HubDestinationButtonBox);
+	if (UVerticalBoxSlot* HubRouteButtonSlot = HubRouteSectionBox->AddChildToVerticalBox(HubDestinationScrollBox))
+	{
+		HubRouteButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+		HubRouteButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+
+	HubRouteStatusTextBlock = ConstructTextBlock(
+		WidgetTree,
+		TEXT("FacilityControlHubRouteStatusTextBlock"),
+		11,
+		FLinearColor(0.82f, 0.86f, 0.90f, 1.0f));
+	HubRouteStatusTextBlock->SetAutoWrapText(false);
+	HubRouteSectionBox->AddChildToVerticalBox(HubRouteStatusTextBlock);
+	AddWidgetToCanvas(
+		PanelCanvas,
+		ConstructSectionBorder(
+			WidgetTree,
+			TEXT("FacilityControlHubRouteBorder"),
+			HubRouteSectionBox,
+			FLinearColor(0.050f, 0.072f, 0.090f, 0.96f),
+			FMargin(10.0f, 8.0f)),
+		FVector2D(18.0f, 622.0f),
+		FVector2D(844.0f, 134.0f));
 }
 
 void USRFacilityControlWidget::BindControlHandlers()
@@ -1233,66 +2619,42 @@ void USRFacilityControlWidget::RefreshInputResourceSlots(USRFacilityNetworkCompo
 		return;
 	}
 
-	TArray<FString> SlotTexts;
-	TArray<int32> SlotPortIndices;
-	TArray<bool> SlotCanAddResources;
-	TArray<bool> SlotShowDebugButtons;
+	TArray<FSRResourceInstance> PreviewResources;
+	FString EmptyText;
+	int32 PreviewResourceCount = 0;
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	const bool bIsMiningFacility = IsValid(FacilityDataAsset) && FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine;
 	if (bIsMiningFacility)
 	{
-		SlotTexts.Add(BuildMiningTargetSummary(FacilityNetwork, FacilityInstance.OccupantId));
-		SlotPortIndices.Add(INDEX_NONE);
-		SlotCanAddResources.Add(false);
-		SlotShowDebugButtons.Add(false);
-	}
-	else if (FacilityInstance.InputPortInventories.IsEmpty())
-	{
-		SlotTexts.Add(TEXT("No Input Port\n-\nProcess cannot start"));
-		SlotPortIndices.Add(INDEX_NONE);
-		SlotCanAddResources.Add(false);
-		SlotShowDebugButtons.Add(false);
+		FSRResourceDepositInstance MiningTarget;
+		if (IsValid(FacilityNetwork)
+			&& FacilityNetwork->GetFacilityMiningTarget(FacilityInstance.OccupantId, MiningTarget)
+			&& IsValid(MiningTarget.ResourceDataAsset.Get()))
+		{
+			PreviewResources.Add(MiningTarget.ResourceDataAsset->BuildDefaultInstance());
+		}
+		PreviewResourceCount = PreviewResources.Num();
+		EmptyText = BuildMiningTargetSummary(FacilityNetwork, FacilityInstance.OccupantId);
 	}
 	else
 	{
-		for (int32 SlotIndex = 0; SlotIndex < FacilityInstance.InputPortInventories.Num(); ++SlotIndex)
-		{
-			const FSRFacilityPortInventory& PortInventory = FacilityInstance.InputPortInventories[SlotIndex];
-			const FSRResourceInstance* ResourceInstance = nullptr;
-			if (FacilityInstance.ProcessingInventory.IsValidIndex(SlotIndex))
-			{
-				ResourceInstance = &FacilityInstance.ProcessingInventory[SlotIndex];
-			}
-			else if (!PortInventory.Inventory.IsEmpty())
-			{
-				ResourceInstance = &PortInventory.Inventory[0];
-			}
-
-			const int32 PortCapacity = FMath::Max(1, PortInventory.Capacity);
-			const bool bCanAddResource = PortInventory.Inventory.Num() < PortCapacity;
-			const FString PortLabel = PortInventory.PortId.IsNone()
-				? FString::Printf(TEXT("Input %d"), SlotIndex + 1)
-				: PortInventory.PortId.ToString();
-			SlotTexts.Add(FString::Printf(
-				TEXT("Input %d\n%s (%d/%d)\n%s"),
-				SlotIndex + 1,
-				*PortLabel,
-				PortInventory.Inventory.Num(),
-				PortCapacity,
-				ResourceInstance ? *BuildCompactResourceSummary(ResourceInstance) : TEXT("Empty")));
-			SlotPortIndices.Add(SlotIndex);
-			SlotCanAddResources.Add(bCanAddResource);
-			SlotShowDebugButtons.Add(true);
-		}
+		BuildNextInputPreviewResources(FacilityInstance, PreviewResources);
+		PreviewResourceCount = PreviewResources.Num();
+		EmptyText = TEXT("No queued resource");
 	}
 
-	FString NewSignature = FString::Printf(TEXT("Input:%d"), SlotTexts.Num());
-	for (int32 SlotIndex = 0; SlotIndex < SlotTexts.Num(); ++SlotIndex)
+	if (InputResourceTextBlock)
+	{
+		InputResourceTextBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("Input Resource Preview (%d)"),
+			PreviewResourceCount)));
+	}
+
+	FString NewSignature = FString::Printf(TEXT("InputPreview:%d:%s"), PreviewResources.Num(), *EmptyText);
+	for (int32 PreviewIndex = 0; PreviewIndex < PreviewResources.Num(); ++PreviewIndex)
 	{
 		NewSignature += TEXT("|");
-		NewSignature += SlotTexts[SlotIndex];
-		NewSignature += SlotCanAddResources.IsValidIndex(SlotIndex) && SlotCanAddResources[SlotIndex] ? TEXT(":Add") : TEXT(":Full");
-		NewSignature += SlotShowDebugButtons.IsValidIndex(SlotIndex) && SlotShowDebugButtons[SlotIndex] ? TEXT(":Debug") : TEXT(":Info");
+		NewSignature += BuildResourceSlotText(TEXT("Input"), PreviewIndex, NAME_None, &PreviewResources[PreviewIndex], TEXT("No Input"));
 	}
 	if (InputResourcePanelSignature == NewSignature)
 	{
@@ -1302,21 +2664,27 @@ void USRFacilityControlWidget::RefreshInputResourceSlots(USRFacilityNetworkCompo
 	InputResourcePanelSignature = NewSignature;
 	InputResourceSlotBox->ClearChildren();
 	InputSlotDebugActions.Reset();
-	for (int32 SlotIndex = 0; SlotIndex < SlotTexts.Num(); ++SlotIndex)
+	if (PreviewResources.IsEmpty())
 	{
-		AddInputResourceSlotCard(
+		AddInventoryInfoCard(
 			WidgetTree,
 			InputResourceSlotBox,
-			this,
-			InputSlotDebugActions,
-			SlotTexts[SlotIndex],
-			SlotPortIndices.IsValidIndex(SlotIndex) ? SlotPortIndices[SlotIndex] : INDEX_NONE,
-			SlotCanAddResources.IsValidIndex(SlotIndex) && SlotCanAddResources[SlotIndex],
-			SlotShowDebugButtons.IsValidIndex(SlotIndex) && SlotShowDebugButtons[SlotIndex]);
+			EmptyText,
+			FLinearColor(0.84f, 0.91f, 1.0f, 1.0f));
+		return;
+	}
+
+	for (const FSRResourceInstance& PreviewResource : PreviewResources)
+	{
+		AddPreviewResourceCard(
+			WidgetTree,
+			InputResourceSlotBox,
+			PreviewResource,
+			FLinearColor(0.84f, 0.91f, 1.0f, 1.0f));
 	}
 }
 
-void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComponent* FacilityNetwork, const FSRFacilityInstance& FacilityInstance)
+void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComponent* FacilityNetwork, const FSRFacilityInstance&)
 {
 	if (!OutputResourceSlotBox)
 	{
@@ -1341,36 +2709,21 @@ void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComp
 		}
 	}
 
-	TArray<FString> SlotTexts;
-	const int32 OutputSlotCount = FMath::Max(FacilityInstance.OutputPortInventories.Num(), PreviewOutputs.Num());
-	if (OutputSlotCount <= 0)
+	const int32 PreviewOutputCount = PreviewOutputs.Num();
+	const FString EmptyText = TEXT("Process result unavailable");
+
+	if (OutputPreviewTextBlock)
 	{
-		SlotTexts.Add(TEXT("No Output Port\n-\nProcess cannot complete"));
-	}
-	else
-	{
-		for (int32 SlotIndex = 0; SlotIndex < OutputSlotCount; ++SlotIndex)
-		{
-			const FSRFacilityPortInventory* PortInventory = FacilityInstance.OutputPortInventories.IsValidIndex(SlotIndex)
-				? &FacilityInstance.OutputPortInventories[SlotIndex]
-				: nullptr;
-			const FSRResourceInstance* PreviewResource = PreviewOutputs.IsValidIndex(SlotIndex)
-				? &PreviewOutputs[SlotIndex]
-				: nullptr;
-			SlotTexts.Add(BuildResourceSlotText(
-				TEXT("Output"),
-				SlotIndex,
-				PortInventory ? PortInventory->PortId : NAME_None,
-				PreviewResource,
-				PreviewOutputs.IsEmpty() ? TEXT("No Preview") : TEXT("Empty")));
-		}
+		OutputPreviewTextBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("Output Resource Preview (%d)"),
+			PreviewOutputCount)));
 	}
 
-	FString NewSignature = FString::Printf(TEXT("Output:%d"), SlotTexts.Num());
-	for (const FString& SlotText : SlotTexts)
+	FString NewSignature = FString::Printf(TEXT("OutputPreview:%d:%s"), PreviewOutputs.Num(), *EmptyText);
+	for (int32 PreviewIndex = 0; PreviewIndex < PreviewOutputs.Num(); ++PreviewIndex)
 	{
 		NewSignature += TEXT("|");
-		NewSignature += SlotText;
+		NewSignature += BuildResourceSlotText(TEXT("Output"), PreviewIndex, NAME_None, &PreviewOutputs[PreviewIndex], TEXT("No Preview"));
 	}
 	if (OutputResourcePanelSignature == NewSignature)
 	{
@@ -1379,14 +2732,396 @@ void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComp
 
 	OutputResourcePanelSignature = NewSignature;
 	OutputResourceSlotBox->ClearChildren();
-	for (const FString& SlotText : SlotTexts)
+	if (PreviewOutputs.IsEmpty())
 	{
-		AddResourceSlotCard(
+		AddInventoryInfoCard(
 			WidgetTree,
 			OutputResourceSlotBox,
-			SlotText,
-			FLinearColor(0.84f, 1.0f, 0.90f, 1.0f),
-			FLinearColor(0.065f, 0.120f, 0.090f, 0.98f));
+			EmptyText,
+			FLinearColor(0.84f, 1.0f, 0.90f, 1.0f));
+		return;
+	}
+
+	for (const FSRResourceInstance& PreviewOutput : PreviewOutputs)
+	{
+		AddPreviewResourceCard(
+			WidgetTree,
+			OutputResourceSlotBox,
+			PreviewOutput,
+			FLinearColor(0.84f, 1.0f, 0.90f, 1.0f));
+	}
+}
+
+void USRFacilityControlWidget::RefreshInputInventorySlots(
+	USRFacilityNetworkComponent* FacilityNetwork,
+	const FSRFacilityInstance& FacilityInstance,
+	bool bIsMiningFacility)
+{
+	if (!InputInventorySlotBox)
+	{
+		return;
+	}
+
+	const FString EmptyText = bIsMiningFacility
+		? BuildMiningTargetSummary(FacilityNetwork, FacilityInstance.OccupantId)
+		: TEXT("No input slots");
+	const FString NewSignature = bIsMiningFacility
+		? FString::Printf(TEXT("InputMining:%s"), *EmptyText)
+		: BuildInventoryPanelSignature(TEXT("Input"), FacilityInstance.InputPortInventories, EmptyText);
+	if (InputInventoryPanelSignature == NewSignature)
+	{
+		return;
+	}
+
+	InputInventoryPanelSignature = NewSignature;
+	InputInventorySlotBox->ClearChildren();
+	if (bIsMiningFacility)
+	{
+		AddInventoryInfoCard(WidgetTree, InputInventorySlotBox, EmptyText, FLinearColor(0.82f, 0.88f, 1.0f, 1.0f));
+		return;
+	}
+
+	if (FacilityInstance.InputPortInventories.IsEmpty())
+	{
+		AddInventoryInfoCard(WidgetTree, InputInventorySlotBox, EmptyText, FLinearColor(0.82f, 0.88f, 1.0f, 1.0f));
+		return;
+	}
+
+	for (int32 SlotIndex = 0; SlotIndex < FacilityInstance.InputPortInventories.Num(); ++SlotIndex)
+	{
+		AddInventorySlotCard(
+			WidgetTree,
+			InputInventorySlotBox,
+			FacilityInstance.InputPortInventories[SlotIndex],
+			SlotIndex,
+			TEXT("Input"),
+			FLinearColor(0.82f, 0.88f, 1.0f, 1.0f));
+	}
+}
+
+void USRFacilityControlWidget::RefreshOutputInventorySlots(const FSRFacilityInstance& FacilityInstance)
+{
+	if (!OutputInventorySlotBox)
+	{
+		return;
+	}
+
+	const FString EmptyText = TEXT("No output slots");
+	const FString NewSignature = BuildInventoryPanelSignature(TEXT("Output"), FacilityInstance.OutputPortInventories, EmptyText);
+	if (OutputInventoryPanelSignature == NewSignature)
+	{
+		return;
+	}
+
+	OutputInventoryPanelSignature = NewSignature;
+	OutputInventorySlotBox->ClearChildren();
+	if (FacilityInstance.OutputPortInventories.IsEmpty())
+	{
+		AddInventoryInfoCard(WidgetTree, OutputInventorySlotBox, EmptyText, FLinearColor(0.82f, 1.0f, 0.88f, 1.0f));
+		return;
+	}
+
+	for (int32 SlotIndex = 0; SlotIndex < FacilityInstance.OutputPortInventories.Num(); ++SlotIndex)
+	{
+		AddInventorySlotCard(
+			WidgetTree,
+			OutputInventorySlotBox,
+			FacilityInstance.OutputPortInventories[SlotIndex],
+			SlotIndex,
+			TEXT("Output"),
+			FLinearColor(0.82f, 1.0f, 0.88f, 1.0f));
+	}
+}
+
+void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponent* FacilityNetwork, const FSRFacilityInstance& FacilityInstance)
+{
+	if (!HubRouteTextBlock || !HubDestinationButtonBox || !HubRouteStatusTextBlock)
+	{
+		return;
+	}
+
+	const bool bIsHubFacility = IsValid(FacilityNetwork) && FacilityNetwork->IsHubFacility(FacilityInstance.OccupantId);
+	if (!bIsHubFacility)
+	{
+		HubRouteTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesUnavailableTitle", "Hub Routes"));
+		HubRouteStatusTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesUnavailableStatus", "Only Hub facilities can launch spaceships."));
+		if (HubRoutePanelSignature != TEXT("NotHub"))
+		{
+			HubRoutePanelSignature = TEXT("NotHub");
+			HubDestinationButtonBox->ClearChildren();
+			HubRouteDestinationActions.Reset();
+			HubRouteLaunchActions.Reset();
+			HubRouteRemovalActions.Reset();
+			HubRouteDebugOrbitActions.Reset();
+			HubRouteSettingActions.Reset();
+		}
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
+		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
+		: nullptr;
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		HubRouteTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesNoSubsystemTitle", "Hub Routes"));
+		HubRouteStatusTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesNoSubsystemStatus", "Logistics subsystem unavailable."));
+		if (HubRoutePanelSignature != TEXT("NoSubsystem"))
+		{
+			HubRoutePanelSignature = TEXT("NoSubsystem");
+			HubDestinationButtonBox->ClearChildren();
+			HubRouteDestinationActions.Reset();
+			HubRouteLaunchActions.Reset();
+			HubRouteRemovalActions.Reset();
+			HubRouteDebugOrbitActions.Reset();
+			HubRouteSettingActions.Reset();
+		}
+		return;
+	}
+
+	FSRHubEndpoint SourceHub;
+	if (!SpaceLogisticsSubsystem->GetHubEndpoint(FocusedActor.Get(), FocusedOccupantId, SourceHub))
+	{
+		HubRouteTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesNoEndpointTitle", "Hub Routes"));
+		HubRouteStatusTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesNoEndpointStatus", "Source Hub endpoint not found."));
+		if (HubRoutePanelSignature != TEXT("NoSourceEndpoint"))
+		{
+			HubRoutePanelSignature = TEXT("NoSourceEndpoint");
+			HubDestinationButtonBox->ClearChildren();
+			HubRouteDestinationActions.Reset();
+			HubRouteLaunchActions.Reset();
+			HubRouteRemovalActions.Reset();
+			HubRouteDebugOrbitActions.Reset();
+			HubRouteSettingActions.Reset();
+		}
+		return;
+	}
+
+	TArray<FSRHubEndpoint> HubEndpoints;
+	SpaceLogisticsSubsystem->GetHubEndpoints(HubEndpoints);
+
+	TArray<FSRHubRoute> HubRoutes;
+	SpaceLogisticsSubsystem->GetHubRoutes(HubRoutes);
+
+	TArray<FName> AvailableCargoResourceIds;
+	if (IsValid(FacilityNetwork))
+	{
+		FacilityNetwork->GetHubOutboundCargoResourceIds(FocusedOccupantId, AvailableCargoResourceIds);
+	}
+
+	int32 DestinationCount = 0;
+	int32 ConnectedRouteCount = 0;
+	for (const FSRHubEndpoint& HubEndpoint : HubEndpoints)
+	{
+		if (!HubEndpoint.IsValid() || AreHubEndpointKeysEqual(HubEndpoint, SourceHub))
+		{
+			continue;
+		}
+		++DestinationCount;
+	}
+
+	for (const FSRHubRoute& HubRoute : HubRoutes)
+	{
+		if (HubRoute.bDebugLocalOrbit)
+		{
+			continue;
+		}
+
+		if (AreHubEndpointKeysEqual(HubRoute.SourceHub, SourceHub) || AreHubEndpointKeysEqual(HubRoute.DestinationHub, SourceHub))
+		{
+			++ConnectedRouteCount;
+		}
+	}
+
+	if (bHasSelectedHubRouteDestination)
+	{
+		bool bFoundSelectedDestination = false;
+		for (const FSRHubEndpoint& HubEndpoint : HubEndpoints)
+		{
+			if (!HubEndpoint.IsValid() || AreHubEndpointKeysEqual(HubEndpoint, SourceHub))
+			{
+				continue;
+			}
+
+			if (AreHubEndpointKeysEqual(HubEndpoint, SelectedHubRouteDestination))
+			{
+				SelectedHubRouteDestination = HubEndpoint;
+				bFoundSelectedDestination = true;
+				break;
+			}
+		}
+
+		if (!bFoundSelectedDestination)
+		{
+			SelectedHubRouteDestination = FSRHubEndpoint();
+			bHasSelectedHubRouteDestination = false;
+			LastHubRouteStatus.Reset();
+		}
+	}
+
+	HubRouteTextBlock->SetText(FText::FromString(FString::Printf(TEXT("Hub Routes (%d active)"), ConnectedRouteCount)));
+	const FString StatusText = !LastHubRouteStatus.IsEmpty()
+		? LastHubRouteStatus
+		: (bHasSelectedHubRouteDestination
+			? FString::Printf(TEXT("Destination selected: %s. Press Launch Route."), *BuildCelestialBodyDisplayName(SelectedHubRouteDestination.BodyActor.Get()))
+			: FString::Printf(
+				TEXT("%s"),
+				DestinationCount > 0 ? TEXT("Select destination Hub.") : TEXT("No destination Hub available.")));
+	HubRouteStatusTextBlock->SetText(FText::FromString(StatusText));
+
+	FString NewSignature = FString::Printf(
+		TEXT("Hub:%s:%s:%d:%d:%s:Selected:%s:%s"),
+		*GetNameSafe(SourceHub.BodyActor.Get()),
+		*SourceHub.HubOccupantId.ToString(),
+		DestinationCount,
+		ConnectedRouteCount,
+		*StatusText,
+		bHasSelectedHubRouteDestination ? *GetNameSafe(SelectedHubRouteDestination.BodyActor.Get()) : TEXT("None"),
+		bHasSelectedHubRouteDestination ? *SelectedHubRouteDestination.HubOccupantId.ToString() : TEXT("None"));
+	for (const FSRHubEndpoint& HubEndpoint : HubEndpoints)
+	{
+		if (!HubEndpoint.IsValid() || AreHubEndpointKeysEqual(HubEndpoint, SourceHub))
+		{
+			continue;
+		}
+
+		NewSignature += FString::Printf(
+			TEXT("|Endpoint:%s:%s"),
+			*GetNameSafe(HubEndpoint.BodyActor.Get()),
+			*HubEndpoint.HubOccupantId.ToString());
+	}
+	for (const FName AvailableCargoResourceId : AvailableCargoResourceIds)
+	{
+		NewSignature += FString::Printf(TEXT("|CargoOption:%s"), *AvailableCargoResourceId.ToString());
+	}
+	for (const FSRHubRoute& HubRoute : HubRoutes)
+	{
+		if (HubRoute.bDebugLocalOrbit)
+		{
+			continue;
+		}
+
+		if (!AreHubEndpointKeysEqual(HubRoute.SourceHub, SourceHub) && !AreHubEndpointKeysEqual(HubRoute.DestinationHub, SourceHub))
+		{
+			continue;
+		}
+
+		NewSignature += FString::Printf(
+			TEXT("|Route:%s:%d:%d:%d:%d:%s"),
+			*HubRoute.RouteId.ToString(),
+			static_cast<int32>(HubRoute.Phase),
+			HubRoute.bDebugLocalOrbit ? 1 : 0,
+			HubRoute.MaxCargoStackCount,
+			HubRoute.bReturnEmptyWhenNoCargo ? 1 : 0,
+			*HubRoute.CargoResourceId.ToString());
+	}
+
+	if (HubRoutePanelSignature == NewSignature)
+	{
+		return;
+	}
+
+	HubRoutePanelSignature = NewSignature;
+	HubDestinationButtonBox->ClearChildren();
+	HubRouteDestinationActions.Reset();
+	HubRouteLaunchActions.Reset();
+	HubRouteRemovalActions.Reset();
+	HubRouteDebugOrbitActions.Reset();
+	HubRouteSettingActions.Reset();
+
+	for (const FSRHubEndpoint& HubEndpoint : HubEndpoints)
+	{
+		if (!HubEndpoint.IsValid() || AreHubEndpointKeysEqual(HubEndpoint, SourceHub))
+		{
+			continue;
+		}
+
+		const FSRHubRoute* ExistingRoute = nullptr;
+		for (const FSRHubRoute& HubRoute : HubRoutes)
+		{
+			if (HubRoute.bDebugLocalOrbit)
+			{
+				continue;
+			}
+
+			if (DoesHubRouteConnectEndpoints(HubRoute, SourceHub, HubEndpoint))
+			{
+				ExistingRoute = &HubRoute;
+				break;
+			}
+		}
+
+		const bool bSelectedDestination = bHasSelectedHubRouteDestination
+			&& AreHubEndpointKeysEqual(HubEndpoint, SelectedHubRouteDestination);
+		const FString ButtonLabel = BuildHubEndpointUiLabel(HubEndpoint, World);
+		AddHubDestinationButton(
+			WidgetTree,
+			HubDestinationButtonBox,
+			this,
+			HubRouteDestinationActions,
+			HubEndpoint,
+			ButtonLabel,
+			bSelectedDestination,
+			ExistingRoute == nullptr);
+		if (bSelectedDestination && !ExistingRoute)
+		{
+			AddHubRouteLaunchButton(
+				WidgetTree,
+				HubDestinationButtonBox,
+				this,
+				HubRouteLaunchActions,
+				HubEndpoint,
+				true);
+		}
+		if (ExistingRoute)
+		{
+			const int32 NextMaxCargoStackCount = ExistingRoute->MaxCargoStackCount <= 1 ? 5 : 1;
+			AddHubRouteMaxCargoStackCountButton(
+				WidgetTree,
+				HubDestinationButtonBox,
+				this,
+				HubRouteSettingActions,
+				ExistingRoute->RouteId,
+				NextMaxCargoStackCount);
+			AddHubRouteReturnEmptyButton(
+				WidgetTree,
+				HubDestinationButtonBox,
+				this,
+				HubRouteSettingActions,
+				ExistingRoute->RouteId,
+				!ExistingRoute->bReturnEmptyWhenNoCargo);
+			if (!ExistingRoute->CargoResourceId.IsNone())
+			{
+				AddHubRouteCargoResourceButton(
+					WidgetTree,
+					HubDestinationButtonBox,
+					this,
+					HubRouteSettingActions,
+					ExistingRoute->RouteId,
+					NAME_None);
+			}
+			for (const FName AvailableCargoResourceId : AvailableCargoResourceIds)
+			{
+				if (AvailableCargoResourceId.IsNone() || AvailableCargoResourceId == ExistingRoute->CargoResourceId)
+				{
+					continue;
+				}
+
+				AddHubRouteCargoResourceButton(
+					WidgetTree,
+					HubDestinationButtonBox,
+					this,
+					HubRouteSettingActions,
+					ExistingRoute->RouteId,
+					AvailableCargoResourceId);
+			}
+			AddHubRouteRemoveButton(
+				WidgetTree,
+				HubDestinationButtonBox,
+				this,
+				HubRouteRemovalActions,
+				ExistingRoute->RouteId);
+		}
 	}
 }
 
@@ -1414,6 +3149,34 @@ void USRFacilityControlWidget::RefreshControlText()
 		{
 			OutputResourceSlotBox->ClearChildren();
 			OutputResourcePanelSignature.Reset();
+		}
+		if (InputInventorySlotBox)
+		{
+			InputInventorySlotBox->ClearChildren();
+			InputInventoryPanelSignature.Reset();
+		}
+		if (OutputInventorySlotBox)
+		{
+			OutputInventorySlotBox->ClearChildren();
+			OutputInventoryPanelSignature.Reset();
+		}
+		if (HubDestinationButtonBox)
+		{
+			HubDestinationButtonBox->ClearChildren();
+			HubRouteDestinationActions.Reset();
+			HubRouteLaunchActions.Reset();
+			HubRouteRemovalActions.Reset();
+			HubRouteDebugOrbitActions.Reset();
+			HubRouteSettingActions.Reset();
+			HubRoutePanelSignature.Reset();
+		}
+		if (HubRouteTextBlock)
+		{
+			HubRouteTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesNoFacility", "Hub Routes"));
+		}
+		if (HubRouteStatusTextBlock)
+		{
+			HubRouteStatusTextBlock->SetText(FText::GetEmpty());
 		}
 		SetVisibility(ESlateVisibility::Collapsed);
 		return;
@@ -1482,13 +3245,6 @@ void USRFacilityControlWidget::RefreshControlText()
 			FacilityInstance.bProcessEnabled ? TEXT("ON") : TEXT("OFF"),
 			*ProcessReason)));
 	}
-	if (InputResourceTextBlock)
-	{
-		InputResourceTextBlock->SetText(FText::FromString(
-			bIsMiningFacility
-				? FString::Printf(TEXT("Mining Target (%s)"), bHasMiningTarget ? TEXT("Ready") : TEXT("None"))
-				: FString::Printf(TEXT("Input Resource (%d)"), FacilityInstance.InputPortInventories.Num())));
-	}
 	RefreshInputResourceSlots(FacilityNetwork, FacilityInstance);
 	if (EffectsTextBlock)
 	{
@@ -1505,24 +3261,22 @@ void USRFacilityControlWidget::RefreshControlText()
 			FacilityInstance.ProcessProgressSeconds,
 			ProcessSeconds)));
 	}
-	if (OutputPreviewTextBlock)
-	{
-		OutputPreviewTextBlock->SetText(FText::FromString(FString::Printf(
-			TEXT("Output Resource (%d)"),
-			FacilityInstance.OutputPortInventories.Num())));
-	}
 	RefreshOutputResourceSlots(FacilityNetwork, FacilityInstance);
 	if (InputInventoryTextBlock)
 	{
 		InputInventoryTextBlock->SetText(FText::FromString(
 			bIsMiningFacility
-				? BuildMiningTargetSummary(FacilityNetwork, FocusedOccupantId)
-				: BuildPortInventorySummary(TEXT("Input Inventory"), FacilityInstance.InputPortInventories)));
+				? TEXT("Input Inventory (Mining)")
+				: FString::Printf(TEXT("Input Inventory (%d slots)"), FacilityInstance.InputPortInventories.Num())));
 	}
+	RefreshInputInventorySlots(FacilityNetwork, FacilityInstance, bIsMiningFacility);
 	if (OutputInventoryTextBlock)
 	{
-		OutputInventoryTextBlock->SetText(FText::FromString(BuildPortInventorySummary(TEXT("Output Inventory"), FacilityInstance.OutputPortInventories)));
+		OutputInventoryTextBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("Output Inventory (%d slots)"),
+			FacilityInstance.OutputPortInventories.Num())));
 	}
+	RefreshOutputInventorySlots(FacilityInstance);
 	if (DeliverStatusTextBlock)
 	{
 		DeliverStatusTextBlock->SetText(FText::FromString(FString::Printf(
@@ -1530,4 +3284,5 @@ void USRFacilityControlWidget::RefreshControlText()
 			FacilityInstance.bDeliverEnabled ? TEXT("ON") : TEXT("OFF"),
 			bHasOutputConveyor ? TEXT("Output conveyor connected") : TEXT("No output conveyor"))));
 	}
+	RefreshHubRouteSection(FacilityNetwork, FacilityInstance);
 }

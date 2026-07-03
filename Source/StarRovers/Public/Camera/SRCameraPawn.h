@@ -142,6 +142,9 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Focus", meta = (DisplayName = "FocusFollowSmoothTime", ClampMin = "0.01"))
     float FocusFollowSmoothTime;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Focus", meta = (DisplayName = "SmallActorFocusZoomDistance", ClampMin = "0.0"))
+    float SmallActorFocusZoomDistance;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Focus|Transition", meta = (DisplayName = "FocusArcTransitionDuration", ClampMin = "0.10"))
     float FocusArcTransitionDuration;
 

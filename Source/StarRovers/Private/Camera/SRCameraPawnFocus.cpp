@@ -2,12 +2,70 @@
 
 #include "Camera/CameraComponent.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Components/PrimitiveComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Gravity/SRGravityParent.h"
 
 namespace
 {
 	constexpr float DefaultFocusZoomMultiplier = 3.0f;
+
+	float ComputeActorVisiblePrimitiveRadius(const AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return 0.0f;
+		}
+
+		float LargestRadius = 0.0f;
+		TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(Actor);
+		Actor->GetComponents(PrimitiveComponents);
+		for (const UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+		{
+			if (!IsValid(PrimitiveComponent)
+				|| !PrimitiveComponent->IsVisible()
+				|| PrimitiveComponent->ComponentHasTag(TEXT("StarRovers.FocusCollision")))
+			{
+				continue;
+			}
+
+			LargestRadius = FMath::Max(LargestRadius, PrimitiveComponent->Bounds.SphereRadius);
+		}
+
+		return LargestRadius;
+	}
+
+	float ResolveActorFocusZoomDistance(
+		const AActor* Actor,
+		float CameraFieldOfViewDegrees,
+		float FocusZoomMultiplier,
+		float SmallActorFocusZoomDistance)
+	{
+		if (!IsValid(Actor))
+		{
+			return 0.0f;
+		}
+
+		if (USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(Actor))
+		{
+			return USRCelestialBodyRuntimeLibrary::GetCelestialFocusZoomDistance(
+				Actor,
+				CameraFieldOfViewDegrees,
+				FocusZoomMultiplier);
+		}
+
+		const float SafeFallbackDistance = FMath::Max(0.0f, SmallActorFocusZoomDistance);
+		const float VisiblePrimitiveRadius = ComputeActorVisiblePrimitiveRadius(Actor);
+		if (VisiblePrimitiveRadius <= KINDA_SMALL_NUMBER)
+		{
+			return SafeFallbackDistance;
+		}
+
+		const float SafeFieldOfViewDegrees = FMath::Clamp(CameraFieldOfViewDegrees, 5.0f, 170.0f);
+		const float HalfFieldOfViewRadians = FMath::DegreesToRadians(SafeFieldOfViewDegrees * 0.5f);
+		const float FramedDistance = VisiblePrimitiveRadius / FMath::Tan(HalfFieldOfViewRadians);
+		return FMath::Max(SafeFallbackDistance, FramedDistance * FMath::Max(0.0f, FocusZoomMultiplier));
+	}
 }
 void ASRCameraPawn::FocusActor(AActor* NewFocusActor)
 {
@@ -39,10 +97,11 @@ void ASRCameraPawn::FocusActorWithTransition(AActor* NewFocusActor, bool bUseArc
 		}
 
 		const float CurrentCameraFieldOfView = Camera->FieldOfView;
-		const float DesiredFocusZoom = USRCelestialBodyRuntimeLibrary::GetCelestialFocusZoomDistance(
+		const float DesiredFocusZoom = ResolveActorFocusZoomDistance(
 			FocusedActor,
 			CurrentCameraFieldOfView,
-			DefaultFocusZoomMultiplier);
+			DefaultFocusZoomMultiplier,
+			SmallActorFocusZoomDistance);
 		ZoomDistanceTarget = ClampZoomDistance(DesiredFocusZoom);
 		if (bUseArcTransition)
 		{
@@ -56,6 +115,9 @@ void ASRCameraPawn::FocusActorWithTransition(AActor* NewFocusActor, bool bUseArc
 void ASRCameraPawn::ClearFocusActor()
 {
 	AActor* PreviousFocusedActor = FocusedActor.Get();
+	const bool bHadFocusedActor = FocusedActor != nullptr;
+	const FQuat CurrentCameraWorldRotation = Camera ? Camera->GetComponentQuat().GetNormalized() : FQuat::Identity;
+	const float CurrentZoomDistance = SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget;
 	if (FocusedActor)
 	{
 		DragTargetLocation = GetActorLocation();
@@ -68,6 +130,19 @@ void ASRCameraPawn::ClearFocusActor()
 	FocusSurface.ResetRotation();
 	StopFocusArcTransition();
 	ClearFocusSurfaceMotion();
+	if (bHadFocusedActor && Camera)
+	{
+		const FQuat FreeViewRotation = GetViewRotationForZoom(CurrentZoomDistance).Quaternion().GetNormalized();
+		const FQuat DesiredPawnRotation = (CurrentCameraWorldRotation * FreeViewRotation.Inverse()).GetNormalized();
+		SetActorRotation(DesiredPawnRotation.Rotator().GetNormalized());
+		ApplyZoomDrivenViewRotation(CurrentZoomDistance);
+		UpdateComponentTransforms();
+		if (SpringArm)
+		{
+			SpringArm->UpdateComponentToWorld();
+		}
+		Camera->UpdateComponentToWorld();
+	}
 	BroadcastFocusedActorChangedIfNeeded(PreviousFocusedActor);
 }
 
@@ -134,10 +209,11 @@ void ASRCameraPawn::ResetFocus()
 		return;
 	}
 
-	const float DesiredFocusZoom = USRCelestialBodyRuntimeLibrary::GetCelestialFocusZoomDistance(
+	const float DesiredFocusZoom = ResolveActorFocusZoomDistance(
 		FocusedActor,
 		Camera->FieldOfView,
-		DefaultFocusZoomMultiplier);
+		DefaultFocusZoomMultiplier,
+		SmallActorFocusZoomDistance);
 	ZoomDistanceTarget = ClampZoomDistance(DesiredFocusZoom);
 }
 

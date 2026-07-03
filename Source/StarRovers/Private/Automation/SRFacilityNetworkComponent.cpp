@@ -24,6 +24,20 @@ namespace
 		return FName(*FString::Printf(TEXT("%s_%d"), GetPortKindIdPrefix(PortKind), FMath::Max(0, PortIndex)));
 	}
 
+	FSRStructurePortSpec MakeDisconnectedPortSpec(ESRFacilityPortKind PortKind, int32 PortIndex)
+	{
+		FSRStructurePortSpec PortSpec;
+		PortSpec.PortId = MakeDefaultPortId(PortKind, PortIndex);
+		PortSpec.CellOffsetX = INDEX_NONE;
+		PortSpec.CellOffsetY = INDEX_NONE;
+		return PortSpec;
+	}
+
+	int32 ResolveInventorySlotCount(const FSRFacilityInventorySpec& InventorySpec, int32 StructurePortCount)
+	{
+		return FMath::Max(FMath::Max(0, InventorySpec.SlotCount), FMath::Max(0, StructurePortCount));
+	}
+
 	void AppendPortInventory(
 		TArray<FSRFacilityPortInventory>& PortInventories,
 		const FSRStructurePortSpec& StructurePortSpec,
@@ -166,36 +180,54 @@ void USRFacilityNetworkComponent::InitializeFacilityPortInventories(FSRFacilityI
 		return;
 	}
 
-	const int32 InputCapacity = FMath::Max(1, FacilityDataAsset->InputCapacity);
-	const int32 OutputCapacity = FMath::Max(1, FacilityDataAsset->OutputCapacity);
+	const int32 InputSlotCapacity = FMath::Max(1, FacilityDataAsset->InputInventory.SlotCapacity);
+	const int32 OutputSlotCapacity = FMath::Max(1, FacilityDataAsset->OutputInventory.SlotCapacity);
+	TArray<FSRStructurePortSpec> RotatedInputPorts;
+	TArray<FSRStructurePortSpec> RotatedOutputPorts;
 
 	if (IsValid(FacilityInstance.StructureDataAsset.Get()))
 	{
 		const FSRStructureData StructureData = FacilityInstance.StructureDataAsset->BuildData();
 		for (const FSRStructurePortSpec& StructureInputPort : StructureData.InputPorts)
 		{
-			const FSRStructurePortSpec RotatedInputPort = StarRovers::Structure::RotateStructurePortSpec(
+			RotatedInputPorts.Add(StarRovers::Structure::RotateStructurePortSpec(
 				StructureInputPort,
 				StructureData,
-				FacilityInstance.PlacementRotationSteps);
-			AppendPortInventory(
-				FacilityInstance.InputPortInventories,
-				RotatedInputPort,
-				ESRFacilityPortKind::Input,
-				InputCapacity);
+				FacilityInstance.PlacementRotationSteps));
 		}
 		for (const FSRStructurePortSpec& StructureOutputPort : StructureData.OutputPorts)
 		{
-			const FSRStructurePortSpec RotatedOutputPort = StarRovers::Structure::RotateStructurePortSpec(
+			RotatedOutputPorts.Add(StarRovers::Structure::RotateStructurePortSpec(
 				StructureOutputPort,
 				StructureData,
-				FacilityInstance.PlacementRotationSteps);
-			AppendPortInventory(
-				FacilityInstance.OutputPortInventories,
-				RotatedOutputPort,
-				ESRFacilityPortKind::Output,
-				OutputCapacity);
+				FacilityInstance.PlacementRotationSteps));
 		}
+	}
+
+	const int32 InputSlotCount = ResolveInventorySlotCount(FacilityDataAsset->InputInventory, RotatedInputPorts.Num());
+	for (int32 InputSlotIndex = 0; InputSlotIndex < InputSlotCount; ++InputSlotIndex)
+	{
+		const FSRStructurePortSpec SlotPortSpec = RotatedInputPorts.IsValidIndex(InputSlotIndex)
+			? RotatedInputPorts[InputSlotIndex]
+			: MakeDisconnectedPortSpec(ESRFacilityPortKind::Input, InputSlotIndex);
+		AppendPortInventory(
+			FacilityInstance.InputPortInventories,
+			SlotPortSpec,
+			ESRFacilityPortKind::Input,
+			InputSlotCapacity);
+	}
+
+	const int32 OutputSlotCount = ResolveInventorySlotCount(FacilityDataAsset->OutputInventory, RotatedOutputPorts.Num());
+	for (int32 OutputSlotIndex = 0; OutputSlotIndex < OutputSlotCount; ++OutputSlotIndex)
+	{
+		const FSRStructurePortSpec SlotPortSpec = RotatedOutputPorts.IsValidIndex(OutputSlotIndex)
+			? RotatedOutputPorts[OutputSlotIndex]
+			: MakeDisconnectedPortSpec(ESRFacilityPortKind::Output, OutputSlotIndex);
+		AppendPortInventory(
+			FacilityInstance.OutputPortInventories,
+			SlotPortSpec,
+			ESRFacilityPortKind::Output,
+			OutputSlotCapacity);
 	}
 
 	RefreshFacilityAggregateInventories(FacilityInstance);
@@ -206,13 +238,25 @@ void USRFacilityNetworkComponent::RefreshFacilityAggregateInventories(FSRFacilit
 	FacilityInstance.InputInventory.Reset();
 	for (const FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
 	{
-		FacilityInstance.InputInventory.Append(InputPortInventory.Inventory);
+		for (const FSRResourceInstance& ResourceInstance : InputPortInventory.Inventory)
+		{
+			if (ResourceInstance.StackCount > 0)
+			{
+				FacilityInstance.InputInventory.Add(ResourceInstance);
+			}
+		}
 	}
 
 	FacilityInstance.OutputInventory.Reset();
 	for (const FSRFacilityPortInventory& OutputPortInventory : FacilityInstance.OutputPortInventories)
 	{
-		FacilityInstance.OutputInventory.Append(OutputPortInventory.Inventory);
+		for (const FSRResourceInstance& ResourceInstance : OutputPortInventory.Inventory)
+		{
+			if (ResourceInstance.StackCount > 0)
+			{
+				FacilityInstance.OutputInventory.Add(ResourceInstance);
+			}
+		}
 	}
 }
 

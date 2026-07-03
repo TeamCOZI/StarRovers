@@ -1,5 +1,7 @@
 ﻿using UnrealBuildTool;
 
+using System.IO;
+
 public class StarRovers : ModuleRules
 {
     public StarRovers(ReadOnlyTargetRules Target) : base(Target)
@@ -11,11 +13,13 @@ public class StarRovers : ModuleRules
             {
                 "Core",
                 "CoreUObject",
+                "DeveloperSettings",
                 "Engine",
                 "EnhancedInput",
                 "GeometryCore",
                 "GeometryFramework",
                 "InputCore",
+                "Niagara",
                 "PCG",
                 "UMG",
             }
@@ -28,5 +32,23 @@ public class StarRovers : ModuleRules
                 "SlateCore",
             }
         );
+
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.AddRange(
+                new[]
+                {
+                    "NiagaraEditor",
+                    "UnrealEd",
+                }
+            );
+
+            PrivateIncludePaths.AddRange(
+                new[]
+                {
+                    Path.Combine(EngineDirectory, "Plugins/FX/Niagara/Source/NiagaraEditor/Private"),
+                }
+            );
+        }
     }
 }

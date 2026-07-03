@@ -12,6 +12,7 @@ class STARROVERS_API USRTimeControlSubsystem : public UTickableWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 

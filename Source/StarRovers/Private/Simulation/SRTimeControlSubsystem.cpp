@@ -1,5 +1,17 @@
 #include "Simulation/SRTimeControlSubsystem.h"
 
+#include "Simulation/SRSimulationSettings.h"
+
+void USRTimeControlSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	if (const USRSimulationSettings* SimulationSettings = GetDefault<USRSimulationSettings>())
+	{
+		SetSecondsPerPeriod(SimulationSettings->SecondsPerPeriod);
+	}
+}
+
 void USRTimeControlSubsystem::Tick(float DeltaTime)
 {
 	const float EffectiveTimeScale = GetEffectiveTimeScale();

@@ -72,6 +72,7 @@ ASRCameraPawn::ASRCameraPawn()
 	FocusedObliqueViewBaseRotation = FRotator::ZeroRotator;
 	FocusedObliqueViewMaxRotation = FRotator(60.0f, 0.0f, 0.0f);
 	FocusFollowSmoothTime = 0.35f;
+	SmallActorFocusZoomDistance = 2500.0f;
 	FocusArcTransitionDuration = 1.55f;
 	FocusArcHeightMultiplier = 2.75f;
 	FocusArcMinHeight = 30000.0f;

@@ -6,6 +6,13 @@
 #include "SRFacilityDataAsset.generated.h"
 
 UENUM(BlueprintType)
+enum class ESRFacilityKind : uint8
+{
+	Standard UMETA(DisplayName = "Standard"),
+	Hub UMETA(DisplayName = "Hub"),
+};
+
+UENUM(BlueprintType)
 enum class ESRFacilityRarity : uint8
 {
 	Basic UMETA(DisplayName = "Basic"),
@@ -79,6 +86,18 @@ struct STARROVERS_API FSRFacilityEffectSpec
 	TObjectPtr<USRResourceDataAsset> ProducedResource = nullptr;
 };
 
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRFacilityInventorySpec
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility|Inventory", meta = (DisplayName = "SlotCount", ClampMin = "0"))
+	int32 SlotCount = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility|Inventory", meta = (DisplayName = "SlotCapacity", ClampMin = "1"))
+	int32 SlotCapacity = 8;
+};
+
 UCLASS(BlueprintType)
 class STARROVERS_API USRFacilityDataAsset : public UDataAsset
 {
@@ -86,6 +105,8 @@ class STARROVERS_API USRFacilityDataAsset : public UDataAsset
 
 public:
 	USRFacilityDataAsset();
+
+	virtual void PostLoad() override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Identity", meta = (DisplayName = "FacilityId"))
 	FName FacilityId;
@@ -96,19 +117,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Identity", meta = (DisplayName = "Description"))
 	FText Description;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "Rarity"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "FacilityKind"))
+	ESRFacilityKind FacilityKind = ESRFacilityKind::Standard;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "Rarity", EditCondition = "FacilityKind == ESRFacilityKind::Standard", EditConditionHides))
 	ESRFacilityRarity Rarity = ESRFacilityRarity::Basic;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "OperationKind"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "OperationKind", EditCondition = "FacilityKind == ESRFacilityKind::Standard", EditConditionHides))
 	ESRFacilityOperationKind OperationKind = ESRFacilityOperationKind::Process;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "BaseProcessSeconds", ClampMin = "0.01"))
 	float BaseProcessSeconds = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "InputCapacity", ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility|Inventory", meta = (DisplayName = "InputInventory"))
+	FSRFacilityInventorySpec InputInventory;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility|Inventory", meta = (DisplayName = "OutputInventory"))
+	FSRFacilityInventorySpec OutputInventory;
+
+	UPROPERTY()
 	int32 InputCapacity = 8;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "OutputCapacity", ClampMin = "1"))
+	UPROPERTY()
 	int32 OutputCapacity = 8;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "bRequiresColdTemperature"))

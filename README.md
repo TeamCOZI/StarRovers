@@ -52,6 +52,7 @@ Core flow:
 -> Dynamic Mesh / `USRPlanetSurfaceGrid`
 -> `USRAssemblyComponent`
 -> `USRStructureInstanceManagerComponent` / `USRConveyorNetworkComponent` / `USRFacilityNetworkComponent`
+-> `USRSpaceLogisticsSubsystem` / `ASRSpaceshipActor`
 
 Feature owners:
 
@@ -59,23 +60,29 @@ Feature owners:
 - Runtime System Generation: [O] `ASRSolarSystemGenerator`, `USRCelestialBodyRegistrySubsystem`
 - Celestial Runtime: [O] `ASRCelestialBody`, `ASRPlanet`, `ASRStar`; [H] `USRCelestialBodyRuntimeLibrary`; runtime/data helper types live in `FSRCelestialBodyDynamicMeshRuntimeState` and `FSRCelestialBodyData`
 - Celestial Data: [D] `USRStarDataAsset`, `USRPlanetDataAsset`, `USRMoonDataAsset`, `USRDynamicMeshBaseDataAsset`
-- Orbit / Time / Gravity: [O] `USROrbit`, `USRTimeControlSubsystem`, `USRGravityParent`, `USRGravityChild`
+- Orbit / Time / Gravity: [O] `USROrbit`, `USRTimeControlSubsystem`, `USRGravityParent`, `USRGravityChild`; [D] `USRSimulationSettings`
 - Terrain / Biome: [D] `FSRDynamicMeshGeneration`, `USRPlanetBiomeDataAsset`, `USRPlanetTerrainProfileDataAsset`; [H] `FSRPlanetTerrainGenerator`
 - Surface Grid: [O] `USRPlanetSurfaceGrid`; [H] `USRPlanetSurfaceGridLibrary`; runtime indexing/raycast/batch state lives in `FSRPlanetSurfaceGrid*State` helper structs
 - Assembly / Structure: [O] `USRAssemblyComponent` for placement/editing workflow, area selection/copy, placement queue, and placement history; [O] `USRStructureInstanceManagerComponent` for placed structure truth, `ASRStructure`; [D] `USRStructureDataAsset`; [H] `USRStructurePlacementLibrary`; runtime structs `FSRPlacedStructureInstance`, `FSRResourceDepositInstance`; interface `ISRBuildableStructureInterface`
 - Conveyor: [O] `USRConveyorNetworkComponent` for graph/path/transport truth, `ASRConveyorBeltActor` for visual output; runtime structs `FSRConveyorLaneKey`, `FSRConveyorSegment`, `FSRConveyorVisualPath`, `FSRConveyorItem`, with transport/cache state grouped in `FSRConveyorTransportRuntimeState`
 - Resource / Facility Automation: [O] `USRFacilityNetworkComponent`; [D] `USRResourceDataAsset`, `USRFacilityDataAsset`; runtime structs `FSRResourceInstance`, `FSRFacilityInstance`, `FSRFacilityPortInventory`, with facility network state grouped in `FSRFacilityNetworkRuntimeState`
+- Space Logistics: [O] `USRSpaceLogisticsSubsystem`, `ASRSpaceshipActor`; runtime structs `FSRHubEndpoint`, `FSRHubRoute`, `FSRSpaceLogisticsSaveData`
 - Natural Structures: [O] `ASRSolarSystemGenerator` with `USRStructureInstanceManagerComponent`; [D] `FSRProfileNaturalStructureSpawnRule`, `FSRNaturalStructureSpawnRuleOverride`
 - UI: [UI] `USRCelestialBodyFocusInfoWidget`, `USRCelestialBodyOverviewWidget`, `USRTimeControlWidget`, `USRStructureSelectionWidget`, `USRFacilityControlWidget`, `USRLoadingScreenWidget`; widgets mirror state or dispatch requests, and are created/refreshed by `ASRPlayerController`
-- Diagnostics / Visual Utilities: [H] `FSRLineThicknessUtils`, `FSRMemoryDiagnostics`, `FSRTimingLog`
+- Diagnostics / Visual / Editor Utilities: [H] `FSRLineThicknessUtils`, `FSRMemoryDiagnostics`, `FSRTimingLog`, `FSRVisualPerformanceSettings`; editor-only helpers live under `Private/Editor`
 
 C++ implementation structure:
 
 - Major runtime owners are intentionally split across partial `.cpp` files by responsibility. Read the owner header first, then use `rg --files` or symbol search to open the relevant private implementation file.
 - Large owner headers may also delegate runtime state and shared data structs to small public helper headers named `*RuntimeState`, `*RuntimeTypes`, `*DataTypes`, or feature-specific helpers such as assembly history/selection/copy/queue.
+- Current source roots include `Assembly`, `Automation`, `Camera`, `Celestial`, `Conveyor`, `Gravity`, `Logistics`, `Simulation`, `Structure`, `Surface`, `UI`, `Utility`, and `Visual`.
 - Common split names are descriptive: `Input`, `Selection`, `UI`, `Focus`, `Surface`, `SurfaceInteraction`, `Placement`, `Deletion`, `AreaSelection`, `AreaCopy`, `History`, `Visuals`, `Path`, `Transport`, `PCG`, `Diagnostics`, `DynamicMesh`, `Biome`, `Noise`, and `ActorGroups`.
 - Private `*Internal.h` files are implementation-only helper declarations for large algorithms such as dynamic mesh generation, terrain generation, and solar system generation.
 - Widgets remain UI surfaces. Even when split across files, gameplay state still belongs to controller/component/subsystem owners.
+
+Asset-side structure:
+
+- Hub/spaceship additions are under `Content/BlueprintClasses/CelestialBody`, `Content/Objects/Structure`, and `Content/Materials`.
 
 Runtime ownership contract:
 
@@ -90,6 +97,7 @@ Runtime ownership contract:
 - Assembly input, selected build option, automatic Assembly Mode activation, and UI coordination belong to `ASRPlayerController`.
 - Assembly editing workflows, placement previews, and per-surface undo/redo history belong to `USRAssemblyComponent`.
 - Structure placement/removal truth belongs to `USRStructureInstanceManagerComponent`; placed structures are keyed by `OccupantId` and are primarily HISM instances.
+- Space logistics runtime state belongs to `USRSpaceLogisticsSubsystem`; spaceship actor state belongs to `ASRSpaceshipActor`.
 - Conveyor graph, visual paths, debug lines, PCG refresh, branch/merge state, and item transport belong to `USRConveyorNetworkComponent`.
 - Conveyor pathfinding uses Surface Grid cell/layer state and treats non-endpoint conveyors as blocking placement/path cells.
 - `ASRConveyorBeltActor` is visual output only, not conveyor graph source of truth.

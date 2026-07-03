@@ -9,6 +9,7 @@
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
+#include "Logistics/SRSpaceshipActor.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 #include "UI/SRCelestialBodyOverviewWidget.h"
@@ -414,22 +415,18 @@ void ASRPlayerController::HandleLeftClick()
 	const bool bHasCursorHit = GetHitResultUnderCursor(ECC_Visibility, false, CursorHitResult);
 
 	AActor* HitActor = bHasCursorHit ? CursorHitResult.GetActor() : nullptr;
-	AActor* SelectedBody = USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(HitActor) ? HitActor : nullptr;
-	if (!SelectedBody)
+	AActor* SelectedFocusActor = nullptr;
+	if (USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(HitActor) || Cast<ASRSpaceshipActor>(HitActor))
 	{
-		if (const ASRCameraPawn* CameraPawn = Cast<ASRCameraPawn>(GetPawn()))
-		{
-			AActor* CurrentFocusActor = CameraPawn->GetFocusedActor();
-			if (IsValid(CurrentFocusActor)
-				&& USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(CurrentFocusActor)
-				&& !USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(CurrentFocusActor))
-			{
-				return;
-			}
-		}
+		SelectedFocusActor = HitActor;
 	}
 
-	RequestFocusActor(SelectedBody);
+	if (!SelectedFocusActor)
+	{
+		return;
+	}
+
+	RequestFocusActor(SelectedFocusActor);
 }
 
 void ASRPlayerController::HandleRightClick()

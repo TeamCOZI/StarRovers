@@ -1,11 +1,16 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
-FSRFacilityPortInventory* USRFacilityNetworkComponent::FindInputPortInventoryForDirectAdd(FSRFacilityInstance& FacilityInstance, int32 PreferredPortIndex)
+#include "SRFacilityNetworkComponentInternal.h"
+
+FSRFacilityPortInventory* USRFacilityNetworkComponent::FindInputPortInventoryForDirectAdd(
+	FSRFacilityInstance& FacilityInstance,
+	const FSRResourceInstance& ResourceInstance,
+	int32 PreferredPortIndex)
 {
 	if (FacilityInstance.InputPortInventories.IsValidIndex(PreferredPortIndex))
 	{
 		FSRFacilityPortInventory& PreferredPortInventory = FacilityInstance.InputPortInventories[PreferredPortIndex];
-		if (PreferredPortInventory.Inventory.Num() < FMath::Max(1, PreferredPortInventory.Capacity))
+		if (StarRovers::FacilityNetwork::CanInventorySlotAcceptResource(PreferredPortInventory, ResourceInstance))
 		{
 			return &PreferredPortInventory;
 		}
@@ -13,8 +18,8 @@ FSRFacilityPortInventory* USRFacilityNetworkComponent::FindInputPortInventoryFor
 
 	for (FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
 	{
-		if (InputPortInventory.Inventory.IsEmpty()
-			&& InputPortInventory.Inventory.Num() < FMath::Max(1, InputPortInventory.Capacity))
+		if (StarRovers::FacilityNetwork::GetInventorySlotStackCount(InputPortInventory) > 0
+			&& StarRovers::FacilityNetwork::CanInventorySlotAcceptResource(InputPortInventory, ResourceInstance))
 		{
 			return &InputPortInventory;
 		}
@@ -22,7 +27,8 @@ FSRFacilityPortInventory* USRFacilityNetworkComponent::FindInputPortInventoryFor
 
 	for (FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
 	{
-		if (InputPortInventory.Inventory.Num() < FMath::Max(1, InputPortInventory.Capacity))
+		if (StarRovers::FacilityNetwork::GetInventorySlotStackCount(InputPortInventory) <= 0
+			&& StarRovers::FacilityNetwork::CanInventorySlotAcceptResource(InputPortInventory, ResourceInstance))
 		{
 			return &InputPortInventory;
 		}
@@ -35,7 +41,7 @@ bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRRe
 {
 	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	FSRFacilityPortInventory* InputPortInventory = FacilityInstance
-		? FindInputPortInventoryForDirectAdd(*FacilityInstance)
+		? FindInputPortInventoryForDirectAdd(*FacilityInstance, ResourceInstance)
 		: nullptr;
 	if (!FacilityInstance || !InputPortInventory || ResourceInstance.ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
 	{
@@ -53,7 +59,18 @@ bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRRe
 		return false;
 	}
 
-	InputPortInventory->Inventory.Add(ResourceInstance);
+	TArray<FSRFacilityPortInventory> SimulatedInputPortInventories = FacilityInstance->InputPortInventories;
+	const int32 RequiredStackCount = StarRovers::FacilityNetwork::GetResourceStackCount(ResourceInstance);
+	if (StarRovers::FacilityNetwork::TryAddResourceToInventorySlots(SimulatedInputPortInventories, ResourceInstance) != RequiredStackCount)
+	{
+		return false;
+	}
+
+	const int32 AddedStackCount = StarRovers::FacilityNetwork::TryAddResourceToInventorySlots(FacilityInstance->InputPortInventories, ResourceInstance);
+	if (AddedStackCount != RequiredStackCount)
+	{
+		return false;
+	}
 	RefreshFacilityAggregateInventories(*FacilityInstance);
 	SetComponentTickEnabled(bAutoProcessFacilities);
 	if (bLogFacilityNetworkEvents)
@@ -66,7 +83,7 @@ bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRRe
 			*InputPortInventory->PortId.ToString(),
 			*ResourceInstance.ResourceId.ToString(),
 			ResourceInstance.StackCount,
-			InputPortInventory->Inventory.Num(),
+			StarRovers::FacilityNetwork::GetInventorySlotStackCount(*InputPortInventory),
 			FacilityInstance->InputInventory.Num(),
 			*GetNameSafe(GetOwner()));
 	}
@@ -83,12 +100,17 @@ bool USRFacilityNetworkComponent::AddInputResourceToPort(FName OccupantId, int32
 	{
 		return false;
 	}
-	if (InputPortInventory->Inventory.Num() >= FMath::Max(1, InputPortInventory->Capacity))
+	FSRFacilityPortInventory SimulatedInputPortInventory = *InputPortInventory;
+	const int32 RequiredStackCount = StarRovers::FacilityNetwork::GetResourceStackCount(ResourceInstance);
+	if (StarRovers::FacilityNetwork::TryAddResourceToInventorySlot(SimulatedInputPortInventory, ResourceInstance) != RequiredStackCount)
 	{
 		return false;
 	}
 
-	InputPortInventory->Inventory.Add(ResourceInstance);
+	if (StarRovers::FacilityNetwork::TryAddResourceToInventorySlot(*InputPortInventory, ResourceInstance) != RequiredStackCount)
+	{
+		return false;
+	}
 	RefreshFacilityAggregateInventories(*FacilityInstance);
 	SetComponentTickEnabled(bAutoProcessFacilities);
 	return true;
@@ -102,7 +124,7 @@ bool USRFacilityNetworkComponent::ExtractOutputResource(FName OccupantId, FSRRes
 	{
 		OutputPortInventory = FacilityInstance->OutputPortInventories.FindByPredicate([](const FSRFacilityPortInventory& CandidatePortInventory)
 		{
-			return !CandidatePortInventory.Inventory.IsEmpty();
+			return StarRovers::FacilityNetwork::GetInventorySlotStackCount(CandidatePortInventory) > 0;
 		});
 	}
 
@@ -121,8 +143,11 @@ bool USRFacilityNetworkComponent::ExtractOutputResource(FName OccupantId, FSRRes
 		return false;
 	}
 
-	OutResourceInstance = OutputPortInventory->Inventory[0];
-	OutputPortInventory->Inventory.RemoveAt(0);
+	if (!StarRovers::FacilityNetwork::TryTakeSingleResourceFromInventorySlot(*OutputPortInventory, OutResourceInstance))
+	{
+		OutResourceInstance = FSRResourceInstance();
+		return false;
+	}
 	RefreshFacilityAggregateInventories(*FacilityInstance);
 	if (bLogFacilityNetworkEvents)
 	{
@@ -133,7 +158,134 @@ bool USRFacilityNetworkComponent::ExtractOutputResource(FName OccupantId, FSRRes
 			*OccupantId.ToString(),
 			*OutputPortInventory->PortId.ToString(),
 			*OutResourceInstance.ResourceId.ToString(),
-			OutputPortInventory->Inventory.Num(),
+			StarRovers::FacilityNetwork::GetInventorySlotStackCount(*OutputPortInventory),
+			FacilityInstance->OutputInventory.Num(),
+			*GetNameSafe(GetOwner()));
+	}
+	return true;
+}
+
+bool USRFacilityNetworkComponent::IsHubFacility(FName OccupantId) const
+{
+	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance ? FacilityInstance->FacilityDataAsset.Get() : nullptr;
+	return IsValid(FacilityDataAsset) && FacilityDataAsset->FacilityKind == ESRFacilityKind::Hub;
+}
+
+bool USRFacilityNetworkComponent::TryTakeHubOutboundCargo(FName OccupantId, int32 MaxStackCount, FSRResourceInstance& OutCargo)
+{
+	return TryTakeHubOutboundCargoByResource(OccupantId, NAME_None, MaxStackCount, OutCargo);
+}
+
+bool USRFacilityNetworkComponent::TryTakeHubOutboundCargoByResource(FName OccupantId, FName ResourceId, int32 MaxStackCount, FSRResourceInstance& OutCargo)
+{
+	OutCargo = FSRResourceInstance();
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance || !IsHubFacility(OccupantId) || MaxStackCount <= 0)
+	{
+		return false;
+	}
+
+	for (FSRFacilityPortInventory& InputPortInventory : FacilityInstance->InputPortInventories)
+	{
+		if (StarRovers::FacilityNetwork::GetInventorySlotStackCount(InputPortInventory) <= 0)
+		{
+			continue;
+		}
+
+		const int32 TakenStackCount = StarRovers::FacilityNetwork::TryTakeResourceStackFromInventorySlot(
+			InputPortInventory,
+			MaxStackCount,
+			OutCargo,
+			ResourceId);
+		if (TakenStackCount <= 0)
+		{
+			continue;
+		}
+
+		RefreshFacilityAggregateInventories(*FacilityInstance);
+		if (bLogFacilityNetworkEvents)
+		{
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("[FacilityNetwork][Hub] Outbound cargo taken: OccupantId=%s Port=%s ResourceId=%s RequestedResourceId=%s StackCount=%d RemainingPortInput=%d Owner=%s"),
+				*OccupantId.ToString(),
+				*InputPortInventory.PortId.ToString(),
+				*OutCargo.ResourceId.ToString(),
+				ResourceId.IsNone() ? TEXT("Any") : *ResourceId.ToString(),
+				OutCargo.StackCount,
+				StarRovers::FacilityNetwork::GetInventorySlotStackCount(InputPortInventory),
+				*GetNameSafe(GetOwner()));
+		}
+		return true;
+	}
+
+	return false;
+}
+
+void USRFacilityNetworkComponent::GetHubOutboundCargoResourceIds(FName OccupantId, TArray<FName>& OutResourceIds) const
+{
+	OutResourceIds.Reset();
+	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance || !IsHubFacility(OccupantId))
+	{
+		return;
+	}
+
+	for (const FSRFacilityPortInventory& InputPortInventory : FacilityInstance->InputPortInventories)
+	{
+		for (const FSRResourceInstance& ResourceInstance : InputPortInventory.Inventory)
+		{
+			if (ResourceInstance.ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
+			{
+				continue;
+			}
+
+			OutResourceIds.AddUnique(ResourceInstance.ResourceId);
+		}
+	}
+}
+
+bool USRFacilityNetworkComponent::CanStoreHubInboundCargo(FName OccupantId, const FSRResourceInstance& Cargo) const
+{
+	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance || !IsHubFacility(OccupantId) || Cargo.ResourceId.IsNone() || Cargo.StackCount <= 0)
+	{
+		return false;
+	}
+
+	TArray<FSRFacilityPortInventory> SimulatedOutputPortInventories = FacilityInstance->OutputPortInventories;
+	const int32 RequiredStackCount = StarRovers::FacilityNetwork::GetResourceStackCount(Cargo);
+	return RequiredStackCount > 0
+		&& StarRovers::FacilityNetwork::TryAddResourceToInventorySlots(SimulatedOutputPortInventories, Cargo) == RequiredStackCount;
+}
+
+bool USRFacilityNetworkComponent::TryStoreHubInboundCargo(FName OccupantId, const FSRResourceInstance& Cargo)
+{
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance || !CanStoreHubInboundCargo(OccupantId, Cargo))
+	{
+		return false;
+	}
+
+	const int32 RequiredStackCount = StarRovers::FacilityNetwork::GetResourceStackCount(Cargo);
+	const int32 AddedStackCount = StarRovers::FacilityNetwork::TryAddResourceToInventorySlots(FacilityInstance->OutputPortInventories, Cargo);
+	if (AddedStackCount != RequiredStackCount)
+	{
+		return false;
+	}
+
+	RefreshFacilityAggregateInventories(*FacilityInstance);
+	if (bLogFacilityNetworkEvents)
+	{
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("[FacilityNetwork][Hub] Inbound cargo stored: OccupantId=%s ResourceId=%s StackCount=%d OutputCount=%d Owner=%s"),
+			*OccupantId.ToString(),
+			*Cargo.ResourceId.ToString(),
+			Cargo.StackCount,
 			FacilityInstance->OutputInventory.Num(),
 			*GetNameSafe(GetOwner()));
 	}

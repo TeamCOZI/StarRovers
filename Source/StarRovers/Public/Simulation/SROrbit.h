@@ -69,6 +69,9 @@ public:
 	FVector ComputeOrbitCenterLocation() const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Orbit")
+	FVector ComputeOrbitPlaneNormal() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Orbit")
 	FVector ComputeOrbitLocationAtCurrentPhase() const;
 
 private:

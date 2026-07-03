@@ -34,6 +34,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|Selection")
     AActor* GetSelectedActor() const;
 
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Focus")
+    void RequestActorFocus(AActor* NewFocusedActor, bool bSnapImmediately = false);
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Selection")
     void ClearSelection();
 

@@ -370,6 +370,11 @@ bool USRFacilityNetworkComponent::CanFacilityAdvanceProcessing(const FSRFacility
 		return false;
 	}
 
+	if (FacilityDataAsset->FacilityKind == ESRFacilityKind::Hub)
+	{
+		return false;
+	}
+
 	if (!FacilityInstance.bProcessEnabled)
 	{
 		return false;
@@ -418,8 +423,9 @@ bool USRFacilityNetworkComponent::CanFacilityRun(const FSRFacilityInstance& Faci
 		return false;
 	}
 
-	const int32 RequiredOutputSlots = ResolveRequiredOutputSlots(FacilityInstance);
-	return CanStoreOutputResources(FacilityInstance, RequiredOutputSlots);
+	TArray<FSRResourceInstance> OutputResources;
+	BuildFacilityOutputResources(FacilityInstance, InputResources, OutputResources);
+	return CanStoreOutputResources(FacilityInstance, OutputResources);
 }
 
 bool USRFacilityNetworkComponent::CanMiningFacilityRun(const FSRFacilityInstance& FacilityInstance) const
@@ -438,7 +444,20 @@ bool USRFacilityNetworkComponent::CanMiningFacilityRun(const FSRFacilityInstance
 		return false;
 	}
 
-	return CanStoreOutputResources(FacilityInstance, ResolveRequiredOutputSlots(FacilityInstance));
+	if (!IsValid(ResourceDeposit.ResourceDataAsset.Get()))
+	{
+		return false;
+	}
+
+	const int32 OutputCount = ResolvePrimaryOutputCount(FacilityInstance);
+	TArray<FSRResourceInstance> OutputResources;
+	OutputResources.Reserve(OutputCount);
+	const FSRResourceInstance MinedResource = ResourceDeposit.ResourceDataAsset->BuildDefaultInstance();
+	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
+	{
+		OutputResources.Add(MinedResource);
+	}
+	return CanStoreOutputResources(FacilityInstance, OutputResources);
 }
 
 bool USRFacilityNetworkComponent::FindMiningTargetDeposit(
@@ -543,35 +562,58 @@ bool USRFacilityNetworkComponent::GatherPendingInputResources(const FSRFacilityI
 	for (int32 InputIndex = 0; InputIndex < InputCount; ++InputIndex)
 	{
 		const FSRFacilityPortInventory& InputPortInventory = FacilityInstance.InputPortInventories[InputIndex];
-		if (InputPortInventory.Inventory.IsEmpty())
+		const FSRResourceInstance ResourceInstance = StarRovers::FacilityNetwork::PeekSingleResourceFromInventorySlot(InputPortInventory);
+		if (ResourceInstance.ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
 		{
 			OutInputResources.Reset();
 			return false;
 		}
 
-		OutInputResources.Add(InputPortInventory.Inventory[0]);
+		OutInputResources.Add(ResourceInstance);
 	}
 
 	return !OutInputResources.IsEmpty();
 }
 
-bool USRFacilityNetworkComponent::CanStoreOutputResources(const FSRFacilityInstance& FacilityInstance, int32 OutputResourceCount) const
+void USRFacilityNetworkComponent::BuildFacilityOutputResources(
+	const FSRFacilityInstance& FacilityInstance,
+	const TArray<FSRResourceInstance>& InputResources,
+	TArray<FSRResourceInstance>& OutOutputResources) const
 {
-	if (OutputResourceCount <= 0)
+	OutOutputResources.Reset();
+	if (!IsValid(FacilityInstance.FacilityDataAsset.Get()) || InputResources.IsEmpty())
+	{
+		return;
+	}
+
+	FSRResourceInstance OutputResource = BuildBaseOutputResource(FacilityInstance, InputResources);
+	TArray<FSRResourceInstance> AdditionalOutputs;
+	const TArray<FSRResourceTagStack> TagsBeforeFacilityEffects = OutputResource.Tags;
+	ApplyFacilityEffects(FacilityInstance.FacilityDataAsset.Get(), OutputResource, AdditionalOutputs);
+	ApplyExistingTagEffects(FacilityInstance.TemperatureState, TagsBeforeFacilityEffects, OutputResource);
+
+	const int32 OutputCount = ResolvePrimaryOutputCount(FacilityInstance);
+	OutOutputResources.Reserve(OutputCount + AdditionalOutputs.Num());
+	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
+	{
+		OutOutputResources.Add(OutputResource);
+	}
+	OutOutputResources.Append(AdditionalOutputs);
+}
+
+bool USRFacilityNetworkComponent::CanStoreOutputResources(const FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& OutputResources) const
+{
+	if (OutputResources.IsEmpty())
 	{
 		return false;
 	}
 
-	const int32 SafeOutputResourceCount = OutputResourceCount;
-	if (FacilityInstance.OutputPortInventories.Num() < SafeOutputResourceCount)
+	TArray<FSRFacilityPortInventory> SimulatedOutputPortInventories = FacilityInstance.OutputPortInventories;
+	for (const FSRResourceInstance& OutputResource : OutputResources)
 	{
-		return false;
-	}
-
-	for (int32 OutputIndex = 0; OutputIndex < SafeOutputResourceCount; ++OutputIndex)
-	{
-		const FSRFacilityPortInventory& OutputPortInventory = FacilityInstance.OutputPortInventories[OutputIndex];
-		if (OutputPortInventory.Inventory.Num() + 1 > FMath::Max(1, OutputPortInventory.Capacity))
+		const int32 RequiredStackCount = StarRovers::FacilityNetwork::GetResourceStackCount(OutputResource);
+		if (RequiredStackCount <= 0
+			|| StarRovers::FacilityNetwork::TryAddResourceToInventorySlots(SimulatedOutputPortInventories, OutputResource) != RequiredStackCount)
 		{
 			return false;
 		}
@@ -582,9 +624,9 @@ bool USRFacilityNetworkComponent::CanStoreOutputResources(const FSRFacilityInsta
 
 void USRFacilityNetworkComponent::StoreOutputResources(FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& OutputResources)
 {
-	for (int32 OutputIndex = 0; OutputIndex < OutputResources.Num() && FacilityInstance.OutputPortInventories.IsValidIndex(OutputIndex); ++OutputIndex)
+	for (const FSRResourceInstance& OutputResource : OutputResources)
 	{
-		FacilityInstance.OutputPortInventories[OutputIndex].Inventory.Add(OutputResources[OutputIndex]);
+		StarRovers::FacilityNetwork::TryAddResourceToInventorySlots(FacilityInstance.OutputPortInventories, OutputResource);
 	}
 
 	RefreshFacilityAggregateInventories(FacilityInstance);
@@ -648,7 +690,7 @@ bool USRFacilityNetworkComponent::TryStartProcessing(FSRFacilityInstance& Facili
 	for (int32 InputIndex = 0; InputIndex < InputCount; ++InputIndex)
 	{
 		if (!FacilityInstance.InputPortInventories.IsValidIndex(InputIndex)
-			|| FacilityInstance.InputPortInventories[InputIndex].Inventory.IsEmpty())
+			|| StarRovers::FacilityNetwork::GetInventorySlotStackCount(FacilityInstance.InputPortInventories[InputIndex]) <= 0)
 		{
 			FacilityInstance.ProcessingInventory.Reset();
 			FacilityInstance.bProcessing = false;
@@ -656,8 +698,14 @@ bool USRFacilityNetworkComponent::TryStartProcessing(FSRFacilityInstance& Facili
 			return false;
 		}
 
-		FSRResourceInstance ResourceInstance = FacilityInstance.InputPortInventories[InputIndex].Inventory[0];
-		FacilityInstance.InputPortInventories[InputIndex].Inventory.RemoveAt(0);
+		FSRResourceInstance ResourceInstance;
+		if (!StarRovers::FacilityNetwork::TryTakeSingleResourceFromInventorySlot(FacilityInstance.InputPortInventories[InputIndex], ResourceInstance))
+		{
+			FacilityInstance.ProcessingInventory.Reset();
+			FacilityInstance.bProcessing = false;
+			FacilityInstance.ProcessProgressSeconds = 0.0f;
+			return false;
+		}
 		FacilityInstance.ProcessingInventory.Add(ResourceInstance);
 	}
 	RefreshFacilityAggregateInventories(FacilityInstance);
@@ -703,21 +751,9 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 	}
 
 	TArray<FSRResourceInstance> ConsumedResources = FacilityInstance.ProcessingInventory;
-	FSRResourceInstance OutputResource = BuildBaseOutputResource(FacilityInstance, ConsumedResources);
-	TArray<FSRResourceInstance> AdditionalOutputs;
-	const TArray<FSRResourceTagStack> TagsBeforeFacilityEffects = OutputResource.Tags;
-	ApplyFacilityEffects(FacilityInstance.FacilityDataAsset.Get(), OutputResource, AdditionalOutputs);
-	ApplyExistingTagEffects(FacilityInstance.TemperatureState, TagsBeforeFacilityEffects, OutputResource);
-
-	const int32 OutputCount = ResolvePrimaryOutputCount(FacilityInstance);
 	TArray<FSRResourceInstance> OutputResources;
-	OutputResources.Reserve(OutputCount + AdditionalOutputs.Num());
-	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
-	{
-		OutputResources.Add(OutputResource);
-	}
-	OutputResources.Append(AdditionalOutputs);
-	if (!CanStoreOutputResources(FacilityInstance, OutputResources.Num()))
+	BuildFacilityOutputResources(FacilityInstance, ConsumedResources, OutputResources);
+	if (!CanStoreOutputResources(FacilityInstance, OutputResources))
 	{
 		FacilityInstance.ProcessProgressSeconds = ResolveProcessSeconds(FacilityInstance);
 		return false;
@@ -740,9 +776,9 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 			TEXT("[FacilityNetwork] Processing completed: OccupantId=%s Facility=%s OutputResourceId=%s OutputCount=%d AdditionalOutputs=%d CellTemperatureEffects=%d Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
 			*GetNameSafe(FacilityInstance.FacilityDataAsset.Get()),
-			*OutputResource.ResourceId.ToString(),
-			OutputCount,
-			AdditionalOutputs.Num(),
+			OutputResources.IsEmpty() ? TEXT("None") : *OutputResources[0].ResourceId.ToString(),
+			OutputResources.Num(),
+			FMath::Max(0, OutputResources.Num() - ResolvePrimaryOutputCount(FacilityInstance)),
 			CellTemperatureEffects,
 			*GetNameSafe(GetOwner()));
 	}
@@ -770,7 +806,22 @@ bool USRFacilityNetworkComponent::TryCompleteMining(FSRFacilityInstance& Facilit
 	}
 
 	const int32 OutputCount = ResolvePrimaryOutputCount(FacilityInstance);
-	if (!CanStoreOutputResources(FacilityInstance, OutputCount))
+	if (!IsValid(ResourceDeposit.ResourceDataAsset.Get()))
+	{
+		FacilityInstance.MiningTargetDepositOccupantId = NAME_None;
+		FacilityInstance.bProcessing = false;
+		FacilityInstance.ProcessProgressSeconds = 0.0f;
+		return false;
+	}
+
+	const FSRResourceInstance PreviewMinedResource = ResourceDeposit.ResourceDataAsset->BuildDefaultInstance();
+	TArray<FSRResourceInstance> PreviewOutputResources;
+	PreviewOutputResources.Reserve(OutputCount);
+	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
+	{
+		PreviewOutputResources.Add(PreviewMinedResource);
+	}
+	if (!CanStoreOutputResources(FacilityInstance, PreviewOutputResources))
 	{
 		FacilityInstance.ProcessProgressSeconds = ResolveProcessSeconds(FacilityInstance);
 		return false;
@@ -883,10 +934,19 @@ bool USRFacilityNetworkComponent::GetFacilityOutputPreview(
 		return false;
 	}
 
-	OutPrimaryOutput = BuildBaseOutputResource(*FacilityInstance, PreviewInputs);
-	const TArray<FSRResourceTagStack> TagsBeforeFacilityEffects = OutPrimaryOutput.Tags;
-	ApplyFacilityEffects(FacilityInstance->FacilityDataAsset.Get(), OutPrimaryOutput, OutAdditionalOutputs);
-	ApplyExistingTagEffects(FacilityInstance->TemperatureState, TagsBeforeFacilityEffects, OutPrimaryOutput);
+	TArray<FSRResourceInstance> PreviewOutputs;
+	BuildFacilityOutputResources(*FacilityInstance, PreviewInputs, PreviewOutputs);
+	if (PreviewOutputs.IsEmpty())
+	{
+		return false;
+	}
+
+	OutPrimaryOutput = PreviewOutputs[0];
+	const int32 PrimaryOutputCount = FMath::Max(0, ResolvePrimaryOutputCount(*FacilityInstance));
+	for (int32 OutputIndex = PrimaryOutputCount; OutputIndex < PreviewOutputs.Num(); ++OutputIndex)
+	{
+		OutAdditionalOutputs.Add(PreviewOutputs[OutputIndex]);
+	}
 	OutOutputCount = ResolvePrimaryOutputCount(*FacilityInstance);
 	return true;
 }
