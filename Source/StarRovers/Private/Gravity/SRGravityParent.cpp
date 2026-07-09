@@ -2,7 +2,7 @@
 
 #include "Components/SceneComponent.h"
 #include "GameFramework/Actor.h"
-#include "Visual/SRCelestialRingMeshComponent.h"
+#include "Rendering/SRCelestialRingMeshComponent.h"
 
 namespace
 {

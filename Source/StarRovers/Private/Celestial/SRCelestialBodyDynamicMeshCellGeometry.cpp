@@ -1,4 +1,4 @@
-#include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
+#include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 
 namespace StarRovers::Celestial::DynamicMesh
 {
@@ -39,7 +39,7 @@ FSRCelestialBodyDynamicMeshSurfaceCellGeometry BuildDynamicMeshSurfaceCellGeomet
 {
 	FSRCelestialBodyDynamicMeshSurfaceCellGeometry Geometry;
 	{
-		const double InnerStart = bProfileBuildBreakdown ? SRCelestialNowSeconds() : 0.0;
+		const double InnerStart = bProfileBuildBreakdown ? GetDynamicMeshTimingSeconds() : 0.0;
 		const float SourceCellRadius = FMath::Max(BaseCell.LocalCenter.Length(), 1.0f);
 		const float CellScale = FMath::Max(0.01f, (SourceCellRadius + TerrainSample.HeightOffset) / SourceCellRadius);
 		Geometry.TargetCellCenter = CellDirection * (SourceCellRadius + TerrainSample.HeightOffset);
@@ -61,16 +61,16 @@ FSRCelestialBodyDynamicMeshSurfaceCellGeometry BuildDynamicMeshSurfaceCellGeomet
 		}
 		if (bProfileBuildBreakdown)
 		{
-			CellTransformMs += SRCelestialElapsedMilliseconds(InnerStart);
+			CellTransformMs += GetDynamicMeshTimingElapsedMilliseconds(InnerStart);
 		}
 	}
 
 	{
-		const double InnerStart = bProfileBuildBreakdown ? SRCelestialNowSeconds() : 0.0;
+		const double InnerStart = bProfileBuildBreakdown ? GetDynamicMeshTimingSeconds() : 0.0;
 		FillDynamicMeshSurfaceCellSourceHashes(Geometry, BaseCell, BaseSourceMetadataCells, BaseCellIndex);
 		if (bProfileBuildBreakdown)
 		{
-			SourceHashMs += SRCelestialElapsedMilliseconds(InnerStart);
+			SourceHashMs += GetDynamicMeshTimingElapsedMilliseconds(InnerStart);
 		}
 	}
 
@@ -81,7 +81,7 @@ FSRCelestialBodyDynamicMeshSurfaceCellGeometry BuildDynamicMeshSurfaceCellGeomet
 
 	for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
 	{
-		Geometry.SurfaceVertexKeys[CornerIndex] = MakeTerrainVertexKey(Geometry.SourcePositionHashes[CornerIndex], TerrainSample.HeightOffset);
+		Geometry.SurfaceVertexKeys[CornerIndex] = MakeCelestialBodyDynamicMeshTerrainVertexKey(Geometry.SourcePositionHashes[CornerIndex], TerrainSample.HeightOffset);
 	}
 	return Geometry;
 }

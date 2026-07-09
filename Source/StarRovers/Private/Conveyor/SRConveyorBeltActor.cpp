@@ -53,42 +53,42 @@ void ASRConveyorBeltActor::BeginPlay()
 
 bool ASRConveyorBeltActor::InitializeConveyorPath(
 	USRPlanetSurfaceGrid* SurfaceGrid,
-	const FSRConveyorVisualPath& VisualPath,
+	const FSRConveyorBeltPath& BeltPath,
 	FName SplineComponentTag,
 	float SurfaceOffset)
 {
-	TArray<FSRConveyorVisualPath> SingleVisualPath;
-	SingleVisualPath.Add(VisualPath);
-	return InitializeConveyorPaths(SurfaceGrid, SingleVisualPath, SplineComponentTag, SurfaceOffset);
+	TArray<FSRConveyorBeltPath> SingleBeltPath;
+	SingleBeltPath.Add(BeltPath);
+	return InitializeConveyorPaths(SurfaceGrid, SingleBeltPath, SplineComponentTag, SurfaceOffset);
 }
 
 bool ASRConveyorBeltActor::InitializeConveyorPaths(
 	USRPlanetSurfaceGrid* SurfaceGrid,
-	const TArray<FSRConveyorVisualPath>& VisualPaths,
+	const TArray<FSRConveyorBeltPath>& BeltPaths,
 	FName SplineComponentTag,
 	float SurfaceOffset)
 {
-	if (!IsValid(SurfaceGrid) || VisualPaths.IsEmpty())
+	if (!IsValid(SurfaceGrid) || BeltPaths.IsEmpty())
 	{
 		return false;
 	}
 
-	ConveyorVisualPath = FSRConveyorVisualPath();
-	ConveyorVisualPaths.Reset();
-	for (const FSRConveyorVisualPath& VisualPath : VisualPaths)
+	ConveyorBeltPath = FSRConveyorBeltPath();
+	ConveyorBeltPaths.Reset();
+	for (const FSRConveyorBeltPath& BeltPath : BeltPaths)
 	{
-		if (!VisualPath.CellIds.IsEmpty())
+		if (!BeltPath.CellIds.IsEmpty())
 		{
-			ConveyorVisualPaths.Add(VisualPath);
+			ConveyorBeltPaths.Add(BeltPath);
 		}
 	}
 
-	if (ConveyorVisualPaths.IsEmpty())
+	if (ConveyorBeltPaths.IsEmpty())
 	{
 		return false;
 	}
 
-	ConveyorVisualPath = ConveyorVisualPaths[0];
+	ConveyorBeltPath = ConveyorBeltPaths[0];
 	ConveyorSplineComponentTag = SplineComponentTag.IsNone() ? FName(TEXT("ConveyorVisualSpline")) : SplineComponentTag;
 	ConveyorSurfaceOffset = FMath::Max(0.0f, SurfaceOffset);
 
@@ -96,9 +96,9 @@ bool ASRConveyorBeltActor::InitializeConveyorPaths(
 	TArray<FVector> WorldNormals;
 	FBox ConveyorWorldBounds(EForceInit::ForceInit);
 	int32 UsedSplineCount = 0;
-	for (const FSRConveyorVisualPath& VisualPath : ConveyorVisualPaths)
+	for (const FSRConveyorBeltPath& BeltPath : ConveyorBeltPaths)
 	{
-		if (!BuildConveyorPathPoints(SurfaceGrid, VisualPath, WorldPoints, WorldNormals))
+		if (!BuildConveyorPathPoints(SurfaceGrid, BeltPath, WorldPoints, WorldNormals))
 		{
 			continue;
 		}
@@ -253,24 +253,24 @@ void ASRConveyorBeltActor::ClearUnusedConveyorSplineComponents(int32 FirstUnused
 
 bool ASRConveyorBeltActor::BuildConveyorPathPoints(
 	USRPlanetSurfaceGrid* SurfaceGrid,
-	const FSRConveyorVisualPath& VisualPath,
+	const FSRConveyorBeltPath& BeltPath,
 	TArray<FVector>& OutWorldPoints,
 	TArray<FVector>& OutWorldNormals) const
 {
 	OutWorldPoints.Reset();
 	OutWorldNormals.Reset();
-	if (!IsValid(SurfaceGrid) || VisualPath.CellIds.IsEmpty())
+	if (!IsValid(SurfaceGrid) || BeltPath.CellIds.IsEmpty())
 	{
 		return false;
 	}
 
 	const FVector PlanetCenter = SurfaceGrid->GetComponentTransform().GetLocation();
-	const float LayerOffset = static_cast<float>(FMath::Max(0, VisualPath.Layer)) * FMath::Max(0.0f, VisualPath.LayerHeight);
+	const float LayerOffset = static_cast<float>(FMath::Max(0, BeltPath.Layer)) * FMath::Max(0.0f, BeltPath.LayerHeight);
 	const float HeightOffset = LayerOffset + ConveyorSurfaceOffset;
-	OutWorldPoints.Reserve(VisualPath.CellIds.Num());
-	OutWorldNormals.Reserve(VisualPath.CellIds.Num());
+	OutWorldPoints.Reserve(BeltPath.CellIds.Num());
+	OutWorldNormals.Reserve(BeltPath.CellIds.Num());
 
-	for (const FSRPlanetSurfaceGridCellId& CellId : VisualPath.CellIds)
+	for (const FSRPlanetSurfaceGridCellId& CellId : BeltPath.CellIds)
 	{
 		FSRPlanetSurfaceGridCellInfo CellInfo;
 		if (!SurfaceGrid->GetCellInfoById(CellId, CellInfo))
@@ -294,7 +294,7 @@ bool ASRConveyorBeltActor::BuildConveyorPathPoints(
 
 	if (OutWorldPoints.Num() == 1)
 	{
-		const FSRPlanetSurfaceGridCellId& CellId = VisualPath.CellIds[0];
+		const FSRPlanetSurfaceGridCellId& CellId = BeltPath.CellIds[0];
 		FSRPlanetSurfaceGridCell Cell;
 		if (SurfaceGrid->GetCellById(CellId, Cell))
 		{
@@ -391,7 +391,9 @@ void ASRConveyorBeltActor::RequestPCGGeneration()
 	}
 
 	PCGComponent->GenerationTrigger = EPCGComponentGenerationTrigger::GenerateOnDemand;
+#if WITH_EDITOR
 	PCGComponent->DirtyGenerated(EPCGComponentDirtyFlag::All, /*bDispatchToLocalComponents=*/false);
+#endif
 	PCGComponent->Generate(true);
 }
 

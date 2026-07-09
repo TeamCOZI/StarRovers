@@ -1,5 +1,8 @@
 #include "Camera/SRCameraPawn.h"
 
+#include "SRCameraFocusSurfaceRigAlignmentController.h"
+#include "SRCameraInputInteractionGate.h"
+#include "SRCameraScreenDragResolver.h"
 #include "Camera/CameraComponent.h"
 #include "Camera/SRPlayerController.h"
 #include "EnhancedInputComponent.h"
@@ -105,40 +108,14 @@ void ASRCameraPawn::ApplyMappingContext()
 
 void ASRCameraPawn::HandleDragHoldStarted()
 {
-	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
+	if (FSRCameraInputInteractionGate::TryConsumeDragHoldStart(Cast<ASRPlayerController>(GetController())))
 	{
-		if (PlayerController->IsPointerOverBlockingUi())
-		{
-			bIsDragging = false;
-			bHasDragStartMousePosition = false;
-			return;
-		}
-
-		if (PlayerController->ShouldHandleAssemblyAreaSelectionDrag())
-		{
-			PlayerController->BeginAssemblyAreaSelectionDrag();
-			bIsDragging = false;
-			bHasDragStartMousePosition = false;
-			return;
-		}
-
-		if (PlayerController->ShouldHandleAssemblyPlacementDrag())
-		{
-			PlayerController->BeginAssemblyPlacementDrag();
-			bIsDragging = false;
-			bHasDragStartMousePosition = false;
-			return;
-		}
-
-		if (PlayerController->ShouldBlockAssemblyCameraDrag())
-		{
-			bIsDragging = false;
-			bHasDragStartMousePosition = false;
-			return;
-		}
+		bIsDragging = false;
+		bHasDragStartMousePosition = false;
+		return;
 	}
 
-	StopFocusArcTransition();
+	FocusArcTransition.Reset();
 	bIsDragging = true;
 	bHasDragStartMousePosition = false;
 
@@ -148,17 +125,15 @@ void ASRCameraPawn::HandleDragHoldStarted()
 		FocusTrackingDeltaVelocity = FVector::ZeroVector;
 		DragStartFocusDragOffset = FocusDragOffset;
 		DragStartTargetLocation = DragTargetLocation;
-		bHasDragStartMousePosition = GetMouseScreenPosition(DragStartMouseScreenPosition);
+		bHasDragStartMousePosition = FSRCameraScreenDragResolver::GetMouseScreenPosition(
+			Cast<APlayerController>(GetController()),
+			DragStartMouseScreenPosition);
 	}
 }
 
 void ASRCameraPawn::HandleDragHoldCompleted()
 {
-	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
-	{
-		PlayerController->EndAssemblyPlacementDrag();
-		PlayerController->EndAssemblyAreaSelectionDrag();
-	}
+	FSRCameraInputInteractionGate::CompleteDragHold(Cast<ASRPlayerController>(GetController()));
 
 	bIsDragging = false;
 	bHasDragStartMousePosition = false;
@@ -166,22 +141,13 @@ void ASRCameraPawn::HandleDragHoldCompleted()
 
 void ASRCameraPawn::HandleFocusSurfaceDragHoldStarted()
 {
-	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
+	if (FSRCameraInputInteractionGate::ShouldBlockFocusSurfaceDragHoldStart(Cast<ASRPlayerController>(GetController())))
 	{
-		if (PlayerController->IsPointerOverBlockingUi())
-		{
-			bIsDraggingFocusSurface = false;
-			return;
-		}
-
-		if (PlayerController->IsAssemblyModeActive())
-		{
-			bIsDraggingFocusSurface = false;
-			return;
-		}
+		bIsDraggingFocusSurface = false;
+		return;
 	}
 
-	StopFocusArcTransition();
+	FocusArcTransition.Reset();
 	bIsDraggingFocusSurface = ShouldDragFocusedSurface();
 	if (!bIsDraggingFocusSurface)
 	{
@@ -190,22 +156,13 @@ void ASRCameraPawn::HandleFocusSurfaceDragHoldStarted()
 
 	bIsDragging = false;
 	bHasDragStartMousePosition = false;
-	FocusSurface.TargetRotation = FocusSurface.Rotation.GetNormalized();
-	FocusSurface.RotationSmoothVelocity = FVector::ZeroVector;
-	FocusSurface.bIsResettingRotation = false;
-	FocusSurface.bIsAligningRig = false;
-	FocusSurface.RigAlignmentCurrentAngleRadians = 0.0f;
-	FocusSurface.RigAlignmentTargetAngleRadians = 0.0f;
-	FocusSurface.AngularVelocity = FVector2D::ZeroVector;
+	FSRCameraFocusSurfaceRigAlignmentController::StopRotationResetForDrag(FocusSurface);
 	bIsFocusSurfaceActive = true;
 }
 
 void ASRCameraPawn::HandleFocusSurfaceDragHoldCompleted()
 {
-	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
-	{
-		PlayerController->EndAssemblyAreaDeletionDrag();
-	}
+	FSRCameraInputInteractionGate::CompleteFocusSurfaceDragHold(Cast<ASRPlayerController>(GetController()));
 
 	bIsDraggingFocusSurface = false;
 }
@@ -224,28 +181,11 @@ void ASRCameraPawn::HandleDragDelta(const FInputActionValue& Value)
 		return;
 	}
 
-	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
+	if (FSRCameraInputInteractionGate::TryConsumeDragDelta(Cast<ASRPlayerController>(GetController())))
 	{
-		if (PlayerController->ContinueAssemblyAreaSelectionDrag())
-		{
-			bIsDragging = false;
-			bHasDragStartMousePosition = false;
-			return;
-		}
-
-		if (PlayerController->ContinueAssemblyAreaDeletionDrag())
-		{
-			bIsDragging = false;
-			bHasDragStartMousePosition = false;
-			return;
-		}
-
-		if (PlayerController->ContinueAssemblyPlacementDrag())
-		{
-			bIsDragging = false;
-			bHasDragStartMousePosition = false;
-			return;
-		}
+		bIsDragging = false;
+		bHasDragStartMousePosition = false;
+		return;
 	}
 
 	if (!bIsDragging)
@@ -254,7 +194,7 @@ void ASRCameraPawn::HandleDragDelta(const FInputActionValue& Value)
 	}
 
 	FVector2D CurrentMouseScreenPosition = FVector2D::ZeroVector;
-	if (GetMouseScreenPosition(CurrentMouseScreenPosition))
+	if (FSRCameraScreenDragResolver::GetMouseScreenPosition(Cast<APlayerController>(GetController()), CurrentMouseScreenPosition))
 	{
 		if (!bHasDragStartMousePosition)
 		{
@@ -265,7 +205,15 @@ void ASRCameraPawn::HandleDragDelta(const FInputActionValue& Value)
 			return;
 		}
 
-		const FVector DragOffsetDelta = ConvertScreenDragToDragOffset(DragStartMouseScreenPosition, CurrentMouseScreenPosition);
+		const FVector DragOffsetDelta = FSRCameraScreenDragResolver::ConvertScreenDragToDragOffset(
+			Cast<APlayerController>(GetController()),
+			Camera,
+			DragStartTargetLocation,
+			GetScreenSpaceThicknessReferenceZoomDistance(),
+			GetScreenSpaceThicknessReferenceFieldOfView(),
+			LeftDragInputScaleMultiplier,
+			DragStartMouseScreenPosition,
+			CurrentMouseScreenPosition);
 
 		if (FocusedActor)
 		{
@@ -292,12 +240,9 @@ void ASRCameraPawn::HandleZoom(const FInputActionValue& Value)
 		return;
 	}
 
-	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetController()))
+	if (FSRCameraInputInteractionGate::ShouldBlockZoom(Cast<ASRPlayerController>(GetController())))
 	{
-		if (PlayerController->IsPointerOverBlockingUi())
-		{
-			return;
-		}
+		return;
 	}
 
 	ZoomDistanceTarget = ClampZoomDistance(ZoomDistanceTarget - (AxisValue * GetZoomSpeed()));
@@ -362,84 +307,15 @@ bool ASRCameraPawn::TryStartFocusSurfaceGridAlignment()
 		return false;
 	}
 
-	const FQuat CurrentSurfaceRotation = FocusSurface.Rotation.GetNormalized();
-	const FQuat AlignmentDelta(AlignmentAxis, AlignmentAngleRadians);
-	FocusSurface.TargetRotation = (AlignmentDelta * CurrentSurfaceRotation).GetNormalized();
-	FocusSurface.RigAlignmentStartRotation = CurrentSurfaceRotation;
-	FocusSurface.RigAlignmentStartOffset = GetActorLocation() - GetFocusLocation();
-	FocusSurface.RigAlignmentAxis = AlignmentAxis;
-	FocusSurface.RigAlignmentCurrentAngleRadians = 0.0f;
-	FocusSurface.RigAlignmentTargetAngleRadians = AlignmentAngleRadians;
-	FocusSurface.RotationSmoothVelocity = FVector::ZeroVector;
-	FocusSurface.bIsResettingRotation = true;
-	FocusSurface.bIsAligningRig = true;
+	if (!FSRCameraFocusSurfaceRigAlignmentController::StartRigAlignment(
+		FocusSurface,
+		GetActorLocation() - GetFocusLocation(),
+		AlignmentAxis,
+		AlignmentAngleRadians))
+	{
+		return false;
+	}
+
 	ClearFocusSurfaceMotion();
 	return true;
-}
-
-bool ASRCameraPawn::GetMouseScreenPosition(FVector2D& OutMouseScreenPosition) const
-{
-	OutMouseScreenPosition = FVector2D::ZeroVector;
-
-	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	if (!PlayerController)
-	{
-		return false;
-	}
-
-	float MouseX = 0.0f;
-	float MouseY = 0.0f;
-	if (!PlayerController->GetMousePosition(MouseX, MouseY))
-	{
-		return false;
-	}
-
-	OutMouseScreenPosition = FVector2D(MouseX, MouseY);
-	return true;
-}
-
-FVector ASRCameraPawn::ConvertScreenDragToDragOffset(const FVector2D& StartScreenPosition, const FVector2D& CurrentScreenPosition) const
-{
-	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	if (!PlayerController || !Camera)
-	{
-		return FVector::ZeroVector;
-	}
-
-	int32 ViewportWidth = 0;
-	int32 ViewportHeight = 0;
-	PlayerController->GetViewportSize(ViewportWidth, ViewportHeight);
-	if (ViewportWidth <= 0 || ViewportHeight <= 0)
-	{
-		return FVector::ZeroVector;
-	}
-
-	const FVector PlaneOrigin = DragStartTargetLocation;
-	const FVector PlaneNormal = Camera
-		? Camera->GetForwardVector().GetSafeNormal()
-		: SpringArm ? SpringArm->GetForwardVector().GetSafeNormal() : FVector::ForwardVector;
-	if (PlaneNormal.SizeSquared() <= UE_SMALL_NUMBER)
-	{
-		return FVector::ZeroVector;
-	}
-
-	const float DistanceToDragPlane = FVector::DotProduct(PlaneOrigin - Camera->GetComponentLocation(), PlaneNormal);
-	if (DistanceToDragPlane <= UE_SMALL_NUMBER)
-	{
-		return FVector::ZeroVector;
-	}
-
-	const float ReferenceZoomDistance = FMath::Max(1.0f, GetScreenSpaceThicknessReferenceZoomDistance());
-	const float ReferenceFieldOfView = FMath::Clamp(GetScreenSpaceThicknessReferenceFieldOfView(), 5.0f, 170.0f);
-	const float ReferenceTanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(ReferenceFieldOfView * 0.5f));
-	const float ReferenceWorldUnitsPerPixelVertical = (ReferenceZoomDistance * ReferenceTanHalfFieldOfView * 2.0f)
-		/ static_cast<float>(ViewportHeight);
-	const float AdaptiveScale = GetScreenSpaceInputScale(DistanceToDragPlane)
-		* FMath::Max(0.0f, LeftDragInputScaleMultiplier);
-	const float WorldUnitsPerPixelVertical = ReferenceWorldUnitsPerPixelVertical * AdaptiveScale;
-	const float WorldUnitsPerPixelHorizontal = WorldUnitsPerPixelVertical;
-
-	const FVector2D ScreenDelta = CurrentScreenPosition - StartScreenPosition;
-	return (-Camera->GetRightVector() * (ScreenDelta.X * WorldUnitsPerPixelHorizontal))
-		+ (Camera->GetUpVector() * (ScreenDelta.Y * WorldUnitsPerPixelVertical));
 }

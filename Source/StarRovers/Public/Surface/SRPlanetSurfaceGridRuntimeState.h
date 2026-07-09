@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 
-struct FSRSurfaceGridRaycastBucket
+struct FSRPlanetSurfaceGridRaycastBucket
 {
     ESRCubeSphereFace Face = ESRCubeSphereFace::PositiveX;
     int32 BucketX = 0;
@@ -22,7 +22,7 @@ struct FSRPlanetSurfaceGridCellIndexState
 
 struct FSRPlanetSurfaceGridRaycastState
 {
-    TArray<FSRSurfaceGridRaycastBucket> Buckets;
+    TArray<FSRPlanetSurfaceGridRaycastBucket> Buckets;
 };
 
 struct FSRPlanetSurfaceGridInteractionBatchState

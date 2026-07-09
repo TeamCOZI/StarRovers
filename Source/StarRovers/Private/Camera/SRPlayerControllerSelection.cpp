@@ -1,11 +1,10 @@
 #include "Camera/SRPlayerController.h"
 
-#include "Assembly/SRAssemblyComponent.h"
 #include "Camera/SRCameraPawn.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
-#include "Surface/SRPlanetSurfaceGrid.h"
-#include "UI/SRCelestialBodyFocusInfoWidget.h"
+#include "SRPlayerControllerFocusInfoState.h"
+#include "SRPlayerControllerSurfaceSelectionState.h"
 
 namespace
 {
@@ -39,61 +38,39 @@ FSRCelestialBodyFocusInfo ASRPlayerController::GetSelectedActorFocusInfo() const
 
 void ASRPlayerController::SetHoveredSurfaceCellInfo(bool bHasHoveredSurfaceCell, const FSRPlanetSurfaceGridCellInfo& HoveredSurfaceCellInfo)
 {
-	if (!SelectedActorFocusInfo.bIsValid)
-	{
-		SelectedActorFocusInfo = USRCelestialBodyRuntimeLibrary::BuildCelestialBodyFocusInfo(SelectedActor);
-	}
-
-	if (!SelectedActorFocusInfo.bIsValid)
+	if (!FSRPlayerControllerFocusInfoState::SetHoveredSurfaceCellInfo(
+		SelectedActor,
+		SelectedActorFocusInfo,
+		bHasHoveredSurfaceCell,
+		HoveredSurfaceCellInfo))
 	{
 		return;
 	}
 
-	SelectedActorFocusInfo.bHasHoveredSurfaceCell = bHasHoveredSurfaceCell;
-	SelectedActorFocusInfo.HoveredSurfaceCellInfo = bHasHoveredSurfaceCell
-		? HoveredSurfaceCellInfo
-		: FSRPlanetSurfaceGridCellInfo();
-	SelectedActorFocusInfo.HoveredSurfaceGridPatchCellIds.Reset();
-	if (bHasHoveredSurfaceCell)
-	{
-		if (USRPlanetSurfaceGrid* SurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
-		{
-			SurfaceGrid->GetInteractionGridPatchCellIds(
-				HoveredSurfaceCellInfo.CellId,
-				SelectedActorFocusInfo.HoveredSurfaceGridPatchCellIds);
-		}
-	}
-
-	if (FocusInfoWidget)
-	{
-		FocusInfoWidget->SetFocusInfo(SelectedActorFocusInfo);
-		FocusInfoWidget->SetAssemblyModeActive(IsAssemblyModeActive());
-	}
+	FSRPlayerControllerFocusInfoState::ApplyToFocusInfoWidget(
+		SelectedActorFocusInfo,
+		IsAssemblyModeActive(),
+		FocusInfoWidget,
+		false);
 	RefreshFacilityControlWidget();
 }
 
 void ASRPlayerController::SetSelectedSurfaceStructureInfo(bool bHasSelectedSurfaceStructure, const FSRFocusedSurfaceStructureInfo& SelectedSurfaceStructureInfo)
 {
-	if (!SelectedActorFocusInfo.bIsValid)
-	{
-		SelectedActorFocusInfo = USRCelestialBodyRuntimeLibrary::BuildCelestialBodyFocusInfo(SelectedActor);
-	}
-
-	if (!SelectedActorFocusInfo.bIsValid)
+	if (!FSRPlayerControllerFocusInfoState::SetSelectedSurfaceStructureInfo(
+		SelectedActor,
+		SelectedActorFocusInfo,
+		bHasSelectedSurfaceStructure,
+		SelectedSurfaceStructureInfo))
 	{
 		return;
 	}
 
-	SelectedActorFocusInfo.bHasSelectedSurfaceStructure = bHasSelectedSurfaceStructure;
-	SelectedActorFocusInfo.SelectedSurfaceStructureInfo = bHasSelectedSurfaceStructure
-		? SelectedSurfaceStructureInfo
-		: FSRFocusedSurfaceStructureInfo();
-
-	if (FocusInfoWidget)
-	{
-		FocusInfoWidget->SetFocusInfo(SelectedActorFocusInfo);
-		FocusInfoWidget->SetAssemblyModeActive(IsAssemblyModeActive());
-	}
+	FSRPlayerControllerFocusInfoState::ApplyToFocusInfoWidget(
+		SelectedActorFocusInfo,
+		IsAssemblyModeActive(),
+		FocusInfoWidget,
+		false);
 	RefreshFacilityControlWidget();
 }
 
@@ -107,29 +84,21 @@ void ASRPlayerController::SetSelectedActorSurfaceStructureInfo(AActor* NewSelect
 	const bool bSelectionChanged = SelectedActor != NewSelectedActor;
 	if (bSelectionChanged)
 	{
-		if (USRPlanetSurfaceGrid* PreviousSurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
-		{
-			PreviousSurfaceGrid->ClearSelectedCell();
-			PreviousSurfaceGrid->ClearOccupiedPreviewCells();
-			PreviousSurfaceGrid->ClearFacilityPortPreviewCells();
-		}
+		FSRPlayerControllerSurfaceSelectionState::ClearSelectedActorSurfacePreview(SelectedActor);
 		SelectedActor = NewSelectedActor;
 		RefreshOverviewWidget();
 		OnSelectionChanged(SelectedActor);
 	}
 
-	SelectedActorFocusInfo = USRCelestialBodyRuntimeLibrary::BuildCelestialBodyFocusInfo(SelectedActor);
-	SelectedActorFocusInfo.bHasSelectedSurfaceStructure = SelectedSurfaceStructureInfo.bIsValid;
-	SelectedActorFocusInfo.SelectedSurfaceStructureInfo = SelectedSurfaceStructureInfo.bIsValid
-		? SelectedSurfaceStructureInfo
-		: FSRFocusedSurfaceStructureInfo();
-
-	if (FocusInfoWidget)
-	{
-		FocusInfoWidget->SetFocusInfo(SelectedActorFocusInfo);
-		FocusInfoWidget->SetAssemblyModeActive(IsAssemblyModeActive());
-		FocusInfoWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
+	FSRPlayerControllerFocusInfoState::RebuildSelectedActorSurfaceStructureInfo(
+		SelectedActor,
+		SelectedActorFocusInfo,
+		SelectedSurfaceStructureInfo);
+	FSRPlayerControllerFocusInfoState::ApplyToFocusInfoWidget(
+		SelectedActorFocusInfo,
+		IsAssemblyModeActive(),
+		FocusInfoWidget,
+		true);
 	RefreshFacilityControlWidget();
 }
 
@@ -267,17 +236,7 @@ void ASRPlayerController::HandleFocusedActorChanged(AActor* NewFocusedActor)
 {
 	SetAssemblyModeActive(false);
 
-	if (!IsValid(NewFocusedActor))
-	{
-		if (AssemblyComponent)
-		{
-			AssemblyComponent->ClearSurfaceHover();
-		}
-	}
-	else if (USRPlanetSurfaceGrid* FocusedSurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(NewFocusedActor))
-	{
-		FocusedSurfaceGrid->ClearHoveredCell();
-	}
+	FSRPlayerControllerSurfaceSelectionState::ClearFocusedActorHover(NewFocusedActor, AssemblyComponent);
 
 	if (!IsValid(NewFocusedActor) || SelectedActor != NewFocusedActor)
 	{
@@ -318,12 +277,7 @@ void ASRPlayerController::UpdateSelection(AActor* NewSelectedActor)
 
 	if (SelectedActor != NewSelectedActor)
 	{
-		if (USRPlanetSurfaceGrid* PreviousSurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
-		{
-			PreviousSurfaceGrid->ClearSelectedCell();
-			PreviousSurfaceGrid->ClearOccupiedPreviewCells();
-			PreviousSurfaceGrid->ClearFacilityPortPreviewCells();
-		}
+		FSRPlayerControllerSurfaceSelectionState::ClearSelectedActorSurfacePreview(SelectedActor);
 	}
 
 	SelectedActor = NewSelectedActor;

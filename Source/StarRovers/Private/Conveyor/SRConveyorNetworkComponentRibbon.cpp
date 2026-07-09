@@ -1,29 +1,22 @@
 #include "Conveyor/SRConveyorNetworkComponent.h"
 
 #include "Components/DynamicMeshComponent.h"
+#include "Conveyor/SRConveyorComponentPool.h"
+#include "Conveyor/SRConveyorRibbonBuilder.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "Materials/MaterialInterface.h"
 #include "Structure/SRStructureDataAsset.h"
 
-void USRConveyorNetworkComponent::RefreshConveyorVisuals(USRPlanetSurfaceGrid* SurfaceGrid)
+void USRConveyorNetworkComponent::RefreshConveyorRibbonMesh(USRPlanetSurfaceGrid* SurfaceGrid)
 {
-	if (!bBuildDynamicMeshVisuals)
+	if (!bBuildBeltRibbonMesh)
 	{
-		if (IsValid(BeltMeshComponent))
-		{
-			UE::Geometry::FDynamicMesh3 EmptyMesh;
-			EmptyMesh.EnableAttributes();
-			EmptyMesh.Attributes()->EnablePrimaryColors();
-			EmptyMesh.Attributes()->SetNumUVLayers(1);
-			BeltMeshComponent->SetMesh(MoveTemp(EmptyMesh));
-			BeltMeshComponent->SetVisibility(false);
-			BeltMeshComponent->SetHiddenInGame(true);
-		}
+		StarRovers::Conveyor::FSRConveyorComponentPool::ClearBeltMeshComponent(BeltMeshComponent, true);
 		return;
 	}
 
-	EnsureBeltMeshComponent();
+	StarRovers::Conveyor::FSRConveyorComponentPool::EnsureBeltMeshComponent(GetOwner(), this, BeltMeshComponent);
 	if (!IsValid(BeltMeshComponent))
 	{
 		return;
@@ -34,20 +27,26 @@ void USRConveyorNetworkComponent::RefreshConveyorVisuals(USRPlanetSurfaceGrid* S
 	BeltMesh.Attributes()->EnablePrimaryColors();
 	BeltMesh.Attributes()->SetNumUVLayers(1);
 
+	StarRovers::Conveyor::FSRConveyorRibbonBuildSettings RibbonSettings;
+	RibbonSettings.BeltWidth = BeltWidth;
+	RibbonSettings.BeltThickness = BeltThickness;
+	RibbonSettings.BeltSurfaceOffset = BeltSurfaceOffset;
+	RibbonSettings.ComponentTransform = GetComponentTransform();
+
 	UMaterialInterface* BeltMaterial = nullptr;
-	for (const FSRConveyorVisualPath& VisualPath : VisualPaths)
+	for (const FSRConveyorBeltPath& BeltPath : BeltPaths)
 	{
-		if (!IsValid(VisualPath.StructureDataAsset))
+		if (!IsValid(BeltPath.StructureDataAsset))
 		{
 			continue;
 		}
 
-		const FSRStructureData StructureData = VisualPath.StructureDataAsset->BuildData();
+		const FSRStructureData StructureData = BeltPath.StructureDataAsset->BuildData();
 		if (!IsValid(BeltMaterial) && IsValid(StructureData.Material.Get()))
 		{
 			BeltMaterial = StructureData.Material.Get();
 		}
-		BuildConveyorPathRibbon(BeltMesh, SurfaceGrid, VisualPath);
+		StarRovers::Conveyor::FSRConveyorRibbonBuilder::BuildPathRibbon(BeltMesh, SurfaceGrid, BeltPath, RibbonSettings);
 	}
 
 	if (IsValid(BeltMaterial))

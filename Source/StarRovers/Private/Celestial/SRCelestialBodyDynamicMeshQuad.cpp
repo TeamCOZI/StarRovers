@@ -1,4 +1,4 @@
-#include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
+#include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
@@ -7,7 +7,7 @@ namespace StarRovers::Celestial::DynamicMesh
 {
 FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	TArray<UE::Geometry::FDynamicMesh3>& FaceDynamicMeshes,
-	TMap<FSRTerrainVertexKey, int32>& WeldedVertexIds,
+	TMap<FSRCelestialBodyDynamicMeshTerrainVertexKey, int32>& WeldedVertexIds,
 	int32 MeshComponentIndex,
 	const FVector& Point0,
 	const FVector& Point1,
@@ -16,7 +16,7 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	const FLinearColor& SurfaceColor,
 	int32 MaterialId,
 	bool bDoubleSided,
-	const FSRTerrainVertexKey* VertexKeys,
+	const FSRCelestialBodyDynamicMeshTerrainVertexKey* VertexKeys,
 	const FVector* NormalReferenceDirectionOverride,
 	bool bAllowUnweldedFallbackForFailedTriangles)
 {
@@ -42,7 +42,7 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 
 	FVector QuadPoints[4] = { Point0, Point1, Point2, Point3 };
 	int32 InputEdgeToFeatureMaskEdgeIndex[4] = { 0, 1, 2, 3 };
-	FSRTerrainVertexKey ResolvedVertexKeys[4];
+	FSRCelestialBodyDynamicMeshTerrainVertexKey ResolvedVertexKeys[4];
 	if (VertexKeys)
 	{
 		for (int32 CornerIndex = 0; CornerIndex < 4; ++CornerIndex)
@@ -74,9 +74,9 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		QuadNormal = OutwardDirection.IsNearlyZero() ? FVector::UpVector : OutwardDirection;
 	}
 
-	auto FindOrAppendVertex = [&TargetDynamicMesh, &WeldedVertexIds](const FVector& Position, const FSRTerrainVertexKey* VertexKey)
+	auto FindOrAppendVertex = [&TargetDynamicMesh, &WeldedVertexIds](const FVector& Position, const FSRCelestialBodyDynamicMeshTerrainVertexKey* VertexKey)
 	{
-		const FSRTerrainVertexKey ResolvedVertexKey = VertexKey ? *VertexKey : MakeTerrainVertexKey(Position);
+		const FSRCelestialBodyDynamicMeshTerrainVertexKey ResolvedVertexKey = VertexKey ? *VertexKey : MakeCelestialBodyDynamicMeshTerrainVertexKey(Position);
 		if (const int32* ExistingVertexId = WeldedVertexIds.Find(ResolvedVertexKey))
 		{
 			return *ExistingVertexId;

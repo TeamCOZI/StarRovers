@@ -4,7 +4,7 @@
 
 class UWorld;
 
-struct STARROVERS_API FSRCameraInfo
+struct STARROVERS_API FSRScreenSpaceLineViewInfo
 {
 	bool bIsValid = false;
 	FVector ViewLocation = FVector::ZeroVector;
@@ -14,20 +14,20 @@ struct STARROVERS_API FSRCameraInfo
 	float ComputeDepthToWorldLocation(const FVector& WorldLocation) const;
 };
 
-class STARROVERS_API FSRLineThicknessUtils
+class STARROVERS_API FSRScreenSpaceLineThickness
 {
 public:
 	// These defaults match the Star Rovers camera's authored startup view.
 	static constexpr float DefaultReferenceViewDepth = 12000.0f;
 	static constexpr float DefaultReferenceFieldOfViewDegrees = 30.0f;
 
-	static bool TryBuildPrimaryCameraInfo(const UWorld* World, FSRCameraInfo& OutCameraInfo);
-	static void ResolveReferenceView(const UWorld* World, float& OutReferenceViewDepth, float& OutReferenceFieldOfViewDegrees);
+	static bool TryBuildPrimaryCameraViewInfo(const UWorld* World, FSRScreenSpaceLineViewInfo& OutCameraInfo);
+	static void ResolveReferenceViewParameters(const UWorld* World, float& OutReferenceViewDepth, float& OutReferenceFieldOfViewDegrees);
 
 	// Treat ReferenceWorldThickness as the authored world thickness at the reference view,
 	// then scale it by the current frustum so the line keeps a consistent on-screen thickness.
-	static float ComputeWorldThicknessAtLocation(
-		const FSRCameraInfo& CameraInfo,
+	static float ComputeWorldThicknessForScreenSpaceLine(
+		const FSRScreenSpaceLineViewInfo& CameraInfo,
 		const FVector& WorldLocation,
 		float ReferenceWorldThickness,
 		float ReferenceViewDepth,

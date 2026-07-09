@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Celestial/SRCelestialBodyDataTypes.h"
+#include "Celestial/SRCelestialBodyData.h"
 #include "SRStarDataAsset.generated.h"
 
 class UMaterialInterface;
@@ -54,18 +54,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star", meta = (DisplayName = "StarPointLightColor"))
 	FLinearColor StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "InitialStoredStellarFuel", ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "InitialStoredStellarFuel", ClampMin = "0.0", ToolTip = "Fuel health for each stellar evolution stage. The star starts as a main sequence star with this fuel, then refills to this amount when it becomes a red giant."))
 	double InitialStoredStellarFuel = 0.0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "RequiredStellarFuelPerCycle", ClampMin = "0.0"))
-	double RequiredStellarFuelPerCycle = 10.0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "StellarFuelRequirementGrowthPerCycle", ClampMin = "0.0"))
-	double StellarFuelRequirementGrowthPerCycle = 1.0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "InitialRedGiantPressure", ClampMin = "0.0"))
-	double InitialRedGiantPressure = 0.0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "RedGiantPressurePerMissingFuel", ClampMin = "0.0"))
-	double RedGiantPressurePerMissingFuel = 1.0;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "InitialStellarFuelDecreasePerSecond", ClampMin = "0.0", ToolTip = "Fuel health removed on the first one-second stellar fuel tick. Later ticks multiply the previous decrease by (200 + previous second index) percent."))
+	double InitialStellarFuelDecreasePerSecond = 50.0;
 };

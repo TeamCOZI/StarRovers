@@ -48,7 +48,7 @@ public:
 	bool IsAssemblyModeActive() const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Input")
-	bool IsPointerOverFocusInfoUi() const;
+	bool IsPointerOverFocusInfoUI() const;
 
 	FSRStarRoversAssemblyModeRequestedSignature& OnAssemblyModeRequested();
 
@@ -100,7 +100,7 @@ private:
 	bool RefreshStarFuelInfoFromFocusedActor();
 	void RefreshFocusInfoText();
 	void RefreshAssemblyModeButton();
-	bool IsScreenPositionOverFocusInfoUi(const FVector2D& ScreenPosition) const;
+	bool IsScreenPositionOverFocusInfoUI(const FVector2D& ScreenPosition) const;
 
 	FSRStarRoversAssemblyModeRequestedSignature AssemblyModeRequestedEvent;
 };

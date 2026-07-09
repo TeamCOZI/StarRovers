@@ -1,11 +1,11 @@
-#include "Visual/SRCelestialRingMeshComponent.h"
+#include "Rendering/SRCelestialRingMeshComponent.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
-#include "Visual/SRLineThicknessUtils.h"
+#include "Rendering/SRScreenSpaceLineThickness.h"
 
 namespace
 {
@@ -213,16 +213,16 @@ bool USRCelestialRingMeshComponent::ShouldRebuildMesh(
 		return false;
 	}
 
-	FSRCameraInfo CameraInfo;
-	FSRLineThicknessUtils::TryBuildPrimaryCameraInfo(GetWorld(), CameraInfo);
+	FSRScreenSpaceLineViewInfo CameraInfo;
+	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(GetWorld(), CameraInfo);
 	if (!CameraInfo.bIsValid)
 	{
 		return false;
 	}
 
-	float ReferenceViewDepth = FSRLineThicknessUtils::DefaultReferenceViewDepth;
-	float ReferenceFieldOfViewDegrees = FSRLineThicknessUtils::DefaultReferenceFieldOfViewDegrees;
-	FSRLineThicknessUtils::ResolveReferenceView(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
+	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
+	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
 
 	const bool bCenterMovedEnough = FVector::DistSquared(WorldCenter, LastWorldCenter) >= FMath::Square(CenterMoveRebuildDistance);
 	const bool bCameraMovedEnough = FVector::DistSquared(CameraInfo.ViewLocation, LastCameraLocation) >= FMath::Square(CameraMoveRebuildDistance);
@@ -247,12 +247,12 @@ void USRCelestialRingMeshComponent::RebuildRingMesh(
 	int32 SegmentCount,
 	double CurrentTime)
 {
-	FSRCameraInfo CameraInfo;
-	FSRLineThicknessUtils::TryBuildPrimaryCameraInfo(GetWorld(), CameraInfo);
+	FSRScreenSpaceLineViewInfo CameraInfo;
+	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(GetWorld(), CameraInfo);
 
-	float ReferenceViewDepth = FSRLineThicknessUtils::DefaultReferenceViewDepth;
-	float ReferenceFieldOfViewDegrees = FSRLineThicknessUtils::DefaultReferenceFieldOfViewDegrees;
-	FSRLineThicknessUtils::ResolveReferenceView(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
+	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
+	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
 
 	UE::Geometry::FDynamicMesh3 RingMesh;
 	RingMesh.EnableAttributes();
@@ -269,7 +269,7 @@ void USRCelestialRingMeshComponent::RebuildRingMesh(
 		const FVector DirectionA(0.0f, FMath::Cos(AngleA), FMath::Sin(AngleA));
 		const FVector DirectionB(0.0f, FMath::Cos(AngleB), FMath::Sin(AngleB));
 		const FVector WorldMidpoint = WorldCenter + ((DirectionA + DirectionB).GetSafeNormal() * SafeRadius);
-		const float SegmentWorldThickness = FSRLineThicknessUtils::ComputeWorldThicknessAtLocation(
+		const float SegmentWorldThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
 			CameraInfo,
 			WorldMidpoint,
 			ReferenceWorldThickness,

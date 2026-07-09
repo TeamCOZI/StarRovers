@@ -4,8 +4,12 @@
 #include "Components/ActorComponent.h"
 #include "Assembly/SRAssemblyAreaCopy.h"
 #include "Assembly/SRAssemblyAreaSelection.h"
+#include "Assembly/SRAssemblyModeState.h"
+#include "Assembly/SRAssemblyPlacementDragState.h"
 #include "Assembly/SRAssemblyPlacementHistory.h"
 #include "Assembly/SRAssemblyPlacementQueue.h"
+#include "Assembly/SRAssemblyPreviewState.h"
+#include "Assembly/SRAssemblySurfaceState.h"
 #include "Conveyor/SRConveyorTypes.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "SRAssemblyComponent.generated.h"
@@ -16,7 +20,6 @@ class USRConveyorNetworkComponent;
 class USRPlanetSurfaceGrid;
 class USRStructureDataAsset;
 class USRStructureInstanceManagerComponent;
-class UMaterialInterface;
 struct FSRStructureData;
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
@@ -59,6 +62,7 @@ public:
 	bool IsAreaCopyPlacementActive() const;
 	bool TryBeginAreaSelectionCopyPlacement();
 	bool MirrorAreaCopyPlacement(bool bMirrorLeftRight);
+	bool RotateAreaCopyPlacement(int32 StepDelta);
 	void CancelAreaCopyPlacement();
 	bool BeginAreaDeletionDrag(AActor*& OutSelectedActor);
 	bool ContinueAreaDeletionDrag(AActor*& OutSelectedActor);
@@ -79,99 +83,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "HoveredSurfaceGrid"))
 	TObjectPtr<USRPlanetSurfaceGrid> HoveredSurfaceGrid;
 
-	bool bAssemblyModeActive;
+	UPROPERTY(Transient)
+	FSRAssemblyModeState ModeState;
 
 	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> ActiveAssemblySurfaceGrid;
+	FSRAssemblySurfaceState SurfaceState;
 
 	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> LastHoveredSampleSurfaceGrid;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> LastPublishedHoveredSurfaceGrid;
-
-	UPROPERTY(Transient)
-	TObjectPtr<AActor> StructureGhostActor;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRStructureDataAsset> StructureGhostDataAsset;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> StructureGhostPortPreviewSurfaceGrid;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> ConveyorPortPreviewSurfaceGrid;
-
-	UPROPERTY(Transient)
-	TObjectPtr<ASRConveyorBeltActor> ConveyorGhostActor;
-
-	UPROPERTY(Transient)
-	TObjectPtr<ASRConveyorBeltActor> ConveyorDeletionGhostActor;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRStructureDataAsset> ConveyorGhostDataAsset;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRStructureDataAsset> ConveyorDeletionGhostDataAsset;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> ConveyorGhostSurfaceGrid;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> ConveyorDeletionGhostSurfaceGrid;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> ConveyorBulkDeletionPreviewSurfaceGrid;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> ConveyorInvalidPlacementPreviewSurfaceGrid;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRStructureDataAsset> LastLoggedInvalidGhostDataAsset;
-
-	FVector2D LastHoveredSampleMousePosition;
-	bool bHasLastHoveredSampleMousePosition;
-	bool bHasLastPublishedHoveredCellInfo;
-	FSRPlanetSurfaceGridCellId LastPublishedHoveredCellId;
-	FSRPlanetSurfaceGridCellId StructureGhostCellId;
-	bool bHasStructureGhostCellId;
-	bool bHasStructureGhostPortPreview;
-	bool bHasConveyorPortPreview;
-	bool bIsStructurePlacementDragActive;
-	bool bIsConveyorPlacementDragActive;
-	int32 StructurePlacementRotationSteps;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> LastStructurePlacementDragSurfaceGrid;
-
-	FSRPlanetSurfaceGridCellId LastStructurePlacementDragCellId;
-	bool bHasLastStructurePlacementDragCellId;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> StructurePlacementDragSurfaceGrid;
-
-	FSRPlanetSurfaceGridCellId StructurePlacementDragStartCellId;
-	int32 StructurePlacementDragRotationSteps;
-	TArray<FSRPlanetSurfaceGridCellId> StructurePlacementDragCellIds;
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> PendingConveyorStartSurfaceGrid;
-
-	FSRPlanetSurfaceGridCellId PendingConveyorStartCellId;
-	bool bHasPendingConveyorStartCell;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USRPlanetSurfaceGrid> ConveyorDragStartSurfaceGrid;
-
-	TArray<FSRPlanetSurfaceGridCellId> ConveyorDragWaypointCellIds;
-	FSRPlanetSurfaceGridCellId ConveyorDragStartCellId;
-	FSRPlanetSurfaceGridCellId ConveyorGhostTargetCellId;
-	FSRPlanetSurfaceGridCellId ConveyorDeletionGhostTargetCellId;
-	bool bHasConveyorDragStartCell;
-	bool bHasConveyorGhostTargetCell;
-	bool bHasConveyorDeletionGhostTargetCell;
-	bool bHasConveyorBulkDeletionPreview;
-	bool bHasConveyorInvalidPlacementPreview;
-	int32 ConveyorDeletionGhostLayer;
+	FSRAssemblyPlacementDragState PlacementDrag;
 
 private:
 	friend class StarRovers::Assembly::FSRAssemblyPlacementHistory;
@@ -179,22 +98,14 @@ private:
 	using ESRAssemblyPlacementHistoryKind = StarRovers::Assembly::ESRAssemblyPlacementHistoryKind;
 	using FSRAssemblyPlacementHistoryEntry = StarRovers::Assembly::FSRAssemblyPlacementHistoryEntry;
 	using FSRRestorableNaturalStructure = StarRovers::Assembly::FSRRestorableNaturalStructure;
-	using ESRAreaCopyPlacementPreviewState = StarRovers::Assembly::ESRAreaCopyPlacementPreviewState;
-	using FSRAreaCopiedStructure = StarRovers::Assembly::FSRAreaCopiedStructure;
-	using FSRAreaCopiedConveyorPath = StarRovers::Assembly::FSRAreaCopiedConveyorPath;
-	using FSRAreaCopyPlacementEvaluation = StarRovers::Assembly::FSRAreaCopyPlacementEvaluation;
+	using ESRAssemblyAreaCopyPlacementPreviewState = StarRovers::Assembly::ESRAssemblyAreaCopyPlacementPreviewState;
+	using FSRAssemblyAreaCopiedStructure = StarRovers::Assembly::FSRAssemblyAreaCopiedStructure;
+	using FSRAssemblyAreaCopiedConveyorPath = StarRovers::Assembly::FSRAssemblyAreaCopiedConveyorPath;
+	using FSRAssemblyAreaCopyPlacementEvaluation = StarRovers::Assembly::FSRAssemblyAreaCopyPlacementEvaluation;
+	using FSRAssemblyAreaCopyCommitResult = StarRovers::Assembly::FSRAssemblyAreaCopyCommitResult;
 	using FSRQueuedStructurePlacement = StarRovers::Assembly::FSRQueuedStructurePlacement;
 
-	struct FSRStructurePlacementDragPreviewActor
-	{
-		FSRPlanetSurfaceGridCellId CellId;
-		TWeakObjectPtr<AActor> PreviewActor;
-	};
-
 	ASRPlayerController* GetOwnerController() const;
-	bool GetCursorRay(FVector& OutRayOrigin, FVector& OutRayDirection) const;
-	bool TryGetFocusedSurfaceGrid(AActor*& OutFocusedActor, USRPlanetSurfaceGrid*& OutSurfaceGrid) const;
-	bool TryProjectCursorToSurfaceCell(USRPlanetSurfaceGrid* SurfaceGrid, FSRPlanetSurfaceGridCell& OutCell, FVector& OutHitLocation) const;
 	void UpdateSurfaceHover();
 	void ClearSurfaceHoverPreview();
 	void ProcessQueuedStructurePlacements();
@@ -205,29 +116,16 @@ private:
 	bool TryPublishSelectedStructureInfo(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& ClickedCell);
 	void ClearSelectedStructureInfo();
 	void UpdateConveyorPlacementPortPreview();
-	void ClearConveyorPlacementPortPreview();
 	bool UpdateConveyorBulkDeletionPreview();
-	void ClearConveyorBulkDeletionPreview();
-	void SetConveyorInvalidPlacementPreview(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
-	void ClearConveyorInvalidPlacementPreview();
 	bool UpdateConveyorDeletionGhostPreview(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		USRConveyorNetworkComponent* ConveyorNetwork,
 		const FSRPlanetSurfaceGridCellId& TargetCellId,
 		int32 Layer,
-		const TArray<FSRConveyorVisualPath>& VisualPaths);
-	void DestroyConveyorDeletionGhostPreview();
+		const TArray<FSRConveyorBeltPath>& BeltPaths);
 	void UpdateStructureGhostPreview();
-	void DestroyStructureGhostPreview();
 	bool UpdateStructurePlacementDragPreview(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell);
-	void DestroyStructurePlacementDragPreviewActors();
-	AActor* SpawnStructurePlacementDragPreviewActor(USRPlanetSurfaceGrid* SurfaceGrid, USRStructureDataAsset* StructureDataAsset);
 	bool UpdateConveyorGhostPreview(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset);
-	void DestroyConveyorGhostPreview();
-	void UpdateStructureGhostPortPreview(USRPlanetSurfaceGrid* SurfaceGrid, const FSRStructureData& StructureData, const TArray<FSRPlanetSurfaceGridCellId>& FootprintCellIds, int32 PlacementRotationSteps);
-	void ClearStructureGhostPortPreview();
-	bool BuildStructureGhostTransform(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& CellId, USRStructureDataAsset* StructureDataAsset, FTransform& OutTransform) const;
-	void PublishStructureGhostPlacementDebug(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& HoveredCell, const FTransform& GhostTransform, float StructureHeightOffset, bool bLogDebug) const;
 	bool TryResolveStructurePlacementDragTarget(AActor*& OutFocusedActor, USRPlanetSurfaceGrid*& OutSurfaceGrid, FSRPlanetSurfaceGridCell& OutTargetCell) const;
 	bool TryGetFocusedConveyorNetwork(AActor*& OutFocusedActor, USRConveyorNetworkComponent*& OutConveyorNetwork) const;
 	void EnqueueStructurePlacement(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& CellId);
@@ -239,42 +137,10 @@ private:
 		const FSRStructureData& ConveyorData,
 		const FSRPlanetSurfaceGridCellId& TargetCellId,
 		TArray<FSRPlanetSurfaceGridCellId>& OutPathCellIds) const;
-	bool BuildAreaSelectionCellIds(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRPlanetSurfaceGridCellId& StartCellId,
-		const FSRPlanetSurfaceGridCellId& EndCellId,
-		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const;
-	bool ResolveAreaSelectionCenterCellId(FSRPlanetSurfaceGridCellId& OutCenterCellId) const;
-	bool UpdateAreaSelection(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell);
-	void ApplyAreaSelectionGhosts(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
-	bool HasAreaCopyPayload() const;
-	void DestroyAreaCopyPreviewActors();
 	void RebuildAreaCopyPreviewActors();
 	void UpdateAreaCopyPlacementPreview();
-	void UpdateAreaCopyStructurePreviewActors(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const TArray<FSRPlanetSurfaceGridCellId>& TargetOriginCellIds,
-		ESRAreaCopyPlacementPreviewState PreviewState);
-	bool BuildAreaCopyPlacementEvaluation(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRPlanetSurfaceGridCellId& HoverCellId,
-		FSRAreaCopyPlacementEvaluation& OutEvaluation) const;
 	bool TryCommitAreaCopyPlacement(AActor*& OutSelectedActor);
-	void ApplyAreaCopyPreviewState(ESRAreaCopyPlacementPreviewState PreviewState);
-	UMaterialInterface* ResolveAreaCopyPreviewMaterial(USRStructureDataAsset* StructureDataAsset, ESRAreaCopyPlacementPreviewState PreviewState) const;
-	void ApplyAreaCopyPreviewMaterial(AActor* PreviewActor, UMaterialInterface* Material) const;
-	void CollectReplaceableOccupiedCellIds(USRStructureInstanceManagerComponent* StructureInstanceManager, const TSet<FName>& OccupantIds, TSet<FSRPlanetSurfaceGridCellId>& OutCellIds) const;
-	bool TryBuildConnectedAreaCopyConveyorPath(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		USRConveyorNetworkComponent* ConveyorNetwork,
-		const FSRConveyorVisualPath& TargetVisualPath,
-		const TSet<FSRPlanetSurfaceGridCellId>& IgnoredOccupiedCellIds,
-		FSRConveyorVisualPath& OutVisualPath) const;
-	bool UpdateAreaDeletion(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell);
-	void ApplyAreaDeletionPreview(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
-	bool CommitAreaDeletion();
 	bool DeleteAreaCells(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
-	void CollectAreaDeletionTargetOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FSRPlanetSurfaceGridCellId>& CellIds, TSet<FName>& OutOccupantIds) const;
 	bool CommitStructurePlacementDrag();
 	bool CommitConveyorPlacementDrag();
 	bool TryPlaceSelectedStructure(
@@ -285,40 +151,13 @@ private:
 		TArray<FSRAssemblyPlacementHistoryEntry>* OutHistoryEntries = nullptr);
 	bool TryPlaceSelectedConveyor(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset, bool bRefreshPreviewAndUI = true);
 	bool TryPlaceSelectedConveyorPath(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& StartCellId, const FSRPlanetSurfaceGridCell& TargetCell, USRStructureDataAsset* ConveyorDataAsset, bool bRefreshPreviewAndUI = true);
-	bool TryDeleteStructureAtCell(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId);
-	bool TryDeleteConnectedConveyorsAtCell(AActor* FocusedActor, USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId);
-	bool TryDestroyAttachedOccupantActor(AActor* SurfaceOwner, FName OccupantId) const;
 	void ClearPendingConveyorPathStart();
-	void BuildCandidateConveyorLayers(TArray<int32>& OutLayers) const;
-	void LogInvalidGhostDataAssetOnce(USRStructureDataAsset* StructureDataAsset, const TCHAR* Reason);
-	void ClearAssemblyPlacementHistory();
-	void PushAssemblyPlacementHistoryEntry(USRPlanetSurfaceGrid* SurfaceGrid, const FSRAssemblyPlacementHistoryEntry& Entry);
-	void RecordAssemblyPlacementHistoryBatch(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FSRAssemblyPlacementHistoryEntry>& Entries);
-	void RecordStructurePlacementHistory(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		USRStructureInstanceManagerComponent* StructureInstanceManager,
-		USRStructureDataAsset* StructureDataAsset,
-		const FSRPlanetSurfaceGridCellId& OriginCellId,
-		int32 PlacementRotationSteps,
-		FName OccupantId);
-	void RecordConveyorPlacementHistory(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		USRConveyorNetworkComponent* ConveyorNetwork,
-		const FSRConveyorVisualPath& VisualPath,
-		const TArray<FSRPlanetSurfaceGridCellId>& PlacedCellIds,
-		const TArray<FSRRestorableNaturalStructure>& RemovedNaturalStructures);
-	void BuildConveyorPlacementHistoryPayload(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		USRConveyorNetworkComponent* ConveyorNetwork,
-		USRStructureDataAsset* StructureDataAsset,
-		const TArray<FSRPlanetSurfaceGridCellId>& PathCellIds,
-		int32 Layer,
-		float LayerHeight,
-		FName NetworkId,
-		FSRConveyorVisualPath& OutVisualPath,
-		TArray<FSRPlanetSurfaceGridCellId>& OutPlacedCellIds,
-		TArray<FSRRestorableNaturalStructure>& OutRemovedNaturalStructures) const;
-	TArray<FSRStructurePlacementDragPreviewActor> StructurePlacementDragPreviewActors;
+	UPROPERTY(Transient)
+	FSRAssemblyStructurePreviewState StructurePreview;
+
+	UPROPERTY(Transient)
+	FSRAssemblyConveyorPreviewState ConveyorPreview;
+
 	StarRovers::Assembly::FSRAssemblyAreaSelection AreaSelection;
 	StarRovers::Assembly::FSRAssemblyAreaCopy AreaCopy;
 	StarRovers::Assembly::FSRAssemblyPlacementHistory PlacementHistory;

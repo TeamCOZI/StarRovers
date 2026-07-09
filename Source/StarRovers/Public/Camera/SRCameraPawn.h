@@ -203,12 +203,12 @@ protected:
     FVector FocusTrackingDeltaVelocity;
 
 private:
+    void InitializeCameraComponents();
+    void InitializeCameraDefaults();
+    void LoadDefaultInputAssets();
     void ApplyMappingContext();
     void ConfigureSpringArmCollision();
     void BroadcastFocusedActorChangedIfNeeded(AActor* PreviousFocusedActor);
-    void BeginFocusArcTransition(float FinalZoomDistance);
-    void StopFocusArcTransition();
-    bool UpdateFocusArcTransition(float DeltaSeconds, FVector& OutNewLocation);
     void HandleDragHoldStarted();
     void HandleDragHoldCompleted();
     void HandleFocusSurfaceDragHoldStarted();
@@ -219,8 +219,6 @@ private:
     void HandleFocusSurfaceCompleted();
     void HandleResetFocus();
     bool HasExitedFocusedActorGravityField() const;
-    bool GetMouseScreenPosition(FVector2D& OutMouseScreenPosition) const;
-    FVector ConvertScreenDragToDragOffset(const FVector2D& StartScreenPosition, const FVector2D& CurrentScreenPosition) const;
     float GetScreenSpaceInputScale(float CurrentZoomDistance) const;
     float GetZoomSpeed() const;
     float GetMinimumZoomDistance() const;
@@ -229,7 +227,6 @@ private:
     bool ResolveSpaceBoundary(FVector& OutCenter, float& OutRadius) const;
     FVector ClampPivotLocationInsideSpace(const FVector& CandidateLocation) const;
     float ClampZoomDistanceAgainstSpace(float ZoomDistance, const FVector& CandidatePawnLocation) const;
-    bool ResolveCelestialCameraAvoidanceSphere(const AActor* Actor, FVector& OutCenter, float& OutRadius) const;
     FVector GetCameraDirectionFromPivot() const;
     float ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance, const FVector& CandidatePawnLocation) const;
     bool ResolveFocusedObliqueViewZoomRange(float& OutNearZoomDistance, float& OutFarZoomDistance) const;
@@ -242,12 +239,8 @@ private:
     bool TryStartFocusSurfaceGridAlignment();
     void UpdateFocusSurface(float DeltaSeconds);
     void UpdateFocusSurfaceRotation(float DeltaSeconds);
-    void ApplyFocusSurfaceRigAlignmentLocation();
-    void ApplyFocusSurfaceDelta(const FVector2D& DegreesDelta);
     void RefreshScreenSpaceThicknessReferenceView();
     void UpdateDynamicMeshVisibility();
-    bool ApplyCelestialBodyMeshVisibility(AActor*& OutDirectionalLightTarget);
-    bool ShouldUseDynamicMesh(const AActor* BodyActor, float& OutScreenSizeRatio) const;
     void ConfigureDirectionalLight(AActor* LightingTarget);
     ADirectionalLight* FindDirectionalLightActor() const;
     USRCelestialBodyRegistrySubsystem* FindCelestialRegistry() const;
@@ -258,13 +251,7 @@ private:
 
     FSRFocusedActorChangedSignature FocusedActorChangedEvent;
     mutable TWeakObjectPtr<ADirectionalLight> CachedDirectionalLightActor;
-    mutable TWeakObjectPtr<AActor> CachedSpaceBoundaryActor;
-    mutable FVector CachedSpaceBoundaryCenter = FVector::ZeroVector;
-    mutable float CachedSpaceBoundaryRadius = 0.0f;
-    mutable double CachedSpaceBoundaryFullScanTime = -BIG_NUMBER;
-    mutable uint64 CachedSpaceBoundaryFrame = 0;
-    mutable bool bHasCachedSpaceBoundaryResult = false;
-    mutable bool bCachedSpaceBoundaryFound = false;
+    mutable FSRCameraSpaceBoundaryCacheState SpaceBoundaryCache;
     FVector DragTargetLocation;
     float ZoomDistanceTarget;
     FSRCameraFocusArcTransitionState FocusArcTransition;

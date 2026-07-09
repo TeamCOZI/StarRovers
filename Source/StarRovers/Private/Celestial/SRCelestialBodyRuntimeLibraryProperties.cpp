@@ -1,4 +1,4 @@
-#include "SRCelestialBodyRuntimeLibraryInternal.h"
+#include "SRCelestialBodyRuntimeLibraryReflection.h"
 
 #include "GameFramework/Actor.h"
 #include "UObject/UnrealType.h"
@@ -56,7 +56,7 @@ namespace StarRovers::CelestialBodyRuntime
 		}
 
 		const FString ClassPath = Actor->GetClass()->GetPathName();
-		return ClassPath.Contains(TEXT("/Game/BlueprintClasses/Celestial/"));
+		return ClassPath.Contains(TEXT("/Game/StarRovers/Celestial/Blueprints/"));
 	}
 
 	bool IsLikelyStarClass(const AActor* Actor)
@@ -67,7 +67,7 @@ namespace StarRovers::CelestialBodyRuntime
 		}
 
 		const FString ClassPath = Actor->GetClass()->GetPathName();
-		return ClassPath.Contains(TEXT("/Game/BlueprintClasses/Celestial/BP_Star."));
+		return ClassPath.Contains(TEXT("/Game/StarRovers/Celestial/Blueprints/BP_Star."));
 	}
 
 	bool TryGetFloatPropertyValue(const AActor* Actor, const FName PropertyName, float& OutValue)

@@ -1,7 +1,7 @@
 #include "Surface/SRPlanetSurfaceGrid.h"
-#include "Surface/SRPlanetSurfaceGridInteractionHelpers.h"
+#include "Surface/SRPlanetSurfaceGridInteractionCoordinateMapping.h"
 
-using StarRovers::Surface::Interaction::FSRSurfaceGridInteractionPatchBuilder;
+using StarRovers::Surface::Interaction::FSRPlanetSurfaceGridInteractionPatchBuilder;
 
 void USRPlanetSurfaceGrid::BeginInteractionHighlightBatch()
 {
@@ -18,22 +18,7 @@ void USRPlanetSurfaceGrid::EndInteractionHighlightBatch()
 
 bool USRPlanetSurfaceGrid::SetHoveredCell(const FSRPlanetSurfaceGridCellId& CellId)
 {
-	int32 CellIndex = INDEX_NONE;
-	if (!GetCellIndex(CellId, CellIndex))
-	{
-		return false;
-	}
-
-	if (bHasHoveredCell && HoveredCellId == CellId)
-	{
-		return true;
-	}
-
-	bHasHoveredCell = true;
-	HoveredCellId = CellId;
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
-	return true;
+	return SetFocusedInteractionCell(CellId, bHasHoveredCell, HoveredCellId);
 }
 
 void USRPlanetSurfaceGrid::SetHoveredInteractionGridPatchVisible(bool bNewVisible)
@@ -46,22 +31,13 @@ void USRPlanetSurfaceGrid::SetHoveredInteractionGridPatchVisible(bool bNewVisibl
 	bHoveredInteractionGridPatchVisible = bNewVisible;
 	if (bHasHoveredCell)
 	{
-		RequestInteractionHighlightRefresh();
-		UpdateDebugTickState();
+		NotifyInteractionStateChanged();
 	}
 }
 
 void USRPlanetSurfaceGrid::ClearHoveredCell()
 {
-	if (!bHasHoveredCell)
-	{
-		return;
-	}
-
-	bHasHoveredCell = false;
-	HoveredCellId = FSRPlanetSurfaceGridCellId();
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	ClearFocusedInteractionCell(bHasHoveredCell, HoveredCellId);
 }
 
 bool USRPlanetSurfaceGrid::HasHoveredCell() const
@@ -85,11 +61,10 @@ bool USRPlanetSurfaceGrid::GetInteractionGridPatchCellIds(
 {
 	auto IsValidCell = [this](const FSRPlanetSurfaceGridCellId& CellId)
 	{
-		FSRPlanetSurfaceGridCell Cell;
-		return GetCellById(CellId, Cell);
+		return IsInteractionCellIdValid(CellId);
 	};
 
-	return FSRSurfaceGridInteractionPatchBuilder::BuildPatchCellIds(
+	return FSRPlanetSurfaceGridInteractionPatchBuilder::BuildPatchCellIds(
 		CenterCellId,
 		FaceResolution,
 		IsValidCell,
@@ -98,220 +73,64 @@ bool USRPlanetSurfaceGrid::GetInteractionGridPatchCellIds(
 
 bool USRPlanetSurfaceGrid::SetSelectedCell(const FSRPlanetSurfaceGridCellId& CellId)
 {
-	int32 CellIndex = INDEX_NONE;
-	if (!GetCellIndex(CellId, CellIndex))
-	{
-		return false;
-	}
-
-	if (bHasSelectedCell && SelectedCellId == CellId)
-	{
-		return true;
-	}
-
-	bHasSelectedCell = true;
-	SelectedCellId = CellId;
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
-	return true;
+	return SetFocusedInteractionCell(CellId, bHasSelectedCell, SelectedCellId);
 }
 
 void USRPlanetSurfaceGrid::ClearSelectedCell()
 {
-	if (!bHasSelectedCell)
-	{
-		return;
-	}
-
-	bHasSelectedCell = false;
-	SelectedCellId = FSRPlanetSurfaceGridCellId();
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	ClearFocusedInteractionCell(bHasSelectedCell, SelectedCellId);
 }
 
 void USRPlanetSurfaceGrid::SetAreaSelectionCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
 {
-	TArray<FSRPlanetSurfaceGridCellId> NewAreaSelectionCellIds;
-	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
-	{
-		int32 CellIndex = INDEX_NONE;
-		if (GetCellIndex(CellId, CellIndex))
-		{
-			NewAreaSelectionCellIds.AddUnique(CellId);
-		}
-	}
-
-	if (AreaSelectionCellIds == NewAreaSelectionCellIds)
-	{
-		return;
-	}
-
-	AreaSelectionCellIds = MoveTemp(NewAreaSelectionCellIds);
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	SetInteractionPreviewCellIds(CellIds, AreaSelectionCellIds);
 }
 
 void USRPlanetSurfaceGrid::ClearAreaSelectionCells()
 {
-	if (AreaSelectionCellIds.IsEmpty())
-	{
-		return;
-	}
-
-	AreaSelectionCellIds.Reset();
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	ClearInteractionPreviewCellIds(AreaSelectionCellIds);
 }
 
 void USRPlanetSurfaceGrid::SetFacilityPortPreviewCells(
 	const TArray<FSRPlanetSurfaceGridCellId>& InputConnectionCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& OutputConnectionCellIds)
 {
-	TArray<FSRPlanetSurfaceGridCellId> NewInputPortPreviewCellIds;
-	for (const FSRPlanetSurfaceGridCellId& CellId : InputConnectionCellIds)
-	{
-		int32 CellIndex = INDEX_NONE;
-		if (GetCellIndex(CellId, CellIndex))
-		{
-			NewInputPortPreviewCellIds.AddUnique(CellId);
-		}
-	}
-
-	TArray<FSRPlanetSurfaceGridCellId> NewOutputPortPreviewCellIds;
-	for (const FSRPlanetSurfaceGridCellId& CellId : OutputConnectionCellIds)
-	{
-		int32 CellIndex = INDEX_NONE;
-		if (GetCellIndex(CellId, CellIndex))
-		{
-			NewOutputPortPreviewCellIds.AddUnique(CellId);
-		}
-	}
-
-	if (InputPortPreviewCellIds == NewInputPortPreviewCellIds
-		&& OutputPortPreviewCellIds == NewOutputPortPreviewCellIds)
-	{
-		return;
-	}
-
-	InputPortPreviewCellIds = MoveTemp(NewInputPortPreviewCellIds);
-	OutputPortPreviewCellIds = MoveTemp(NewOutputPortPreviewCellIds);
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	SetInteractionPortPreviewCellIds(InputConnectionCellIds, OutputConnectionCellIds);
 }
 
 void USRPlanetSurfaceGrid::ClearFacilityPortPreviewCells()
 {
-	if (InputPortPreviewCellIds.IsEmpty() && OutputPortPreviewCellIds.IsEmpty())
-	{
-		return;
-	}
-
-	InputPortPreviewCellIds.Reset();
-	OutputPortPreviewCellIds.Reset();
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	ClearInteractionPortPreviewCellIds();
 }
 
 void USRPlanetSurfaceGrid::SetOccupiedPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
 {
-	TArray<FSRPlanetSurfaceGridCellId> NewOccupiedPreviewCellIds;
-	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
-	{
-		int32 CellIndex = INDEX_NONE;
-		if (GetCellIndex(CellId, CellIndex))
-		{
-			NewOccupiedPreviewCellIds.AddUnique(CellId);
-		}
-	}
-
-	if (OccupiedPreviewCellIds == NewOccupiedPreviewCellIds)
-	{
-		return;
-	}
-
-	OccupiedPreviewCellIds = MoveTemp(NewOccupiedPreviewCellIds);
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	SetInteractionPreviewCellIds(CellIds, OccupiedPreviewCellIds);
 }
 
 void USRPlanetSurfaceGrid::ClearOccupiedPreviewCells()
 {
-	if (OccupiedPreviewCellIds.IsEmpty())
-	{
-		return;
-	}
-
-	OccupiedPreviewCellIds.Reset();
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	ClearInteractionPreviewCellIds(OccupiedPreviewCellIds);
 }
 
 void USRPlanetSurfaceGrid::SetDeletionPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
 {
-	TArray<FSRPlanetSurfaceGridCellId> NewDeletionPreviewCellIds;
-	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
-	{
-		int32 CellIndex = INDEX_NONE;
-		if (GetCellIndex(CellId, CellIndex))
-		{
-			NewDeletionPreviewCellIds.AddUnique(CellId);
-		}
-	}
-
-	if (DeletionPreviewCellIds == NewDeletionPreviewCellIds)
-	{
-		return;
-	}
-
-	DeletionPreviewCellIds = MoveTemp(NewDeletionPreviewCellIds);
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	SetInteractionPreviewCellIds(CellIds, DeletionPreviewCellIds);
 }
 
 void USRPlanetSurfaceGrid::ClearDeletionPreviewCells()
 {
-	if (DeletionPreviewCellIds.IsEmpty())
-	{
-		return;
-	}
-
-	DeletionPreviewCellIds.Reset();
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	ClearInteractionPreviewCellIds(DeletionPreviewCellIds);
 }
 
 void USRPlanetSurfaceGrid::SetInvalidPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
 {
-	TArray<FSRPlanetSurfaceGridCellId> NewInvalidPreviewCellIds;
-	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
-	{
-		int32 CellIndex = INDEX_NONE;
-		if (GetCellIndex(CellId, CellIndex))
-		{
-			NewInvalidPreviewCellIds.AddUnique(CellId);
-		}
-	}
-
-	if (InvalidPreviewCellIds == NewInvalidPreviewCellIds)
-	{
-		return;
-	}
-
-	InvalidPreviewCellIds = MoveTemp(NewInvalidPreviewCellIds);
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	SetInteractionPreviewCellIds(CellIds, InvalidPreviewCellIds);
 }
 
 void USRPlanetSurfaceGrid::ClearInvalidPreviewCells()
 {
-	if (InvalidPreviewCellIds.IsEmpty())
-	{
-		return;
-	}
-
-	InvalidPreviewCellIds.Reset();
-	RequestInteractionHighlightRefresh();
-	UpdateDebugTickState();
+	ClearInteractionPreviewCellIds(InvalidPreviewCellIds);
 }
 
 bool USRPlanetSurfaceGrid::HasSelectedCell() const

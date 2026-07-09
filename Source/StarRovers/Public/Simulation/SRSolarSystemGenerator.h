@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
-#include "Celestial/SRCelestialBodyDataTypes.h"
+#include "Celestial/SRCelestialBodyData.h"
 #include "SRSolarSystemGenerator.generated.h"
 
 class ASRCelestialBody;
@@ -40,8 +40,12 @@ class STARROVERS_API ASRSolarSystemGenerator : public AActor
 public:
 	ASRSolarSystemGenerator();
 
+	virtual void PostLoad() override;
 	virtual void BeginPlay() override;
 	virtual void Destroyed() override;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Generation")
 	ASRCelestialBody* GenerateRuntimeSystem();
@@ -98,6 +102,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Orbit", meta = (DisplayName = "MoonOrbitIncrease", ClampMin = "0.0"))
 	float MoonOrbitIncrease;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Orbit", meta = (DisplayName = "PlanetOrbitPeriods", ClampMin = "0.0", ToolTip = "Orbit periods assigned by generated planet order. The array is sized from the resolved MaxPlanet count, and generation uses only the prefix for the actual planet count."))
+	TArray<float> PlanetOrbitPeriods;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Orbit", meta = (DisplayName = "MoonOrbitPeriods", ClampMin = "0.0", ToolTip = "Orbit periods assigned by generated moon order for each parent planet. The array is sized from the resolved MaxMoon count, and generation uses only the prefix for the actual moon count."))
+	TArray<float> MoonOrbitPeriods;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "bGenerateNaturalStructures"))
 	bool bGenerateNaturalStructures;
 
@@ -137,6 +147,9 @@ private:
 	void LogAsyncGenerationStageTiming(const TCHAR* StageName, double Milliseconds, const FString& Suffix = FString());
 	void EnsureMemoryDiagnosticTrackedClasses() const;
 	void LogMemoryDiagnosticsSnapshot(const FString& Label) const;
+	void NormalizeOrbitPeriodSettings();
+	float ResolvePlanetOrbitPeriod(int32 PlanetIndex) const;
+	float ResolveMoonOrbitPeriod(int32 MoonIndex) const;
 	ASRCelestialBody* SpawnPrimaryStar(FRandomStream& RandomStream, const USRStarDataAsset*& OutSelectedStarDataAsset);
 	ASRCelestialBody* SpawnOrbitingBody(const TSubclassOf<ASRCelestialBody>& BodyClass, const FSRCelestialBodyGenerateRequest& CelestialBodyRequest, ASRCelestialBody* ParentBody);
 	void BuildOrbitingBodyRequests(

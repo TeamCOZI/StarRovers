@@ -1,6 +1,6 @@
 #include "Simulation/SRSolarSystemGenerator.h"
 
-#include "Simulation/SRSolarSystemGeneratorInternal.h"
+#include "Simulation/SRSolarSystemGeneratorPipeline.h"
 
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
@@ -9,7 +9,7 @@
 #include "UI/SRLoadingScreenWidget.h"
 #include "Utility/SRTimingLog.h"
 
-using namespace StarRoversSolarSystemGeneratorInternal;
+using namespace StarRovers::Simulation::SolarSystemGeneration;
 void ASRSolarSystemGenerator::StartRuntimeSystemGenerationWithLoadingScreen()
 {
 	ShowLoadingScreen();
@@ -25,6 +25,7 @@ void ASRSolarSystemGenerator::GenerateRuntimeSystemDeferred()
 
 void ASRSolarSystemGenerator::BeginRuntimeSystemGenerationDeferred()
 {
+	NormalizeOrbitPeriodSettings();
 	if (!GetWorld())
 	{
 		HideLoadingScreen();
@@ -33,17 +34,17 @@ void ASRSolarSystemGenerator::BeginRuntimeSystemGenerationDeferred()
 
 	bRuntimeGenerationInProgress = true;
 	AsyncGenerationStageTimings.Reset();
-	AsyncGenerationTotalStart = SRSolarNowSeconds();
+	AsyncGenerationTotalStart = GetSolarSystemGenerationTimingSeconds();
 	FSRTimingLog::BeginSession(TEXT("GenerateRuntimeSystem"));
 
 	UpdateLoadingProgress(0.02f, NSLOCTEXT("StarRoversLoadingScreen", "Clearing", "Clearing previous system..."));
 	LogMemoryDiagnosticsSnapshot(TEXT("GenerateRuntimeSystem.BeforeClear"));
-	AsyncCurrentStageStart = SRSolarNowSeconds();
+	AsyncCurrentStageStart = GetSolarSystemGenerationTimingSeconds();
 	ClearRuntimeGeneratedBodies();
-	LogAsyncGenerationStageTiming(TEXT("ClearRuntimeGeneratedBodies"), SRSolarElapsedMilliseconds(AsyncCurrentStageStart));
+	LogAsyncGenerationStageTiming(TEXT("ClearRuntimeGeneratedBodies"), GetSolarSystemGenerationElapsedMilliseconds(AsyncCurrentStageStart));
 
 	UpdateLoadingProgress(0.05f, NSLOCTEXT("StarRoversLoadingScreen", "WaitingForCleanup", "Finalizing cleanup..."));
-	AsyncCurrentStageStart = SRSolarNowSeconds();
+	AsyncCurrentStageStart = GetSolarSystemGenerationTimingSeconds();
 	ScheduleLoadingGenerationStep(&ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear);
 }
 
@@ -55,7 +56,7 @@ void ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear()
 		return;
 	}
 
-	LogAsyncGenerationStageTiming(TEXT("WaitAfterClearForGC"), SRSolarElapsedMilliseconds(AsyncCurrentStageStart));
+	LogAsyncGenerationStageTiming(TEXT("WaitAfterClearForGC"), GetSolarSystemGenerationElapsedMilliseconds(AsyncCurrentStageStart));
 
 	AsyncRuntimeGenerationSeed = bRandomizeGenerationSeedEachRun
 		? CreateRuntimeRandomGenerationSeed()
@@ -70,9 +71,9 @@ void ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear()
 	AsyncSelectedStarDataAsset = nullptr;
 
 	UpdateLoadingProgress(0.08f, NSLOCTEXT("StarRoversLoadingScreen", "SpawningStar", "Creating primary star..."));
-	AsyncCurrentStageStart = SRSolarNowSeconds();
+	AsyncCurrentStageStart = GetSolarSystemGenerationTimingSeconds();
 	RuntimeStarBody = SpawnPrimaryStar(AsyncGenerationRandomStream, AsyncSelectedStarDataAsset);
-	LogAsyncGenerationStageTiming(TEXT("SpawnPrimaryStar"), SRSolarElapsedMilliseconds(AsyncCurrentStageStart));
+	LogAsyncGenerationStageTiming(TEXT("SpawnPrimaryStar"), GetSolarSystemGenerationElapsedMilliseconds(AsyncCurrentStageStart));
 	if (!IsValid(RuntimeStarBody))
 	{
 		FinishRuntimeSystemGeneration();
@@ -80,11 +81,11 @@ void ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear()
 	}
 
 	UpdateLoadingProgress(0.14f, NSLOCTEXT("StarRoversLoadingScreen", "SpawningPlanets", "Creating planets..."));
-	AsyncCurrentStageStart = SRSolarNowSeconds();
+	AsyncCurrentStageStart = GetSolarSystemGenerationTimingSeconds();
 	SpawnPlanets(RuntimeStarBody, AsyncSelectedStarDataAsset, AsyncGenerationRandomStream, RuntimePlanetBodies);
 	LogAsyncGenerationStageTiming(
 		TEXT("SpawnPlanets"),
-		SRSolarElapsedMilliseconds(AsyncCurrentStageStart),
+		GetSolarSystemGenerationElapsedMilliseconds(AsyncCurrentStageStart),
 		FString::Printf(TEXT(" Planets=%d Moons=%d"), RuntimePlanetBodies.Num(), RuntimeMoonBodies.Num()));
 
 	AsyncPrepareBodyIndex = 0;
@@ -96,7 +97,7 @@ void ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear()
 	AsyncPrepareSlowestBodyName = TEXT("None");
 	AsyncPrepareSlowestBodyDetailLines.Reset();
 	AsyncPrepareBodyTimingDetails.Reset();
-	AsyncDynamicMeshTotalStart = SRSolarNowSeconds();
+	AsyncDynamicMeshTotalStart = GetSolarSystemGenerationTimingSeconds();
 	UpdateLoadingProgress(0.20f, NSLOCTEXT("StarRoversLoadingScreen", "PreparingSurfaces", "Preparing planet surfaces..."));
 	ScheduleLoadingGenerationStep(&ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation);
 }
@@ -104,7 +105,7 @@ void ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear()
 void ASRSolarSystemGenerator::FinishRuntimeSystemGeneration()
 {
 	UpdateLoadingProgress(0.98f, NSLOCTEXT("StarRoversLoadingScreen", "Finalizing", "Finalizing star system..."));
-	AsyncCurrentStageStart = SRSolarNowSeconds();
+	AsyncCurrentStageStart = GetSolarSystemGenerationTimingSeconds();
 	if (UWorld* World = GetWorld())
 	{
 		if (USRCelestialBodyRegistrySubsystem* CelestialBodyRegistry = World->GetSubsystem<USRCelestialBodyRegistrySubsystem>())
@@ -112,7 +113,7 @@ void ASRSolarSystemGenerator::FinishRuntimeSystemGeneration()
 			CelestialBodyRegistry->SetPrimaryStarActor(RuntimeStarBody);
 		}
 	}
-	LogAsyncGenerationStageTiming(TEXT("Registry"), SRSolarElapsedMilliseconds(AsyncCurrentStageStart));
+	LogAsyncGenerationStageTiming(TEXT("Registry"), GetSolarSystemGenerationElapsedMilliseconds(AsyncCurrentStageStart));
 
 	const FSRAsyncGenerationStageTiming* SlowestStageTiming = nullptr;
 	for (const FSRAsyncGenerationStageTiming& StageTiming : AsyncGenerationStageTimings)
@@ -126,7 +127,7 @@ void ASRSolarSystemGenerator::FinishRuntimeSystemGeneration()
 	{
 		FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeSystem.Bottleneck Stage=%s %.2f ms"), *SlowestStageTiming->Name, SlowestStageTiming->Milliseconds));
 	}
-	FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeSystem.Total %.2f ms"), SRSolarElapsedMilliseconds(AsyncGenerationTotalStart)));
+	FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeSystem.Total %.2f ms"), GetSolarSystemGenerationElapsedMilliseconds(AsyncGenerationTotalStart)));
 	LogMemoryDiagnosticsSnapshot(TEXT("GenerateRuntimeSystem.AfterComplete"));
 
 	UpdateLoadingProgress(1.0f, NSLOCTEXT("StarRoversLoadingScreen", "Complete", "Complete"));

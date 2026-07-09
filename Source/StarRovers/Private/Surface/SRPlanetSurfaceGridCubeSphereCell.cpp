@@ -1,4 +1,4 @@
-#include "Surface/SRPlanetSurfaceGridCubeSphereHelpers.h"
+#include "Surface/SRPlanetSurfaceGridCubeSphereGeometry.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
 #include "HAL/CriticalSection.h"
 #include "Utility/SRTimingLog.h"

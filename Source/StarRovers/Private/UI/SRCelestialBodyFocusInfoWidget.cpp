@@ -136,32 +136,58 @@ namespace
 		}
 	}
 
+	const TCHAR* GetStellarEvolutionStageLabel(ESRStellarEvolutionStage EvolutionStage)
+	{
+		switch (EvolutionStage)
+		{
+		case ESRStellarEvolutionStage::MainSequence:
+			return TEXT("Main Sequence");
+		case ESRStellarEvolutionStage::RedGiant:
+			return TEXT("Red Giant");
+		case ESRStellarEvolutionStage::Supernova:
+			return TEXT("Supernova");
+		default:
+			return TEXT("Unknown");
+		}
+	}
+
 	FString BuildFocusedStarFuelSummary(const FSRFocusedStarFuelInfo& FuelInfo)
 	{
 		return FString::Printf(
-			TEXT("Stellar Fuel\nStored: %.2f\nRequired: %.2f\nGrowth: +%.2f / cycle\nRedGiantPressure: %.2f\nLastCycle: %s\nLastCycleIndex: %d\nConsumed: %.2f\nDeficit: %.2f"),
+			TEXT("Stellar Evolution\nStage: %s\nFuel: %.2f / %.2f\nCurrent Decrease/sec: %.2f\nInitial Decrease/sec: %.2f\nNext Multiplier: %.2fx\nRateCycleIndex: %d\nLastSecond: %s\nLastSecondIndex: %d\nLast Decrease: %.2f\nConsumed: %.2f\nOverkill: %.2f\nGameOver: %s"),
+			GetStellarEvolutionStageLabel(FuelInfo.EvolutionStage),
 			FuelInfo.StoredFuel,
+			FuelInfo.InitialStageFuel,
 			FuelInfo.RequiredFuelPerCycle,
+			FuelInfo.InitialFuelDecreasePerSecond,
 			FuelInfo.RequirementGrowthPerCycle,
-			FuelInfo.RedGiantPressure,
-			FuelInfo.bLastCycleMetRequirement ? TEXT("Met") : TEXT("Short"),
-			FuelInfo.LastSettledCycleIndex,
-			FuelInfo.LastCycleFuelConsumed,
-			FuelInfo.LastCycleFuelDeficit);
+			FuelInfo.LastFuelDecreaseRateCycleIndex,
+			FuelInfo.bLastSecondSurvived ? TEXT("Survived") : TEXT("Depleted"),
+			FuelInfo.LastSettledSecondIndex,
+			FuelInfo.LastSecondFuelDecrease,
+			FuelInfo.LastSecondFuelConsumed,
+			FuelInfo.LastSecondFuelDeficit,
+			FuelInfo.bSupernovaGameOver ? TEXT("Yes") : TEXT("No"));
 	}
 
 	bool AreFocusedStarFuelInfosEqual(const FSRFocusedStarFuelInfo& Left, const FSRFocusedStarFuelInfo& Right)
 	{
 		return Left.bIsValid == Right.bIsValid
+			&& Left.EvolutionStage == Right.EvolutionStage
 			&& FMath::IsNearlyEqual(Left.StoredFuel, Right.StoredFuel)
+			&& FMath::IsNearlyEqual(Left.InitialStageFuel, Right.InitialStageFuel)
+			&& FMath::IsNearlyEqual(Left.InitialFuelDecreasePerSecond, Right.InitialFuelDecreasePerSecond)
 			&& FMath::IsNearlyEqual(Left.RequiredFuelPerCycle, Right.RequiredFuelPerCycle)
 			&& FMath::IsNearlyEqual(Left.RequirementGrowthPerCycle, Right.RequirementGrowthPerCycle)
+			&& Left.LastFuelDecreaseRateCycleIndex == Right.LastFuelDecreaseRateCycleIndex
 			&& FMath::IsNearlyEqual(Left.RedGiantPressure, Right.RedGiantPressure)
 			&& FMath::IsNearlyEqual(Left.RedGiantPressurePerMissingFuel, Right.RedGiantPressurePerMissingFuel)
-			&& Left.LastSettledCycleIndex == Right.LastSettledCycleIndex
-			&& FMath::IsNearlyEqual(Left.LastCycleFuelConsumed, Right.LastCycleFuelConsumed)
-			&& FMath::IsNearlyEqual(Left.LastCycleFuelDeficit, Right.LastCycleFuelDeficit)
-			&& Left.bLastCycleMetRequirement == Right.bLastCycleMetRequirement;
+			&& Left.LastSettledSecondIndex == Right.LastSettledSecondIndex
+			&& FMath::IsNearlyEqual(Left.LastSecondFuelConsumed, Right.LastSecondFuelConsumed)
+			&& FMath::IsNearlyEqual(Left.LastSecondFuelDecrease, Right.LastSecondFuelDecrease)
+			&& FMath::IsNearlyEqual(Left.LastSecondFuelDeficit, Right.LastSecondFuelDeficit)
+			&& Left.bLastSecondSurvived == Right.bLastSecondSurvived
+			&& Left.bSupernovaGameOver == Right.bSupernovaGameOver;
 	}
 
 	constexpr float FocusDetailsBoxWidth = 360.0f;
@@ -215,7 +241,7 @@ void USRCelestialBodyFocusInfoWidget::NativeTick(const FGeometry& MyGeometry, fl
 FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
-	if (IsScreenPositionOverFocusInfoUi(ScreenPosition))
+	if (IsScreenPositionOverFocusInfoUI(ScreenPosition))
 	{
 		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
@@ -229,7 +255,7 @@ FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonDown(const FGeometry&
 FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
-	if (IsScreenPositionOverFocusInfoUi(ScreenPosition))
+	if (IsScreenPositionOverFocusInfoUI(ScreenPosition))
 	{
 		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
@@ -242,7 +268,7 @@ FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonUp(const FGeometry& I
 
 FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (IsScreenPositionOverFocusInfoUi(InMouseEvent.GetScreenSpacePosition()))
+	if (IsScreenPositionOverFocusInfoUI(InMouseEvent.GetScreenSpacePosition()))
 	{
 		return FReply::Handled();
 	}
@@ -288,14 +314,14 @@ bool USRCelestialBodyFocusInfoWidget::IsAssemblyModeActive() const
 	return bAssemblyModeActive;
 }
 
-bool USRCelestialBodyFocusInfoWidget::IsPointerOverFocusInfoUi() const
+bool USRCelestialBodyFocusInfoWidget::IsPointerOverFocusInfoUI() const
 {
 	if (!FSlateApplication::IsInitialized())
 	{
 		return false;
 	}
 
-	return IsScreenPositionOverFocusInfoUi(FSlateApplication::Get().GetCursorPos());
+	return IsScreenPositionOverFocusInfoUI(FSlateApplication::Get().GetCursorPos());
 }
 
 FSRStarRoversAssemblyModeRequestedSignature& USRCelestialBodyFocusInfoWidget::OnAssemblyModeRequested()
@@ -571,15 +597,21 @@ bool USRCelestialBodyFocusInfoWidget::RefreshStarFuelInfoFromFocusedActor()
 	const FSRStellarFuelState FuelState = Star->GetStellarFuelState();
 	FSRFocusedStarFuelInfo NewFuelInfo;
 	NewFuelInfo.bIsValid = true;
+	NewFuelInfo.EvolutionStage = FuelState.EvolutionStage;
 	NewFuelInfo.StoredFuel = FuelState.StoredFuel;
+	NewFuelInfo.InitialStageFuel = FuelState.InitialStageFuel;
+	NewFuelInfo.InitialFuelDecreasePerSecond = FuelState.InitialFuelDecreasePerSecond;
 	NewFuelInfo.RequiredFuelPerCycle = FuelState.RequiredFuelPerCycle;
 	NewFuelInfo.RequirementGrowthPerCycle = FuelState.RequirementGrowthPerCycle;
+	NewFuelInfo.LastFuelDecreaseRateCycleIndex = FuelState.LastFuelDecreaseRateCycleIndex;
 	NewFuelInfo.RedGiantPressure = FuelState.RedGiantPressure;
 	NewFuelInfo.RedGiantPressurePerMissingFuel = FuelState.RedGiantPressurePerMissingFuel;
-	NewFuelInfo.LastSettledCycleIndex = FuelState.LastSettledCycleIndex;
-	NewFuelInfo.LastCycleFuelConsumed = FuelState.LastCycleFuelConsumed;
-	NewFuelInfo.LastCycleFuelDeficit = FuelState.LastCycleFuelDeficit;
-	NewFuelInfo.bLastCycleMetRequirement = FuelState.bLastCycleMetRequirement;
+	NewFuelInfo.LastSettledSecondIndex = FuelState.LastSettledSecondIndex;
+	NewFuelInfo.LastSecondFuelConsumed = FuelState.LastSecondFuelConsumed;
+	NewFuelInfo.LastSecondFuelDecrease = FuelState.LastSecondFuelDecrease;
+	NewFuelInfo.LastSecondFuelDeficit = FuelState.LastSecondFuelDeficit;
+	NewFuelInfo.bLastSecondSurvived = FuelState.bLastSecondSurvived;
+	NewFuelInfo.bSupernovaGameOver = FuelState.bSupernovaGameOver;
 
 	if (AreFocusedStarFuelInfosEqual(FocusInfo.StarFuelInfo, NewFuelInfo))
 	{
@@ -724,7 +756,7 @@ void USRCelestialBodyFocusInfoWidget::HandleAssemblyModeButtonClicked()
 	AssemblyModeRequestedEvent.Broadcast();
 }
 
-bool USRCelestialBodyFocusInfoWidget::IsScreenPositionOverFocusInfoUi(const FVector2D& ScreenPosition) const
+bool USRCelestialBodyFocusInfoWidget::IsScreenPositionOverFocusInfoUI(const FVector2D& ScreenPosition) const
 {
 	if (!IsVisible())
 	{

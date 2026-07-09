@@ -13,14 +13,9 @@ class ULineBatchComponent;
 class UMaterialInterface;
 class UPCGComponent;
 class USplineComponent;
-class UTextRenderComponent;
 class USRFacilityNetworkComponent;
 class USRPlanetSurfaceGrid;
 class USRStructureDataAsset;
-namespace UE::Geometry
-{
-	class FDynamicMesh3;
-}
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
 class STARROVERS_API USRConveyorNetworkComponent : public USceneComponent
@@ -86,9 +81,9 @@ public:
 		const TSet<FSRPlanetSurfaceGridCellId>& AdditionalBlockedCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& OutPath) const;
 
-	bool GetConveyorVisualPathsInCells(
+	bool GetConveyorBeltPathsInCells(
 		const TSet<FSRPlanetSurfaceGridCellId>& CellIds,
-		TArray<FSRConveyorVisualPath>& OutVisualPaths) const;
+		TArray<FSRConveyorBeltPath>& OutBeltPaths) const;
 
 	bool CanPlaceConveyorPath(
 		USRPlanetSurfaceGrid* SurfaceGrid,
@@ -111,9 +106,9 @@ public:
 		const FSRPlanetSurfaceGridCellId& CellId,
 		int32 Layer);
 
-	bool TryRemoveConveyorVisualPath(
+	bool TryRemoveConveyorBeltPath(
 		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRConveyorVisualPath& VisualPath,
+		const FSRConveyorBeltPath& BeltPath,
 		const TArray<FSRPlanetSurfaceGridCellId>& PlacedCellIds);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
@@ -129,11 +124,11 @@ public:
 		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor")
-	bool GetConnectedConveyorVisualPathsAtCell(
+	bool GetConnectedConveyorBeltPathsAtCell(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlanetSurfaceGridCellId& CellId,
 		int32 Layer,
-		TArray<FSRConveyorVisualPath>& OutVisualPaths) const;
+		TArray<FSRConveyorBeltPath>& OutBeltPaths) const;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
 	bool TryRemoveConnectedConveyorsAtCell(
@@ -154,13 +149,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "BeltSurfaceOffset", ClampMin = "0.0"))
 	float BeltSurfaceOffset;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Visual", meta = (DisplayName = "bBuildDynamicMeshVisuals"))
-	bool bBuildDynamicMeshVisuals;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Rendering", meta = (DisplayName = "bBuildBeltRibbonMesh"))
+	bool bBuildBeltRibbonMesh;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Visual", meta = (DisplayName = "bSpawnConveyorBeltActors"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Rendering", meta = (DisplayName = "bSpawnConveyorBeltActors"))
 	bool bSpawnConveyorBeltActors;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Visual", meta = (DisplayName = "MaxConveyorActorGroupsRefreshedPerFrame", ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Rendering", meta = (DisplayName = "MaxConveyorActorGroupsRefreshedPerFrame", ClampMin = "1"))
 	int32 MaxConveyorActorGroupsRefreshedPerFrame;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|PCG", meta = (DisplayName = "bBuildPCGSplineInputs"))
@@ -211,29 +206,29 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport", meta = (DisplayName = "MaxItemTransfersPerTick", ClampMin = "1"))
 	int32 MaxItemTransfersPerTick;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "bShowTransportItemVisuals"))
-	bool bShowTransportItemVisuals;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "bShowTransportItemLabels"))
+	bool bShowTransportItemLabels;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemVisualHeightOffset", ClampMin = "0.0"))
-	float ItemVisualHeightOffset;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemLabelHeightOffset", ClampMin = "0.0"))
+	float ItemLabelHeightOffset;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemEnergyLabelWorldSize", ClampMin = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemEnergyLabelWorldSize", ClampMin = "1.0"))
 	float ItemEnergyLabelWorldSize;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemEnergyLabelMaxScale", ClampMin = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemEnergyLabelMaxScale", ClampMin = "1.0"))
 	float ItemEnergyLabelMaxScale;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemEnergyLowColor"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemEnergyLowColor"))
 	FLinearColor ItemEnergyLowColor;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemEnergyHighColor"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemEnergyHighColor"))
 	FLinearColor ItemEnergyHighColor;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Visual", meta = (DisplayName = "ItemEnergyNegativeColor"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemEnergyNegativeColor"))
 	FLinearColor ItemEnergyNegativeColor;
 
 	TMap<FSRConveyorLaneKey, FSRConveyorSegment> Segments;
-	TArray<FSRConveyorVisualPath> VisualPaths;
+	TArray<FSRConveyorBeltPath> BeltPaths;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UDynamicMeshComponent> BeltMeshComponent;
@@ -251,100 +246,22 @@ protected:
 	TWeakObjectPtr<USRPlanetSurfaceGrid> PendingConveyorActorRefreshSurfaceGrid;
 
 private:
-	static FSRConveyorLaneKey MakeLaneKey(const FSRPlanetSurfaceGridCellId& CellId, int32 Layer);
-	static FName MakeActorGroupKey(USRStructureDataAsset* StructureDataAsset, int32 Layer);
-	static ESRConveyorGridDirection GetOppositeDirection(ESRConveyorGridDirection Direction);
-	static ESRConveyorSegmentShape ResolveSegmentShape(ESRConveyorGridDirection InputDirection, ESRConveyorGridDirection OutputDirection);
-	static bool GetNeighborCellIdByDirection(const FSRPlanetSurfaceGridCellNeighbors& Neighbors, ESRConveyorGridDirection Direction, FSRPlanetSurfaceGridCellId& OutCellId);
-	static bool FindDirectionBetweenCells(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& FromCellId, const FSRPlanetSurfaceGridCellId& ToCellId, ESRConveyorGridDirection& OutDirection);
-	static int32 GetConveyorDirectionClockwiseOrder(ESRConveyorGridDirection Direction);
-	static void SortConveyorDirectionsClockwise(TArray<ESRConveyorGridDirection>& Directions);
-	static void CollectConveyorInputDirections(const FSRConveyorSegment& Segment, TArray<ESRConveyorGridDirection>& OutDirections);
-	static void CollectConveyorOutputDirections(const FSRConveyorSegment& Segment, TArray<ESRConveyorGridDirection>& OutDirections);
-
-	bool CanPlaceConveyorSegment(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorLaneKey& LaneKey) const;
-	bool CanMergeConveyorSegment(const FSRConveyorSegment& Segment) const;
-	void MergeConveyorSegment(const FSRConveyorSegment& Segment);
-	void MergeConveyorInputDirection(FSRConveyorSegment& ExistingSegment, ESRConveyorGridDirection IncomingDirection);
-	void MergeConveyorOutputDirection(FSRConveyorSegment& ExistingSegment, ESRConveyorGridDirection IncomingDirection);
-	bool CanDestroyNaturalStructureForConveyorPlacement(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId) const;
-	bool DoesConveyorSegmentReferenceLane(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorSegment& Segment, const FSRConveyorLaneKey& TargetLaneKey) const;
-	bool GatherConnectedConveyorLaneKeysAtCell(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRPlanetSurfaceGridCellId& CellId,
-		int32 Layer,
-		TArray<FSRConveyorLaneKey>& OutLaneKeys) const;
-	void EnsureBeltMeshComponent();
-	void EnsurePathDebugLineBatchComponent();
-	USplineComponent* EnsurePCGSplineComponent(int32 SplineIndex);
-	void ClearUnusedPCGSplineComponents(int32 FirstUnusedSplineIndex);
-	bool BuildConveyorPathSplinePoints(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRConveyorVisualPath& VisualPath,
-		TArray<FVector>& OutWorldPoints,
-		TArray<FVector>& OutWorldNormals) const;
-	float ResolveBeltHalfWidth(const TArray<FVector>& WorldPoints) const;
-	float ResolveBeltHalfThickness(float HalfWidth, float LayerHeight) const;
-	float ResolveConveyorLayerHeight(USRPlanetSurfaceGrid* SurfaceGrid, float RequestedLayerHeight) const;
-	bool BuildConveyorSegmentRibbon(
-		UE::Geometry::FDynamicMesh3& BeltMesh,
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRConveyorSegment& Segment,
-		float LayerHeight) const;
-	bool BuildConveyorPathRibbon(
-		UE::Geometry::FDynamicMesh3& BeltMesh,
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRConveyorVisualPath& VisualPath) const;
-	ASRConveyorBeltActor* SpawnConveyorActorForVisualPaths(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const TArray<FSRConveyorVisualPath>& GroupedVisualPaths);
 	void DestroyPlacedConveyorActors();
-	void MarkConveyorActorGroupDirty(USRStructureDataAsset* StructureDataAsset, int32 Layer);
-	void MarkConveyorActorGroupPlacementDiagnosticPending(USRStructureDataAsset* StructureDataAsset, int32 Layer);
-	void MarkConveyorActorGroupDeletionDiagnosticPending(USRStructureDataAsset* StructureDataAsset, int32 Layer);
 	void ScheduleDirtyConveyorActorGroupRefresh(USRPlanetSurfaceGrid* SurfaceGrid);
-	bool RefreshConveyorActorGroup(USRPlanetSurfaceGrid* SurfaceGrid, FName ActorGroupKey);
 	bool RefreshDirtyConveyorActorGroups(USRPlanetSurfaceGrid* SurfaceGrid, int32 MaxGroupCount = INDEX_NONE);
 	bool HasDirtyConveyorActorGroups() const;
 	void LogConveyorMutationMemoryDiagnostics(const TCHAR* Label, FName ActorGroupKey, bool bRequestGarbageCollection) const;
-	void RebuildSegmentsFromVisualPaths(USRPlanetSurfaceGrid* SurfaceGrid);
 	bool RebuildPlacedConveyorActors(USRPlanetSurfaceGrid* SurfaceGrid);
-	void RefreshConveyorVisuals(USRPlanetSurfaceGrid* SurfaceGrid);
+	void RefreshConveyorRibbonMesh(USRPlanetSurfaceGrid* SurfaceGrid);
 	void RefreshPCGSplineInputs(USRPlanetSurfaceGrid* SurfaceGrid);
 	void RefreshPathDebugLines(USRPlanetSurfaceGrid* SurfaceGrid);
 	void ProcessConveyorTransport(USRPlanetSurfaceGrid* SurfaceGrid, float DeltaTime);
-	void RefreshConveyorItemVisuals(USRPlanetSurfaceGrid* SurfaceGrid, float DeltaTime);
-	void DestroyConveyorItemVisuals();
-	UTextRenderComponent* EnsureConveyorItemLabelComponent(const FSRConveyorLaneKey& LaneKey);
-	bool ResolveConveyorItemWorldLocation(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRConveyorItem& Item,
-		FVector& OutWorldLocation,
-		FVector& OutWorldNormal) const;
-	FText BuildConveyorItemLabelText(const FSRResourceInstance& ResourceInstance) const;
-	FColor ResolveConveyorItemLabelColor(const FSRResourceInstance& ResourceInstance) const;
-	bool TryResolveNextLane(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorSegment& Segment, FSRConveyorLaneKey& OutNextLane) const;
-	bool TryResolveNextLaneByDirection(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorSegment& Segment, ESRConveyorGridDirection Direction, FSRConveyorLaneKey& OutNextLane) const;
-	bool TryResolveNextTransferLane(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		FSRConveyorSegment& Segment,
-		const TMap<FSRConveyorLaneKey, FSRConveyorItem>& NextItemsByLane,
-		FSRConveyorLaneKey& OutNextLane);
-	bool CanTransferIntoMergeConveyorSegment(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		FSRConveyorSegment& MergeSegment,
-		ESRConveyorGridDirection IncomingInputDirection,
-		const TMap<FSRConveyorLaneKey, FSRConveyorItem>& NextItemsByLane) const;
-	bool TryPullFacilityOutputToConveyor(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		USRFacilityNetworkComponent* FacilityNetwork,
-		const FSRConveyorLaneKey& LaneKey,
-		TMap<FSRConveyorLaneKey, FSRConveyorItem>& OutNextItems) const;
+	void RefreshConveyorItemLabels(USRPlanetSurfaceGrid* SurfaceGrid, float DeltaTime);
+	void DestroyConveyorItemLabels();
 	bool ShouldKeepTransportTickEnabled() const;
 	void RequestPCGGeneration();
 	void BindPCGGenerationDelegates();
 	void HandlePCGGraphGenerated(UPCGComponent* PCGComponent);
-	void RebaseGeneratedPCGSplineMeshes(UPCGComponent* PCGComponent);
 
 	UPROPERTY(Transient)
 	FSRConveyorTransportRuntimeState TransportState;

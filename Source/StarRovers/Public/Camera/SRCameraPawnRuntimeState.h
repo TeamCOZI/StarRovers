@@ -68,3 +68,16 @@ struct FSRCameraDynamicMeshVisibilityState
         double CurrentTime);
     void Reset();
 };
+
+struct FSRCameraSpaceBoundaryCacheState
+{
+    TWeakObjectPtr<AActor> Actor;
+    FVector Center = FVector::ZeroVector;
+    float Radius = 0.0f;
+    double FullScanTime = -BIG_NUMBER;
+    uint64 Frame = 0;
+    bool bHasResult = false;
+    bool bFound = false;
+
+    void Reset();
+};

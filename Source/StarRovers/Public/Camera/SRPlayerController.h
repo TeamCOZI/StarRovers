@@ -3,13 +3,15 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/SRPlayerControllerRuntimeState.h"
-#include "Camera/SRPlayerControllerUiTypes.h"
+#include "Camera/SRPlayerControllerWidgetLayers.h"
+#include "Simulation/SRAugmentSubsystem.h"
 #include "UI/SRCelestialBodyFocusInfo.h"
 #include "SRPlayerController.generated.h"
 
 class UInputAction;
 class UInputMappingContext;
 class USRAssemblyComponent;
+class USRAugmentChoiceWidget;
 class USRCelestialBodyFocusInfoWidget;
 class USRCelestialBodyOverviewWidget;
 class USRFacilityControlWidget;
@@ -18,6 +20,8 @@ class USRStructureDataAsset;
 class USRTimeControlWidget;
 class ASRCameraPawn;
 class USRCelestialBodyRegistrySubsystem;
+class FSRPlayerControllerInputBinder;
+class FSRPlayerControllerLifecycle;
 
 UCLASS(Blueprintable)
 class STARROVERS_API ASRPlayerController : public APlayerController
@@ -64,13 +68,16 @@ public:
     USRStructureSelectionWidget* GetStructureSelectionWidget() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
+    USRAugmentChoiceWidget* GetAugmentChoiceWidget() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     USRFacilityControlWidget* GetFacilityControlWidget() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     bool IsPointerOverFacilityControlWidget() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
-    bool IsPointerOverBlockingUi() const;
+    bool IsPointerOverBlockingUI() const;
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|UI")
     void ClearFacilityFocus();
@@ -145,6 +152,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "RotatePlacementClockwiseAction"))
     TObjectPtr<UInputAction> RotatePlacementClockwiseAction;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "RotateAssemblyPlacementAction"))
+    TObjectPtr<UInputAction> RotateAssemblyPlacementAction;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "ConveyorWaypointAction"))
     TObjectPtr<UInputAction> ConveyorWaypointAction;
 
@@ -190,6 +200,12 @@ protected:
     UPROPERTY()
     TObjectPtr<USRStructureSelectionWidget> StructureSelectionWidget;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "AugmentChoiceWidgetClass"))
+    TSubclassOf<USRAugmentChoiceWidget> AugmentChoiceWidgetClass;
+
+    UPROPERTY()
+    TObjectPtr<USRAugmentChoiceWidget> AugmentChoiceWidget;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "FacilityControlWidgetClass"))
     TSubclassOf<USRFacilityControlWidget> FacilityControlWidgetClass;
 
@@ -197,7 +213,7 @@ protected:
     TObjectPtr<USRFacilityControlWidget> FacilityControlWidget;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "WidgetLayerOrder", ToolTip = "Index 0 is the bottom UI layer. Later entries are drawn and hit-tested above earlier entries."))
-    TArray<ESRPlayerUiLayer> WidgetLayerOrder;
+    TArray<ESRPlayerUILayer> WidgetLayerOrder;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "AvailableStructureDataAssets"))
     TArray<TObjectPtr<USRStructureDataAsset>> AvailableStructureDataAssets;
@@ -236,6 +252,9 @@ protected:
     void OnSelectionChanged(AActor* NewSelectedActor);
 
 private:
+    friend class FSRPlayerControllerInputBinder;
+    friend class FSRPlayerControllerLifecycle;
+
     void TryBindCameraPawnFocusEvents();
     void TryBindCelestialBodyRegistryEvents();
     USRCelestialBodyRegistrySubsystem* GetCelestialBodyRegistry() const;
@@ -248,11 +267,20 @@ private:
     void RefreshOverviewWidget();
     void HandleOverviewCelestialBodyRequested(AActor* RequestedActor);
     void CreateTimeControlWidget();
+    void CreateAugmentChoiceWidget();
+    void BindAugmentSubsystem();
+    void RegisterAvailableStructuresForAugments();
+    UFUNCTION()
+    void HandleAugmentChoicesReady(const TArray<FSRAugmentChoice>& Choices, int32 CycleIndex);
+    UFUNCTION()
+    void HandleAugmentChoiceSelected(const FSRAugmentChoice& Choice);
+    UFUNCTION()
+    void HandleUnlockedStructuresChanged();
     void CreateStructureSelectionWidget();
     void RefreshStructureSelectionWidget();
     void CreateFacilityControlWidget();
     void RefreshFacilityControlWidget();
-    int32 ResolveWidgetLayerZOrder(ESRPlayerUiLayer WidgetLayer) const;
+    int32 ResolveWidgetLayerZOrder(ESRPlayerUILayer WidgetLayer) const;
     void HandleStructureBuildOptionSelected(FName StructureId, USRStructureDataAsset* StructureDataAsset);
     void GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const;
     void UpdateAssemblyModeFromFocusedActorScreenSize();
@@ -270,6 +298,7 @@ private:
     void EnsureAssemblyAreaCopyMirrorInputAction();
     void EnsureAssemblyPickStructureInputAction();
     void EnsureRotatePlacementInputActions();
+    void EnsureRotateAssemblyPlacementInputAction();
     void EnsureStructureSelectionTabInputAction();
     void ApplyRuntimeAssemblyInputMapping();
     void HandleStructureSelectionTab();
@@ -279,14 +308,15 @@ private:
     void HandleConveyorPlacementWaypoint();
     void HandleRotatePlacementCounterClockwise();
     void HandleRotatePlacementClockwise();
+    void HandleRotateAssemblyPlacement();
     void HandleBulkDeleteConveyorModifierStarted();
     void HandleBulkDeleteConveyorModifierEnded();
     void HandleAssemblyShiftModifierStarted();
     void HandleAssemblyShiftModifierEnded();
     bool ClearSelectedStructureBuildOption();
     bool TrySelectBuildOptionFromHoveredCell();
-    USRStructureDataAsset* ResolveSelectableStructureDataAsset(USRStructureDataAsset* CandidateStructureDataAsset) const;
     bool TryHandlePlacementRotationInput(int32 StepDelta);
+    bool TryHandleSurfaceViewRotationInput(int32 StepDelta);
     void UpdateSelection(AActor* NewSelectedActor);
 
     FSRPlayerControllerRuntimeState RuntimeState;

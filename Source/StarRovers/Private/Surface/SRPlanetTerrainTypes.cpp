@@ -388,6 +388,7 @@ FSRDynamicMeshGenerationSnapshot FSRDynamicMeshGeneration::MakeThreadSafeSnapsho
 	FSRDynamicMeshGenerationSnapshot Snapshot;
 	Snapshot.bDynamicMeshGeneration = bDynamicMeshGeneration;
 	Snapshot.bMinecraft = bMinecraft;
+	Snapshot.bClampTerrainHeightToOceanLevel = bClampTerrainHeightToOceanLevel;
 	Snapshot.GenerationSeed = GenerationSeed;
 	Snapshot.bRandomizeGenerationSeedEachRun = bRandomizeGenerationSeedEachRun;
 	Snapshot.DynamicMeshHeight = DynamicMeshHeight;

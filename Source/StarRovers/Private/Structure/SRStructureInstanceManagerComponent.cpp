@@ -1,4 +1,4 @@
-#include "Structure/SRStructureInstanceManagerComponent.h"
+﻿#include "Structure/SRStructureInstanceManagerComponent.h"
 
 #include "Automation/SRFacilityNetworkComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
@@ -235,6 +235,61 @@ bool USRStructureInstanceManagerComponent::CanDestroyNaturalStructureForConstruc
 	return PlacedStructure->StructureDataAsset->BuildData().bDestroyableByConstruction;
 }
 
+bool USRStructureInstanceManagerComponent::CanDestroyStructureForConstruction(FName OccupantId) const
+{
+	if (OccupantId.IsNone())
+	{
+		return false;
+	}
+
+	const FSRPlacedStructureInstance* PlacedStructure = PlacedStructuresByOccupantId.Find(OccupantId);
+	if (!PlacedStructure || !IsValid(PlacedStructure->StructureDataAsset.Get()))
+	{
+		return false;
+	}
+
+	return PlacedStructure->StructureDataAsset->BuildData().bDestroyableByConstruction;
+}
+
+bool USRStructureInstanceManagerComponent::CanBuildOverCellsForConstruction(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const TArray<FSRPlanetSurfaceGridCellId>& CellIds,
+	TSet<FName>& OutDestructibleOccupantIds) const
+{
+	OutDestructibleOccupantIds.Reset();
+	if (!IsValid(SurfaceGrid) || CellIds.IsEmpty())
+	{
+		return false;
+	}
+
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		FSRPlanetSurfaceGridCellInfo CellInfo;
+		if (!SurfaceGrid->GetCellInfoById(CellId, CellInfo))
+		{
+			return false;
+		}
+
+		if (!CellInfo.bOccupied)
+		{
+			if (!CellInfo.bCanConstruct)
+			{
+				return false;
+			}
+			continue;
+		}
+
+		if (CellInfo.OccupantId.IsNone() || !CanDestroyStructureForConstruction(CellInfo.OccupantId))
+		{
+			return false;
+		}
+
+		OutDestructibleOccupantIds.Add(CellInfo.OccupantId);
+	}
+
+	return true;
+}
+
 void USRStructureInstanceManagerComponent::SetGhostedStructures(const TSet<FName>& OccupantIds)
 {
 	TSet<FName> NewGhostedStructureOccupantIds;
@@ -310,6 +365,38 @@ void USRStructureInstanceManagerComponent::SetDeletePreviewedStructures(const TS
 	RefreshVisualGroupsForPreviewState();
 }
 
+void USRStructureInstanceManagerComponent::SetConstructionReplacementPreviewedStructures(const TSet<FName>& OccupantIds)
+{
+	TSet<FName> NewDeletePreviewedStructureOccupantIds;
+	for (const FName OccupantId : OccupantIds)
+	{
+		if (CanDestroyStructureForConstruction(OccupantId))
+		{
+			NewDeletePreviewedStructureOccupantIds.Add(OccupantId);
+		}
+	}
+
+	if (DeletePreviewedStructureOccupantIds.Num() == NewDeletePreviewedStructureOccupantIds.Num())
+	{
+		bool bMatchesExistingSet = true;
+		for (const FName OccupantId : NewDeletePreviewedStructureOccupantIds)
+		{
+			if (!DeletePreviewedStructureOccupantIds.Contains(OccupantId))
+			{
+				bMatchesExistingSet = false;
+				break;
+			}
+		}
+		if (bMatchesExistingSet)
+		{
+			return;
+		}
+	}
+
+	DeletePreviewedStructureOccupantIds = MoveTemp(NewDeletePreviewedStructureOccupantIds);
+	RefreshVisualGroupsForPreviewState();
+}
+
 void USRStructureInstanceManagerComponent::ClearDeletePreviewedStructures()
 {
 	if (DeletePreviewedStructureOccupantIds.IsEmpty())
@@ -337,6 +424,54 @@ bool USRStructureInstanceManagerComponent::RemoveNonResourceStructuresByOccupant
 		if (IsDeletePreviewTarget(OccupantId))
 		{
 			OccupantIdsToRemove.AddUnique(OccupantId);
+		}
+	}
+
+	if (OccupantIdsToRemove.IsEmpty())
+	{
+		return false;
+	}
+
+	RemoveStructuresByOccupantIds(SurfaceGrid, OccupantIdsToRemove);
+	return true;
+}
+
+bool USRStructureInstanceManagerComponent::RemoveConstructionDestructibleStructuresByOccupantIds(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const TSet<FName>& OccupantIds,
+	TArray<FSRPlacedStructureInstance>* OutRemovedStructures)
+{
+	if (OutRemovedStructures)
+	{
+		OutRemovedStructures->Reset();
+	}
+	if (!IsValid(SurfaceGrid) || OccupantIds.IsEmpty())
+	{
+		return false;
+	}
+
+	TArray<FName> OccupantIdsToRemove;
+	OccupantIdsToRemove.Reserve(OccupantIds.Num());
+	if (OutRemovedStructures)
+	{
+		OutRemovedStructures->Reserve(OccupantIds.Num());
+	}
+
+	for (const FName OccupantId : OccupantIds)
+	{
+		if (!CanDestroyStructureForConstruction(OccupantId))
+		{
+			continue;
+		}
+
+		OccupantIdsToRemove.AddUnique(OccupantId);
+		if (OutRemovedStructures)
+		{
+			FSRPlacedStructureInstance PlacedStructure;
+			if (GetPlacedStructure(OccupantId, PlacedStructure))
+			{
+				OutRemovedStructures->Add(PlacedStructure);
+			}
 		}
 	}
 
@@ -387,6 +522,53 @@ bool USRStructureInstanceManagerComponent::TryRemoveConstructionDestructibleNatu
 
 	RemoveStructuresByOccupantIds(SurfaceGrid, OccupantIdsToRemove);
 	return true;
+}
+
+bool USRStructureInstanceManagerComponent::TryRemoveConstructionDestructibleStructuresAtCells(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const TArray<FSRPlanetSurfaceGridCellId>& CellIds,
+	TArray<FSRPlacedStructureInstance>* OutRemovedStructures)
+{
+	if (OutRemovedStructures)
+	{
+		OutRemovedStructures->Reset();
+	}
+	if (!IsValid(SurfaceGrid))
+	{
+		return false;
+	}
+
+	TSet<FName> OccupantIdsToRemove;
+	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+	{
+		FSRPlanetSurfaceGridCellInfo CellInfo;
+		if (!SurfaceGrid->GetCellInfoById(CellId, CellInfo))
+		{
+			return false;
+		}
+
+		if (!CellInfo.bOccupied || CellInfo.OccupantId.IsNone())
+		{
+			continue;
+		}
+
+		if (!CanDestroyStructureForConstruction(CellInfo.OccupantId))
+		{
+			return false;
+		}
+
+		OccupantIdsToRemove.Add(CellInfo.OccupantId);
+	}
+
+	if (OccupantIdsToRemove.IsEmpty())
+	{
+		return true;
+	}
+
+	return RemoveConstructionDestructibleStructuresByOccupantIds(
+		SurfaceGrid,
+		OccupantIdsToRemove,
+		OutRemovedStructures);
 }
 
 FName USRStructureInstanceManagerComponent::MakeVisualKey(USRStructureDataAsset* StructureDataAsset, bool bUseStaticMeshMaterials)
@@ -510,6 +692,12 @@ USRStructureInstanceManagerComponent::FSRStructureVisualGroup& USRStructureInsta
 	HISMComponent->SetCastShadow(true);
 	HISMComponent->SetRenderCustomDepth(true);
 	HISMComponent->SetStaticMesh(StructureData.StaticMesh);
+	if (VisualOverride == ESRStructureVisualOverride::Delete)
+	{
+		HISMComponent->SetVisibility(false, true);
+		HISMComponent->SetHiddenInGame(true);
+		HISMComponent->SetCastShadow(false);
+	}
 	UMaterialInterface* OverrideMaterial = nullptr;
 	if (VisualOverride == ESRStructureVisualOverride::Ghost)
 	{
@@ -614,7 +802,7 @@ void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlan
 		RemoveVisualInstances(RemovedGroupPair.Key, RemovedGroupPair.Value);
 	}
 
-	const bool bForceGC = CVarSRMemoryDiagnosticsForceGCOnStructureDelete.GetValueOnGameThread() != 0;
+	const bool bForceGC = CVarSRMemoryDiagnosticsForceGCOnStructureDelete.GetValueOnAnyThread() != 0;
 	if (RemovedUserStructureCount > 0)
 	{
 		LogStructureMemoryDiagnostics(TEXT("StructureDelete.User"), bForceGC, RemovedUserStructureCount, ClearedCellIds.Num());
@@ -744,7 +932,7 @@ void USRStructureInstanceManagerComponent::RefreshVisualGroupsForPreviewState()
 
 void USRStructureInstanceManagerComponent::LogStructureMemoryDiagnostics(const TCHAR* Label, bool bRequestGarbageCollection, int32 AffectedStructures, int32 AffectedCells) const
 {
-	if (CVarSRMemoryDiagnosticsStructureMutation.GetValueOnGameThread() == 0)
+	if (CVarSRMemoryDiagnosticsStructureMutation.GetValueOnAnyThread() == 0)
 	{
 		return;
 	}

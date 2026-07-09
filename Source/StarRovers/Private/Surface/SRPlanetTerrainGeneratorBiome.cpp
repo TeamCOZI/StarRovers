@@ -1,4 +1,4 @@
-#include "Surface/SRPlanetTerrainGeneratorInternal.h"
+#include "Surface/SRPlanetTerrainGeneratorSampling.h"
 
 #include "HAL/CriticalSection.h"
 #include "Misc/Crc.h"

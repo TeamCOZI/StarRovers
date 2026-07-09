@@ -1,21 +1,11 @@
 #include "Assembly/SRAssemblyComponent.h"
 
+#include "Assembly/SRAssemblySurfaceCursorQuery.h"
+#include "Assembly/SRAssemblySurfaceHoverUpdater.h"
 #include "Camera/SRPlayerController.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "GameFramework/Actor.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
-
-namespace
-{
-	FString FormatSurfaceHoverCellId(const FSRPlanetSurfaceGridCellId& CellId)
-	{
-		return FString::Printf(
-			TEXT("Face=%d X=%d Y=%d"),
-			static_cast<int32>(CellId.Face),
-			CellId.CellX,
-			CellId.CellY);
-	}
-}
 
 void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 {
@@ -30,13 +20,13 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 		CurrentSurfaceGrid->ClearInvalidPreviewCells();
 		CurrentSurfaceGrid->SetGridVisible(false);
 	}
-	if (CurrentSurfaceGrid == ActiveAssemblySurfaceGrid)
+	if (CurrentSurfaceGrid == SurfaceState.ActiveAssemblySurfaceGrid)
 	{
-		ActiveAssemblySurfaceGrid = nullptr;
+		SurfaceState.ActiveAssemblySurfaceGrid = nullptr;
 	}
 
-	ClearConveyorPlacementPortPreview();
-	ClearConveyorBulkDeletionPreview();
+	ConveyorPreview.ClearPortPreview();
+	ConveyorPreview.ClearBulkDeletionPreview();
 	if (!IsValid(SurfaceActor) || CurrentSurfaceGrid == HoveredSurfaceGrid)
 	{
 		HoveredSurfaceGrid = nullptr;
@@ -50,9 +40,9 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 	CancelAreaCopyPlacement();
 	ClearPendingConveyorPathStart();
 	PlacementQueue.Reset();
-	DestroyStructureGhostPreview();
-	DestroyConveyorGhostPreview();
-	DestroyConveyorDeletionGhostPreview();
+	StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
+	ConveyorPreview.DestroyGhostActor(HoveredSurfaceGrid);
+	ConveyorPreview.DestroyDeletionGhostActor();
 }
 
 void USRAssemblyComponent::ClearSurfaceHover()
@@ -66,8 +56,8 @@ void USRAssemblyComponent::ClearSurfaceHover()
 		HoveredSurfaceGrid->ClearInvalidPreviewCells();
 	}
 
-	ClearConveyorPlacementPortPreview();
-	ClearConveyorBulkDeletionPreview();
+	ConveyorPreview.ClearPortPreview();
+	ConveyorPreview.ClearBulkDeletionPreview();
 	HoveredSurfaceGrid = nullptr;
 	ClearPublishedHoveredCellInfo();
 	ClearSelectedStructureInfo();
@@ -77,9 +67,9 @@ void USRAssemblyComponent::ClearSurfaceHover()
 	ClearAreaDeletion();
 	ClearPendingConveyorPathStart();
 	PlacementQueue.Reset();
-	DestroyStructureGhostPreview();
-	DestroyConveyorGhostPreview();
-	DestroyConveyorDeletionGhostPreview();
+	StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
+	ConveyorPreview.DestroyGhostActor(HoveredSurfaceGrid);
+	ConveyorPreview.DestroyDeletionGhostActor();
 }
 
 void USRAssemblyComponent::ClearSurfaceHoverPreview()
@@ -89,106 +79,42 @@ void USRAssemblyComponent::ClearSurfaceHoverPreview()
 		HoveredSurfaceGrid->ClearHoveredCell();
 	}
 
-	ClearConveyorPlacementPortPreview();
-	ClearConveyorBulkDeletionPreview();
-	ClearConveyorInvalidPlacementPreview();
+	ConveyorPreview.ClearPortPreview();
+	ConveyorPreview.ClearBulkDeletionPreview();
+	ConveyorPreview.ClearInvalidPlacementPreview();
 	HoveredSurfaceGrid = nullptr;
 	ClearPublishedHoveredCellInfo();
 	ResetHoverSampleCache();
-	DestroyStructureGhostPreview();
-	DestroyConveyorGhostPreview();
-	DestroyConveyorDeletionGhostPreview();
+	StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
+	ConveyorPreview.DestroyGhostActor(HoveredSurfaceGrid);
+	ConveyorPreview.DestroyDeletionGhostActor();
 }
 
 void USRAssemblyComponent::UpdateSurfaceHover()
 {
-	if (!bAssemblyModeActive)
+	StarRovers::Assembly::FSRAssemblySurfaceHoverUpdate HoverUpdate;
+	USRPlanetSurfaceGrid* HoveredSurfaceGridRaw = HoveredSurfaceGrid.Get();
+	const StarRovers::Assembly::ESRAssemblySurfaceHoverUpdateResult UpdateResult =
+		StarRovers::Assembly::FSRAssemblySurfaceHoverUpdater::Update(
+			GetOwnerController(),
+			ModeState.bAssemblyModeActive,
+			HoveredSurfaceGridRaw,
+			SurfaceState,
+			HoverUpdate);
+	HoveredSurfaceGrid = HoveredSurfaceGridRaw;
+	if (UpdateResult == StarRovers::Assembly::ESRAssemblySurfaceHoverUpdateResult::ClearHover)
 	{
 		ClearSurfaceHover();
 		return;
 	}
-
-	ASRPlayerController* PlayerController = GetOwnerController();
-	if (!PlayerController)
-	{
-		ClearSurfaceHover();
-		return;
-	}
-
-	if (PlayerController->IsPointerOverBlockingUi())
+	if (UpdateResult == StarRovers::Assembly::ESRAssemblySurfaceHoverUpdateResult::ClearHoverPreview)
 	{
 		ClearSurfaceHoverPreview();
 		return;
 	}
-
-	AActor* FocusedActor = nullptr;
-	USRPlanetSurfaceGrid* SurfaceGrid = nullptr;
-	if (!TryGetFocusedSurfaceGrid(FocusedActor, SurfaceGrid))
+	if (UpdateResult == StarRovers::Assembly::ESRAssemblySurfaceHoverUpdateResult::Updated)
 	{
-		ClearSurfaceHover();
-		return;
-	}
-
-	SurfaceGrid->SetHoveredInteractionGridPatchVisible(IsValid(PlayerController->GetSelectedStructureDataAsset()));
-
-	FVector2D CurrentMousePosition = FVector2D::ZeroVector;
-	const bool bHasMousePosition = PlayerController->GetMousePosition(CurrentMousePosition.X, CurrentMousePosition.Y);
-	if (bHasMousePosition
-		&& bHasLastHoveredSampleMousePosition
-		&& LastHoveredSampleSurfaceGrid == SurfaceGrid
-		&& HoveredSurfaceGrid == SurfaceGrid
-		&& SurfaceGrid->HasHoveredCell()
-		&& FVector2D::Distance(CurrentMousePosition, LastHoveredSampleMousePosition) <= 0.5f)
-	{
-		FSRPlanetSurfaceGridCell CachedHoveredCell;
-		if (bHasLastPublishedHoveredCellInfo
-			&& SurfaceGrid->GetHoveredCell(CachedHoveredCell)
-			&& !(CachedHoveredCell.CellId == LastPublishedHoveredCellId))
-		{
-			UE_LOG(
-				LogTemp,
-				Warning,
-				TEXT("[SR SurfaceHover] Result=CacheMismatch GridHovered={%s} PublishedHovered={%s} MouseDelta=%.3f"),
-				*FormatSurfaceHoverCellId(CachedHoveredCell.CellId),
-				*FormatSurfaceHoverCellId(LastPublishedHoveredCellId),
-				FVector2D::Distance(CurrentMousePosition, LastHoveredSampleMousePosition));
-		}
-		return;
-	}
-
-	FSRPlanetSurfaceGridCell HoveredCell;
-	FVector HoverHitLocation = FVector::ZeroVector;
-	if (!TryProjectCursorToSurfaceCell(SurfaceGrid, HoveredCell, HoverHitLocation))
-	{
-		ClearSurfaceHover();
-		return;
-	}
-
-	if (HoveredSurfaceGrid && HoveredSurfaceGrid != SurfaceGrid)
-	{
-		HoveredSurfaceGrid->ClearHoveredCell();
-	}
-
-	HoveredSurfaceGrid = SurfaceGrid;
-	FSRPlanetSurfaceGridCell PreviousHoveredCell;
-	const bool bHadPreviousHoveredCell = SurfaceGrid->GetHoveredCell(PreviousHoveredCell);
-	HoveredSurfaceGrid->SetHoveredCell(HoveredCell.CellId);
-	PublishHoveredCellInfo(SurfaceGrid, HoveredCell);
-	if (bHadPreviousHoveredCell && PreviousHoveredCell.CellId.Face != HoveredCell.CellId.Face)
-	{
-		UE_LOG(
-			LogTemp,
-			Warning,
-			TEXT("[SR SurfaceHover] Result=FaceTransition Previous={%s} Current={%s} Hit=%s"),
-			*FormatSurfaceHoverCellId(PreviousHoveredCell.CellId),
-			*FormatSurfaceHoverCellId(HoveredCell.CellId),
-			*HoverHitLocation.ToCompactString());
-	}
-	if (bHasMousePosition)
-	{
-		LastHoveredSampleSurfaceGrid = SurfaceGrid;
-		LastHoveredSampleMousePosition = CurrentMousePosition;
-		bHasLastHoveredSampleMousePosition = true;
+		PublishHoveredCellInfo(HoverUpdate.SurfaceGrid, HoverUpdate.HoveredCell);
 	}
 }
 
@@ -196,43 +122,46 @@ void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
 {
 	AActor* FocusedActor = nullptr;
 	USRPlanetSurfaceGrid* FocusedSurfaceGrid = nullptr;
-	const bool bHasFocusedSurfaceGrid = TryGetFocusedSurfaceGrid(FocusedActor, FocusedSurfaceGrid);
-	USRPlanetSurfaceGrid* DesiredSurfaceGrid = bAssemblyModeActive && bHasFocusedSurfaceGrid ? FocusedSurfaceGrid : nullptr;
+	const bool bHasFocusedSurfaceGrid = StarRovers::Assembly::FSRAssemblySurfaceCursorQuery::TryGetFocusedSurfaceGrid(
+		GetOwnerController(),
+		FocusedActor,
+		FocusedSurfaceGrid);
+	USRPlanetSurfaceGrid* DesiredSurfaceGrid = ModeState.bAssemblyModeActive && bHasFocusedSurfaceGrid ? FocusedSurfaceGrid : nullptr;
 
-	if (ActiveAssemblySurfaceGrid && ActiveAssemblySurfaceGrid != DesiredSurfaceGrid)
+	if (SurfaceState.ActiveAssemblySurfaceGrid && SurfaceState.ActiveAssemblySurfaceGrid != DesiredSurfaceGrid)
 	{
 		ClearAreaSelection();
 		ClearAreaDeletion();
 		CancelAreaCopyPlacement();
-		ActiveAssemblySurfaceGrid->SetGridVisible(false);
-		ActiveAssemblySurfaceGrid->ClearOccupiedPreviewCells();
-		ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
-		ActiveAssemblySurfaceGrid->ClearDeletionPreviewCells();
-		ActiveAssemblySurfaceGrid->ClearInvalidPreviewCells();
-		ClearConveyorPlacementPortPreview();
-		ClearConveyorBulkDeletionPreview();
+		SurfaceState.ActiveAssemblySurfaceGrid->SetGridVisible(false);
+		SurfaceState.ActiveAssemblySurfaceGrid->ClearOccupiedPreviewCells();
+		SurfaceState.ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
+		SurfaceState.ActiveAssemblySurfaceGrid->ClearDeletionPreviewCells();
+		SurfaceState.ActiveAssemblySurfaceGrid->ClearInvalidPreviewCells();
+		ConveyorPreview.ClearPortPreview();
+		ConveyorPreview.ClearBulkDeletionPreview();
 	}
 
-	ActiveAssemblySurfaceGrid = DesiredSurfaceGrid;
-	if (ActiveAssemblySurfaceGrid)
+	SurfaceState.ActiveAssemblySurfaceGrid = DesiredSurfaceGrid;
+	if (SurfaceState.ActiveAssemblySurfaceGrid)
 	{
-		ActiveAssemblySurfaceGrid->SetGridVisible(true);
+		SurfaceState.ActiveAssemblySurfaceGrid->SetGridVisible(true);
 	}
 
-	if (!bAssemblyModeActive)
+	if (!ModeState.bAssemblyModeActive)
 	{
 		ClearSurfaceHover();
-		DestroyStructureGhostPreview();
-		DestroyConveyorGhostPreview();
-		DestroyConveyorDeletionGhostPreview();
-		ClearConveyorPlacementPortPreview();
-		ClearConveyorBulkDeletionPreview();
-		if (ActiveAssemblySurfaceGrid)
+		StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
+		ConveyorPreview.DestroyGhostActor(HoveredSurfaceGrid);
+		ConveyorPreview.DestroyDeletionGhostActor();
+		ConveyorPreview.ClearPortPreview();
+		ConveyorPreview.ClearBulkDeletionPreview();
+		if (SurfaceState.ActiveAssemblySurfaceGrid)
 		{
-			ActiveAssemblySurfaceGrid->ClearOccupiedPreviewCells();
-			ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
-			ActiveAssemblySurfaceGrid->ClearDeletionPreviewCells();
-			ActiveAssemblySurfaceGrid->ClearInvalidPreviewCells();
+			SurfaceState.ActiveAssemblySurfaceGrid->ClearOccupiedPreviewCells();
+			SurfaceState.ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
+			SurfaceState.ActiveAssemblySurfaceGrid->ClearDeletionPreviewCells();
+			SurfaceState.ActiveAssemblySurfaceGrid->ClearInvalidPreviewCells();
 		}
 	}
 }

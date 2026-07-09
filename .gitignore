@@ -1,6 +1,10 @@
 # Visual Studio 2015 user specific files
 .vs/
 
+# Local editor/search state
+.ignore
+.vscode/
+
 # Compiled Object files
 *.slo
 *.lo
@@ -41,6 +45,9 @@
 *.VC.db
 *.VC.opendb
 .vsconfig
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
 
 # Precompiled Assets
 SourceArt/**/*.png
@@ -75,5 +82,4 @@ Plugins/**/Intermediate/*
 DerivedDataCache/*
 
 # StarRovers generated/precomputed runtime caches
-Content/**/DA_Cache_*.uasset
-Content/BlueprintClasses/CelestialBody/DataAssets/Planets/DA_DynamicMeshBase_Cube256.uasset
+Content/**/DA_DynamicMeshBase_*.uasset

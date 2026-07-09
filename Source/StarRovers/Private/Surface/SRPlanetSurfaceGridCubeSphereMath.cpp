@@ -1,4 +1,4 @@
-#include "Surface/SRPlanetSurfaceGridCubeSphereHelpers.h"
+#include "Surface/SRPlanetSurfaceGridCubeSphereGeometry.h"
 #include "Math/UnrealMathUtility.h"
 namespace StarRovers::SurfaceGrid::CubeSphere
 {
@@ -70,9 +70,9 @@ FVector BuildCubePoint(ESRCubeSphereFace Face, float FaceU, float FaceV)
 	return Basis.Normal + (Basis.AxisU * FaceU) + (Basis.AxisV * FaceV);
 }
 
-FSRCCAMGridTransform BuildCCAMGridTransform()
+FSRConformalCubePanelTransform BuildConformalCubePanelTransform()
 {
-	FSRCCAMGridTransform Transform;
+	FSRConformalCubePanelTransform Transform;
 
 	const int32 KDA[48] =
 	{
@@ -124,7 +124,7 @@ FSRCCAMGridTransform BuildCCAMGridTransform()
 		IgK[3] = KNC[IgK[7]];
 		for (int32 KgIndex = 0; KgIndex < 8; ++KgIndex)
 		{
-			Transform.IgOfKg[KgIndex][PanelIndex] = IgK[KgIndex];
+			Transform.TransformIndexByWedgeAndPanel[KgIndex][PanelIndex] = IgK[KgIndex];
 		}
 	}
 
@@ -202,7 +202,7 @@ FSRCCAMGridTransform BuildCCAMGridTransform()
 		{
 			for (int32 Column = 0; Column < 3; ++Column)
 			{
-				Transform.RotG[Lg][Row][Column] =
+				Transform.TransformRotationMatrices[Lg][Row][Column] =
 					RotatedF[Row][KDA[Lg]] * Txe[Column][0]
 					+ RotatedE[Row][KDB[Lg]] * Txe[Column][1]
 					+ RotatedE[Row][KDC[Lg]] * Txe[Column][2];
@@ -214,13 +214,13 @@ FSRCCAMGridTransform BuildCCAMGridTransform()
 	return Transform;
 }
 
-const FSRCCAMGridTransform& GetCCAMGridTransform()
+const FSRConformalCubePanelTransform& GetConformalCubePanelTransform()
 {
-	static const FSRCCAMGridTransform Transform = BuildCCAMGridTransform();
+	static const FSRConformalCubePanelTransform Transform = BuildConformalCubePanelTransform();
 	return Transform;
 }
 
-FSRComplex EvaluateCCAMTaylor(const FSRComplex& Z)
+FSRConformalCubeComplex EvaluateConformalCubeProjectionTaylor(const FSRConformalCubeComplex& Z)
 {
 	static constexpr double Coefficients[30] =
 	{
@@ -236,15 +236,15 @@ FSRComplex EvaluateCCAMTaylor(const FSRComplex& Z)
 		-0.00011449267279, -0.00010536946150, -0.00009725109376
 	};
 
-	FSRComplex W(0.0, 0.0);
+	FSRConformalCubeComplex W(0.0, 0.0);
 	for (int32 Index = 29; Index >= 0; --Index)
 	{
-		W = (W + FSRComplex(Coefficients[Index], 0.0)) * Z;
+		W = (W + FSRConformalCubeComplex(Coefficients[Index], 0.0)) * Z;
 	}
 	return W;
 }
 
-bool GetCCAMPanelCoordinates(float FaceU, float FaceV, double& OutX, double& OutY)
+bool ProjectFaceCoordinatesToConformalPanel(float FaceU, float FaceV, double& OutX, double& OutY)
 {
 	double X = (static_cast<double>(FMath::Clamp(FaceU, -1.0f, 1.0f)) + 1.0) * 0.5;
 	double Y = (static_cast<double>(FMath::Clamp(FaceV, -1.0f, 1.0f)) + 1.0) * 0.5;
@@ -265,27 +265,27 @@ bool GetCCAMPanelCoordinates(float FaceU, float FaceV, double& OutX, double& Out
 		Swap(X, Y);
 	}
 
-	FSRComplex Z(X, Y);
+	FSRConformalCubeComplex Z(X, Y);
 	Z = Z * Z;
 	Z = Z * Z;
-	const FSRComplex W = EvaluateCCAMTaylor(Z);
-	const FSRComplex MinusIW(W.Imaginary, -W.Real);
-	FSRComplex Projected(0.0, 0.0);
-	if (AbsSquared(MinusIW) > 1.e-40)
+	const FSRConformalCubeComplex W = EvaluateConformalCubeProjectionTaylor(Z);
+	const FSRConformalCubeComplex MinusIW(W.Imaginary, -W.Real);
+	FSRConformalCubeComplex Projected(0.0, 0.0);
+	if (GetConformalCubeComplexMagnitudeSquared(MinusIW) > 1.e-40)
 	{
 		constexpr double SqrtTwo = 1.41421356237309504880;
-		const FSRComplex CiToThird(FMath::Cos(PI / 6.0), FMath::Sin(PI / 6.0));
-		Projected = CiToThird * ComplexPow(MinusIW, 1.0 / 3.0) / SqrtTwo;
+		const FSRConformalCubeComplex CiToThird(FMath::Cos(PI / 6.0), FMath::Sin(PI / 6.0));
+		Projected = CiToThird * PowConformalCubeComplex(MinusIW, 1.0 / 3.0) / SqrtTwo;
 	}
 
 	const double XW = Projected.Real;
 	const double YW = Projected.Imaginary;
 	const double H = 2.0 / (1.0 + XW * XW + YW * YW);
 	const FVector Xv(XW * H, YW * H, H - 1.0);
-	const FSRCCAMGridTransform& Transform = GetCCAMGridTransform();
-	constexpr int32 CCAMPanelIndex = 1; // Fortran ipanel = 2.
-	const int32 Ig = Transform.IgOfKg[Kg][CCAMPanelIndex];
-	const FVector PanelPoint = MatrixVectorMultiply(Transform.RotG[Ig], Xv);
+	const FSRConformalCubePanelTransform& Transform = GetConformalCubePanelTransform();
+	constexpr int32 ConformalPanelIndex = 1; // Fortran ipanel = 2.
+	const int32 TransformIndex = Transform.TransformIndexByWedgeAndPanel[Kg][ConformalPanelIndex];
+	const FVector PanelPoint = MatrixVectorMultiply(Transform.TransformRotationMatrices[TransformIndex], Xv);
 	if (FMath::Abs(PanelPoint.X) <= UE_DOUBLE_SMALL_NUMBER)
 	{
 		OutX = 0.0;
@@ -298,7 +298,7 @@ bool GetCCAMPanelCoordinates(float FaceU, float FaceV, double& OutX, double& Out
 	return true;
 }
 
-bool InvertCCAMPanelCoordinates(double TargetX, double TargetY, double& OutFaceU, double& OutFaceV)
+bool InvertConformalCubePanelProjection(double TargetX, double TargetY, double& OutFaceU, double& OutFaceV)
 {
 	TargetX = FMath::Clamp(TargetX, -1.0, 1.0);
 	TargetY = FMath::Clamp(TargetY, -1.0, 1.0);
@@ -313,7 +313,7 @@ bool InvertCCAMPanelCoordinates(double TargetX, double TargetY, double& OutFaceU
 	{
 		double ProjectedX = 0.0;
 		double ProjectedY = 0.0;
-		if (!GetCCAMPanelCoordinates(static_cast<float>(TestFaceU), static_cast<float>(TestFaceV), ProjectedX, ProjectedY))
+		if (!ProjectFaceCoordinatesToConformalPanel(static_cast<float>(TestFaceU), static_cast<float>(TestFaceV), ProjectedX, ProjectedY))
 		{
 			return false;
 		}
@@ -407,7 +407,7 @@ FVector GetConformalCubeDirection(ESRCubeSphereFace Face, float FaceU, float Fac
 {
 	double Xx = 0.0;
 	double Yy = 0.0;
-	if (!GetCCAMPanelCoordinates(FaceU, FaceV, Xx, Yy))
+	if (!ProjectFaceCoordinatesToConformalPanel(FaceU, FaceV, Xx, Yy))
 	{
 		return BuildCubePoint(Face, FaceU, FaceV).GetSafeNormal();
 	}

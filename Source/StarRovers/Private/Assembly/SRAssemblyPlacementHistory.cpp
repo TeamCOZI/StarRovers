@@ -1,6 +1,7 @@
 #include "Assembly/SRAssemblyPlacementHistory.h"
 
 #include "Assembly/SRAssemblyComponent.h"
+#include "Assembly/SRAssemblySurfaceCursorQuery.h"
 #include "Camera/SRPlayerController.h"
 #include "Conveyor/SRConveyorNetworkComponent.h"
 #include "GameFramework/Actor.h"
@@ -24,12 +25,13 @@ namespace StarRovers::Assembly
 	{
 		AActor* FocusedActor = nullptr;
 		USRPlanetSurfaceGrid* FocusedSurfaceGrid = nullptr;
-		if (Owner.TryGetFocusedSurfaceGrid(FocusedActor, FocusedSurfaceGrid) && IsValid(FocusedSurfaceGrid))
+		if (FSRAssemblySurfaceCursorQuery::TryGetFocusedSurfaceGrid(Owner.GetOwnerController(), FocusedActor, FocusedSurfaceGrid)
+			&& IsValid(FocusedSurfaceGrid))
 		{
 			return FocusedSurfaceGrid;
 		}
 
-		return IsValid(Owner.ActiveAssemblySurfaceGrid) ? Owner.ActiveAssemblySurfaceGrid.Get() : nullptr;
+		return IsValid(Owner.SurfaceState.ActiveAssemblySurfaceGrid) ? Owner.SurfaceState.ActiveAssemblySurfaceGrid.Get() : nullptr;
 	}
 
 	FSRAssemblyPlacementHistoryState* FSRAssemblyPlacementHistory::FindState(USRPlanetSurfaceGrid* SurfaceGrid)
@@ -52,7 +54,7 @@ namespace StarRovers::Assembly
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRAssemblyPlacementHistoryEntry& Entry)
 	{
-		if (!Owner.bAssemblyModeActive || !IsValid(SurfaceGrid))
+		if (!Owner.ModeState.bAssemblyModeActive || !IsValid(SurfaceGrid))
 		{
 			return;
 		}
@@ -71,7 +73,7 @@ namespace StarRovers::Assembly
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const TArray<FSRAssemblyPlacementHistoryEntry>& Entries)
 	{
-		if (!Owner.bAssemblyModeActive || !IsValid(SurfaceGrid) || Entries.IsEmpty())
+		if (!Owner.ModeState.bAssemblyModeActive || !IsValid(SurfaceGrid) || Entries.IsEmpty())
 		{
 			return;
 		}
@@ -96,9 +98,10 @@ namespace StarRovers::Assembly
 		USRStructureDataAsset* StructureDataAsset,
 		const FSRPlanetSurfaceGridCellId& OriginCellId,
 		int32 PlacementRotationSteps,
-		FName OccupantId)
+		FName OccupantId,
+		const TArray<FSRRestorableNaturalStructure>& RemovedNaturalStructures)
 	{
-		if (!Owner.bAssemblyModeActive
+		if (!Owner.ModeState.bAssemblyModeActive
 			|| !IsValid(SurfaceGrid)
 			|| !IsValid(StructureInstanceManager)
 			|| !IsValid(StructureDataAsset)
@@ -112,27 +115,28 @@ namespace StarRovers::Assembly
 		Entry.SurfaceGrid = SurfaceGrid;
 		Entry.StructureInstanceManager = StructureInstanceManager;
 		Entry.StructureDataAsset = StructureDataAsset;
-		Entry.OriginCellId = OriginCellId;
-		Entry.PlacementRotationSteps = PlacementRotationSteps;
-		Entry.OccupantId = OccupantId;
+	Entry.OriginCellId = OriginCellId;
+	Entry.PlacementRotationSteps = PlacementRotationSteps;
+	Entry.OccupantId = OccupantId;
+	Entry.RemovedNaturalStructures = RemovedNaturalStructures;
 
-		Push(Owner, SurfaceGrid, Entry);
-	}
+	Push(Owner, SurfaceGrid, Entry);
+}
 
 	void FSRAssemblyPlacementHistory::RecordConveyor(
 		USRAssemblyComponent& Owner,
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		USRConveyorNetworkComponent* ConveyorNetwork,
-		const FSRConveyorVisualPath& VisualPath,
+		const FSRConveyorBeltPath& BeltPath,
 		const TArray<FSRPlanetSurfaceGridCellId>& PlacedCellIds,
 		const TArray<FSRRestorableNaturalStructure>& RemovedNaturalStructures)
 	{
-		if (!Owner.bAssemblyModeActive
+		if (!Owner.ModeState.bAssemblyModeActive
 			|| !IsValid(SurfaceGrid)
 			|| !IsValid(ConveyorNetwork)
-			|| VisualPath.CellIds.IsEmpty()
+			|| BeltPath.CellIds.IsEmpty()
 			|| PlacedCellIds.IsEmpty()
-			|| !IsValid(VisualPath.StructureDataAsset.Get()))
+			|| !IsValid(BeltPath.StructureDataAsset.Get()))
 		{
 			return;
 		}
@@ -141,8 +145,8 @@ namespace StarRovers::Assembly
 		Entry.Kind = ESRAssemblyPlacementHistoryKind::Conveyor;
 		Entry.SurfaceGrid = SurfaceGrid;
 		Entry.ConveyorNetwork = ConveyorNetwork;
-		Entry.StructureDataAsset = VisualPath.StructureDataAsset.Get();
-		Entry.ConveyorVisualPath = VisualPath;
+		Entry.StructureDataAsset = BeltPath.StructureDataAsset.Get();
+		Entry.ConveyorBeltPath = BeltPath;
 		Entry.ConveyorPlacedCellIds = PlacedCellIds;
 		Entry.RemovedNaturalStructures = RemovedNaturalStructures;
 
@@ -150,7 +154,6 @@ namespace StarRovers::Assembly
 	}
 
 	void FSRAssemblyPlacementHistory::BuildConveyorPlacementPayload(
-		const USRAssemblyComponent& Owner,
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		USRConveyorNetworkComponent* ConveyorNetwork,
 		USRStructureDataAsset* StructureDataAsset,
@@ -158,11 +161,11 @@ namespace StarRovers::Assembly
 		int32 Layer,
 		float LayerHeight,
 		FName NetworkId,
-		FSRConveyorVisualPath& OutVisualPath,
+		FSRConveyorBeltPath& OutBeltPath,
 		TArray<FSRPlanetSurfaceGridCellId>& OutPlacedCellIds,
 		TArray<FSRRestorableNaturalStructure>& OutRemovedNaturalStructures) const
 	{
-		OutVisualPath = FSRConveyorVisualPath();
+		OutBeltPath = FSRConveyorBeltPath();
 		OutPlacedCellIds.Reset();
 		OutRemovedNaturalStructures.Reset();
 		if (!IsValid(SurfaceGrid)
@@ -174,11 +177,11 @@ namespace StarRovers::Assembly
 		}
 
 		const int32 SafeLayer = FMath::Max(0, Layer);
-		OutVisualPath.CellIds = PathCellIds;
-		OutVisualPath.Layer = SafeLayer;
-		OutVisualPath.LayerHeight = LayerHeight;
-		OutVisualPath.NetworkId = NetworkId;
-		OutVisualPath.StructureDataAsset = StructureDataAsset;
+		OutBeltPath.CellIds = PathCellIds;
+		OutBeltPath.Layer = SafeLayer;
+		OutBeltPath.LayerHeight = LayerHeight;
+		OutBeltPath.NetworkId = NetworkId;
+		OutBeltPath.StructureDataAsset = StructureDataAsset;
 
 		for (const FSRPlanetSurfaceGridCellId& CellId : PathCellIds)
 		{
@@ -209,9 +212,9 @@ namespace StarRovers::Assembly
 
 	bool FSRAssemblyPlacementHistory::TryUndo(USRAssemblyComponent& Owner)
 	{
-		if (!Owner.bAssemblyModeActive
-			|| Owner.bIsStructurePlacementDragActive
-			|| Owner.bIsConveyorPlacementDragActive)
+		if (!Owner.ModeState.bAssemblyModeActive
+			|| Owner.PlacementDrag.bIsStructurePlacementDragActive
+			|| Owner.PlacementDrag.bIsConveyorPlacementDragActive)
 		{
 			return false;
 		}
@@ -237,9 +240,9 @@ namespace StarRovers::Assembly
 
 	bool FSRAssemblyPlacementHistory::TryRedo(USRAssemblyComponent& Owner)
 	{
-		if (!Owner.bAssemblyModeActive
-			|| Owner.bIsStructurePlacementDragActive
-			|| Owner.bIsConveyorPlacementDragActive)
+		if (!Owner.ModeState.bAssemblyModeActive
+			|| Owner.PlacementDrag.bIsStructurePlacementDragActive
+			|| Owner.PlacementDrag.bIsConveyorPlacementDragActive)
 		{
 			return false;
 		}
@@ -344,6 +347,7 @@ namespace StarRovers::Assembly
 		Entry.OriginCellId = RemovedStructure.OriginCellId;
 		Entry.PlacementRotationSteps = RemovedStructure.PlacementRotationSteps;
 		Entry.OccupantId = RemovedStructure.OccupantId;
+		RestoreNaturalStructures(SurfaceGrid, StructureInstanceManager, Entry.RemovedNaturalStructures);
 		return true;
 	}
 
@@ -365,6 +369,44 @@ namespace StarRovers::Assembly
 			return false;
 		}
 
+		const FSRStructureData StructureData = StructureDataAsset->BuildData();
+		TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
+		if (!SurfaceGrid->GetFootprintCellIds(
+			Entry.OriginCellId,
+			StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, Entry.PlacementRotationSteps),
+			StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, Entry.PlacementRotationSteps),
+			FootprintCellIds))
+		{
+			return false;
+		}
+
+		TArray<FSRPlacedStructureInstance> RemovedStructures;
+		if (!StructureInstanceManager->TryRemoveConstructionDestructibleStructuresAtCells(
+			SurfaceGrid,
+			FootprintCellIds,
+			&RemovedStructures))
+		{
+			return false;
+		}
+
+		TArray<FSRRestorableNaturalStructure> RemovedRestorableStructures;
+		RemovedRestorableStructures.Reserve(RemovedStructures.Num());
+		for (const FSRPlacedStructureInstance& RemovedStructure : RemovedStructures)
+		{
+			if (!IsValid(RemovedStructure.StructureDataAsset.Get()))
+			{
+				continue;
+			}
+
+			FSRRestorableNaturalStructure RestorableStructure;
+			RestorableStructure.StructureDataAsset = RemovedStructure.StructureDataAsset.Get();
+			RestorableStructure.OriginCellId = RemovedStructure.OriginCellId;
+			RestorableStructure.PlacementRotationSteps = RemovedStructure.PlacementRotationSteps;
+			RestorableStructure.bNaturalStructure = RemovedStructure.bNaturalStructure;
+			RestorableStructure.bUseStaticMeshMaterials = RemovedStructure.bUseStaticMeshMaterials;
+			RemovedRestorableStructures.Add(RestorableStructure);
+		}
+
 		FName NewOccupantId = NAME_None;
 		if (!StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(
 			SurfaceGrid,
@@ -375,6 +417,7 @@ namespace StarRovers::Assembly
 			false,
 			Entry.PlacementRotationSteps))
 		{
+			RestoreNaturalStructures(SurfaceGrid, StructureInstanceManager, RemovedRestorableStructures);
 			return false;
 		}
 
@@ -382,6 +425,7 @@ namespace StarRovers::Assembly
 		Entry.StructureInstanceManager = StructureInstanceManager;
 		Entry.StructureDataAsset = StructureDataAsset;
 		Entry.OccupantId = NewOccupantId;
+		Entry.RemovedNaturalStructures = MoveTemp(RemovedRestorableStructures);
 		return true;
 	}
 
@@ -399,21 +443,21 @@ namespace StarRovers::Assembly
 
 		if (!IsValid(SurfaceGrid)
 			|| !IsValid(ConveyorNetwork)
-			|| Entry.ConveyorVisualPath.CellIds.IsEmpty()
+			|| Entry.ConveyorBeltPath.CellIds.IsEmpty()
 			|| Entry.ConveyorPlacedCellIds.IsEmpty())
 		{
 			return false;
 		}
 
-		bool bRemoved = ConveyorNetwork->TryRemoveConveyorVisualPath(
+		bool bRemoved = ConveyorNetwork->TryRemoveConveyorBeltPath(
 			SurfaceGrid,
-			Entry.ConveyorVisualPath,
+			Entry.ConveyorBeltPath,
 			Entry.ConveyorPlacedCellIds);
 		if (!bRemoved)
 		{
 			for (const FSRPlanetSurfaceGridCellId& CellId : Entry.ConveyorPlacedCellIds)
 			{
-				bRemoved |= ConveyorNetwork->TryRemoveConveyorAtCell(SurfaceGrid, CellId, Entry.ConveyorVisualPath.Layer);
+				bRemoved |= ConveyorNetwork->TryRemoveConveyorAtCell(SurfaceGrid, CellId, Entry.ConveyorBeltPath.Layer);
 			}
 		}
 
@@ -430,7 +474,7 @@ namespace StarRovers::Assembly
 
 		Entry.SurfaceGrid = SurfaceGrid;
 		Entry.ConveyorNetwork = ConveyorNetwork;
-		Entry.StructureDataAsset = Entry.ConveyorVisualPath.StructureDataAsset.Get();
+		Entry.StructureDataAsset = Entry.ConveyorBeltPath.StructureDataAsset.Get();
 		return true;
 	}
 
@@ -451,41 +495,40 @@ namespace StarRovers::Assembly
 		USRStructureDataAsset* StructureDataAsset = Entry.StructureDataAsset.Get();
 		if (!IsValid(StructureDataAsset))
 		{
-			StructureDataAsset = Entry.ConveyorVisualPath.StructureDataAsset.Get();
+			StructureDataAsset = Entry.ConveyorBeltPath.StructureDataAsset.Get();
 		}
 
 		if (!IsValid(SurfaceGrid)
 			|| !IsValid(ConveyorNetwork)
 			|| !IsValid(StructureDataAsset)
-			|| Entry.ConveyorVisualPath.CellIds.IsEmpty())
+			|| Entry.ConveyorBeltPath.CellIds.IsEmpty())
 		{
 			return false;
 		}
 
-		FSRConveyorVisualPath VisualPath;
+		FSRConveyorBeltPath BeltPath;
 		TArray<FSRPlanetSurfaceGridCellId> PlacedCellIds;
 		TArray<FSRRestorableNaturalStructure> RemovedNaturalStructures;
 		BuildConveyorPlacementPayload(
-			Owner,
 			SurfaceGrid,
 			ConveyorNetwork,
 			StructureDataAsset,
-			Entry.ConveyorVisualPath.CellIds,
-			Entry.ConveyorVisualPath.Layer,
-			Entry.ConveyorVisualPath.LayerHeight,
-			Entry.ConveyorVisualPath.NetworkId,
-			VisualPath,
+			Entry.ConveyorBeltPath.CellIds,
+			Entry.ConveyorBeltPath.Layer,
+			Entry.ConveyorBeltPath.LayerHeight,
+			Entry.ConveyorBeltPath.NetworkId,
+			BeltPath,
 			PlacedCellIds,
 			RemovedNaturalStructures);
 
 		if (PlacedCellIds.IsEmpty()
 			|| !ConveyorNetwork->TryPlaceConveyorPath(
 				SurfaceGrid,
-				VisualPath.CellIds,
-				VisualPath.Layer,
-				VisualPath.LayerHeight,
+				BeltPath.CellIds,
+				BeltPath.Layer,
+				BeltPath.LayerHeight,
 				StructureDataAsset,
-				VisualPath.NetworkId))
+				BeltPath.NetworkId))
 		{
 			return false;
 		}
@@ -493,7 +536,7 @@ namespace StarRovers::Assembly
 		Entry.SurfaceGrid = SurfaceGrid;
 		Entry.ConveyorNetwork = ConveyorNetwork;
 		Entry.StructureDataAsset = StructureDataAsset;
-		Entry.ConveyorVisualPath = VisualPath;
+		Entry.ConveyorBeltPath = BeltPath;
 		Entry.ConveyorPlacedCellIds = MoveTemp(PlacedCellIds);
 		Entry.RemovedNaturalStructures = MoveTemp(RemovedNaturalStructures);
 		return true;
@@ -610,14 +653,13 @@ namespace StarRovers::Assembly
 				|| !CellInfo.bOccupied
 				|| CellInfo.OccupantId.IsNone()
 				|| AddedOccupantIds.Contains(CellInfo.OccupantId)
-				|| !StructureInstanceManager->CanDestroyNaturalStructureForConstruction(CellInfo.OccupantId))
+				|| !StructureInstanceManager->CanDestroyStructureForConstruction(CellInfo.OccupantId))
 			{
 				continue;
 			}
 
 			FSRPlacedStructureInstance PlacedStructure;
 			if (!StructureInstanceManager->GetPlacedStructure(CellInfo.OccupantId, PlacedStructure)
-				|| !PlacedStructure.bNaturalStructure
 				|| !IsValid(PlacedStructure.StructureDataAsset.Get()))
 			{
 				continue;
@@ -627,6 +669,8 @@ namespace StarRovers::Assembly
 			NaturalStructure.StructureDataAsset = PlacedStructure.StructureDataAsset.Get();
 			NaturalStructure.OriginCellId = PlacedStructure.OriginCellId;
 			NaturalStructure.PlacementRotationSteps = PlacedStructure.PlacementRotationSteps;
+			NaturalStructure.bNaturalStructure = PlacedStructure.bNaturalStructure;
+			NaturalStructure.bUseStaticMeshMaterials = PlacedStructure.bUseStaticMeshMaterials;
 			OutNaturalStructures.Add(NaturalStructure);
 			AddedOccupantIds.Add(CellInfo.OccupantId);
 		}
@@ -656,11 +700,11 @@ namespace StarRovers::Assembly
 				NaturalStructure.OriginCellId,
 				StructureDataAsset,
 				RestoredOccupantId,
-				true,
-				true,
+				NaturalStructure.bNaturalStructure,
+				NaturalStructure.bUseStaticMeshMaterials,
 				NaturalStructure.PlacementRotationSteps))
 			{
-				UE_LOG(LogTemp, Warning, TEXT("Failed to restore natural structure '%s' while undoing conveyor placement."), *GetNameSafe(StructureDataAsset));
+				UE_LOG(LogTemp, Warning, TEXT("Failed to restore replaced structure '%s' while undoing placement."), *GetNameSafe(StructureDataAsset));
 			}
 		}
 	}
@@ -669,12 +713,12 @@ namespace StarRovers::Assembly
 		USRAssemblyComponent& Owner,
 		USRPlanetSurfaceGrid* SurfaceGrid)
 	{
-		Owner.ClearConveyorBulkDeletionPreview();
+		Owner.ConveyorPreview.ClearBulkDeletionPreview();
 		Owner.ClearPendingConveyorPathStart();
 		Owner.ClearSelectedStructureInfo();
-		Owner.DestroyStructureGhostPreview();
-		Owner.DestroyConveyorGhostPreview();
-		Owner.DestroyConveyorDeletionGhostPreview();
+		Owner.StructurePreview.DestroyGhostActor(Owner.HoveredSurfaceGrid);
+		Owner.ConveyorPreview.DestroyGhostActor(Owner.HoveredSurfaceGrid);
+		Owner.ConveyorPreview.DestroyDeletionGhostActor();
 
 		ASRPlayerController* PlayerController = Owner.GetOwnerController();
 		if (IsValid(SurfaceGrid) && PlayerController)
@@ -682,9 +726,7 @@ namespace StarRovers::Assembly
 			SurfaceGrid->SetHoveredInteractionGridPatchVisible(IsValid(PlayerController->GetSelectedStructureDataAsset()));
 		}
 
-		Owner.bHasLastPublishedHoveredCellInfo = false;
-		Owner.LastPublishedHoveredSurfaceGrid = nullptr;
-		Owner.LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+		Owner.SurfaceState.ResetPublishedHoveredCellInfo();
 
 		if (IsValid(SurfaceGrid))
 		{

@@ -21,7 +21,6 @@ USRMoonDataAsset::USRMoonDataAsset()
 	DynamicMeshGeneration.RiverStrength = 0.0f;
 	DynamicMeshGeneration.LakeStrength = 0.0f;
 	DynamicMeshGeneration.DetailStrength = 0.55f;
-	OrbitPeriod = 1.0f;
 	Mass = 50.0f;
 	GravityRatio = 1.0f;
 	GravityRadiusRatio = 100.0f;
@@ -97,6 +96,5 @@ FSRCelestialBodyData USRMoonDataAsset::BuildData() const
 	Result.AtmosphereMaterial = AtmosphereMaterial;
 	Result.AtmosphereScaleMultiplier = FMath::Max(0.01f, AtmosphereScaleMultiplier);
 	Result.SurfaceGridHeightOffset = FMath::Clamp(SurfaceGridHeightOffset, 0.0f, 1.0f);
-	Result.OrbitPeriod = FMath::Max(0.0f, OrbitPeriod);
 	return Result;
 }

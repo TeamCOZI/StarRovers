@@ -16,10 +16,12 @@ namespace StarRovers::Assembly
 		void BeginSelectionDrag(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& StartCellId);
 		void EndSelectionDrag();
 		void ClearSelection();
+		void ClearSelectionPreview();
 		bool HasSelectionStartCell() const;
 		bool HasSelectionCells() const;
 		bool IsLastSelectionTargetCell(const FSRPlanetSurfaceGridCellId& CellId) const;
 		void SetSelectionCells(TArray<FSRPlanetSurfaceGridCellId>&& CellIds, const FSRPlanetSurfaceGridCellId& TargetCellId);
+		bool UpdateSelectionPreview(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId);
 		USRPlanetSurfaceGrid* GetSelectionSurfaceGrid() const;
 		const FSRPlanetSurfaceGridCellId& GetSelectionStartCellId() const;
 		const TArray<FSRPlanetSurfaceGridCellId>& GetSelectionCellIds() const;
@@ -28,13 +30,18 @@ namespace StarRovers::Assembly
 		void BeginDeletionDrag(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& StartCellId);
 		void EndDeletionDrag();
 		void ClearDeletion();
+		void ClearDeletionPreview();
 		bool HasDeletionStartCell() const;
 		bool HasDeletionCells() const;
 		bool IsLastDeletionTargetCell(const FSRPlanetSurfaceGridCellId& CellId) const;
 		void SetDeletionCells(TArray<FSRPlanetSurfaceGridCellId>&& CellIds, const FSRPlanetSurfaceGridCellId& TargetCellId);
+		bool UpdateDeletionPreview(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlanetSurfaceGridCellId& TargetCellId);
 		USRPlanetSurfaceGrid* GetDeletionSurfaceGrid() const;
 		const FSRPlanetSurfaceGridCellId& GetDeletionStartCellId() const;
 		const TArray<FSRPlanetSurfaceGridCellId>& GetDeletionCellIds() const;
+		bool DeleteCells(
+			USRPlanetSurfaceGrid* SurfaceGrid,
+			const TArray<FSRPlanetSurfaceGridCellId>& CellIds) const;
 
 		bool BuildCellIds(
 			USRPlanetSurfaceGrid* SurfaceGrid,

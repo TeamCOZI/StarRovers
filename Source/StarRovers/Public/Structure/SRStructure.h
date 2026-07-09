@@ -53,7 +53,7 @@ protected:
 	bool bStructureGhostMode = false;
 
 private:
-	void ApplyStructureVisuals();
+	void ApplyStructureMeshAppearance();
 	UMaterialInterface* ResolveActiveMaterial() const;
 	FVector ResolveSurfaceSnappedMeshRelativeLocation() const;
 	bool HasValidStructureData() const;

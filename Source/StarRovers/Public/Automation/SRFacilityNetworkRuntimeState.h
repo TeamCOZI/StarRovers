@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Automation/SRFacilityRuntimeTypes.h"
+#include "Automation/SRFacilityRuntimeData.h"
 #include "SRFacilityNetworkRuntimeState.generated.h"
 
 class USRTimeControlSubsystem;

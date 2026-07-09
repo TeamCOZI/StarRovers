@@ -54,6 +54,7 @@ struct STARROVERS_API FSRDynamicMeshGenerationSnapshot
 {
 	bool bDynamicMeshGeneration = true;
 	bool bMinecraft = false;
+	bool bClampTerrainHeightToOceanLevel = false;
 	int32 GenerationSeed = 1000;
 	bool bRandomizeGenerationSeedEachRun = false;
 	float DynamicMeshHeight = 120.0f;
@@ -150,6 +151,9 @@ struct STARROVERS_API FSRDynamicMeshGeneration
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "bMinecraft", ToolTip = "Quantizes terrain height to block steps. When enabled, the step matches one regular cube-face cell edge length; when disabled, continuous terrain height is used."))
 	bool bMinecraft = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "bClampTerrainHeightToOceanLevel", ToolTip = "When enabled, terrain higher than the resolved ocean level is clamped to that level, flattening all exposed land above the ocean."))
+	bool bClampTerrainHeightToOceanLevel = false;
 
 	UPROPERTY()
 	TArray<TObjectPtr<USRPlanetBiomeDataAsset>> BiomeDataAssets;

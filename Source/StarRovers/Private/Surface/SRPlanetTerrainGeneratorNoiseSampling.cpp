@@ -1,4 +1,4 @@
-#include "Surface/SRPlanetTerrainGeneratorInternal.h"
+#include "Surface/SRPlanetTerrainGeneratorSampling.h"
 
 namespace StarRovers::Terrain
 {

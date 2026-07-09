@@ -1,4 +1,4 @@
-#include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
+#include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
@@ -72,7 +72,7 @@ bool SetFeatureMaskUVComponent(UE::Geometry::FDynamicMeshUVOverlay* UVOverlay, i
 
 FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator(
 	TArray<UE::Geometry::FDynamicMesh3>& InFaceDynamicMeshes,
-	TMap<FSRTerrainVertexKey, int32>& InWeldedVertexIds,
+	TMap<FSRCelestialBodyDynamicMeshTerrainVertexKey, int32>& InWeldedVertexIds,
 	TArray<FSRPlanetSurfaceGridCell>& InPreparedSurfaceGridCells,
 	const TArray<int32>& InCachedCellIndexByFlatId,
 	TArray<FSRCelestialBodyDynamicMeshCellColorData>& InPreparedColorDataByFlatId,
@@ -265,12 +265,12 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 				WallNormalReferenceDirection = (ExistingEdge->CellCenter + CellCenter).GetSafeNormal();
 			}
 
-			const FSRTerrainVertexKey WallVertexKeys[4] =
+			const FSRCelestialBodyDynamicMeshTerrainVertexKey WallVertexKeys[4] =
 			{
-				MakeTerrainVertexKey(ExistingEdge->SourceHashA, ExistingEdge->HeightOffset),
-				MakeTerrainVertexKey(ExistingEdge->SourceHashB, ExistingEdge->HeightOffset),
-				MakeTerrainVertexKey(OrderedHashB, HeightOffset),
-				MakeTerrainVertexKey(OrderedHashA, HeightOffset),
+				MakeCelestialBodyDynamicMeshTerrainVertexKey(ExistingEdge->SourceHashA, ExistingEdge->HeightOffset),
+				MakeCelestialBodyDynamicMeshTerrainVertexKey(ExistingEdge->SourceHashB, ExistingEdge->HeightOffset),
+				MakeCelestialBodyDynamicMeshTerrainVertexKey(OrderedHashB, HeightOffset),
+				MakeCelestialBodyDynamicMeshTerrainVertexKey(OrderedHashA, HeightOffset),
 			};
 			const FSRCelestialBodyDynamicMeshQuadRenderData SideRenderData = AppendFlatColoredDynamicMeshQuad(
 				FaceDynamicMeshes,
@@ -412,7 +412,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 	bool bProfileBuildBreakdown,
 	double& TerrainEdgeRegisterMs)
 {
-	const double InnerStart = bProfileBuildBreakdown ? SRCelestialNowSeconds() : 0.0;
+	const double InnerStart = bProfileBuildBreakdown ? GetDynamicMeshTimingSeconds() : 0.0;
 	const uint32* SourcePositionHashes = CellGeometry.SourcePositionHashes;
 	const FVector* TargetPositions = CellGeometry.TargetPositions;
 	const FVector& TargetCellCenter = CellGeometry.TargetCellCenter;
@@ -470,7 +470,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 		CellId);
 	if (bProfileBuildBreakdown)
 	{
-		TerrainEdgeRegisterMs += SRCelestialElapsedMilliseconds(InnerStart);
+		TerrainEdgeRegisterMs += GetDynamicMeshTimingElapsedMilliseconds(InnerStart);
 	}
 }
 

@@ -2,11 +2,12 @@
 
 #include "Components/DynamicMeshComponent.h"
 #include "Components/LineBatchComponent.h"
-#include "DynamicMesh/DynamicMesh3.h"
-#include "DynamicMesh/DynamicMeshAttributeSet.h"
+#include "Conveyor/SRConveyorComponentPool.h"
+#include "Conveyor/SRConveyorMutationFinalizer.h"
+#include "Conveyor/SRConveyorPCGGenerationCoordinator.h"
+#include "Conveyor/SRConveyorSegmentQuery.h"
+#include "Conveyor/SRConveyorTickCoordinator.h"
 #include "GameFramework/Actor.h"
-#include "PCGComponent.h"
-#include "Simulation/SRTimeControlSubsystem.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 USRConveyorNetworkComponent::USRConveyorNetworkComponent()
@@ -17,7 +18,7 @@ USRConveyorNetworkComponent::USRConveyorNetworkComponent()
 	BeltWidth = 260.0f;
 	BeltThickness = 80.0f;
 	BeltSurfaceOffset = 0.0f;
-	bBuildDynamicMeshVisuals = false;
+	bBuildBeltRibbonMesh = false;
 	bSpawnConveyorBeltActors = true;
 	MaxConveyorActorGroupsRefreshedPerFrame = 1;
 	bBuildPCGSplineInputs = false;
@@ -36,8 +37,8 @@ USRConveyorNetworkComponent::USRConveyorNetworkComponent()
 	bAutoTransportItems = true;
 	ItemSpeedCellsPerSecond = 1.0f;
 	MaxItemTransfersPerTick = 128;
-	bShowTransportItemVisuals = true;
-	ItemVisualHeightOffset = 180.0f;
+	bShowTransportItemLabels = true;
+	ItemLabelHeightOffset = 180.0f;
 	ItemEnergyLabelWorldSize = 120.0f;
 	ItemEnergyLabelMaxScale = 2.5f;
 	ItemEnergyLowColor = FLinearColor(0.1f, 0.75f, 1.0f, 1.0f);
@@ -57,15 +58,7 @@ void USRConveyorNetworkComponent::BeginPlay()
 		return;
 	}
 
-	TArray<UPCGComponent*> PCGComponents;
-	OwnerActor->GetComponents<UPCGComponent>(PCGComponents);
-	for (UPCGComponent* PCGComponent : PCGComponents)
-	{
-		if (IsValid(PCGComponent))
-		{
-			PCGComponent->GenerationTrigger = EPCGComponentGenerationTrigger::GenerateOnDemand;
-		}
-	}
+	StarRovers::Conveyor::FSRConveyorPCGGenerationCoordinator::ConfigureGenerationTriggers(OwnerActor);
 	BindPCGGenerationDelegates();
 
 	if (bShowPathDebugLine || bShowConnectionDebugLine)
@@ -80,37 +73,21 @@ void USRConveyorNetworkComponent::TickComponent(float DeltaTime, ELevelTick Tick
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	USRPlanetSurfaceGrid* SurfaceGrid = PendingConveyorActorRefreshSurfaceGrid.Get();
-	if (!IsValid(SurfaceGrid))
-	{
-		if (AActor* OwnerActor = GetOwner())
-		{
-			SurfaceGrid = OwnerActor->FindComponentByClass<USRPlanetSurfaceGrid>();
-			PendingConveyorActorRefreshSurfaceGrid = SurfaceGrid;
-		}
-	}
-
-	float TransportDeltaTime = FMath::Max(0.0f, DeltaTime);
-	if (const UWorld* World = GetWorld())
-	{
-		if (const USRTimeControlSubsystem* TimeControlSubsystem = World->GetSubsystem<USRTimeControlSubsystem>())
-		{
-			TransportDeltaTime *= FMath::Max(0.0f, TimeControlSubsystem->GetEffectiveTimeScale());
-		}
-	}
+	USRPlanetSurfaceGrid* SurfaceGrid = StarRovers::Conveyor::FSRConveyorTickCoordinator::ResolveSurfaceGrid(GetOwner(), PendingConveyorActorRefreshSurfaceGrid);
+	const float TransportDeltaTime = StarRovers::Conveyor::FSRConveyorTickCoordinator::ResolveTransportDeltaTime(GetWorld(), DeltaTime);
 
 	if (bAutoTransportItems && IsValid(SurfaceGrid) && TransportDeltaTime > 0.0f)
 	{
 		ProcessConveyorTransport(SurfaceGrid, TransportDeltaTime);
 	}
 
-	if (bShowTransportItemVisuals && IsValid(SurfaceGrid))
+	if (bShowTransportItemLabels && IsValid(SurfaceGrid))
 	{
-		RefreshConveyorItemVisuals(SurfaceGrid, DeltaTime);
+		RefreshConveyorItemLabels(SurfaceGrid, DeltaTime);
 	}
 	else
 	{
-		DestroyConveyorItemVisuals();
+		DestroyConveyorItemLabels();
 	}
 
 	if ((bShowPathDebugLine || bShowConnectionDebugLine) && IsValid(SurfaceGrid))
@@ -119,7 +96,11 @@ void USRConveyorNetworkComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	}
 
 	RefreshDirtyConveyorActorGroups(SurfaceGrid, FMath::Max(1, MaxConveyorActorGroupsRefreshedPerFrame));
-	if (!HasDirtyConveyorActorGroups() && !ShouldKeepTransportTickEnabled() && !bShowPathDebugLine && !bShowConnectionDebugLine)
+	if (!StarRovers::Conveyor::FSRConveyorTickCoordinator::ShouldKeepTickEnabled(
+		HasDirtyConveyorActorGroups(),
+		ShouldKeepTransportTickEnabled(),
+		bShowPathDebugLine,
+		bShowConnectionDebugLine))
 	{
 		PendingConveyorActorRefreshSurfaceGrid.Reset();
 		SetComponentTickEnabled(false);
@@ -142,9 +123,13 @@ void USRConveyorNetworkComponent::PostEditChangeProperty(FPropertyChangedEvent& 
 		{
 			DestroyPlacedConveyorActors();
 		}
-		RefreshConveyorVisuals(SurfaceGrid);
+		RefreshConveyorRibbonMesh(SurfaceGrid);
 		RefreshPathDebugLines(SurfaceGrid);
-		SetComponentTickEnabled(HasDirtyConveyorActorGroups() || ShouldKeepTransportTickEnabled() || bShowPathDebugLine || bShowConnectionDebugLine);
+		SetComponentTickEnabled(StarRovers::Conveyor::FSRConveyorTickCoordinator::ShouldKeepTickEnabled(
+			HasDirtyConveyorActorGroups(),
+			ShouldKeepTransportTickEnabled(),
+			bShowPathDebugLine,
+			bShowConnectionDebugLine));
 	}
 }
 #endif
@@ -168,14 +153,7 @@ bool USRConveyorNetworkComponent::GetConveyorSegment(const FSRConveyorLaneKey& L
 
 bool USRConveyorNetworkComponent::HasConveyorSegmentAtCell(const FSRPlanetSurfaceGridCellId& CellId) const
 {
-	for (const TPair<FSRConveyorLaneKey, FSRConveyorSegment>& SegmentPair : Segments)
-	{
-		if (SegmentPair.Key.CellId == CellId)
-		{
-			return true;
-		}
-	}
-	return false;
+	return StarRovers::Conveyor::FSRConveyorSegmentQuery::HasSegmentAtCell(Segments, CellId);
 }
 
 void USRConveyorNetworkComponent::ClearConveyors()
@@ -185,40 +163,24 @@ void USRConveyorNetworkComponent::ClearConveyors()
 		if (USRPlanetSurfaceGrid* SurfaceGrid = OwnerActor->FindComponentByClass<USRPlanetSurfaceGrid>())
 		{
 			TArray<FSRPlanetSurfaceGridCellId> SurfaceLayerCellIds;
-			for (const TPair<FSRConveyorLaneKey, FSRConveyorSegment>& SegmentPair : Segments)
-			{
-				if (SegmentPair.Key.Layer == 0)
-				{
-					SurfaceLayerCellIds.Add(SegmentPair.Key.CellId);
-				}
-			}
-			if (!SurfaceLayerCellIds.IsEmpty())
-			{
-				SurfaceGrid->SetCellsOccupied(SurfaceLayerCellIds, false, NAME_None);
-			}
+			StarRovers::Conveyor::FSRConveyorSegmentQuery::GatherCellIdsAtLayer(Segments, 0, SurfaceLayerCellIds);
+			StarRovers::Conveyor::FSRConveyorMutationFinalizer::ClearSurfaceCells(SurfaceGrid, SurfaceLayerCellIds);
 		}
 	}
 
 	Segments.Reset();
-	VisualPaths.Reset();
+	BeltPaths.Reset();
 	TransportState.ResetItems();
-	DestroyConveyorItemVisuals();
+	DestroyConveyorItemLabels();
 	DestroyPlacedConveyorActors();
 	PendingConveyorActorRefreshSurfaceGrid.Reset();
 	SetComponentTickEnabled(false);
-	if (IsValid(BeltMeshComponent))
-	{
-		UE::Geometry::FDynamicMesh3 EmptyMesh;
-		EmptyMesh.EnableAttributes();
-		EmptyMesh.Attributes()->EnablePrimaryColors();
-		EmptyMesh.Attributes()->SetNumUVLayers(1);
-		BeltMeshComponent->SetMesh(MoveTemp(EmptyMesh));
-	}
+	StarRovers::Conveyor::FSRConveyorComponentPool::ClearBeltMeshComponent(BeltMeshComponent, false);
 	if (IsValid(PathDebugLineBatchComponent))
 	{
 		PathDebugLineBatchComponent->Flush();
 	}
-	ClearUnusedPCGSplineComponents(0);
+	StarRovers::Conveyor::FSRConveyorComponentPool::ClearUnusedPCGSplineComponents(PCGSplineComponents, 0);
 }
 
 void USRConveyorNetworkComponent::SetPathDebugLineVisible(bool bNewPathDebugLineVisible)
@@ -233,7 +195,11 @@ void USRConveyorNetworkComponent::SetPathDebugLineVisible(bool bNewPathDebugLine
 	{
 		RefreshPathDebugLines(OwnerActor->FindComponentByClass<USRPlanetSurfaceGrid>());
 	}
-	SetComponentTickEnabled(HasDirtyConveyorActorGroups() || ShouldKeepTransportTickEnabled() || bShowPathDebugLine || bShowConnectionDebugLine);
+	SetComponentTickEnabled(StarRovers::Conveyor::FSRConveyorTickCoordinator::ShouldKeepTickEnabled(
+		HasDirtyConveyorActorGroups(),
+		ShouldKeepTransportTickEnabled(),
+		bShowPathDebugLine,
+		bShowConnectionDebugLine));
 }
 
 bool USRConveyorNetworkComponent::IsPathDebugLineVisible() const
@@ -253,7 +219,11 @@ void USRConveyorNetworkComponent::SetConnectionDebugLineVisible(bool bNewConnect
 	{
 		RefreshPathDebugLines(OwnerActor->FindComponentByClass<USRPlanetSurfaceGrid>());
 	}
-	SetComponentTickEnabled(HasDirtyConveyorActorGroups() || ShouldKeepTransportTickEnabled() || bShowPathDebugLine || bShowConnectionDebugLine);
+	SetComponentTickEnabled(StarRovers::Conveyor::FSRConveyorTickCoordinator::ShouldKeepTickEnabled(
+		HasDirtyConveyorActorGroups(),
+		ShouldKeepTransportTickEnabled(),
+		bShowPathDebugLine,
+		bShowConnectionDebugLine));
 }
 
 bool USRConveyorNetworkComponent::IsConnectionDebugLineVisible() const

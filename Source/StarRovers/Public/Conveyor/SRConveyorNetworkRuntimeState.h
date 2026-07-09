@@ -9,7 +9,7 @@ class UTextRenderComponent;
 
 struct FSRConveyorActorGroupState
 {
-    TArray<FSRConveyorVisualPath> VisualPaths;
+    TArray<FSRConveyorBeltPath> BeltPaths;
     ASRConveyorBeltActor* Actor = nullptr;
     bool bDirty = false;
 };

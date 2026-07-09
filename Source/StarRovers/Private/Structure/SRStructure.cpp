@@ -28,7 +28,7 @@ void ASRStructure::OnConstruction(const FTransform& Transform)
 	}
 	else
 	{
-		ApplyStructureVisuals();
+		ApplyStructureMeshAppearance();
 	}
 }
 
@@ -67,7 +67,7 @@ void ASRStructure::ApplyStructureDataAsset_Implementation(USRStructureDataAsset*
 {
 	CurrentStructureDataAsset = StructureDataAsset;
 	AppliedStructureData = StructureDataAsset ? StructureDataAsset->BuildData() : FSRStructureData();
-	ApplyStructureVisuals();
+	ApplyStructureMeshAppearance();
 }
 
 void ASRStructure::SetStructureGhostMode_Implementation(bool bNewGhostMode)
@@ -78,7 +78,7 @@ void ASRStructure::SetStructureGhostMode_Implementation(bool bNewGhostMode)
 	}
 
 	bStructureGhostMode = bNewGhostMode;
-	ApplyStructureVisuals();
+	ApplyStructureMeshAppearance();
 }
 
 bool ASRStructure::CanPlaceOnSurfaceCell_Implementation(const FSRPlanetSurfaceGridCellInfo& SurfaceCellInfo) const
@@ -90,7 +90,7 @@ bool ASRStructure::CanPlaceOnSurfaceCell_Implementation(const FSRPlanetSurfaceGr
 		&& SurfaceCellInfo.FaceResolution > 0;
 }
 
-void ASRStructure::ApplyStructureVisuals()
+void ASRStructure::ApplyStructureMeshAppearance()
 {
 	if (!StructureStaticMesh)
 	{

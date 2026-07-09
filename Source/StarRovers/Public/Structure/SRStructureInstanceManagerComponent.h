@@ -114,16 +114,33 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Structure")
 	bool CanDestroyNaturalStructureForConstruction(FName OccupantId) const;
 
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Structure")
+	bool CanDestroyStructureForConstruction(FName OccupantId) const;
+
+	bool CanBuildOverCellsForConstruction(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const TArray<FSRPlanetSurfaceGridCellId>& CellIds,
+		TSet<FName>& OutDestructibleOccupantIds) const;
 	void SetGhostedStructures(const TSet<FName>& OccupantIds);
 	void ClearGhostedStructures();
 	void SetDeletePreviewedStructures(const TSet<FName>& OccupantIds);
+	void SetConstructionReplacementPreviewedStructures(const TSet<FName>& OccupantIds);
 	void ClearDeletePreviewedStructures();
 	bool RemoveNonResourceStructuresByOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, const TSet<FName>& OccupantIds);
+	bool RemoveConstructionDestructibleStructuresByOccupantIds(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const TSet<FName>& OccupantIds,
+		TArray<FSRPlacedStructureInstance>* OutRemovedStructures = nullptr);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Structure")
 	bool TryRemoveConstructionDestructibleNaturalStructuresAtCells(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+
+	bool TryRemoveConstructionDestructibleStructuresAtCells(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const TArray<FSRPlanetSurfaceGridCellId>& CellIds,
+		TArray<FSRPlacedStructureInstance>* OutRemovedStructures = nullptr);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Resource Deposit")
 	bool GetResourceDepositInstance(FName OccupantId, FSRResourceDepositInstance& OutResourceDeposit) const;

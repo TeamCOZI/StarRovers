@@ -1,11 +1,11 @@
-#include "Visual/SRLineThicknessUtils.h"
+#include "Rendering/SRScreenSpaceLineThickness.h"
 
 #include "Camera/SRCameraPawn.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 
-float FSRCameraInfo::ComputeDepthToWorldLocation(const FVector& WorldLocation) const
+float FSRScreenSpaceLineViewInfo::ComputeDepthToWorldLocation(const FVector& WorldLocation) const
 {
 	if (!bIsValid)
 	{
@@ -15,11 +15,11 @@ float FSRCameraInfo::ComputeDepthToWorldLocation(const FVector& WorldLocation) c
 	return FVector::DotProduct(WorldLocation - ViewLocation, ViewForward);
 }
 
-bool FSRLineThicknessUtils::TryBuildPrimaryCameraInfo(
+bool FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(
 	const UWorld* World,
-	FSRCameraInfo& OutCameraInfo)
+	FSRScreenSpaceLineViewInfo& OutCameraInfo)
 {
-	OutCameraInfo = FSRCameraInfo();
+	OutCameraInfo = FSRScreenSpaceLineViewInfo();
 
 	if (!World)
 	{
@@ -48,7 +48,7 @@ bool FSRLineThicknessUtils::TryBuildPrimaryCameraInfo(
 	return true;
 }
 
-void FSRLineThicknessUtils::ResolveReferenceView(
+void FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(
 	const UWorld* World,
 	float& OutReferenceViewDepth,
 	float& OutReferenceFieldOfViewDegrees)
@@ -77,8 +77,8 @@ void FSRLineThicknessUtils::ResolveReferenceView(
 	OutReferenceFieldOfViewDegrees = CameraPawn->GetScreenSpaceThicknessReferenceFieldOfView();
 }
 
-float FSRLineThicknessUtils::ComputeWorldThicknessAtLocation(
-	const FSRCameraInfo& CameraInfo,
+float FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
+	const FSRScreenSpaceLineViewInfo& CameraInfo,
 	const FVector& WorldLocation,
 	float ReferenceWorldThickness,
 	float ReferenceViewDepth,

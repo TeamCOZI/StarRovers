@@ -1,6 +1,6 @@
 #include "Simulation/SRSolarSystemGenerator.h"
 
-#include "Simulation/SRSolarSystemGeneratorInternal.h"
+#include "Simulation/SRSolarSystemGeneratorPipeline.h"
 
 #include "Engine/Engine.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
@@ -8,17 +8,18 @@
 #include "Utility/SRMemoryDiagnostics.h"
 #include "Utility/SRTimingLog.h"
 
-using namespace StarRoversSolarSystemGeneratorInternal;
+using namespace StarRovers::Simulation::SolarSystemGeneration;
 ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 {
 	FSRTimingLogSession TimingLogSession(TEXT("GenerateRuntimeSystem"));
-	const double TotalStart = SRSolarNowSeconds();
+	const double TotalStart = GetSolarSystemGenerationTimingSeconds();
+	NormalizeOrbitPeriodSettings();
 	if (!GetWorld())
 	{
 		return nullptr;
 	}
 
-	TArray<FSRGenerationStageTiming> StageTimings;
+	TArray<FSRSolarSystemGenerationStageTiming> StageTimings;
 	auto LogStageTiming = [&StageTimings](const TCHAR* StageName, double Milliseconds, const FString& Suffix = FString())
 	{
 		StageTimings.Add({ FString(StageName), Milliseconds });
@@ -26,9 +27,9 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 	};
 
 	LogMemoryDiagnosticsSnapshot(TEXT("GenerateRuntimeSystem.BeforeClear"));
-	double StageStart = SRSolarNowSeconds();
+	double StageStart = GetSolarSystemGenerationTimingSeconds();
 	ClearRuntimeGeneratedBodies();
-	LogStageTiming(TEXT("ClearRuntimeGeneratedBodies"), SRSolarElapsedMilliseconds(StageStart));
+	LogStageTiming(TEXT("ClearRuntimeGeneratedBodies"), GetSolarSystemGenerationElapsedMilliseconds(StageStart));
 
 	const int32 RuntimeGenerationSeed = bRandomizeGenerationSeedEachRun
 		? CreateRuntimeRandomGenerationSeed()
@@ -41,31 +42,31 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 
 	FRandomStream RandomStream(RuntimeGenerationSeed);
 	const USRStarDataAsset* SelectedStarDataAsset = nullptr;
-	StageStart = SRSolarNowSeconds();
+	StageStart = GetSolarSystemGenerationTimingSeconds();
 	RuntimeStarBody = SpawnPrimaryStar(RandomStream, SelectedStarDataAsset);
-	LogStageTiming(TEXT("SpawnPrimaryStar"), SRSolarElapsedMilliseconds(StageStart));
+	LogStageTiming(TEXT("SpawnPrimaryStar"), GetSolarSystemGenerationElapsedMilliseconds(StageStart));
 	if (!IsValid(RuntimeStarBody))
 	{
 		return nullptr;
 	}
 
-	StageStart = SRSolarNowSeconds();
+	StageStart = GetSolarSystemGenerationTimingSeconds();
 	SpawnPlanets(RuntimeStarBody, SelectedStarDataAsset, RandomStream, RuntimePlanetBodies);
-	LogStageTiming(TEXT("SpawnPlanets"), SRSolarElapsedMilliseconds(StageStart), FString::Printf(TEXT(" Planets=%d Moons=%d"), RuntimePlanetBodies.Num(), RuntimeMoonBodies.Num()));
-	StageStart = SRSolarNowSeconds();
+	LogStageTiming(TEXT("SpawnPlanets"), GetSolarSystemGenerationElapsedMilliseconds(StageStart), FString::Printf(TEXT(" Planets=%d Moons=%d"), RuntimePlanetBodies.Num(), RuntimeMoonBodies.Num()));
+	StageStart = GetSolarSystemGenerationTimingSeconds();
 	PrepareRuntimeGeneratedDynamicMeshes();
-	LogStageTiming(TEXT("PrepareRuntimeGeneratedDynamicMeshes"), SRSolarElapsedMilliseconds(StageStart));
-	StageStart = SRSolarNowSeconds();
+	LogStageTiming(TEXT("PrepareRuntimeGeneratedDynamicMeshes"), GetSolarSystemGenerationElapsedMilliseconds(StageStart));
+	StageStart = GetSolarSystemGenerationTimingSeconds();
 	GenerateRuntimeNaturalStructures(RuntimeGenerationSeed);
-	LogStageTiming(TEXT("GenerateRuntimeNaturalStructures"), SRSolarElapsedMilliseconds(StageStart));
-	StageStart = SRSolarNowSeconds();
+	LogStageTiming(TEXT("GenerateRuntimeNaturalStructures"), GetSolarSystemGenerationElapsedMilliseconds(StageStart));
+	StageStart = GetSolarSystemGenerationTimingSeconds();
 	if (USRCelestialBodyRegistrySubsystem* CelestialBodyRegistry = GetWorld()->GetSubsystem<USRCelestialBodyRegistrySubsystem>())
 	{
 		CelestialBodyRegistry->SetPrimaryStarActor(RuntimeStarBody);
 	}
-	LogStageTiming(TEXT("Registry"), SRSolarElapsedMilliseconds(StageStart));
-	const FSRGenerationStageTiming* SlowestStageTiming = nullptr;
-	for (const FSRGenerationStageTiming& StageTiming : StageTimings)
+	LogStageTiming(TEXT("Registry"), GetSolarSystemGenerationElapsedMilliseconds(StageStart));
+	const FSRSolarSystemGenerationStageTiming* SlowestStageTiming = nullptr;
+	for (const FSRSolarSystemGenerationStageTiming& StageTiming : StageTimings)
 	{
 		if (!SlowestStageTiming || StageTiming.Milliseconds > SlowestStageTiming->Milliseconds)
 		{
@@ -76,7 +77,7 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 	{
 		FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeSystem.Bottleneck Stage=%s %.2f ms"), *SlowestStageTiming->Name, SlowestStageTiming->Milliseconds));
 	}
-	FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeSystem.Total %.2f ms"), SRSolarElapsedMilliseconds(TotalStart)));
+	FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeSystem.Total %.2f ms"), GetSolarSystemGenerationElapsedMilliseconds(TotalStart)));
 	LogMemoryDiagnosticsSnapshot(TEXT("GenerateRuntimeSystem.AfterComplete"));
 
 	return RuntimeStarBody;

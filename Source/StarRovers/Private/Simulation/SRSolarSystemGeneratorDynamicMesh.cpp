@@ -1,6 +1,6 @@
 #include "Simulation/SRSolarSystemGenerator.h"
 
-#include "Simulation/SRSolarSystemGeneratorInternal.h"
+#include "Simulation/SRSolarSystemGeneratorPipeline.h"
 
 #include "Async/ParallelFor.h"
 #include "HAL/CriticalSection.h"
@@ -8,7 +8,7 @@
 #include "Misc/ScopeLock.h"
 #include "Utility/SRTimingLog.h"
 
-using namespace StarRoversSolarSystemGeneratorInternal;
+using namespace StarRovers::Simulation::SolarSystemGeneration;
 
 namespace
 {
@@ -31,7 +31,7 @@ namespace
 
 	bool ResolveParallelDynamicMeshPreparationEnabled(bool bConfiguredEnabled)
 	{
-		const int32 OverrideValue = CVarSRDynamicMeshParallelBodyPrepare.GetValueOnGameThread();
+		const int32 OverrideValue = CVarSRDynamicMeshParallelBodyPrepare.GetValueOnAnyThread();
 		if (OverrideValue >= 0)
 		{
 			return OverrideValue != 0;
@@ -41,7 +41,7 @@ namespace
 
 	int32 ResolveParallelDynamicMeshPreparationMaxConcurrency(int32 ConfiguredMaxConcurrency)
 	{
-		const int32 OverrideValue = CVarSRDynamicMeshParallelBodyPrepareMaxConcurrency.GetValueOnGameThread();
+		const int32 OverrideValue = CVarSRDynamicMeshParallelBodyPrepareMaxConcurrency.GetValueOnAnyThread();
 		const int32 RequestedMaxConcurrency = OverrideValue > 0 ? OverrideValue : ConfiguredMaxConcurrency;
 		return FMath::Clamp(RequestedMaxConcurrency, 1, StableDynamicMeshPreparationMaxConcurrency);
 	}
@@ -52,7 +52,7 @@ namespace
 		const FString& SlowestBodyName,
 		const TArray<FString>& SlowestBodyDetailLines)
 	{
-		const int32 DetailBodyLimit = FMath::Max(0, CVarSRDynamicMeshPrepareDetailBodyLimit.GetValueOnGameThread());
+		const int32 DetailBodyLimit = FMath::Max(0, CVarSRDynamicMeshPrepareDetailBodyLimit.GetValueOnAnyThread());
 		if (DetailBodyLimit > 0 && !BodyTimingDetails.IsEmpty())
 		{
 			const int32 DetailBodyCount = FMath::Min(DetailBodyLimit, BodyTimingDetails.Num());
@@ -99,7 +99,7 @@ void ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation()
 	{
 		UpdateLoadingProgress(0.20f, NSLOCTEXT("StarRoversLoadingScreen", "PreparingSurfacesParallel", "Preparing planet surfaces..."));
 		PrepareRuntimeGeneratedDynamicMeshes();
-		LogAsyncGenerationStageTiming(TEXT("PrepareRuntimeGeneratedDynamicMeshes"), SRSolarElapsedMilliseconds(AsyncDynamicMeshTotalStart));
+		LogAsyncGenerationStageTiming(TEXT("PrepareRuntimeGeneratedDynamicMeshes"), GetSolarSystemGenerationElapsedMilliseconds(AsyncDynamicMeshTotalStart));
 
 		AsyncNaturalStructureRandomStream = FRandomStream(AsyncRuntimeGenerationSeed + 7919);
 		AsyncNaturalPlanetIndex = 0;
@@ -107,10 +107,10 @@ void ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation()
 		AsyncNaturalPlanetTotalMs = 0.0;
 		AsyncNaturalSlowestBodyMs = 0.0;
 		AsyncNaturalSlowestBodyName = TEXT("None");
-		AsyncNaturalStructuresTotalStart = SRSolarNowSeconds();
-		AsyncCurrentStageStart = SRSolarNowSeconds();
+		AsyncNaturalStructuresTotalStart = GetSolarSystemGenerationTimingSeconds();
+		AsyncCurrentStageStart = GetSolarSystemGenerationTimingSeconds();
 		DestroyRuntimeNaturalStructures();
-		FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeNaturalStructures.DestroyExisting %.2f ms"), SRSolarElapsedMilliseconds(AsyncCurrentStageStart)));
+		FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeNaturalStructures.DestroyExisting %.2f ms"), GetSolarSystemGenerationElapsedMilliseconds(AsyncCurrentStageStart)));
 
 		UpdateLoadingProgress(0.84f, NSLOCTEXT("StarRoversLoadingScreen", "GeneratingStructures", "Placing natural structures..."));
 		ScheduleLoadingGenerationStep(&ASRSolarSystemGenerator::ContinueRuntimeNaturalStructureGeneration);
@@ -124,12 +124,12 @@ void ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation()
 		if (IsValid(Body))
 		{
 			TArray<FString> BodyDetailLines;
-			const double BodyStart = SRSolarNowSeconds();
+			const double BodyStart = GetSolarSystemGenerationTimingSeconds();
 			{
 				FSRTimingLogScopedCapture CaptureBodyDetailLogs(BodyDetailLines);
 				Body->PrepareCelestialBodyDynamicMesh();
 			}
-			const double BodyMs = SRSolarElapsedMilliseconds(BodyStart);
+			const double BodyMs = GetSolarSystemGenerationElapsedMilliseconds(BodyStart);
 			AsyncPreparePlanetTotalMs += BodyMs;
 			++AsyncPreparePlanetCount;
 			if (BodyMs > AsyncPrepareSlowestBodyMs)
@@ -162,12 +162,12 @@ void ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation()
 		if (IsValid(Body))
 		{
 			TArray<FString> BodyDetailLines;
-			const double BodyStart = SRSolarNowSeconds();
+			const double BodyStart = GetSolarSystemGenerationTimingSeconds();
 			{
 				FSRTimingLogScopedCapture CaptureBodyDetailLogs(BodyDetailLines);
 				Body->PrepareCelestialBodyDynamicMesh();
 			}
-			const double BodyMs = SRSolarElapsedMilliseconds(BodyStart);
+			const double BodyMs = GetSolarSystemGenerationElapsedMilliseconds(BodyStart);
 			AsyncPrepareMoonTotalMs += BodyMs;
 			++AsyncPrepareMoonCount;
 			if (BodyMs > AsyncPrepareSlowestBodyMs)
@@ -195,7 +195,7 @@ void ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation()
 
 	FSRTimingLog::AddLine(FString::Printf(
 		TEXT("PrepareRuntimeGeneratedDynamicMeshes.Total %.2f ms Bodies=%d Planets=%d PlanetTotal=%.2f ms Moons=%d MoonTotal=%.2f ms Slowest=%s SlowestMs=%.2f Parallel=false Path=DeferredSequential"),
-		SRSolarElapsedMilliseconds(AsyncDynamicMeshTotalStart),
+		GetSolarSystemGenerationElapsedMilliseconds(AsyncDynamicMeshTotalStart),
 		AsyncPreparePlanetCount + AsyncPrepareMoonCount,
 		AsyncPreparePlanetCount,
 		AsyncPreparePlanetTotalMs,
@@ -208,7 +208,7 @@ void ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation()
 		AsyncPrepareBodyTimingDetails,
 		AsyncPrepareSlowestBodyName,
 		AsyncPrepareSlowestBodyDetailLines);
-	LogAsyncGenerationStageTiming(TEXT("PrepareRuntimeGeneratedDynamicMeshes"), SRSolarElapsedMilliseconds(AsyncDynamicMeshTotalStart));
+	LogAsyncGenerationStageTiming(TEXT("PrepareRuntimeGeneratedDynamicMeshes"), GetSolarSystemGenerationElapsedMilliseconds(AsyncDynamicMeshTotalStart));
 
 	AsyncNaturalStructureRandomStream = FRandomStream(AsyncRuntimeGenerationSeed + 7919);
 	AsyncNaturalPlanetIndex = 0;
@@ -216,10 +216,10 @@ void ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation()
 	AsyncNaturalPlanetTotalMs = 0.0;
 	AsyncNaturalSlowestBodyMs = 0.0;
 	AsyncNaturalSlowestBodyName = TEXT("None");
-	AsyncNaturalStructuresTotalStart = SRSolarNowSeconds();
-	AsyncCurrentStageStart = SRSolarNowSeconds();
+	AsyncNaturalStructuresTotalStart = GetSolarSystemGenerationTimingSeconds();
+	AsyncCurrentStageStart = GetSolarSystemGenerationTimingSeconds();
 	DestroyRuntimeNaturalStructures();
-	FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeNaturalStructures.DestroyExisting %.2f ms"), SRSolarElapsedMilliseconds(AsyncCurrentStageStart)));
+	FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeNaturalStructures.DestroyExisting %.2f ms"), GetSolarSystemGenerationElapsedMilliseconds(AsyncCurrentStageStart)));
 
 	UpdateLoadingProgress(0.84f, NSLOCTEXT("StarRoversLoadingScreen", "GeneratingStructures", "Placing natural structures..."));
 	ScheduleLoadingGenerationStep(&ASRSolarSystemGenerator::ContinueRuntimeNaturalStructureGeneration);
@@ -227,7 +227,7 @@ void ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation()
 
 void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 {
-	const double TotalStart = SRSolarNowSeconds();
+	const double TotalStart = GetSolarSystemGenerationTimingSeconds();
 	int32 PlanetCount = 0;
 	int32 MoonCount = 0;
 	double PlanetTotalMs = 0.0;
@@ -264,12 +264,12 @@ void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 	auto PrepareBody = [&RecordPreparedBody](ASRCelestialBody* Body)
 	{
 		TArray<FString> BodyDetailLines;
-		const double BodyStart = SRSolarNowSeconds();
+		const double BodyStart = GetSolarSystemGenerationTimingSeconds();
 		{
 			FSRTimingLogScopedCapture CaptureBodyDetailLogs(BodyDetailLines);
 			Body->PrepareCelestialBodyDynamicMesh();
 		}
-		const double BodyMs = SRSolarElapsedMilliseconds(BodyStart);
+		const double BodyMs = GetSolarSystemGenerationElapsedMilliseconds(BodyStart);
 		RecordPreparedBody(Body, BodyMs, MoveTemp(BodyDetailLines));
 		return BodyMs;
 	};
@@ -279,21 +279,21 @@ void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 	{
 		const int32 MaxParallelBodyPrepare = ResolveParallelDynamicMeshPreparationMaxConcurrency(DynamicMeshPreparationMaxConcurrency);
 
-		struct FSRBodyPrepareBatchItem
+		struct FSRSolarSystemDynamicMeshPrepareBatchItem
 		{
 			ASRCelestialBody* Body = nullptr;
 			bool bIsMoon = false;
 		};
 
-		TArray<FSRBodyPrepareBatchItem> BodiesToPrepare;
-		BodiesToPrepare.Reserve(RuntimePlanetBodies.Num() + RuntimeMoonBodies.Num());
+		TArray<FSRSolarSystemDynamicMeshPrepareBatchItem> DynamicMeshPrepareBatchItems;
+		DynamicMeshPrepareBatchItems.Reserve(RuntimePlanetBodies.Num() + RuntimeMoonBodies.Num());
 		for (TObjectPtr<ASRCelestialBody>& PlanetBody : RuntimePlanetBodies)
 		{
 			if (IsValid(PlanetBody))
 			{
-				FSRBodyPrepareBatchItem& Item = BodiesToPrepare.AddDefaulted_GetRef();
-				Item.Body = PlanetBody.Get();
-				Item.bIsMoon = false;
+				FSRSolarSystemDynamicMeshPrepareBatchItem& BatchItem = DynamicMeshPrepareBatchItems.AddDefaulted_GetRef();
+				BatchItem.Body = PlanetBody.Get();
+				BatchItem.bIsMoon = false;
 				++PlanetCount;
 			}
 		}
@@ -302,16 +302,16 @@ void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 		{
 			if (IsValid(MoonBody))
 			{
-				FSRBodyPrepareBatchItem& Item = BodiesToPrepare.AddDefaulted_GetRef();
-				Item.Body = MoonBody.Get();
-				Item.bIsMoon = true;
+				FSRSolarSystemDynamicMeshPrepareBatchItem& BatchItem = DynamicMeshPrepareBatchItems.AddDefaulted_GetRef();
+				BatchItem.Body = MoonBody.Get();
+				BatchItem.bIsMoon = true;
 				++MoonCount;
 			}
 		}
 
-		auto AddBodyTotalMs = [&PlanetTotalMs, &MoonTotalMs](const FSRBodyPrepareBatchItem& Item, double BodyMs)
+		auto AddBodyTotalMs = [&PlanetTotalMs, &MoonTotalMs](const FSRSolarSystemDynamicMeshPrepareBatchItem& BatchItem, double BodyMs)
 		{
-			if (Item.bIsMoon)
+			if (BatchItem.bIsMoon)
 			{
 				MoonTotalMs += BodyMs;
 			}
@@ -321,17 +321,17 @@ void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 			}
 		};
 
-		auto PrepareBodiesInBatches = [&RecordPreparedBody, &AddBodyTotalMs, MaxParallelBodyPrepare](const TArray<FSRBodyPrepareBatchItem>& BodiesToPrepare)
+		auto PrepareBodiesInBatches = [&RecordPreparedBody, &AddBodyTotalMs, MaxParallelBodyPrepare](const TArray<FSRSolarSystemDynamicMeshPrepareBatchItem>& BatchItems)
 		{
-			for (int32 BatchStart = 0; BatchStart < BodiesToPrepare.Num(); BatchStart += MaxParallelBodyPrepare)
+			for (int32 BatchStart = 0; BatchStart < BatchItems.Num(); BatchStart += MaxParallelBodyPrepare)
 			{
-				const double BatchStartSeconds = SRSolarNowSeconds();
-				const int32 BatchCount = FMath::Min(MaxParallelBodyPrepare, BodiesToPrepare.Num() - BatchStart);
+				const double BatchStartSeconds = GetSolarSystemGenerationTimingSeconds();
+				const int32 BatchCount = FMath::Min(MaxParallelBodyPrepare, BatchItems.Num() - BatchStart);
 				int32 BatchPlanetCount = 0;
 				int32 BatchMoonCount = 0;
 				for (int32 BatchIndex = 0; BatchIndex < BatchCount; ++BatchIndex)
 				{
-					if (BodiesToPrepare[BatchStart + BatchIndex].bIsMoon)
+					if (BatchItems[BatchStart + BatchIndex].bIsMoon)
 					{
 						++BatchMoonCount;
 					}
@@ -349,25 +349,25 @@ void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 				TArray<bool> bBuildSucceeded;
 				bBuildSucceeded.Init(false, BatchCount);
 
-				const double BuildPhaseStart = SRSolarNowSeconds();
+				const double BuildPhaseStart = GetSolarSystemGenerationTimingSeconds();
 				ParallelFor(
 					BatchCount,
-					[&BodiesToPrepare, &PreparedMeshes, &BodyDetailLines, &BuildTimes, &bBuildSucceeded, BatchStart](int32 BatchIndex)
+					[&BatchItems, &PreparedMeshes, &BodyDetailLines, &BuildTimes, &bBuildSucceeded, BatchStart](int32 BatchIndex)
 					{
-						ASRCelestialBody* Body = BodiesToPrepare[BatchStart + BatchIndex].Body;
+						ASRCelestialBody* Body = BatchItems[BatchStart + BatchIndex].Body;
 						if (!IsValid(Body))
 						{
 							return;
 						}
 
-						const double BuildStart = SRSolarNowSeconds();
+						const double BuildStart = GetSolarSystemGenerationTimingSeconds();
 						{
 							FSRTimingLogScopedCapture CaptureBodyDetailLogs(BodyDetailLines[BatchIndex]);
 							bBuildSucceeded[BatchIndex] = Body->BuildPreparedCelestialBodyDynamicMesh(PreparedMeshes[BatchIndex]);
 						}
-						BuildTimes[BatchIndex] = SRSolarElapsedMilliseconds(BuildStart);
+						BuildTimes[BatchIndex] = GetSolarSystemGenerationElapsedMilliseconds(BuildStart);
 					});
-				const double BuildWallMs = SRSolarElapsedMilliseconds(BuildPhaseStart);
+				const double BuildWallMs = GetSolarSystemGenerationElapsedMilliseconds(BuildPhaseStart);
 
 				double BuildSumMs = 0.0;
 				double BuildMaxMs = 0.0;
@@ -377,13 +377,13 @@ void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 					BuildMaxMs = FMath::Max(BuildMaxMs, BuildMs);
 				}
 
-				const double ApplyPhaseStart = SRSolarNowSeconds();
+				const double ApplyPhaseStart = GetSolarSystemGenerationTimingSeconds();
 				double ApplySumMs = 0.0;
 				double ApplyMaxMs = 0.0;
 				for (int32 BatchIndex = 0; BatchIndex < BatchCount; ++BatchIndex)
 				{
-					const FSRBodyPrepareBatchItem& Item = BodiesToPrepare[BatchStart + BatchIndex];
-					ASRCelestialBody* Body = Item.Body;
+					const FSRSolarSystemDynamicMeshPrepareBatchItem& BatchItem = BatchItems[BatchStart + BatchIndex];
+					ASRCelestialBody* Body = BatchItem.Body;
 					if (!IsValid(Body))
 					{
 						continue;
@@ -393,32 +393,32 @@ void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 					if (bBuildSucceeded[BatchIndex])
 					{
 						TArray<FString> ApplyDetailLines;
-						const double ApplyStart = SRSolarNowSeconds();
+						const double ApplyStart = GetSolarSystemGenerationTimingSeconds();
 						{
 							FSRTimingLogScopedCapture CaptureApplyDetailLogs(ApplyDetailLines);
 							Body->ApplyPreparedCelestialBodyDynamicMesh(MoveTemp(PreparedMeshes[BatchIndex]), ApplyStart);
 						}
-						ApplyMs = SRSolarElapsedMilliseconds(ApplyStart);
+						ApplyMs = GetSolarSystemGenerationElapsedMilliseconds(ApplyStart);
 						BodyDetailLines[BatchIndex].Append(MoveTemp(ApplyDetailLines));
 					}
 					else
 					{
-						const double FallbackStart = SRSolarNowSeconds();
+						const double FallbackStart = GetSolarSystemGenerationTimingSeconds();
 						{
 							FSRTimingLogScopedCapture CaptureFallbackDetailLogs(BodyDetailLines[BatchIndex]);
 							Body->PrepareCelestialBodyDynamicMesh();
 						}
-						BuildTimes[BatchIndex] = SRSolarElapsedMilliseconds(FallbackStart);
+						BuildTimes[BatchIndex] = GetSolarSystemGenerationElapsedMilliseconds(FallbackStart);
 						ApplyMs = 0.0;
 					}
 					ApplySumMs += ApplyMs;
 					ApplyMaxMs = FMath::Max(ApplyMaxMs, ApplyMs);
 
 					const double BodyMs = BuildTimes[BatchIndex] + ApplyMs;
-					AddBodyTotalMs(Item, BodyMs);
+					AddBodyTotalMs(BatchItem, BodyMs);
 					RecordPreparedBody(Body, BodyMs, MoveTemp(BodyDetailLines[BatchIndex]));
 				}
-				const double ApplyWallMs = SRSolarElapsedMilliseconds(ApplyPhaseStart);
+				const double ApplyWallMs = GetSolarSystemGenerationElapsedMilliseconds(ApplyPhaseStart);
 				FSRTimingLog::AddLine(FString::Printf(
 					TEXT("PrepareRuntimeGeneratedDynamicMeshes.Batch Start=%d Count=%d Planets=%d Moons=%d MaxConcurrency=%d BuildWall=%.2f ms BuildSum=%.2f ms BuildMax=%.2f ms ApplyWall=%.2f ms ApplySum=%.2f ms ApplyMax=%.2f ms TotalWall=%.2f ms"),
 					BatchStart,
@@ -432,11 +432,11 @@ void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 					ApplyWallMs,
 					ApplySumMs,
 					ApplyMaxMs,
-					SRSolarElapsedMilliseconds(BatchStartSeconds)));
+					GetSolarSystemGenerationElapsedMilliseconds(BatchStartSeconds)));
 			}
 		};
 
-		PrepareBodiesInBatches(BodiesToPrepare);
+		PrepareBodiesInBatches(DynamicMeshPrepareBatchItems);
 	}
 	else
 	{
@@ -460,7 +460,7 @@ void ASRSolarSystemGenerator::PrepareRuntimeGeneratedDynamicMeshes()
 	}
 	FSRTimingLog::AddLine(FString::Printf(
 		TEXT("PrepareRuntimeGeneratedDynamicMeshes.Total %.2f ms Bodies=%d Planets=%d PlanetTotal=%.2f ms Moons=%d MoonTotal=%.2f ms Slowest=%s SlowestMs=%.2f Parallel=%s MaxConcurrency=%d"),
-		SRSolarElapsedMilliseconds(TotalStart),
+		GetSolarSystemGenerationElapsedMilliseconds(TotalStart),
 		PlanetCount + MoonCount,
 		PlanetCount,
 		PlanetTotalMs,

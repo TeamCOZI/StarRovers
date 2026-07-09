@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Automation/SRFacilityDataAsset.h"
+#include "Celestial/SRStellarEvolutionTypes.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "SRCelestialBodyFocusInfo.generated.h"
@@ -80,14 +81,26 @@ struct STARROVERS_API FSRFocusedStarFuelInfo
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bIsValid"))
 	bool bIsValid = false;
 
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "EvolutionStage"))
+	ESRStellarEvolutionStage EvolutionStage = ESRStellarEvolutionStage::MainSequence;
+
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "StoredFuel"))
 	double StoredFuel = 0.0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "RequiredFuelPerCycle"))
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "InitialStageFuel"))
+	double InitialStageFuel = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "InitialFuelDecreasePerSecond"))
+	double InitialFuelDecreasePerSecond = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "CurrentFuelDecreasePerSecond"))
 	double RequiredFuelPerCycle = 0.0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "RequirementGrowthPerCycle"))
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "NextFuelDecreaseMultiplier"))
 	double RequirementGrowthPerCycle = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastFuelDecreaseRateCycleIndex"))
+	int32 LastFuelDecreaseRateCycleIndex = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "RedGiantPressure"))
 	double RedGiantPressure = 0.0;
@@ -95,17 +108,23 @@ struct STARROVERS_API FSRFocusedStarFuelInfo
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "RedGiantPressurePerMissingFuel"))
 	double RedGiantPressurePerMissingFuel = 0.0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastSettledCycleIndex"))
-	int32 LastSettledCycleIndex = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastSettledSecondIndex"))
+	int32 LastSettledSecondIndex = 0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastCycleFuelConsumed"))
-	double LastCycleFuelConsumed = 0.0;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastSecondFuelConsumed"))
+	double LastSecondFuelConsumed = 0.0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastCycleFuelDeficit"))
-	double LastCycleFuelDeficit = 0.0;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastSecondFuelDecrease"))
+	double LastSecondFuelDecrease = 0.0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bLastCycleMetRequirement"))
-	bool bLastCycleMetRequirement = true;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastSecondFuelDeficit"))
+	double LastSecondFuelDeficit = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bLastSecondSurvived"))
+	bool bLastSecondSurvived = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bSupernovaGameOver"))
+	bool bSupernovaGameOver = false;
 };
 
 USTRUCT(BlueprintType)

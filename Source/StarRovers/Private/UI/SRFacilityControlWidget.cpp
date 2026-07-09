@@ -1,7 +1,7 @@
 #include "UI/SRFacilityControlWidget.h"
 
 #include "Automation/SRFacilityNetworkComponent.h"
-#include "Automation/SRFacilityNetworkComponentInternal.h"
+#include "Automation/SRFacilityResourceOperations.h"
 #include "Blueprint/WidgetTree.h"
 #include "Camera/SRPlayerController.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
@@ -131,38 +131,38 @@ namespace
 		}
 	}
 
-	const TCHAR* GetHubRoutePhaseLabel(ESRHubRoutePhase Phase)
+	const TCHAR* GetHubRoutePhaseLabel(ESRSpaceLogisticsHubRoutePhase Phase)
 	{
 		switch (Phase)
 		{
-		case ESRHubRoutePhase::Idle:
+		case ESRSpaceLogisticsHubRoutePhase::Idle:
 			return TEXT("Idle");
-		case ESRHubRoutePhase::WaitingForCargo:
+		case ESRSpaceLogisticsHubRoutePhase::WaitingForCargo:
 			return TEXT("Waiting");
-		case ESRHubRoutePhase::TravelingToDestination:
+		case ESRSpaceLogisticsHubRoutePhase::TravelingToDestination:
 			return TEXT("Outbound");
-		case ESRHubRoutePhase::UnloadingAtDestination:
+		case ESRSpaceLogisticsHubRoutePhase::UnloadingAtDestination:
 			return TEXT("Unload Dest");
-		case ESRHubRoutePhase::TravelingToSource:
+		case ESRSpaceLogisticsHubRoutePhase::TravelingToSource:
 			return TEXT("Return");
-		case ESRHubRoutePhase::UnloadingAtSource:
+		case ESRSpaceLogisticsHubRoutePhase::UnloadingAtSource:
 			return TEXT("Unload Source");
-		case ESRHubRoutePhase::Blocked:
+		case ESRSpaceLogisticsHubRoutePhase::Blocked:
 			return TEXT("Blocked");
 		default:
 			return TEXT("Unknown");
 		}
 	}
 
-	bool AreHubEndpointKeysEqual(const FSRHubEndpoint& Left, const FSRHubEndpoint& Right)
+	bool AreHubEndpointKeysEqual(const FSRSpaceLogisticsHubEndpoint& Left, const FSRSpaceLogisticsHubEndpoint& Right)
 	{
 		return Left.BodyActor == Right.BodyActor && Left.HubOccupantId == Right.HubOccupantId;
 	}
 
 	bool DoesHubRouteConnectEndpoints(
-		const FSRHubRoute& Route,
-		const FSRHubEndpoint& SourceHub,
-		const FSRHubEndpoint& DestinationHub)
+		const FSRSpaceLogisticsHubRoute& Route,
+		const FSRSpaceLogisticsHubEndpoint& SourceHub,
+		const FSRSpaceLogisticsHubEndpoint& DestinationHub)
 	{
 		return (AreHubEndpointKeysEqual(Route.SourceHub, SourceHub) && AreHubEndpointKeysEqual(Route.DestinationHub, DestinationHub))
 			|| (AreHubEndpointKeysEqual(Route.SourceHub, DestinationHub) && AreHubEndpointKeysEqual(Route.DestinationHub, SourceHub));
@@ -290,7 +290,7 @@ namespace
 		return INDEX_NONE;
 	}
 
-	FString BuildHubEndpointUiLabel(const FSRHubEndpoint& HubEndpoint, UWorld* World)
+	FString BuildHubEndpointUILabel(const FSRSpaceLogisticsHubEndpoint& HubEndpoint, UWorld* World)
 	{
 		const FString HubName = HubEndpoint.DisplayName.IsEmpty()
 			? HubEndpoint.HubOccupantId.ToString()
@@ -487,7 +487,7 @@ namespace
 			TEXT("%s:%d:%d"),
 			*PortInventory.PortId.ToString(),
 			PortInventory.Capacity,
-			StarRovers::FacilityNetwork::GetInventorySlotStackCount(PortInventory));
+			StarRovers::FacilityResources::GetInventorySlotStackCount(PortInventory));
 		for (const FSRResourceInstance& ResourceInstance : PortInventory.Inventory)
 		{
 			Signature += FString::Printf(
@@ -543,7 +543,7 @@ namespace
 
 		for (const FSRFacilityPortInventory& PortInventory : FacilityInstance.InputPortInventories)
 		{
-			FSRResourceInstance PreviewResource = StarRovers::FacilityNetwork::PeekSingleResourceFromInventorySlot(PortInventory);
+			FSRResourceInstance PreviewResource = StarRovers::FacilityResources::PeekSingleResourceFromInventorySlot(PortInventory);
 			if (!PreviewResource.ResourceId.IsNone() && PreviewResource.StackCount > 0)
 			{
 				OutPreviewInputs.Add(PreviewResource);
@@ -593,7 +593,7 @@ namespace
 			Summary += FString::Printf(
 				TEXT("\n%s (%d/%d)"),
 				*PortInventory.PortId.ToString(),
-				StarRovers::FacilityNetwork::GetInventorySlotStackCount(PortInventory),
+				StarRovers::FacilityResources::GetInventorySlotStackCount(PortInventory),
 				FMath::Max(1, PortInventory.Capacity));
 
 			if (PortInventory.Inventory.IsEmpty())
@@ -638,7 +638,7 @@ namespace
 	{
 		for (const FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
 		{
-			if (StarRovers::FacilityNetwork::GetInventorySlotStackCount(InputPortInventory) < FMath::Max(1, InputPortInventory.Capacity))
+			if (StarRovers::FacilityResources::GetInventorySlotStackCount(InputPortInventory) < FMath::Max(1, InputPortInventory.Capacity))
 			{
 				return true;
 			}
@@ -844,7 +844,7 @@ namespace
 		}
 
 		const int32 Capacity = FMath::Max(1, PortInventory.Capacity);
-		const int32 SlotStackCount = StarRovers::FacilityNetwork::GetInventorySlotStackCount(PortInventory);
+		const int32 SlotStackCount = StarRovers::FacilityResources::GetInventorySlotStackCount(PortInventory);
 		const FSRResourceInstance* ResourceInstance = PortInventory.Inventory.IsEmpty()
 			? nullptr
 			: &PortInventory.Inventory[0];
@@ -1029,7 +1029,7 @@ namespace
 		UHorizontalBox* ButtonBox,
 		USRFacilityControlWidget* OwnerWidget,
 		TArray<TObjectPtr<USRHubRouteDestinationAction>>& OutActions,
-		const FSRHubEndpoint& DestinationHub,
+		const FSRSpaceLogisticsHubEndpoint& DestinationHub,
 		const FString& Label,
 		bool bSelected,
 		bool bEnabled)
@@ -1069,7 +1069,7 @@ namespace
 		UHorizontalBox* ButtonBox,
 		USRFacilityControlWidget* OwnerWidget,
 		TArray<TObjectPtr<USRHubRouteLaunchAction>>& OutActions,
-		const FSRHubEndpoint& DestinationHub,
+		const FSRSpaceLogisticsHubEndpoint& DestinationHub,
 		bool bEnabled)
 	{
 		if (!WidgetTree || !ButtonBox || !OwnerWidget)
@@ -1317,12 +1317,12 @@ namespace
 		if (bShowDebugButtons)
 		{
 			UHorizontalBox* ButtonRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-			struct FInputDebugButtonSpec
+			struct FSRFacilityInputDebugButtonSpec
 			{
 				FName ResourceId;
 				FText Label;
 			};
-			const FInputDebugButtonSpec ButtonSpecs[] =
+			const FSRFacilityInputDebugButtonSpec ButtonSpecs[] =
 			{
 				{ TEXT("Territe"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddTerrite", "+T") },
 				{ TEXT("Aquid"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddAquid", "+A") },
@@ -1409,7 +1409,7 @@ void USRFacilityInputSlotDebugAction::HandleClicked()
 
 void USRHubRouteDestinationAction::Initialize(
 	USRFacilityControlWidget* InOwnerWidget,
-	const FSRHubEndpoint& InDestinationHub,
+	const FSRSpaceLogisticsHubEndpoint& InDestinationHub,
 	UButton* InButton)
 {
 	OwnerWidget = InOwnerWidget;
@@ -1444,7 +1444,7 @@ bool USRHubRouteDestinationAction::TryHandleManualClick(const FVector2D& ScreenP
 
 void USRHubRouteLaunchAction::Initialize(
 	USRFacilityControlWidget* InOwnerWidget,
-	const FSRHubEndpoint& InDestinationHub,
+	const FSRSpaceLogisticsHubEndpoint& InDestinationHub,
 	UButton* InButton)
 {
 	OwnerWidget = InOwnerWidget;
@@ -1713,7 +1713,7 @@ void USRFacilityControlWidget::SetFocusedFacility(AActor* NewFocusedActor, FName
 	{
 		LastHubRouteStatus.Reset();
 		HubRoutePanelSignature.Reset();
-		SelectedHubRouteDestination = FSRHubEndpoint();
+		SelectedHubRouteDestination = FSRSpaceLogisticsHubEndpoint();
 		bHasSelectedHubRouteDestination = false;
 	}
 	RefreshControlText();
@@ -1726,7 +1726,7 @@ void USRFacilityControlWidget::ClearFocusedFacility()
 	bHasFocusedFacility = false;
 	LastHubRouteStatus.Reset();
 	HubRoutePanelSignature.Reset();
-	SelectedHubRouteDestination = FSRHubEndpoint();
+	SelectedHubRouteDestination = FSRSpaceLogisticsHubEndpoint();
 	bHasSelectedHubRouteDestination = false;
 	RefreshControlText();
 }
@@ -1889,7 +1889,7 @@ bool USRFacilityControlWidget::AddDebugInputResourceToPort(int32 InputPortIndex,
 	return bAdded;
 }
 
-bool USRFacilityControlWidget::SelectRouteDestinationHubEndpoint(const FSRHubEndpoint& DestinationHub)
+bool USRFacilityControlWidget::SelectRouteDestinationHubEndpoint(const FSRSpaceLogisticsHubEndpoint& DestinationHub)
 {
 	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
 	if (!IsValid(FacilityNetwork) || !FacilityNetwork->IsHubFacility(FocusedOccupantId))
@@ -1917,7 +1917,7 @@ bool USRFacilityControlWidget::SelectRouteDestinationHubEndpoint(const FSRHubEnd
 		return false;
 	}
 
-	FSRHubEndpoint SourceHub;
+	FSRSpaceLogisticsHubEndpoint SourceHub;
 	if (!SpaceLogisticsSubsystem->GetHubEndpoint(FocusedActor.Get(), FocusedOccupantId, SourceHub))
 	{
 		LastHubRouteStatus = TEXT("Destination select failed: source Hub endpoint not found.");
@@ -1942,7 +1942,7 @@ bool USRFacilityControlWidget::SelectRouteDestinationHubEndpoint(const FSRHubEnd
 	return true;
 }
 
-bool USRFacilityControlWidget::CreateRouteToHubEndpoint(const FSRHubEndpoint& DestinationHub)
+bool USRFacilityControlWidget::CreateRouteToHubEndpoint(const FSRSpaceLogisticsHubEndpoint& DestinationHub)
 {
 	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
 	if (!IsValid(FacilityNetwork) || !FacilityNetwork->IsHubFacility(FocusedOccupantId))
@@ -1963,7 +1963,7 @@ bool USRFacilityControlWidget::CreateRouteToHubEndpoint(const FSRHubEndpoint& De
 		return false;
 	}
 
-	FSRHubEndpoint SourceHub;
+	FSRSpaceLogisticsHubEndpoint SourceHub;
 	if (!SpaceLogisticsSubsystem->GetHubEndpoint(FocusedActor.Get(), FocusedOccupantId, SourceHub))
 	{
 		LastHubRouteStatus = TEXT("Route failed: source Hub endpoint not found.");
@@ -1983,7 +1983,7 @@ bool USRFacilityControlWidget::CreateRouteToHubEndpoint(const FSRHubEndpoint& De
 		: TEXT("Route failed: endpoint invalid or route already exists.");
 	if (bCreated)
 	{
-		SelectedHubRouteDestination = FSRHubEndpoint();
+		SelectedHubRouteDestination = FSRSpaceLogisticsHubEndpoint();
 		bHasSelectedHubRouteDestination = false;
 	}
 	HubRoutePanelSignature.Reset();
@@ -2012,7 +2012,7 @@ bool USRFacilityControlWidget::LaunchDebugLocalOrbitRoute()
 		return false;
 	}
 
-	FSRHubEndpoint SourceHub;
+	FSRSpaceLogisticsHubEndpoint SourceHub;
 	if (!SpaceLogisticsSubsystem->GetHubEndpoint(FocusedActor.Get(), FocusedOccupantId, SourceHub))
 	{
 		LastHubRouteStatus = TEXT("Debug orbit failed: source Hub endpoint not found.");
@@ -2879,7 +2879,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		return;
 	}
 
-	FSRHubEndpoint SourceHub;
+	FSRSpaceLogisticsHubEndpoint SourceHub;
 	if (!SpaceLogisticsSubsystem->GetHubEndpoint(FocusedActor.Get(), FocusedOccupantId, SourceHub))
 	{
 		HubRouteTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesNoEndpointTitle", "Hub Routes"));
@@ -2897,10 +2897,10 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		return;
 	}
 
-	TArray<FSRHubEndpoint> HubEndpoints;
+	TArray<FSRSpaceLogisticsHubEndpoint> HubEndpoints;
 	SpaceLogisticsSubsystem->GetHubEndpoints(HubEndpoints);
 
-	TArray<FSRHubRoute> HubRoutes;
+	TArray<FSRSpaceLogisticsHubRoute> HubRoutes;
 	SpaceLogisticsSubsystem->GetHubRoutes(HubRoutes);
 
 	TArray<FName> AvailableCargoResourceIds;
@@ -2911,7 +2911,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 
 	int32 DestinationCount = 0;
 	int32 ConnectedRouteCount = 0;
-	for (const FSRHubEndpoint& HubEndpoint : HubEndpoints)
+	for (const FSRSpaceLogisticsHubEndpoint& HubEndpoint : HubEndpoints)
 	{
 		if (!HubEndpoint.IsValid() || AreHubEndpointKeysEqual(HubEndpoint, SourceHub))
 		{
@@ -2920,7 +2920,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		++DestinationCount;
 	}
 
-	for (const FSRHubRoute& HubRoute : HubRoutes)
+	for (const FSRSpaceLogisticsHubRoute& HubRoute : HubRoutes)
 	{
 		if (HubRoute.bDebugLocalOrbit)
 		{
@@ -2936,7 +2936,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 	if (bHasSelectedHubRouteDestination)
 	{
 		bool bFoundSelectedDestination = false;
-		for (const FSRHubEndpoint& HubEndpoint : HubEndpoints)
+		for (const FSRSpaceLogisticsHubEndpoint& HubEndpoint : HubEndpoints)
 		{
 			if (!HubEndpoint.IsValid() || AreHubEndpointKeysEqual(HubEndpoint, SourceHub))
 			{
@@ -2953,7 +2953,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 
 		if (!bFoundSelectedDestination)
 		{
-			SelectedHubRouteDestination = FSRHubEndpoint();
+			SelectedHubRouteDestination = FSRSpaceLogisticsHubEndpoint();
 			bHasSelectedHubRouteDestination = false;
 			LastHubRouteStatus.Reset();
 		}
@@ -2978,7 +2978,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		*StatusText,
 		bHasSelectedHubRouteDestination ? *GetNameSafe(SelectedHubRouteDestination.BodyActor.Get()) : TEXT("None"),
 		bHasSelectedHubRouteDestination ? *SelectedHubRouteDestination.HubOccupantId.ToString() : TEXT("None"));
-	for (const FSRHubEndpoint& HubEndpoint : HubEndpoints)
+	for (const FSRSpaceLogisticsHubEndpoint& HubEndpoint : HubEndpoints)
 	{
 		if (!HubEndpoint.IsValid() || AreHubEndpointKeysEqual(HubEndpoint, SourceHub))
 		{
@@ -2994,7 +2994,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 	{
 		NewSignature += FString::Printf(TEXT("|CargoOption:%s"), *AvailableCargoResourceId.ToString());
 	}
-	for (const FSRHubRoute& HubRoute : HubRoutes)
+	for (const FSRSpaceLogisticsHubRoute& HubRoute : HubRoutes)
 	{
 		if (HubRoute.bDebugLocalOrbit)
 		{
@@ -3029,15 +3029,15 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 	HubRouteDebugOrbitActions.Reset();
 	HubRouteSettingActions.Reset();
 
-	for (const FSRHubEndpoint& HubEndpoint : HubEndpoints)
+	for (const FSRSpaceLogisticsHubEndpoint& HubEndpoint : HubEndpoints)
 	{
 		if (!HubEndpoint.IsValid() || AreHubEndpointKeysEqual(HubEndpoint, SourceHub))
 		{
 			continue;
 		}
 
-		const FSRHubRoute* ExistingRoute = nullptr;
-		for (const FSRHubRoute& HubRoute : HubRoutes)
+		const FSRSpaceLogisticsHubRoute* ExistingRoute = nullptr;
+		for (const FSRSpaceLogisticsHubRoute& HubRoute : HubRoutes)
 		{
 			if (HubRoute.bDebugLocalOrbit)
 			{
@@ -3053,7 +3053,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 
 		const bool bSelectedDestination = bHasSelectedHubRouteDestination
 			&& AreHubEndpointKeysEqual(HubEndpoint, SelectedHubRouteDestination);
-		const FString ButtonLabel = BuildHubEndpointUiLabel(HubEndpoint, World);
+		const FString ButtonLabel = BuildHubEndpointUILabel(HubEndpoint, World);
 		AddHubDestinationButton(
 			WidgetTree,
 			HubDestinationButtonBox,

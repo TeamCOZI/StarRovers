@@ -2,9 +2,10 @@
 
 #include "Assembly/SRAssemblyComponent.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "SRPlayerControllerStructureBuildSelectionState.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Structure/SRStructureDataAsset.h"
-#include "Surface/SRPlanetSurfaceGrid.h"
+#include "UI/SRAugmentChoiceWidget.h"
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 #include "UI/SRCelestialBodyOverviewWidget.h"
 #include "UI/SRFacilityControlWidget.h"
@@ -31,6 +32,11 @@ USRStructureSelectionWidget* ASRPlayerController::GetStructureSelectionWidget() 
 	return StructureSelectionWidget;
 }
 
+USRAugmentChoiceWidget* ASRPlayerController::GetAugmentChoiceWidget() const
+{
+	return AugmentChoiceWidget;
+}
+
 USRFacilityControlWidget* ASRPlayerController::GetFacilityControlWidget() const
 {
 	return FacilityControlWidget;
@@ -41,16 +47,17 @@ bool ASRPlayerController::IsPointerOverFacilityControlWidget() const
 	return IsValid(FacilityControlWidget) && FacilityControlWidget->IsPointerOverControlPanel();
 }
 
-bool ASRPlayerController::IsPointerOverBlockingUi() const
+bool ASRPlayerController::IsPointerOverBlockingUI() const
 {
 	return (IsValid(FacilityControlWidget) && FacilityControlWidget->IsPointerOverControlPanel())
-		|| (IsValid(FocusInfoWidget) && FocusInfoWidget->IsPointerOverFocusInfoUi())
-		|| (IsValid(OverviewWidget) && OverviewWidget->IsPointerOverOverviewUi())
+		|| (IsValid(FocusInfoWidget) && FocusInfoWidget->IsPointerOverFocusInfoUI())
+		|| (IsValid(OverviewWidget) && OverviewWidget->IsPointerOverOverviewUI())
 		|| (IsValid(TimeControlWidget) && TimeControlWidget->IsPointerOverTimeControlPanel())
+		|| (IsValid(AugmentChoiceWidget) && AugmentChoiceWidget->IsVisible())
 		|| (IsValid(StructureSelectionWidget) && StructureSelectionWidget->IsPointerOverStructureSelectionPanel());
 }
 
-int32 ASRPlayerController::ResolveWidgetLayerZOrder(ESRPlayerUiLayer WidgetLayer) const
+int32 ASRPlayerController::ResolveWidgetLayerZOrder(ESRPlayerUILayer WidgetLayer) const
 {
 	return StarRovers::PlayerControllerUI::ResolveWidgetLayerZOrder(WidgetLayerOrder, WidgetLayer);
 }
@@ -85,7 +92,7 @@ void ASRPlayerController::CreateFocusInfoWidget()
 		return;
 	}
 
-	FocusInfoWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::FocusInfo));
+	FocusInfoWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::FocusInfo));
 	FocusInfoWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
 
@@ -131,7 +138,7 @@ void ASRPlayerController::CreateOverviewWidget()
 		return;
 	}
 
-	OverviewWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::Overview));
+	OverviewWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::Overview));
 	OverviewWidget->OnCelestialBodyRequested().AddUObject(this, &ASRPlayerController::HandleOverviewCelestialBodyRequested);
 	OverviewWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
@@ -183,8 +190,115 @@ void ASRPlayerController::CreateTimeControlWidget()
 		return;
 	}
 
-	TimeControlWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::TimeControl));
+	TimeControlWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::TimeControl));
 	TimeControlWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+}
+
+void ASRPlayerController::CreateAugmentChoiceWidget()
+{
+	if (!IsLocalController() || AugmentChoiceWidget)
+	{
+		return;
+	}
+
+	TSubclassOf<USRAugmentChoiceWidget> WidgetClass = AugmentChoiceWidgetClass;
+	if (!WidgetClass)
+	{
+		WidgetClass = USRAugmentChoiceWidget::StaticClass();
+	}
+
+	AugmentChoiceWidget = CreateWidget<USRAugmentChoiceWidget>(this, WidgetClass);
+	if (!AugmentChoiceWidget)
+	{
+		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController failed to create AugmentChoiceWidget from '%s'."), *GetNameSafe(WidgetClass));
+		return;
+	}
+
+	AugmentChoiceWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::AugmentChoice));
+	AugmentChoiceWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void ASRPlayerController::BindAugmentSubsystem()
+{
+	USRAugmentSubsystem* AugmentSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRAugmentSubsystem>() : nullptr;
+	if (!AugmentSubsystem)
+	{
+		return;
+	}
+
+	AugmentSubsystem->OnAugmentChoicesReady.RemoveDynamic(this, &ASRPlayerController::HandleAugmentChoicesReady);
+	AugmentSubsystem->OnAugmentChoicesReady.AddDynamic(this, &ASRPlayerController::HandleAugmentChoicesReady);
+	AugmentSubsystem->OnAugmentChoiceSelected.RemoveDynamic(this, &ASRPlayerController::HandleAugmentChoiceSelected);
+	AugmentSubsystem->OnAugmentChoiceSelected.AddDynamic(this, &ASRPlayerController::HandleAugmentChoiceSelected);
+	AugmentSubsystem->OnUnlockedStructuresChanged.RemoveDynamic(this, &ASRPlayerController::HandleUnlockedStructuresChanged);
+	AugmentSubsystem->OnUnlockedStructuresChanged.AddDynamic(this, &ASRPlayerController::HandleUnlockedStructuresChanged);
+}
+
+void ASRPlayerController::RegisterAvailableStructuresForAugments()
+{
+	USRAugmentSubsystem* AugmentSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRAugmentSubsystem>() : nullptr;
+	if (!AugmentSubsystem)
+	{
+		return;
+	}
+
+	TArray<USRStructureDataAsset*> StructureDataAssets;
+	StructureDataAssets.Reserve(AvailableStructureDataAssets.Num());
+	for (USRStructureDataAsset* StructureDataAsset : AvailableStructureDataAssets)
+	{
+		if (IsValid(StructureDataAsset))
+		{
+			StructureDataAssets.Add(StructureDataAsset);
+		}
+	}
+
+	AugmentSubsystem->RegisterStructureDataAssets(StructureDataAssets);
+}
+
+void ASRPlayerController::HandleAugmentChoicesReady(const TArray<FSRAugmentChoice>& Choices, int32 CycleIndex)
+{
+	TArray<FSRAugmentChoice> ResolvedChoices = Choices;
+	int32 ResolvedCycleIndex = CycleIndex;
+	if (ResolvedChoices.IsEmpty() || ResolvedCycleIndex <= 0)
+	{
+		if (const USRAugmentSubsystem* AugmentSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRAugmentSubsystem>() : nullptr)
+		{
+			ResolvedChoices = AugmentSubsystem->GetCurrentAugmentChoices();
+			ResolvedCycleIndex = AugmentSubsystem->GetCurrentAugmentChoiceCycleIndex();
+		}
+	}
+
+	if (ResolvedChoices.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController received an augment choice event without choices for cycle %d."), CycleIndex);
+		return;
+	}
+
+	CreateAugmentChoiceWidget();
+	if (!AugmentChoiceWidget)
+	{
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("ASRPlayerController showing %d augment choices for cycle %d."), ResolvedChoices.Num(), ResolvedCycleIndex);
+	AugmentChoiceWidget->SetAugmentChoices(ResolvedChoices, ResolvedCycleIndex);
+	AugmentChoiceWidget->SetVisibility(ESlateVisibility::Visible);
+}
+
+void ASRPlayerController::HandleAugmentChoiceSelected(const FSRAugmentChoice& Choice)
+{
+	if (AugmentChoiceWidget)
+	{
+		AugmentChoiceWidget->ClearAugmentChoices();
+		AugmentChoiceWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	RefreshStructureSelectionWidget();
+}
+
+void ASRPlayerController::HandleUnlockedStructuresChanged()
+{
+	RefreshStructureSelectionWidget();
 }
 
 void ASRPlayerController::CreateStructureSelectionWidget()
@@ -207,7 +321,7 @@ void ASRPlayerController::CreateStructureSelectionWidget()
 		return;
 	}
 
-	StructureSelectionWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::StructureSelection));
+	StructureSelectionWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::StructureSelection));
 	StructureSelectionWidget->OnBuildOptionSelected().AddUObject(this, &ASRPlayerController::HandleStructureBuildOptionSelected);
 	TArray<USRStructureDataAsset*> StructureDataAssets;
 	GetAvailableStructureDataAssets(StructureDataAssets);
@@ -228,34 +342,30 @@ void ASRPlayerController::RefreshStructureSelectionWidget()
 	StructureSelectionWidget->SetBuildOptionsFromDataAssets(StructureDataAssets);
 	if (bHasSelectedStructureBuildId && !StructureSelectionWidget->HasSelectedStructureId())
 	{
-		SelectedStructureBuildId = NAME_None;
-		bHasSelectedStructureBuildId = false;
-		SelectedStructureDataAsset = nullptr;
-		if (USRPlanetSurfaceGrid* SurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
-		{
-			SurfaceGrid->SetHoveredInteractionGridPatchVisible(false);
-		}
+		FSRPlayerControllerStructureBuildSelectionState::ResetSelection(
+			SelectedStructureBuildId,
+			bHasSelectedStructureBuildId,
+			SelectedStructureDataAsset,
+			SelectedActor);
 	}
 	StructureSelectionWidget->SetVisibility(bShowStructureSelection ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	if (!bShowStructureSelection)
 	{
-		SelectedStructureBuildId = NAME_None;
-		bHasSelectedStructureBuildId = false;
-		SelectedStructureDataAsset = nullptr;
-		if (USRPlanetSurfaceGrid* SurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
-		{
-			SurfaceGrid->SetHoveredInteractionGridPatchVisible(false);
-		}
+		FSRPlayerControllerStructureBuildSelectionState::ResetSelection(
+			SelectedStructureBuildId,
+			bHasSelectedStructureBuildId,
+			SelectedStructureDataAsset,
+			SelectedActor);
 		StructureSelectionWidget->ClearSelectedStructureId();
 	}
 	else if (bHasSelectedStructureBuildId)
 	{
-		StructureSelectionWidget->SetSelectedStructureId(SelectedStructureBuildId);
-		SelectedStructureDataAsset = StructureSelectionWidget->GetSelectedStructureDataAsset();
-		if (USRPlanetSurfaceGrid* SurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
-		{
-			SurfaceGrid->SetHoveredInteractionGridPatchVisible(IsValid(SelectedStructureDataAsset));
-		}
+		FSRPlayerControllerStructureBuildSelectionState::SyncSelectionFromWidget(
+			SelectedStructureBuildId,
+			bHasSelectedStructureBuildId,
+			SelectedStructureDataAsset,
+			SelectedActor,
+			StructureSelectionWidget);
 	}
 }
 
@@ -279,7 +389,7 @@ void ASRPlayerController::CreateFacilityControlWidget()
 		return;
 	}
 
-	FacilityControlWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUiLayer::FacilityControl));
+	FacilityControlWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::FacilityControl));
 	FacilityControlWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
 
@@ -311,9 +421,11 @@ void ASRPlayerController::GetAvailableStructureDataAssets(TArray<USRStructureDat
 {
 	OutStructureDataAssets.Reset();
 	OutStructureDataAssets.Reserve(AvailableStructureDataAssets.Num());
+	const USRAugmentSubsystem* AugmentSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRAugmentSubsystem>() : nullptr;
 	for (USRStructureDataAsset* StructureDataAsset : AvailableStructureDataAssets)
 	{
-		if (IsValid(StructureDataAsset))
+		if (IsValid(StructureDataAsset)
+			&& (!AugmentSubsystem || AugmentSubsystem->IsStructureUnlocked(StructureDataAsset)))
 		{
 			OutStructureDataAssets.Add(StructureDataAsset);
 		}

@@ -7,6 +7,8 @@ public class StarRovers : ModuleRules
     public StarRovers(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        // UE 5.7 engine headers emit deprecation warnings with VS 2026; keep project builds readable.
+        CppCompileWarningSettings.DeprecationWarningLevel = WarningLevel.Off;
 
         PublicDependencyModuleNames.AddRange(
             new[]

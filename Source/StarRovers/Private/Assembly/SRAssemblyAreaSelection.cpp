@@ -1,5 +1,9 @@
 #include "Assembly/SRAssemblyAreaSelection.h"
 
+#include "Conveyor/SRConveyorNetworkComponent.h"
+#include "GameFramework/Actor.h"
+#include "Structure/SRStructureDataAsset.h"
+#include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 namespace StarRovers::Assembly
@@ -154,6 +158,94 @@ namespace StarRovers::Assembly
 
 			return BestBridge;
 		}
+
+		void ApplyAssemblyAreaSelectionGhosts(
+			USRPlanetSurfaceGrid* SurfaceGrid,
+			const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+		{
+			if (!IsValid(SurfaceGrid))
+			{
+				return;
+			}
+
+			TSet<FName> StructureOccupantIds;
+			for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+			{
+				FSRPlanetSurfaceGridCellInfo CellInfo;
+				if (SurfaceGrid->GetCellInfoById(CellId, CellInfo) && CellInfo.bOccupied && !CellInfo.OccupantId.IsNone())
+				{
+					StructureOccupantIds.Add(CellInfo.OccupantId);
+				}
+			}
+
+			if (AActor* SurfaceOwner = SurfaceGrid->GetOwner())
+			{
+				if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
+				{
+					StructureInstanceManager->SetGhostedStructures(StructureOccupantIds);
+				}
+			}
+		}
+
+		void CollectAssemblyAreaDeletionTargetOccupantIds(
+			USRPlanetSurfaceGrid* SurfaceGrid,
+			const TArray<FSRPlanetSurfaceGridCellId>& CellIds,
+			TSet<FName>& OutOccupantIds)
+		{
+			OutOccupantIds.Reset();
+			if (!IsValid(SurfaceGrid))
+			{
+				return;
+			}
+
+			AActor* SurfaceOwner = SurfaceGrid->GetOwner();
+			USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(SurfaceOwner)
+				? SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>()
+				: nullptr;
+			if (!StructureInstanceManager)
+			{
+				return;
+			}
+
+			for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+			{
+				FSRPlanetSurfaceGridCellInfo CellInfo;
+				if (!SurfaceGrid->GetCellInfoById(CellId, CellInfo) || !CellInfo.bOccupied || CellInfo.OccupantId.IsNone())
+				{
+					continue;
+				}
+
+				FSRPlacedStructureInstance PlacedStructure;
+				if (!StructureInstanceManager->GetPlacedStructure(CellInfo.OccupantId, PlacedStructure)
+					|| !IsValid(PlacedStructure.StructureDataAsset.Get())
+					|| PlacedStructure.StructureDataAsset->BuildData().bIsResourceDeposit)
+				{
+					continue;
+				}
+
+				OutOccupantIds.Add(CellInfo.OccupantId);
+			}
+		}
+
+		void ApplyAssemblyAreaDeletionPreview(
+			USRPlanetSurfaceGrid* SurfaceGrid,
+			const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+		{
+			if (!IsValid(SurfaceGrid))
+			{
+				return;
+			}
+
+			TSet<FName> StructureOccupantIds;
+			CollectAssemblyAreaDeletionTargetOccupantIds(SurfaceGrid, CellIds, StructureOccupantIds);
+			if (AActor* SurfaceOwner = SurfaceGrid->GetOwner())
+			{
+				if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
+				{
+					StructureInstanceManager->SetDeletePreviewedStructures(StructureOccupantIds);
+				}
+			}
+		}
 	}
 
 	bool FSRAssemblyAreaSelection::IsSelectionDragActive() const
@@ -195,6 +287,25 @@ namespace StarRovers::Assembly
 		SelectionCellIds.Reset();
 	}
 
+	void FSRAssemblyAreaSelection::ClearSelectionPreview()
+	{
+		USRPlanetSurfaceGrid* SurfaceGrid = SelectionSurfaceGrid.Get();
+		if (!IsValid(SurfaceGrid))
+		{
+			return;
+		}
+
+		SurfaceGrid->ClearAreaSelectionCells();
+
+		if (AActor* SurfaceOwner = SurfaceGrid->GetOwner())
+		{
+			if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
+			{
+				StructureInstanceManager->ClearGhostedStructures();
+			}
+		}
+	}
+
 	bool FSRAssemblyAreaSelection::HasSelectionStartCell() const
 	{
 		return bHasSelectionStartCell;
@@ -217,6 +328,32 @@ namespace StarRovers::Assembly
 		SelectionCellIds = MoveTemp(CellIds);
 		LastSelectionTargetCellId = TargetCellId;
 		bHasLastSelectionTargetCell = true;
+	}
+
+	bool FSRAssemblyAreaSelection::UpdateSelectionPreview(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& TargetCellId)
+	{
+		if (!IsValid(SurfaceGrid) || !HasSelectionStartCell())
+		{
+			return false;
+		}
+
+		if (IsLastSelectionTargetCell(TargetCellId))
+		{
+			return true;
+		}
+
+		TArray<FSRPlanetSurfaceGridCellId> NewSelectionCellIds;
+		if (!BuildCellIds(SurfaceGrid, SelectionStartCellId, TargetCellId, NewSelectionCellIds))
+		{
+			return false;
+		}
+
+		SetSelectionCells(MoveTemp(NewSelectionCellIds), TargetCellId);
+		SurfaceGrid->SetAreaSelectionCells(SelectionCellIds);
+		ApplyAssemblyAreaSelectionGhosts(SurfaceGrid, SelectionCellIds);
+		return true;
 	}
 
 	USRPlanetSurfaceGrid* FSRAssemblyAreaSelection::GetSelectionSurfaceGrid() const
@@ -295,6 +432,25 @@ namespace StarRovers::Assembly
 		DeletionCellIds.Reset();
 	}
 
+	void FSRAssemblyAreaSelection::ClearDeletionPreview()
+	{
+		USRPlanetSurfaceGrid* SurfaceGrid = DeletionSurfaceGrid.Get();
+		if (!IsValid(SurfaceGrid))
+		{
+			return;
+		}
+
+		SurfaceGrid->ClearDeletionPreviewCells();
+
+		if (AActor* SurfaceOwner = SurfaceGrid->GetOwner())
+		{
+			if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
+			{
+				StructureInstanceManager->ClearDeletePreviewedStructures();
+			}
+		}
+	}
+
 	bool FSRAssemblyAreaSelection::HasDeletionStartCell() const
 	{
 		return bHasDeletionStartCell;
@@ -319,6 +475,32 @@ namespace StarRovers::Assembly
 		bHasLastDeletionTargetCell = true;
 	}
 
+	bool FSRAssemblyAreaSelection::UpdateDeletionPreview(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& TargetCellId)
+	{
+		if (!IsValid(SurfaceGrid) || !HasDeletionStartCell())
+		{
+			return false;
+		}
+
+		if (IsLastDeletionTargetCell(TargetCellId))
+		{
+			return true;
+		}
+
+		TArray<FSRPlanetSurfaceGridCellId> NewDeletionCellIds;
+		if (!BuildCellIds(SurfaceGrid, DeletionStartCellId, TargetCellId, NewDeletionCellIds))
+		{
+			return false;
+		}
+
+		SetDeletionCells(MoveTemp(NewDeletionCellIds), TargetCellId);
+		SurfaceGrid->SetDeletionPreviewCells(DeletionCellIds);
+		ApplyAssemblyAreaDeletionPreview(SurfaceGrid, DeletionCellIds);
+		return true;
+	}
+
 	USRPlanetSurfaceGrid* FSRAssemblyAreaSelection::GetDeletionSurfaceGrid() const
 	{
 		return DeletionSurfaceGrid.Get();
@@ -332,6 +514,40 @@ namespace StarRovers::Assembly
 	const TArray<FSRPlanetSurfaceGridCellId>& FSRAssemblyAreaSelection::GetDeletionCellIds() const
 	{
 		return DeletionCellIds;
+	}
+
+	bool FSRAssemblyAreaSelection::DeleteCells(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const TArray<FSRPlanetSurfaceGridCellId>& CellIds) const
+	{
+		if (!IsValid(SurfaceGrid) || CellIds.IsEmpty())
+		{
+			return false;
+		}
+
+		bool bDeletedAny = false;
+		AActor* SurfaceOwner = SurfaceGrid->GetOwner();
+
+		if (USRConveyorNetworkComponent* ConveyorNetwork = IsValid(SurfaceOwner)
+			? SurfaceOwner->FindComponentByClass<USRConveyorNetworkComponent>()
+			: nullptr)
+		{
+			bDeletedAny |= ConveyorNetwork->TryRemoveConveyorsAtCells(SurfaceGrid, CellIds);
+		}
+
+		TSet<FName> StructureOccupantIds;
+		CollectAssemblyAreaDeletionTargetOccupantIds(SurfaceGrid, CellIds, StructureOccupantIds);
+		USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(SurfaceOwner)
+			? SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>()
+			: nullptr;
+		if (!StructureOccupantIds.IsEmpty()
+			&& StructureInstanceManager
+			&& StructureInstanceManager->RemoveNonResourceStructuresByOccupantIds(SurfaceGrid, StructureOccupantIds))
+		{
+			bDeletedAny = true;
+		}
+
+		return bDeletedAny;
 	}
 
 	bool FSRAssemblyAreaSelection::BuildCellIds(

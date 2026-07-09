@@ -76,7 +76,7 @@ public:
 	void SetSelectedActor(AActor* NewSelectedActor);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Input")
-	bool IsPointerOverOverviewUi() const;
+	bool IsPointerOverOverviewUI() const;
 
 	void DispatchEntryClicked(AActor* CelestialBodyActor);
 	FSRStarRoversCelestialBodyRequestedSignature& OnCelestialBodyRequested();
@@ -192,7 +192,7 @@ private:
 	FText GetStarSystemTreePrefixText(AActor* CelestialBodyActor) const;
 	int32 GetStarSystemSiblingSortIndex(AActor* CelestialBodyActor) const;
 	void SortStarSystemBodies(TArray<TObjectPtr<AActor>>& StarSystemBodiesToSort) const;
-	bool IsScreenPositionOverOverviewUi(const FVector2D& ScreenPosition) const;
+	bool IsScreenPositionOverOverviewUI(const FVector2D& ScreenPosition) const;
 
 	FSRStarRoversCelestialBodyRequestedSignature CelestialBodyRequestedEvent;
 };

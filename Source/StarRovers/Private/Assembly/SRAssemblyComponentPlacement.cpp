@@ -1,62 +1,15 @@
 #include "Assembly/SRAssemblyComponent.h"
 
+#include "Assembly/SRAssemblyConveyorPlacement.h"
+#include "Assembly/SRAssemblySurfaceCursorQuery.h"
+#include "Assembly/SRAssemblyStructureDragPathBuilder.h"
+#include "Assembly/SRAssemblyStructurePlacement.h"
 #include "Camera/SRPlayerController.h"
 #include "Conveyor/SRConveyorNetworkComponent.h"
 #include "GameFramework/Actor.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Structure/SRStructureInstanceManagerComponent.h"
-#include "Structure/SRStructurePlacementLibrary.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
-
-namespace
-{
-	void AppendGridLineCellIds(
-		const FSRPlanetSurfaceGridCellId& StartCellId,
-		const FSRPlanetSurfaceGridCellId& EndCellId,
-		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds)
-	{
-		if (StartCellId.Face != EndCellId.Face)
-		{
-			OutCellIds.Add(EndCellId);
-			return;
-		}
-
-		const int32 DeltaX = FMath::Abs(EndCellId.CellX - StartCellId.CellX);
-		const int32 DeltaY = FMath::Abs(EndCellId.CellY - StartCellId.CellY);
-		const int32 StepX = StartCellId.CellX < EndCellId.CellX ? 1 : -1;
-		const int32 StepY = StartCellId.CellY < EndCellId.CellY ? 1 : -1;
-
-		int32 CurrentX = StartCellId.CellX;
-		int32 CurrentY = StartCellId.CellY;
-		int32 Error = DeltaX - DeltaY;
-
-		while (true)
-		{
-			FSRPlanetSurfaceGridCellId CellId;
-			CellId.Face = StartCellId.Face;
-			CellId.CellX = CurrentX;
-			CellId.CellY = CurrentY;
-			OutCellIds.Add(CellId);
-
-			if (CurrentX == EndCellId.CellX && CurrentY == EndCellId.CellY)
-			{
-				break;
-			}
-
-			const int32 Error2 = Error * 2;
-			if (Error2 > -DeltaY)
-			{
-				Error -= DeltaY;
-				CurrentX += StepX;
-			}
-			if (Error2 < DeltaX)
-			{
-				Error += DeltaX;
-				CurrentY += StepY;
-			}
-		}
-	}
-}
 
 void USRAssemblyComponent::ProcessQueuedStructurePlacements()
 {
@@ -102,15 +55,13 @@ void USRAssemblyComponent::ProcessQueuedStructurePlacements()
 
 	if (bPlacedAnyStructure)
 	{
-		DestroyStructureGhostPreview();
+		StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
 		if (IsValid(HoveredSurfaceGrid))
 		{
 			FSRPlanetSurfaceGridCell HoveredCell;
 			if (HoveredSurfaceGrid->GetHoveredCell(HoveredCell))
 			{
-				bHasLastPublishedHoveredCellInfo = false;
-				LastPublishedHoveredSurfaceGrid = nullptr;
-				LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+				SurfaceState.ResetPublishedHoveredCellInfo();
 				PublishHoveredCellInfo(HoveredSurfaceGrid, HoveredCell);
 			}
 		}
@@ -128,16 +79,23 @@ bool USRAssemblyComponent::TryResolveStructurePlacementDragTarget(
 
 	const ASRPlayerController* PlayerController = GetOwnerController();
 	if (!PlayerController
-		|| PlayerController->IsPointerOverBlockingUi()
-		|| !bAssemblyModeActive
+		|| PlayerController->IsPointerOverBlockingUI()
+		|| !ModeState.bAssemblyModeActive
 		|| !IsValid(PlayerController->GetSelectedStructureDataAsset()))
 	{
 		return false;
 	}
 
-	FVector HoverHitLocation = FVector::ZeroVector;
-	return TryGetFocusedSurfaceGrid(OutFocusedActor, OutSurfaceGrid)
-		&& TryProjectCursorToSurfaceCell(OutSurfaceGrid, OutTargetCell, HoverHitLocation);
+	StarRovers::Assembly::FSRAssemblySurfaceCursorTarget CursorTarget;
+	if (!StarRovers::Assembly::FSRAssemblySurfaceCursorQuery::TryResolveSurfaceCell(PlayerController, CursorTarget))
+	{
+		return false;
+	}
+
+	OutFocusedActor = CursorTarget.FocusedActor;
+	OutSurfaceGrid = CursorTarget.SurfaceGrid;
+	OutTargetCell = CursorTarget.Cell;
+	return true;
 }
 
 bool USRAssemblyComponent::TryGetFocusedConveyorNetwork(AActor*& OutFocusedActor, USRConveyorNetworkComponent*& OutConveyorNetwork) const
@@ -146,7 +104,8 @@ bool USRAssemblyComponent::TryGetFocusedConveyorNetwork(AActor*& OutFocusedActor
 	OutConveyorNetwork = nullptr;
 
 	USRPlanetSurfaceGrid* UnusedSurfaceGrid = nullptr;
-	if (!TryGetFocusedSurfaceGrid(OutFocusedActor, UnusedSurfaceGrid) || !IsValid(OutFocusedActor))
+	if (!StarRovers::Assembly::FSRAssemblySurfaceCursorQuery::TryGetFocusedSurfaceGrid(GetOwnerController(), OutFocusedActor, UnusedSurfaceGrid)
+		|| !IsValid(OutFocusedActor))
 	{
 		return false;
 	}
@@ -174,40 +133,29 @@ bool USRAssemblyComponent::TryPlaceStructureDragPath(USRPlanetSurfaceGrid* Surfa
 		return TryPlaceConveyorDragPath(SurfaceGrid, TargetCell, SelectedStructureDataAsset);
 	}
 
-	if (LastStructurePlacementDragSurfaceGrid == SurfaceGrid
-		&& bHasLastStructurePlacementDragCellId
-		&& LastStructurePlacementDragCellId == TargetCell.CellId)
+	if (PlacementDrag.IsLastStructurePlacementDragCell(SurfaceGrid, TargetCell.CellId))
 	{
 		return true;
 	}
 
 	TArray<FSRPlanetSurfaceGridCellId> PathCellIds;
-	if (LastStructurePlacementDragSurfaceGrid == SurfaceGrid && bHasLastStructurePlacementDragCellId)
+	if (!StarRovers::Assembly::FSRAssemblyStructureDragPathBuilder::BuildQueuedCellIds(
+		PlacementDrag,
+		SurfaceGrid,
+		TargetCell.CellId,
+		PathCellIds))
 	{
-		AppendGridLineCellIds(LastStructurePlacementDragCellId, TargetCell.CellId, PathCellIds);
-	}
-	else
-	{
-		PathCellIds.Add(TargetCell.CellId);
+		return false;
 	}
 
 	for (const FSRPlanetSurfaceGridCellId& PathCellId : PathCellIds)
 	{
-		if (LastStructurePlacementDragSurfaceGrid == SurfaceGrid
-			&& bHasLastStructurePlacementDragCellId
-			&& LastStructurePlacementDragCellId == PathCellId)
-		{
-			continue;
-		}
-
 		EnqueueStructurePlacement(SurfaceGrid, PathCellId);
 	}
 
 	SurfaceGrid->SetHoveredCell(TargetCell.CellId);
 	PublishHoveredCellInfo(SurfaceGrid, TargetCell);
-	LastStructurePlacementDragSurfaceGrid = SurfaceGrid;
-	LastStructurePlacementDragCellId = TargetCell.CellId;
-	bHasLastStructurePlacementDragCellId = true;
+	PlacementDrag.SetLastStructurePlacementDragCell(SurfaceGrid, TargetCell.CellId);
 	return !PathCellIds.IsEmpty();
 }
 
@@ -225,18 +173,16 @@ bool USRAssemblyComponent::TryPlaceConveyorDragPath(USRPlanetSurfaceGrid* Surfac
 		return false;
 	}
 
-	if (LastStructurePlacementDragSurfaceGrid == SurfaceGrid
-		&& bHasLastStructurePlacementDragCellId
-		&& LastStructurePlacementDragCellId == TargetCell.CellId)
+	if (PlacementDrag.IsLastStructurePlacementDragCell(SurfaceGrid, TargetCell.CellId))
 	{
 		return true;
 	}
 
 	const FSRStructureData ConveyorData = ConveyorDataAsset->BuildData();
 	TArray<FSRPlanetSurfaceGridCellId> PathCellIds;
-	if (LastStructurePlacementDragSurfaceGrid == SurfaceGrid && bHasLastStructurePlacementDragCellId)
+	if (PlacementDrag.HasLastStructurePlacementDragCell(SurfaceGrid))
 	{
-		if (!ConveyorNetwork->FindConveyorPath(SurfaceGrid, LastStructurePlacementDragCellId, TargetCell.CellId, ConveyorData.ConveyorLayer, PathCellIds))
+		if (!ConveyorNetwork->FindConveyorPath(SurfaceGrid, PlacementDrag.LastStructurePlacementDragCellId, TargetCell.CellId, ConveyorData.ConveyorLayer, PathCellIds))
 		{
 			return false;
 		}
@@ -246,50 +192,38 @@ bool USRAssemblyComponent::TryPlaceConveyorDragPath(USRPlanetSurfaceGrid* Surfac
 		PathCellIds.Add(TargetCell.CellId);
 	}
 
-	const FName NetworkId = FName(*FString::Printf(TEXT("Conveyor_%s_%d"), *GetNameSafe(FocusedActor), static_cast<int32>(ConveyorData.ConveyorLayer)));
-	FSRConveyorVisualPath HistoryVisualPath;
-	TArray<FSRPlanetSurfaceGridCellId> HistoryPlacedCellIds;
-	TArray<FSRRestorableNaturalStructure> HistoryRemovedNaturalStructures;
-	BuildConveyorPlacementHistoryPayload(
+	const FName NetworkId = StarRovers::Assembly::FSRAssemblyConveyorPlacement::MakeNetworkId(FocusedActor, ConveyorData.ConveyorLayer);
+	StarRovers::Assembly::FSRAssemblyConveyorPlacementResult PlacementResult;
+	if (!StarRovers::Assembly::FSRAssemblyConveyorPlacement::TryPlacePath(
 		SurfaceGrid,
 		ConveyorNetwork,
 		ConveyorDataAsset,
+		ConveyorData,
 		PathCellIds,
-		ConveyorData.ConveyorLayer,
-		ConveyorData.ConveyorLayerHeight,
 		NetworkId,
-		HistoryVisualPath,
-		HistoryPlacedCellIds,
-		HistoryRemovedNaturalStructures);
-	if (!ConveyorNetwork->TryPlaceConveyorPath(
-		SurfaceGrid,
-		PathCellIds,
-		ConveyorData.ConveyorLayer,
-		ConveyorData.ConveyorLayerHeight,
-		ConveyorDataAsset,
-		NetworkId))
+		PlacementHistory,
+		PlacementResult))
 	{
 		return false;
 	}
 
-	RecordConveyorPlacementHistory(
+	PlacementHistory.RecordConveyor(
+		*this,
 		SurfaceGrid,
 		ConveyorNetwork,
-		HistoryVisualPath,
-		HistoryPlacedCellIds,
-		HistoryRemovedNaturalStructures);
+		PlacementResult.HistoryBeltPath,
+		PlacementResult.HistoryPlacedCellIds,
+		PlacementResult.HistoryRemovedNaturalStructures);
 	SurfaceGrid->SetHoveredCell(TargetCell.CellId);
 	PublishHoveredCellInfo(SurfaceGrid, TargetCell);
-	LastStructurePlacementDragSurfaceGrid = SurfaceGrid;
-	LastStructurePlacementDragCellId = TargetCell.CellId;
-	bHasLastStructurePlacementDragCellId = true;
+	PlacementDrag.SetLastStructurePlacementDragCell(SurfaceGrid, TargetCell.CellId);
 	return true;
 }
 
 bool USRAssemblyComponent::CommitStructurePlacementDrag()
 {
-	USRPlanetSurfaceGrid* SurfaceGrid = StructurePlacementDragSurfaceGrid.Get();
-	if (!bIsStructurePlacementDragActive || !IsValid(SurfaceGrid) || StructurePlacementDragCellIds.IsEmpty())
+	USRPlanetSurfaceGrid* SurfaceGrid = PlacementDrag.StructurePlacementDragSurfaceGrid.Get();
+	if (!PlacementDrag.bIsStructurePlacementDragActive || !IsValid(SurfaceGrid) || PlacementDrag.StructurePlacementDragCellIds.IsEmpty())
 	{
 		return false;
 	}
@@ -303,10 +237,10 @@ bool USRAssemblyComponent::CommitStructurePlacementDrag()
 
 	bool bPlacedAnyStructure = false;
 	TArray<FSRAssemblyPlacementHistoryEntry> HistoryEntries;
-	HistoryEntries.Reserve(StructurePlacementDragCellIds.Num());
+	HistoryEntries.Reserve(PlacementDrag.StructurePlacementDragCellIds.Num());
 
 	SurfaceGrid->BeginInteractionHighlightBatch();
-	for (const FSRPlanetSurfaceGridCellId& CellId : StructurePlacementDragCellIds)
+	for (const FSRPlanetSurfaceGridCellId& CellId : PlacementDrag.StructurePlacementDragCellIds)
 	{
 		FSRPlanetSurfaceGridCell TargetCell;
 		if (!SurfaceGrid->GetCellById(CellId, TargetCell))
@@ -318,7 +252,7 @@ bool USRAssemblyComponent::CommitStructurePlacementDrag()
 			SurfaceGrid,
 			TargetCell,
 			false,
-			StructurePlacementDragRotationSteps,
+			PlacementDrag.StructurePlacementDragRotationSteps,
 			&HistoryEntries);
 	}
 	SurfaceGrid->EndInteractionHighlightBatch();
@@ -328,11 +262,9 @@ bool USRAssemblyComponent::CommitStructurePlacementDrag()
 		return false;
 	}
 
-	RecordAssemblyPlacementHistoryBatch(SurfaceGrid, HistoryEntries);
-	DestroyStructureGhostPreview();
-	bHasLastPublishedHoveredCellInfo = false;
-	LastPublishedHoveredSurfaceGrid = nullptr;
-	LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+	PlacementHistory.RecordBatch(*this, SurfaceGrid, HistoryEntries);
+	StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
+	SurfaceState.ResetPublishedHoveredCellInfo();
 
 	FSRPlanetSurfaceGridCell HoveredCell;
 	if (SurfaceGrid->GetHoveredCell(HoveredCell))
@@ -365,90 +297,57 @@ bool USRAssemblyComponent::TryPlaceSelectedStructure(
 		? GetStructurePlacementRotationSteps()
 		: StarRovers::Structure::NormalizePlacementRotationSteps(PlacementRotationStepsOverride);
 
-	TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
-	if (!SurfaceGrid->GetFootprintCellIds(
+	StarRovers::Assembly::FSRAssemblyStructurePlacementResult PlacementResult;
+	if (!StarRovers::Assembly::FSRAssemblyStructurePlacement::TryPlace(
+		SurfaceGrid,
+		SelectedStructureDataAsset,
+		StructureData,
 		TargetCell.CellId,
-		StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacementRotationSteps),
-		StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, PlacementRotationSteps),
-		FootprintCellIds)
-		|| !SurfaceGrid->CanOccupyCells(FootprintCellIds))
+		PlacementRotationSteps,
+		PlacementResult))
 	{
-		if (bRefreshPreviewAndUI)
+		if (bRefreshPreviewAndUI && PlacementResult.bShouldDestroyPreviewOnFailure)
 		{
-			DestroyStructureGhostPreview();
+			StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
 		}
 		return false;
 	}
 
-	if (AActor* SurfaceOwner = SurfaceGrid->GetOwner())
+	if (PlacementResult.bPlacedWithStructureInstanceManager)
 	{
-		if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
+		USRStructureInstanceManagerComponent* StructureInstanceManager = PlacementResult.StructureInstanceManager.Get();
+		if (IsValid(StructureInstanceManager))
 		{
-			FName OccupantId = NAME_None;
-			if (StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(
-				SurfaceGrid,
-				TargetCell.CellId,
-				SelectedStructureDataAsset,
-				OccupantId,
-				false,
-				false,
-				PlacementRotationSteps))
+			if (OutHistoryEntries)
 			{
-				if (OutHistoryEntries)
-				{
-					FSRAssemblyPlacementHistoryEntry HistoryEntry;
-					HistoryEntry.Kind = ESRAssemblyPlacementHistoryKind::Structure;
-					HistoryEntry.SurfaceGrid = SurfaceGrid;
-					HistoryEntry.StructureInstanceManager = StructureInstanceManager;
-					HistoryEntry.StructureDataAsset = SelectedStructureDataAsset;
-					HistoryEntry.OriginCellId = TargetCell.CellId;
-					HistoryEntry.PlacementRotationSteps = PlacementRotationSteps;
-					HistoryEntry.OccupantId = OccupantId;
-					OutHistoryEntries->Add(HistoryEntry);
-				}
-				else
-				{
-					RecordStructurePlacementHistory(
-						SurfaceGrid,
-						StructureInstanceManager,
-						SelectedStructureDataAsset,
-						TargetCell.CellId,
-						PlacementRotationSteps,
-						OccupantId);
-				}
-				if (bRefreshPreviewAndUI)
-				{
-					DestroyStructureGhostPreview();
-
-					bHasLastPublishedHoveredCellInfo = false;
-					LastPublishedHoveredSurfaceGrid = nullptr;
-					LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
-					PublishHoveredCellInfo(SurfaceGrid, TargetCell);
-				}
-				return true;
+				OutHistoryEntries->Add(StarRovers::Assembly::FSRAssemblyStructurePlacement::BuildHistoryEntry(
+					SurfaceGrid,
+					StructureInstanceManager,
+					SelectedStructureDataAsset,
+					TargetCell.CellId,
+					PlacementRotationSteps,
+					PlacementResult));
+			}
+			else
+			{
+				PlacementHistory.RecordStructure(
+					*this,
+					SurfaceGrid,
+					StructureInstanceManager,
+					SelectedStructureDataAsset,
+					TargetCell.CellId,
+					PlacementRotationSteps,
+					PlacementResult.OccupantId,
+					PlacementResult.RemovedNaturalStructures);
 			}
 		}
 	}
 
-	AActor* PlacedStructureActor = nullptr;
-	if (!USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
-		SurfaceGrid,
-		TargetCell.CellId,
-		SelectedStructureDataAsset,
-		PlacedStructureActor,
-		false,
-		PlacementRotationSteps))
-	{
-		return false;
-	}
-
 	if (bRefreshPreviewAndUI)
 	{
-		DestroyStructureGhostPreview();
+		StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
 
-		bHasLastPublishedHoveredCellInfo = false;
-		LastPublishedHoveredSurfaceGrid = nullptr;
-		LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+		SurfaceState.ResetPublishedHoveredCellInfo();
 		PublishHoveredCellInfo(SurfaceGrid, TargetCell);
 	}
 	return true;
@@ -470,44 +369,32 @@ bool USRAssemblyComponent::TryPlaceSelectedConveyor(USRPlanetSurfaceGrid* Surfac
 
 	const FSRStructureData ConveyorData = ConveyorDataAsset->BuildData();
 	const TArray<FSRPlanetSurfaceGridCellId> PathCellIds = { TargetCell.CellId };
-	const FName NetworkId = FName(*FString::Printf(TEXT("Conveyor_%s_%d"), *GetNameSafe(FocusedActor), static_cast<int32>(ConveyorData.ConveyorLayer)));
-	FSRConveyorVisualPath HistoryVisualPath;
-	TArray<FSRPlanetSurfaceGridCellId> HistoryPlacedCellIds;
-	TArray<FSRRestorableNaturalStructure> HistoryRemovedNaturalStructures;
-	BuildConveyorPlacementHistoryPayload(
+	const FName NetworkId = StarRovers::Assembly::FSRAssemblyConveyorPlacement::MakeNetworkId(FocusedActor, ConveyorData.ConveyorLayer);
+	StarRovers::Assembly::FSRAssemblyConveyorPlacementResult PlacementResult;
+	if (!StarRovers::Assembly::FSRAssemblyConveyorPlacement::TryPlacePath(
 		SurfaceGrid,
 		ConveyorNetwork,
 		ConveyorDataAsset,
+		ConveyorData,
 		PathCellIds,
-		ConveyorData.ConveyorLayer,
-		ConveyorData.ConveyorLayerHeight,
 		NetworkId,
-		HistoryVisualPath,
-		HistoryPlacedCellIds,
-		HistoryRemovedNaturalStructures);
-	if (!ConveyorNetwork->TryPlaceConveyorPath(
-		SurfaceGrid,
-		PathCellIds,
-		ConveyorData.ConveyorLayer,
-		ConveyorData.ConveyorLayerHeight,
-		ConveyorDataAsset,
-		NetworkId))
+		PlacementHistory,
+		PlacementResult))
 	{
 		return false;
 	}
 
-	RecordConveyorPlacementHistory(
+	PlacementHistory.RecordConveyor(
+		*this,
 		SurfaceGrid,
 		ConveyorNetwork,
-		HistoryVisualPath,
-		HistoryPlacedCellIds,
-		HistoryRemovedNaturalStructures);
+		PlacementResult.HistoryBeltPath,
+		PlacementResult.HistoryPlacedCellIds,
+		PlacementResult.HistoryRemovedNaturalStructures);
 	if (bRefreshPreviewAndUI)
 	{
-		DestroyStructureGhostPreview();
-		bHasLastPublishedHoveredCellInfo = false;
-		LastPublishedHoveredSurfaceGrid = nullptr;
-		LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+		StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
+		SurfaceState.ResetPublishedHoveredCellInfo();
 		PublishHoveredCellInfo(SurfaceGrid, TargetCell);
 	}
 	return true;
@@ -534,44 +421,32 @@ bool USRAssemblyComponent::TryPlaceSelectedConveyorPath(USRPlanetSurfaceGrid* Su
 		return false;
 	}
 
-	const FName NetworkId = FName(*FString::Printf(TEXT("Conveyor_%s_%d"), *GetNameSafe(FocusedActor), static_cast<int32>(ConveyorData.ConveyorLayer)));
-	FSRConveyorVisualPath HistoryVisualPath;
-	TArray<FSRPlanetSurfaceGridCellId> HistoryPlacedCellIds;
-	TArray<FSRRestorableNaturalStructure> HistoryRemovedNaturalStructures;
-	BuildConveyorPlacementHistoryPayload(
+	const FName NetworkId = StarRovers::Assembly::FSRAssemblyConveyorPlacement::MakeNetworkId(FocusedActor, ConveyorData.ConveyorLayer);
+	StarRovers::Assembly::FSRAssemblyConveyorPlacementResult PlacementResult;
+	if (!StarRovers::Assembly::FSRAssemblyConveyorPlacement::TryPlacePath(
 		SurfaceGrid,
 		ConveyorNetwork,
 		ConveyorDataAsset,
+		ConveyorData,
 		PathCellIds,
-		ConveyorData.ConveyorLayer,
-		ConveyorData.ConveyorLayerHeight,
 		NetworkId,
-		HistoryVisualPath,
-		HistoryPlacedCellIds,
-		HistoryRemovedNaturalStructures);
-	if (!ConveyorNetwork->TryPlaceConveyorPath(
-		SurfaceGrid,
-		PathCellIds,
-		ConveyorData.ConveyorLayer,
-		ConveyorData.ConveyorLayerHeight,
-		ConveyorDataAsset,
-		NetworkId))
+		PlacementHistory,
+		PlacementResult))
 	{
 		return false;
 	}
 
-	RecordConveyorPlacementHistory(
+	PlacementHistory.RecordConveyor(
+		*this,
 		SurfaceGrid,
 		ConveyorNetwork,
-		HistoryVisualPath,
-		HistoryPlacedCellIds,
-		HistoryRemovedNaturalStructures);
+		PlacementResult.HistoryBeltPath,
+		PlacementResult.HistoryPlacedCellIds,
+		PlacementResult.HistoryRemovedNaturalStructures);
 	if (bRefreshPreviewAndUI)
 	{
-		DestroyStructureGhostPreview();
-		bHasLastPublishedHoveredCellInfo = false;
-		LastPublishedHoveredSurfaceGrid = nullptr;
-		LastPublishedHoveredCellId = FSRPlanetSurfaceGridCellId();
+		StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
+		SurfaceState.ResetPublishedHoveredCellInfo();
 		PublishHoveredCellInfo(SurfaceGrid, TargetCell);
 	}
 	return true;
@@ -579,12 +454,10 @@ bool USRAssemblyComponent::TryPlaceSelectedConveyorPath(USRPlanetSurfaceGrid* Su
 
 void USRAssemblyComponent::ClearPendingConveyorPathStart()
 {
-	if (IsValid(PendingConveyorStartSurfaceGrid))
+	if (IsValid(PlacementDrag.PendingConveyorStartSurfaceGrid))
 	{
-		PendingConveyorStartSurfaceGrid->ClearSelectedCell();
+		PlacementDrag.PendingConveyorStartSurfaceGrid->ClearSelectedCell();
 	}
 
-	PendingConveyorStartSurfaceGrid = nullptr;
-	PendingConveyorStartCellId = FSRPlanetSurfaceGridCellId();
-	bHasPendingConveyorStartCell = false;
+	PlacementDrag.ResetPendingConveyorStart();
 }

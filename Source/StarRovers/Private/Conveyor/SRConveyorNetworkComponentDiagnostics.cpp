@@ -27,8 +27,8 @@ void USRConveyorNetworkComponent::LogConveyorMutationMemoryDiagnostics(const TCH
 	const FString LabelString(Label);
 	const bool bIsPlacementLog = LabelString.StartsWith(TEXT("ConveyorPlace"));
 	const bool bIsDeletionLog = LabelString.StartsWith(TEXT("ConveyorDelete"));
-	if ((bIsPlacementLog && CVarSRMemoryDiagnosticsConveyorPlacement.GetValueOnGameThread() == 0)
-		|| (bIsDeletionLog && CVarSRMemoryDiagnosticsConveyorDelete.GetValueOnGameThread() == 0))
+	if ((bIsPlacementLog && CVarSRMemoryDiagnosticsConveyorPlacement.GetValueOnAnyThread() == 0)
+		|| (bIsDeletionLog && CVarSRMemoryDiagnosticsConveyorDelete.GetValueOnAnyThread() == 0))
 	{
 		return;
 	}
@@ -41,11 +41,11 @@ void USRConveyorNetworkComponent::LogConveyorMutationMemoryDiagnostics(const TCH
 
 	TArray<FString> ExtraLines;
 	ExtraLines.Add(FString::Printf(
-		TEXT("ConveyorNetwork Owner=%s ActorGroup=%s Segments=%d VisualPaths=%d PlacedActors=%d ActorGroups=%d PendingDeletionDiagnostics=%d ForceGC=%s"),
+		TEXT("ConveyorNetwork Owner=%s ActorGroup=%s Segments=%d BeltPaths=%d PlacedActors=%d ActorGroups=%d PendingDeletionDiagnostics=%d ForceGC=%s"),
 		*GetNameSafe(GetOwner()),
 		*ActorGroupKey.ToString(),
 		Segments.Num(),
-		VisualPaths.Num(),
+		BeltPaths.Num(),
 		PlacedConveyorActors.Num(),
 		ActorGroupState.GroupsByKey.Num(),
 		ActorGroupState.PendingDeletionDiagnosticKeys.Num(),

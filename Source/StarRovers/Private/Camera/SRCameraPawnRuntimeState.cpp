@@ -88,3 +88,14 @@ void FSRCameraDynamicMeshVisibilityState::Reset()
     bHasAppliedMeshVisibility = false;
     bHasState = false;
 }
+
+void FSRCameraSpaceBoundaryCacheState::Reset()
+{
+    Actor = nullptr;
+    Center = FVector::ZeroVector;
+    Radius = 0.0f;
+    FullScanTime = -BIG_NUMBER;
+    Frame = 0;
+    bHasResult = false;
+    bFound = false;
+}

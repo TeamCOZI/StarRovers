@@ -1,6 +1,6 @@
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
-#include "Surface/SRPlanetSurfaceGridCubeSphereHelpers.h"
-#include "Surface/SRPlanetSurfaceGridInteractionHelpers.h"
+#include "Surface/SRPlanetSurfaceGridCubeSphereGeometry.h"
+#include "Surface/SRPlanetSurfaceGridInteractionCoordinateMapping.h"
 using namespace StarRovers::SurfaceGrid::CubeSphere;
 
 namespace
@@ -10,12 +10,12 @@ namespace
 		int32 Resolution,
 		const FIntPoint& LocalStep)
 	{
-		using StarRovers::Surface::Interaction::FSRSurfaceGridDisplayCoord;
-		using StarRovers::Surface::Interaction::FSRSurfaceGridDisplayMapper;
+		using StarRovers::Surface::Interaction::FSRPlanetSurfaceGridDisplayCoord;
+		using StarRovers::Surface::Interaction::FSRPlanetSurfaceGridDisplayMapper;
 
-		const FSRSurfaceGridDisplayMapper DisplayMapper(Resolution);
-		const FSRSurfaceGridDisplayCoord FromCoord = DisplayMapper.CanonicalToDisplay(CellId);
-		FSRSurfaceGridDisplayCoord ToCoord;
+		const FSRPlanetSurfaceGridDisplayMapper DisplayMapper(Resolution);
+		const FSRPlanetSurfaceGridDisplayCoord FromCoord = DisplayMapper.CanonicalToDisplay(CellId);
+		FSRPlanetSurfaceGridDisplayCoord ToCoord;
 		bool bCrossedEdge = false;
 		if (!DisplayMapper.TryStepDisplayCoord(FromCoord, LocalStep, ToCoord, bCrossedEdge))
 		{
@@ -107,7 +107,7 @@ bool USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(const FVect
 	double InvertedFaceV = 0.0;
 	float FaceU = FMath::Clamp(ProjectionU, -1.0f, 1.0f);
 	float FaceV = FMath::Clamp(ProjectionV, -1.0f, 1.0f);
-	if (InvertCCAMPanelCoordinates(ProjectionU, ProjectionV, InvertedFaceU, InvertedFaceV))
+	if (InvertConformalCubePanelProjection(ProjectionU, ProjectionV, InvertedFaceU, InvertedFaceV))
 	{
 		FaceU = static_cast<float>(InvertedFaceU);
 		FaceV = static_cast<float>(InvertedFaceV);

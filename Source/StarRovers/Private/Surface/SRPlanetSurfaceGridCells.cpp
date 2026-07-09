@@ -1,28 +1,18 @@
 #include "Surface/SRPlanetSurfaceGrid.h"
 
-#include "Math/RotationMatrix.h"
-#include "Surface/SRPlanetSurfaceGridLibrary.h"
+#include "SRPlanetSurfaceGridCellIndex.h"
+#include "SRPlanetSurfaceGridCellPose.h"
+#include "SRPlanetSurfaceGridCellQuery.h"
+#include "SRPlanetSurfaceGridFootprint.h"
+#include "SRPlanetSurfaceGridProjectionQuery.h"
+#include "SRPlanetSurfaceGridTemperatureState.h"
 
-namespace
-{
-	float GetRepresentativeSurfaceTemperature(ESRFacilityTemperatureState TemperatureState)
-	{
-		switch (TemperatureState)
-		{
-		case ESRFacilityTemperatureState::Frozen:
-			return 0.0f;
-		case ESRFacilityTemperatureState::Cold:
-			return 0.25f;
-		case ESRFacilityTemperatureState::Hot:
-			return 0.78f;
-		case ESRFacilityTemperatureState::Overheated:
-			return 1.0f;
-		case ESRFacilityTemperatureState::Normal:
-		default:
-			return 0.5f;
-		}
-	}
-}
+namespace SurfaceGridCellIndex = StarRovers::SurfaceGridCellIndex;
+namespace SurfaceGridCellPose = StarRovers::SurfaceGridCellPose;
+namespace SurfaceGridCellQuery = StarRovers::SurfaceGridCellQuery;
+namespace SurfaceGridFootprint = StarRovers::SurfaceGridFootprint;
+namespace SurfaceGridProjectionQuery = StarRovers::SurfaceGridProjectionQuery;
+namespace SurfaceGridTemperatureState = StarRovers::SurfaceGridTemperatureState;
 
 int32 USRPlanetSurfaceGrid::GetCellCount() const
 {
@@ -41,118 +31,106 @@ const TArray<FSRPlanetSurfaceGridCell>& USRPlanetSurfaceGrid::GetCellsRef() cons
 
 bool USRPlanetSurfaceGrid::GetCellById(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCell& OutCell) const
 {
-	int32 CellIndex = INDEX_NONE;
-	if (!GetCellIndex(CellId, CellIndex))
-	{
-		OutCell = FSRPlanetSurfaceGridCell();
-		return false;
-	}
-
-	OutCell = Cells[CellIndex];
-	return true;
+	return SurfaceGridCellQuery::GetCellById(
+		Cells,
+		CellId,
+		[this](const FSRPlanetSurfaceGridCellId& CandidateCellId, int32& OutIndex)
+		{
+			return GetCellIndex(CandidateCellId, OutIndex);
+		},
+		OutCell);
 }
 
 bool USRPlanetSurfaceGrid::GetCellInfoById(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCellInfo& OutCellInfo) const
 {
-	FSRPlanetSurfaceGridCellInfo FoundCellInfo;
-	if (!GetStoredCellInfoById(CellId, FoundCellInfo))
-	{
-		OutCellInfo = FSRPlanetSurfaceGridCellInfo();
-		return false;
-	}
-
-	OutCellInfo = ResolveRuntimeCellInfo(FoundCellInfo);
-	return true;
+	return SurfaceGridCellQuery::GetCellInfoById(
+		CellId,
+		[this](const FSRPlanetSurfaceGridCellId& CandidateCellId, FSRPlanetSurfaceGridCellInfo& FoundCellInfo)
+		{
+			return GetStoredCellInfoById(CandidateCellId, FoundCellInfo);
+		},
+		[this](const FSRPlanetSurfaceGridCellInfo& CellInfo)
+		{
+			return ResolveRuntimeCellInfo(CellInfo);
+		},
+		OutCellInfo);
 }
 
 bool USRPlanetSurfaceGrid::GetCellNeighbors(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCellNeighbors& OutNeighbors) const
 {
-	FSRPlanetSurfaceGridCell Cell;
-	if (!GetCellById(CellId, Cell))
-	{
-		OutNeighbors = FSRPlanetSurfaceGridCellNeighbors();
-		return false;
-	}
-
-	OutNeighbors = USRPlanetSurfaceGridLibrary::GetCubeSphereNeighborIds(CellId, FaceResolution);
-	return true;
+	return SurfaceGridCellQuery::GetCellNeighbors(
+		CellId,
+		FaceResolution,
+		[this](const FSRPlanetSurfaceGridCellId& CandidateCellId, int32& OutIndex)
+		{
+			return GetCellIndex(CandidateCellId, OutIndex);
+		},
+		OutNeighbors);
 }
 
 ESRFacilityTemperatureState USRPlanetSurfaceGrid::ResolveTemperatureStateFromSurfaceTemperature(float SurfaceTemperature)
 {
-	const float ClampedSurfaceTemperature = FMath::Clamp(SurfaceTemperature, 0.0f, 1.0f);
-	if (ClampedSurfaceTemperature <= 0.12f)
-	{
-		return ESRFacilityTemperatureState::Frozen;
-	}
-	if (ClampedSurfaceTemperature <= 0.35f)
-	{
-		return ESRFacilityTemperatureState::Cold;
-	}
-	if (ClampedSurfaceTemperature < 0.70f)
-	{
-		return ESRFacilityTemperatureState::Normal;
-	}
-	if (ClampedSurfaceTemperature < 0.88f)
-	{
-		return ESRFacilityTemperatureState::Hot;
-	}
-	return ESRFacilityTemperatureState::Overheated;
+	return SurfaceGridTemperatureState::ResolveTemperatureStateFromSurfaceTemperature(SurfaceTemperature);
 }
 
 bool USRPlanetSurfaceGrid::GetCellTemperatureState(const FSRPlanetSurfaceGridCellId& CellId, ESRFacilityTemperatureState& OutTemperatureState) const
 {
-	FSRPlanetSurfaceGridCell Cell;
-	if (!GetCellById(CellId, Cell))
-	{
-		OutTemperatureState = ESRFacilityTemperatureState::Normal;
-		return false;
-	}
-
-	OutTemperatureState = Cell.TemperatureState;
-	return true;
+	return SurfaceGridTemperatureState::GetCellTemperatureState(
+		Cells,
+		CellId,
+		OutTemperatureState,
+		[this](const FSRPlanetSurfaceGridCellId& CandidateCellId, int32& OutIndex)
+		{
+			return GetCellIndex(CandidateCellId, OutIndex);
+		});
 }
 
 bool USRPlanetSurfaceGrid::SetCellTemperatureState(const FSRPlanetSurfaceGridCellId& CellId, ESRFacilityTemperatureState TemperatureState)
 {
-	int32 CellIndex = INDEX_NONE;
-	if (!GetCellIndex(CellId, CellIndex))
-	{
-		return false;
-	}
-
-	FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
-	Cell.TemperatureState = TemperatureState;
-	Cell.SurfaceTemperature = GetRepresentativeSurfaceTemperature(TemperatureState);
-	FSRPlanetSurfaceGridCellInfo UpdatedCellInfo = BuildCellInfo(Cell);
-	FSRPlanetSurfaceGridCellInfo ExistingCellInfo;
-	if (GetStoredCellInfoById(CellId, ExistingCellInfo))
-	{
-		UpdatedCellInfo.FaceCellIndex = ExistingCellInfo.FaceCellIndex;
-	}
-	StoreCellInfo(UpdatedCellInfo);
-	return true;
+	return SurfaceGridTemperatureState::SetCellTemperatureState(
+		Cells,
+		CellId,
+		TemperatureState,
+		[this](const FSRPlanetSurfaceGridCellId& CandidateCellId, int32& OutIndex)
+		{
+			return GetCellIndex(CandidateCellId, OutIndex);
+		},
+		[this](const FSRPlanetSurfaceGridCell& Cell)
+		{
+			return BuildCellInfo(Cell);
+		},
+		[this](const FSRPlanetSurfaceGridCellId& CandidateCellId, FSRPlanetSurfaceGridCellInfo& OutCellInfo)
+		{
+			return GetStoredCellInfoById(CandidateCellId, OutCellInfo);
+		},
+		[this](const FSRPlanetSurfaceGridCellInfo& CellInfo)
+		{
+			StoreCellInfo(CellInfo);
+		});
 }
 
 bool USRPlanetSurfaceGrid::SetCellSurfaceTemperature(const FSRPlanetSurfaceGridCellId& CellId, float SurfaceTemperature)
 {
-	int32 CellIndex = INDEX_NONE;
-	if (!GetCellIndex(CellId, CellIndex))
-	{
-		return false;
-	}
-
-	FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
-	Cell.SurfaceTemperature = FMath::Clamp(SurfaceTemperature, 0.0f, 1.0f);
-	Cell.TemperatureState = ResolveTemperatureStateFromSurfaceTemperature(Cell.SurfaceTemperature);
-	FSRPlanetSurfaceGridCellInfo UpdatedCellInfo = BuildCellInfo(Cell);
-	FSRPlanetSurfaceGridCellInfo ExistingCellInfo;
-	if (GetStoredCellInfoById(CellId, ExistingCellInfo))
-	{
-		UpdatedCellInfo.FaceCellIndex = ExistingCellInfo.FaceCellIndex;
-	}
-	StoreCellInfo(UpdatedCellInfo);
-	return true;
+	return SurfaceGridTemperatureState::SetCellSurfaceTemperature(
+		Cells,
+		CellId,
+		SurfaceTemperature,
+		[this](const FSRPlanetSurfaceGridCellId& CandidateCellId, int32& OutIndex)
+		{
+			return GetCellIndex(CandidateCellId, OutIndex);
+		},
+		[this](const FSRPlanetSurfaceGridCell& Cell)
+		{
+			return BuildCellInfo(Cell);
+		},
+		[this](const FSRPlanetSurfaceGridCellId& CandidateCellId, FSRPlanetSurfaceGridCellInfo& OutCellInfo)
+		{
+			return GetStoredCellInfoById(CandidateCellId, OutCellInfo);
+		},
+		[this](const FSRPlanetSurfaceGridCellInfo& CellInfo)
+		{
+			StoreCellInfo(CellInfo);
+		});
 }
 
 bool USRPlanetSurfaceGrid::GetFootprintCellIds(
@@ -161,46 +139,16 @@ bool USRPlanetSurfaceGrid::GetFootprintCellIds(
 	int32 FootprintCellsY,
 	TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const
 {
-	OutCellIds.Reset();
-
-	const int32 SafeFootprintCellsX = FMath::Max(1, FootprintCellsX);
-	const int32 SafeFootprintCellsY = FMath::Max(1, FootprintCellsY);
-	const int32 SafeFaceResolution = FMath::Max(1, FaceResolution);
-	if (!OriginCellId.IsValid(SafeFaceResolution))
-	{
-		return false;
-	}
-
-	const int32 StartCellX = OriginCellId.CellX - (SafeFootprintCellsX / 2);
-	const int32 StartCellY = OriginCellId.CellY - (SafeFootprintCellsY / 2);
-	const int32 EndCellX = StartCellX + SafeFootprintCellsX - 1;
-	const int32 EndCellY = StartCellY + SafeFootprintCellsY - 1;
-	if (StartCellX < 0 || StartCellY < 0 || EndCellX >= SafeFaceResolution || EndCellY >= SafeFaceResolution)
-	{
-		return false;
-	}
-
-	OutCellIds.Reserve(SafeFootprintCellsX * SafeFootprintCellsY);
-	for (int32 CellY = StartCellY; CellY <= EndCellY; ++CellY)
-	{
-		for (int32 CellX = StartCellX; CellX <= EndCellX; ++CellX)
+	return SurfaceGridFootprint::BuildFootprintCellIds(
+		OriginCellId,
+		FootprintCellsX,
+		FootprintCellsY,
+		FaceResolution,
+		[this](const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex)
 		{
-			FSRPlanetSurfaceGridCellId FootprintCellId;
-			FootprintCellId.Face = OriginCellId.Face;
-			FootprintCellId.CellX = CellX;
-			FootprintCellId.CellY = CellY;
-			int32 FootprintCellIndex = INDEX_NONE;
-			if (!GetCellIndex(FootprintCellId, FootprintCellIndex))
-			{
-				OutCellIds.Reset();
-				return false;
-			}
-
-			OutCellIds.Add(FootprintCellId);
-		}
-	}
-
-	return !OutCellIds.IsEmpty();
+			return GetCellIndex(CellId, OutIndex);
+		},
+		OutCellIds);
 }
 
 bool USRPlanetSurfaceGrid::GetCellWorldTransform(const FSRPlanetSurfaceGridCellId& CellId, float HeightOffset, FTransform& OutTransform) const
@@ -212,41 +160,21 @@ bool USRPlanetSurfaceGrid::GetCellWorldTransform(const FSRPlanetSurfaceGridCellI
 		return false;
 	}
 
-	FVector LocalTangent = ((Cell.Corner10 + Cell.Corner11) - (Cell.Corner00 + Cell.Corner01)) * 0.5f;
-	if (LocalTangent.IsNearlyZero())
-	{
-		LocalTangent = FVector::CrossProduct(FVector::UpVector, Cell.LocalNormal);
-		if (LocalTangent.IsNearlyZero())
+	SurfaceGridCellPose::BuildCellWorldTransform(
+		Cell,
+		GetComponentTransform(),
+		bUsingGeneratedGridCells,
+		GridSurfaceOffset,
+		HeightOffset,
+		[this](const FVector& LocalUnitDirection, float SurfaceHeightOffset)
 		{
-			LocalTangent = FVector::ForwardVector;
-		}
-	}
-
-	const FVector LocalPosition = bUsingGeneratedGridCells
-		? Cell.LocalCenter + (Cell.LocalNormal.GetSafeNormal() * HeightOffset)
-		: ResolveLocalSurfacePoint(Cell.LocalNormal, HeightOffset);
-	const FVector WorldPosition = GetComponentTransform().TransformPosition(LocalPosition);
-	const FVector WorldCorner00 = bUsingGeneratedGridCells
-		? GetComponentTransform().TransformPosition(Cell.Corner00 + (Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset))
-		: ResolveWorldSurfacePoint(Cell.Corner00.GetSafeNormal(), GridSurfaceOffset);
-	const FVector WorldCorner10 = bUsingGeneratedGridCells
-		? GetComponentTransform().TransformPosition(Cell.Corner10 + (Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset))
-		: ResolveWorldSurfacePoint(Cell.Corner10.GetSafeNormal(), GridSurfaceOffset);
-	const FVector WorldCorner01 = bUsingGeneratedGridCells
-		? GetComponentTransform().TransformPosition(Cell.Corner01 + (Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset))
-		: ResolveWorldSurfacePoint(Cell.Corner01.GetSafeNormal(), GridSurfaceOffset);
-	const FVector DerivedWorldNormal = FVector::CrossProduct(WorldCorner10 - WorldCorner00, WorldCorner01 - WorldCorner00).GetSafeNormal();
-	const FVector WorldNormal = DerivedWorldNormal.IsNearlyZero()
-		? GetComponentTransform().TransformVectorNoScale(Cell.LocalNormal).GetSafeNormal()
-		: DerivedWorldNormal;
-	FVector WorldTangent = (WorldCorner10 - WorldCorner00).GetSafeNormal();
-	if (WorldTangent.IsNearlyZero())
-	{
-		WorldTangent = GetComponentTransform().TransformVectorNoScale(LocalTangent).GetSafeNormal();
-	}
-	const FQuat WorldRotation = FRotationMatrix::MakeFromXZ(WorldTangent, WorldNormal).ToQuat();
-
-	OutTransform = FTransform(WorldRotation, WorldPosition, FVector::OneVector);
+			return ResolveLocalSurfacePoint(LocalUnitDirection, SurfaceHeightOffset);
+		},
+		[this](const FVector& LocalUnitDirection, float SurfaceHeightOffset)
+		{
+			return ResolveWorldSurfacePoint(LocalUnitDirection, SurfaceHeightOffset);
+		},
+		OutTransform);
 	return true;
 }
 
@@ -262,200 +190,72 @@ bool USRPlanetSurfaceGrid::GetCellWorldCorners(const FSRPlanetSurfaceGridCellId&
 		return false;
 	}
 
-	if (bUsingGeneratedGridCells)
-	{
-		const FVector LocalOffset = Cell.LocalNormal.GetSafeNormal() * GridSurfaceOffset;
-		OutCorner00 = GetComponentTransform().TransformPosition(Cell.Corner00 + LocalOffset);
-		OutCorner10 = GetComponentTransform().TransformPosition(Cell.Corner10 + LocalOffset);
-		OutCorner11 = GetComponentTransform().TransformPosition(Cell.Corner11 + LocalOffset);
-		OutCorner01 = GetComponentTransform().TransformPosition(Cell.Corner01 + LocalOffset);
-		return true;
-	}
-
-	OutCorner00 = ResolveWorldSurfacePoint(Cell.Corner00.GetSafeNormal(), GridSurfaceOffset);
-	OutCorner10 = ResolveWorldSurfacePoint(Cell.Corner10.GetSafeNormal(), GridSurfaceOffset);
-	OutCorner11 = ResolveWorldSurfacePoint(Cell.Corner11.GetSafeNormal(), GridSurfaceOffset);
-	OutCorner01 = ResolveWorldSurfacePoint(Cell.Corner01.GetSafeNormal(), GridSurfaceOffset);
+	SurfaceGridCellPose::GetCellWorldCorners(
+		Cell,
+		GetComponentTransform(),
+		bUsingGeneratedGridCells,
+		GridSurfaceOffset,
+		[this](const FVector& LocalUnitDirection, float SurfaceHeightOffset)
+		{
+			return ResolveWorldSurfacePoint(LocalUnitDirection, SurfaceHeightOffset);
+		},
+		OutCorner00,
+		OutCorner10,
+		OutCorner11,
+		OutCorner01);
 	return true;
 }
 
 bool USRPlanetSurfaceGrid::ProjectWorldLocationToCell(const FVector& WorldLocation, FSRPlanetSurfaceGridCell& OutCell) const
 {
-	if (Cells.IsEmpty())
-	{
-		OutCell = FSRPlanetSurfaceGridCell();
-		return false;
-	}
-
-	const FVector LocalDirection = GetComponentTransform().InverseTransformPosition(WorldLocation).GetSafeNormal();
-	if (LocalDirection.IsNearlyZero())
-	{
-		OutCell = FSRPlanetSurfaceGridCell();
-		return false;
-	}
-
-	FSRPlanetSurfaceGridCellId CellId;
-	FVector2D UnusedFaceCoordinates = FVector2D::ZeroVector;
-	if (!USRPlanetSurfaceGridLibrary::ProjectDirectionToCubeSphereCellId(LocalDirection, FaceResolution, CellId, UnusedFaceCoordinates))
-	{
-		OutCell = FSRPlanetSurfaceGridCell();
-		return false;
-	}
-
-	return GetCellById(CellId, OutCell);
+	return SurfaceGridProjectionQuery::ProjectWorldLocationToCell(
+		Cells,
+		WorldLocation,
+		GetComponentTransform(),
+		FaceResolution,
+		[this](const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCell& FoundCell)
+		{
+			return GetCellById(CellId, FoundCell);
+		},
+		OutCell);
 }
 
 bool USRPlanetSurfaceGrid::GetCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32& OutIndex) const
 {
-	const int32 FlatIndex = GetFlatCellIndex(CellId);
-	if (CellIndexState.IndexByFlatId.IsValidIndex(FlatIndex))
-	{
-		OutIndex = CellIndexState.IndexByFlatId[FlatIndex];
-		return Cells.IsValidIndex(OutIndex);
-	}
-
-	if (const int32* FoundIndex = CellIndexState.IndexById.Find(CellId))
-	{
-		OutIndex = *FoundIndex;
-		return Cells.IsValidIndex(OutIndex);
-	}
-
-	OutIndex = INDEX_NONE;
-	return false;
+	return SurfaceGridCellIndex::GetCellIndex(CellIndexState, Cells, FaceResolution, CellId, OutIndex);
 }
 
 int32 USRPlanetSurfaceGrid::GetFlatCellIndex(const FSRPlanetSurfaceGridCellId& CellId) const
 {
-	if (!CellId.IsValid(FaceResolution))
-	{
-		return INDEX_NONE;
-	}
-
-	return ((static_cast<int32>(CellId.Face) * FaceResolution) + CellId.CellY) * FaceResolution + CellId.CellX;
+	return SurfaceGridCellIndex::GetFlatCellIndex(CellId, FaceResolution);
 }
 
 void USRPlanetSurfaceGrid::RebuildCellIndex()
 {
-	CellIndexState.IndexById.Reset();
-	CellIndexState.IndexByFlatId.Init(INDEX_NONE, 6 * FaceResolution * FaceResolution);
-
-	for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
-	{
-		const int32 FlatIndex = GetFlatCellIndex(Cells[CellIndex].CellId);
-		if (CellIndexState.IndexByFlatId.IsValidIndex(FlatIndex))
-		{
-			CellIndexState.IndexByFlatId[FlatIndex] = CellIndex;
-		}
-		else
-		{
-			CellIndexState.IndexById.Add(Cells[CellIndex].CellId, CellIndex);
-		}
-	}
+	SurfaceGridCellIndex::RebuildCellIndex(CellIndexState, Cells, FaceResolution);
 }
 
 FSRPlanetSurfaceGridCellInfo USRPlanetSurfaceGrid::BuildCellInfo(const FSRPlanetSurfaceGridCell& Cell) const
 {
-	FSRPlanetSurfaceGridCellInfo CellInfo;
-	CellInfo.CellId = Cell.CellId;
-	CellInfo.FaceResolution = FaceResolution;
-	CellInfo.FaceCellIndex = Cell.CellId.IsValid(FaceResolution)
-		? Cell.CellId.CellY * FaceResolution + Cell.CellId.CellX
-		: Cell.CellId.CellX;
-	CellInfo.DisplayCellX = Cell.CellId.CellX;
-	CellInfo.DisplayCellY = Cell.CellId.CellY;
-	if (Cell.CellId.Face == ESRCubeSphereFace::PositiveZ || Cell.CellId.Face == ESRCubeSphereFace::NegativeZ)
-	{
-		const int32 SafeFaceResolution = FMath::Max(1, FaceResolution);
-		CellInfo.DisplayCellX = SafeFaceResolution - 1 - Cell.CellId.CellX;
-		CellInfo.DisplayCellY = SafeFaceResolution - 1 - Cell.CellId.CellY;
-	}
-	CellInfo.DisplayCellIndex = Cell.CellId.IsValid(FaceResolution)
-		? CellInfo.DisplayCellY * FaceResolution + CellInfo.DisplayCellX
-		: CellInfo.DisplayCellX;
-	CellInfo.FaceUVMin = Cell.FaceUVMin;
-	CellInfo.FaceUVMax = Cell.FaceUVMax;
-	CellInfo.FaceUVCenter = (Cell.FaceUVMin + Cell.FaceUVMax) * 0.5f;
-	CellInfo.LocalCenter = Cell.LocalCenter;
-	CellInfo.LocalNormal = Cell.LocalNormal;
-	const FVector LatitudeDirection = Cell.LocalCenter.GetSafeNormal();
-	const FVector FallbackLatitudeDirection = LatitudeDirection.IsNearlyZero()
-		? Cell.LocalNormal.GetSafeNormal()
-		: LatitudeDirection;
-	const float LatitudeSin = static_cast<float>(FMath::Clamp(FallbackLatitudeDirection.Z, -1.0, 1.0));
-	CellInfo.LatitudeDegrees = FMath::RadiansToDegrees(FMath::Asin(LatitudeSin));
-	CellInfo.ApproxSurfaceArea = Cell.ApproxSurfaceArea;
-	CellInfo.Biome = Cell.Biome;
-	CellInfo.BiomeId = Cell.BiomeId;
-	CellInfo.WaterRole = Cell.WaterRole;
-	CellInfo.SurfaceTemperature = Cell.SurfaceTemperature;
-	CellInfo.TemperatureState = Cell.TemperatureState;
-	CellInfo.Neighbors = Cell.Neighbors;
-	CellInfo.bOccupied = Cell.bOccupied;
-	CellInfo.OccupantId = Cell.OccupantId;
-	CellInfo.bCanConstruct = !Cell.bOccupied;
-	return CellInfo;
+	return SurfaceGridCellIndex::BuildCellInfo(Cell, FaceResolution);
 }
 
 FSRPlanetSurfaceGridCellInfo USRPlanetSurfaceGrid::ResolveRuntimeCellInfo(const FSRPlanetSurfaceGridCellInfo& CellInfo) const
 {
-	FSRPlanetSurfaceGridCellInfo RuntimeCellInfo = CellInfo;
-	const FTransform& ComponentTransform = GetComponentTransform();
-	RuntimeCellInfo.WorldCenter = ComponentTransform.TransformPosition(CellInfo.LocalCenter);
-	RuntimeCellInfo.WorldNormal = ComponentTransform.TransformVectorNoScale(CellInfo.LocalNormal).GetSafeNormal();
-	if (RuntimeCellInfo.WorldNormal.IsNearlyZero())
-	{
-		RuntimeCellInfo.WorldNormal = FVector::UpVector;
-	}
-	return RuntimeCellInfo;
+	return SurfaceGridCellIndex::ResolveRuntimeCellInfo(CellInfo, GetComponentTransform());
 }
 
 void USRPlanetSurfaceGrid::RebuildCellInfoIndex()
 {
-	CellIndexState.InfoById.Reset();
-	CellIndexState.InfoByFlatId.Reset();
-	CellIndexState.InfoByFlatId.SetNum(6 * FaceResolution * FaceResolution);
-
-	int32 FaceCellCounts[6] = {};
-	for (const FSRPlanetSurfaceGridCell& Cell : Cells)
-	{
-		FSRPlanetSurfaceGridCellInfo CellInfo = BuildCellInfo(Cell);
-		int32& FaceCellCount = FaceCellCounts[static_cast<int32>(Cell.CellId.Face)];
-		CellInfo.FaceCellIndex = FaceCellCount;
-		++FaceCellCount;
-		StoreCellInfo(CellInfo);
-	}
+	SurfaceGridCellIndex::RebuildCellInfoIndex(CellIndexState, Cells, FaceResolution);
 }
 
 bool USRPlanetSurfaceGrid::GetStoredCellInfoById(const FSRPlanetSurfaceGridCellId& CellId, FSRPlanetSurfaceGridCellInfo& OutCellInfo) const
 {
-	const int32 FlatIndex = GetFlatCellIndex(CellId);
-	if (CellIndexState.InfoByFlatId.IsValidIndex(FlatIndex)
-		&& CellIndexState.IndexByFlatId.IsValidIndex(FlatIndex)
-		&& Cells.IsValidIndex(CellIndexState.IndexByFlatId[FlatIndex])
-		&& CellIndexState.InfoByFlatId[FlatIndex].CellId == CellId)
-	{
-		OutCellInfo = CellIndexState.InfoByFlatId[FlatIndex];
-		return true;
-	}
-
-	if (const FSRPlanetSurfaceGridCellInfo* FoundCellInfo = CellIndexState.InfoById.Find(CellId))
-	{
-		OutCellInfo = *FoundCellInfo;
-		return true;
-	}
-
-	return false;
+	return SurfaceGridCellIndex::GetStoredCellInfoById(CellIndexState, Cells, FaceResolution, CellId, OutCellInfo);
 }
 
 void USRPlanetSurfaceGrid::StoreCellInfo(const FSRPlanetSurfaceGridCellInfo& CellInfo)
 {
-	const int32 FlatIndex = GetFlatCellIndex(CellInfo.CellId);
-	if (CellIndexState.InfoByFlatId.IsValidIndex(FlatIndex))
-	{
-		CellIndexState.InfoByFlatId[FlatIndex] = CellInfo;
-	}
-	else
-	{
-		CellIndexState.InfoById.Add(CellInfo.CellId, CellInfo);
-	}
+	SurfaceGridCellIndex::StoreCellInfo(CellIndexState, FaceResolution, CellInfo);
 }

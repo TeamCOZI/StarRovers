@@ -43,7 +43,7 @@ class STARROVERS_API USRHubRouteDestinationAction : public UObject
 	GENERATED_BODY()
 
 public:
-	void Initialize(USRFacilityControlWidget* InOwnerWidget, const FSRHubEndpoint& InDestinationHub, UButton* InButton);
+	void Initialize(USRFacilityControlWidget* InOwnerWidget, const FSRSpaceLogisticsHubEndpoint& InDestinationHub, UButton* InButton);
 
 	UFUNCTION()
 	void HandleClicked();
@@ -55,7 +55,7 @@ private:
 	TObjectPtr<USRFacilityControlWidget> OwnerWidget;
 
 	UPROPERTY(Transient)
-	FSRHubEndpoint DestinationHub;
+	FSRSpaceLogisticsHubEndpoint DestinationHub;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> Button;
@@ -67,7 +67,7 @@ class STARROVERS_API USRHubRouteLaunchAction : public UObject
 	GENERATED_BODY()
 
 public:
-	void Initialize(USRFacilityControlWidget* InOwnerWidget, const FSRHubEndpoint& InDestinationHub, UButton* InButton);
+	void Initialize(USRFacilityControlWidget* InOwnerWidget, const FSRSpaceLogisticsHubEndpoint& InDestinationHub, UButton* InButton);
 
 	UFUNCTION()
 	void HandleClicked();
@@ -79,7 +79,7 @@ private:
 	TObjectPtr<USRFacilityControlWidget> OwnerWidget;
 
 	UPROPERTY(Transient)
-	FSRHubEndpoint DestinationHub;
+	FSRSpaceLogisticsHubEndpoint DestinationHub;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> Button;
@@ -191,10 +191,10 @@ public:
 	bool AddDebugInputResourceToPort(int32 InputPortIndex, FName ResourceId);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
-	bool CreateRouteToHubEndpoint(const FSRHubEndpoint& DestinationHub);
+	bool CreateRouteToHubEndpoint(const FSRSpaceLogisticsHubEndpoint& DestinationHub);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
-	bool SelectRouteDestinationHubEndpoint(const FSRHubEndpoint& DestinationHub);
+	bool SelectRouteDestinationHubEndpoint(const FSRSpaceLogisticsHubEndpoint& DestinationHub);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
 	bool LaunchDebugLocalOrbitRoute();
@@ -350,7 +350,7 @@ private:
 	FString LastHubRouteStatus;
 
 	UPROPERTY(Transient)
-	FSRHubEndpoint SelectedHubRouteDestination;
+	FSRSpaceLogisticsHubEndpoint SelectedHubRouteDestination;
 
 	bool bHasSelectedHubRouteDestination = false;
 };

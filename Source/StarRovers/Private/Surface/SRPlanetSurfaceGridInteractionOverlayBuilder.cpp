@@ -1,0 +1,141 @@
+#include "SRPlanetSurfaceGridInteractionOverlayBuilder.h"
+
+#include "DynamicMesh/DynamicMesh3.h"
+
+namespace
+{
+	bool HasAnyCells(const TArray<FSRPlanetSurfaceGridCellId>* CellIds)
+	{
+		return CellIds && !CellIds->IsEmpty();
+	}
+
+	void AppendPreviewCells(
+		UE::Geometry::FDynamicMesh3& OverlayMesh,
+		const TArray<FSRPlanetSurfaceGridCellId>* CellIds,
+		const FLinearColor& CellColor,
+		float LineThickness,
+		StarRovers::SurfaceGridInteractionOverlayBuilder::FCellLookup GetCellById,
+		StarRovers::SurfaceGridInteractionOverlayBuilder::FAppendInteractionCell AppendInteractionCell)
+	{
+		if (!CellIds)
+		{
+			return;
+		}
+
+		for (const FSRPlanetSurfaceGridCellId& CellId : *CellIds)
+		{
+			FSRPlanetSurfaceGridCell Cell;
+			if (GetCellById(CellId, Cell))
+			{
+				AppendInteractionCell(OverlayMesh, Cell, CellColor, LineThickness);
+			}
+		}
+	}
+}
+
+bool StarRovers::SurfaceGridInteractionOverlayBuilder::BuildInteractionOverlayMesh(
+	UE::Geometry::FDynamicMesh3& OverlayMesh,
+	const FSRInteractionOverlayBuildInput& Input,
+	FCellLookup GetCellById,
+	FAppendInteractionCell AppendInteractionCell,
+	FAppendInteractionRegion AppendInteractionRegion,
+	FAppendInteractionPatch AppendInteractionPatch)
+{
+	AppendPreviewCells(
+		OverlayMesh,
+		Input.OccupiedPreviewCellIds,
+		Input.OccupiedCellColor,
+		Input.DebugLineThickness * 2.5f,
+		GetCellById,
+		AppendInteractionCell);
+
+	if (Input.AreaSelectionCellIds)
+	{
+		AppendInteractionRegion(
+			OverlayMesh,
+			*Input.AreaSelectionCellIds,
+			Input.AreaSelectionCellColor,
+			Input.DebugLineThickness * 2.0f,
+			true);
+	}
+
+	FSRPlanetSurfaceGridCell SelectedCell;
+	if (Input.bHasSelectedCell && GetCellById(Input.SelectedCellId, SelectedCell) && Input.bIncludeCellHighlightOverlay)
+	{
+		AppendInteractionCell(OverlayMesh, SelectedCell, Input.SelectedCellColor, Input.DebugLineThickness * 2.5f);
+	}
+
+	if (Input.bHasHoveredCell)
+	{
+		FSRPlanetSurfaceGridCell HoveredCell;
+		if (GetCellById(Input.HoveredCellId, HoveredCell))
+		{
+			if (Input.bIncludeCellHighlightOverlay && (!Input.bHasSelectedCell || !(Input.HoveredCellId == Input.SelectedCellId)))
+			{
+				AppendInteractionCell(OverlayMesh, HoveredCell, Input.HoveredCellColor, Input.DebugLineThickness * 2.0f);
+			}
+		}
+
+		FSRPlanetSurfaceGridCell HoveredCellInfo;
+		if (GetCellById(Input.HoveredCellId, HoveredCellInfo) && HoveredCellInfo.bOccupied)
+		{
+			AppendInteractionCell(OverlayMesh, HoveredCellInfo, Input.OccupiedCellColor, Input.DebugLineThickness * 2.5f);
+		}
+	}
+
+	AppendPreviewCells(
+		OverlayMesh,
+		Input.InputPortPreviewCellIds,
+		Input.InputPortPreviewCellColor,
+		Input.DebugLineThickness * 3.0f,
+		GetCellById,
+		AppendInteractionCell);
+
+	AppendPreviewCells(
+		OverlayMesh,
+		Input.OutputPortPreviewCellIds,
+		Input.OutputPortPreviewCellColor,
+		Input.DebugLineThickness * 3.0f,
+		GetCellById,
+		AppendInteractionCell);
+
+	if (Input.DeletionPreviewCellIds)
+	{
+		AppendInteractionRegion(
+			OverlayMesh,
+			*Input.DeletionPreviewCellIds,
+			Input.DeletionPreviewCellColor,
+			Input.DebugLineThickness * 3.5f,
+			true);
+	}
+
+	AppendPreviewCells(
+		OverlayMesh,
+		Input.InvalidPreviewCellIds,
+		Input.InvalidPreviewCellColor,
+		Input.DebugLineThickness * 3.5f,
+		GetCellById,
+		AppendInteractionCell);
+
+	if (Input.bHasHoveredCell && Input.bHoveredInteractionGridPatchVisible)
+	{
+		TSet<uint64> PatchDrawnEdges;
+		PatchDrawnEdges.Reserve(320);
+		AppendInteractionPatch(
+			OverlayMesh,
+			Input.HoveredCellId,
+			Input.HoveredCellColor,
+			Input.DebugLineThickness * 1.5f,
+			PatchDrawnEdges);
+	}
+
+	return Input.bGridVisible
+		&& (Input.bHasHoveredCell
+			|| Input.bHasSelectedCell
+			|| HasAnyCells(Input.AreaSelectionCellIds)
+			|| HasAnyCells(Input.OccupiedPreviewCellIds)
+			|| HasAnyCells(Input.InputPortPreviewCellIds)
+			|| HasAnyCells(Input.OutputPortPreviewCellIds)
+			|| HasAnyCells(Input.DeletionPreviewCellIds)
+			|| HasAnyCells(Input.InvalidPreviewCellIds));
+}

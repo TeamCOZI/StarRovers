@@ -1,13 +1,13 @@
 #include "Simulation/SRSolarSystemGenerator.h"
 
-#include "Simulation/SRSolarSystemGeneratorInternal.h"
+#include "Simulation/SRSolarSystemGeneratorPipeline.h"
 
 #include "Celestial/SRMoonDataAsset.h"
 #include "Celestial/SRPlanetDataAsset.h"
 #include "Celestial/SRStarDataAsset.h"
 #include "Gravity/SRGravityParent.h"
 
-using namespace StarRoversSolarSystemGeneratorInternal;
+using namespace StarRovers::Simulation::SolarSystemGeneration;
 ASRCelestialBody* ASRSolarSystemGenerator::SpawnPrimaryStar(FRandomStream& RandomStream, const USRStarDataAsset*& OutSelectedStarDataAsset)
 {
 	OutSelectedStarDataAsset = nullptr;
@@ -138,8 +138,8 @@ bool ASRSolarSystemGenerator::TrySolvePackedOrbitRadii(ASRCelestialBody* ParentB
 	}
 	const float ParentGravityRadius = ParentGravityParent->GetGravityRadius();
 
-	TArray<FSROrbitInfo> OrbitInfos;
-	OrbitInfos.Reserve(CelestialBodyRequests.Num());
+	TArray<FSRSolarSystemOrbitLayoutEntry> OrbitLayoutEntries;
+	OrbitLayoutEntries.Reserve(CelestialBodyRequests.Num());
 
 	const bool bParentIsStar = ParentBody->GetBodyCategory() == ESRCelestialBodyCategory::Star;
 	const float InitialOrbit = bParentIsStar ? PlanetInitialOrbit : MoonInitialOrbit;
@@ -153,22 +153,22 @@ bool ASRSolarSystemGenerator::TrySolvePackedOrbitRadii(ASRCelestialBody* ParentB
 			return false;
 		}
 		const float GravityRadius = ComputeGravityRadiusFromCelestialBodyRequest(CelestialBodyRequests[BodyIndex]);
-		FSROrbitInfo& OrbitInfo = OrbitInfos.AddDefaulted_GetRef();
-		OrbitInfo.OrbitingBodyExtent = FMath::Max(BodyRadius, GravityRadius);
-		OrbitInfo.DesiredOrbitRadius = InitialOrbit + (OrbitIncrease * static_cast<float>(BodyIndex));
+		FSRSolarSystemOrbitLayoutEntry& OrbitLayoutEntry = OrbitLayoutEntries.AddDefaulted_GetRef();
+		OrbitLayoutEntry.OrbitingBodyClearanceRadius = FMath::Max(BodyRadius, GravityRadius);
+		OrbitLayoutEntry.DesiredOrbitRadius = InitialOrbit + (OrbitIncrease * static_cast<float>(BodyIndex));
 	}
 
-	OutOrbitRadii.SetNumUninitialized(OrbitInfos.Num());
+	OutOrbitRadii.SetNumUninitialized(OrbitLayoutEntries.Num());
 	float NextMinimumInnerEdge = ParentBodyRadius;
 	float RequiredParentGravityRadius = NextMinimumInnerEdge;
-	for (int32 BodyIndex = 0; BodyIndex < OrbitInfos.Num(); ++BodyIndex)
+	for (int32 BodyIndex = 0; BodyIndex < OrbitLayoutEntries.Num(); ++BodyIndex)
 	{
-		const FSROrbitInfo& OrbitInfo = OrbitInfos[BodyIndex];
-		const float MinimumCenterRadius = NextMinimumInnerEdge + OrbitInfo.OrbitingBodyExtent;
-		const float OrbitRadius = FMath::Max(OrbitInfo.DesiredOrbitRadius, MinimumCenterRadius);
+		const FSRSolarSystemOrbitLayoutEntry& OrbitLayoutEntry = OrbitLayoutEntries[BodyIndex];
+		const float MinimumCenterRadius = NextMinimumInnerEdge + OrbitLayoutEntry.OrbitingBodyClearanceRadius;
+		const float OrbitRadius = FMath::Max(OrbitLayoutEntry.DesiredOrbitRadius, MinimumCenterRadius);
 		OutOrbitRadii[BodyIndex] = OrbitRadius;
 
-		const float OuterEdge = OrbitRadius + OrbitInfo.OrbitingBodyExtent;
+		const float OuterEdge = OrbitRadius + OrbitLayoutEntry.OrbitingBodyClearanceRadius;
 		RequiredParentGravityRadius = OuterEdge;
 		NextMinimumInnerEdge = OuterEdge;
 	}
@@ -213,8 +213,8 @@ void ASRSolarSystemGenerator::EnsureParentGravityContainsOrbitingBody(ASRCelesti
 		return;
 	}
 	const float OrbitingBodyGravityRadius = OrbitingBodyGravityParent->GetGravityRadius();
-	const float OrbitingBodyExtent = FMath::Max(OrbitingBodyRadius, OrbitingBodyGravityRadius);
-	const float RequiredParentGravityRadius = OrbitRadius + OrbitingBodyExtent;
+	const float OrbitingBodyClearanceRadius = FMath::Max(OrbitingBodyRadius, OrbitingBodyGravityRadius);
+	const float RequiredParentGravityRadius = OrbitRadius + OrbitingBodyClearanceRadius;
 	if (ParentGravityRadius + KINDA_SMALL_NUMBER >= RequiredParentGravityRadius)
 	{
 		return;
@@ -280,6 +280,7 @@ void ASRSolarSystemGenerator::SpawnPlanets(ASRCelestialBody* ParentStar, const U
 		}
 
 		PlanetCelestialBodyRequest.BodyData.ParentBody = ParentStar;
+		PlanetCelestialBodyRequest.BodyData.OrbitPeriod = ResolvePlanetOrbitPeriod(PlanetIndex);
 		CandidatePlanetCelestialBodyRequests.Add(PlanetCelestialBodyRequest);
 	}
 
@@ -341,6 +342,7 @@ void ASRSolarSystemGenerator::SpawnMoons(ASRCelestialBody* ParentPlanet, FRandom
 		}
 
 		MoonCelestialBodyRequest.BodyData.ParentBody = ParentPlanet;
+		MoonCelestialBodyRequest.BodyData.OrbitPeriod = ResolveMoonOrbitPeriod(MoonIndex);
 		CandidateMoonCelestialBodyRequests.Add(MoonCelestialBodyRequest);
 	}
 

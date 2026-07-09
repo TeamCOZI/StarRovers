@@ -17,7 +17,6 @@ USRPlanetDataAsset::USRPlanetDataAsset()
 	DynamicMeshGeneration = FSRDynamicMeshGeneration();
 	DynamicMeshGeneration.bDynamicMeshGeneration = true;
 	DynamicMeshGeneration.DynamicMeshHeight = 120.0f;
-	OrbitPeriod = 1.0f;
 	Mass = 200.0f;
 	GravityRatio = 1.0f;
 	GravityRadiusRatio = 100.0f;
@@ -93,6 +92,5 @@ FSRCelestialBodyData USRPlanetDataAsset::BuildData() const
 	Result.AtmosphereMaterial = AtmosphereMaterial;
 	Result.AtmosphereScaleMultiplier = FMath::Max(0.01f, AtmosphereScaleMultiplier);
 	Result.SurfaceGridHeightOffset = FMath::Clamp(SurfaceGridHeightOffset, 0.0f, 1.0f);
-	Result.OrbitPeriod = FMath::Max(0.0f, OrbitPeriod);
 	return Result;
 }

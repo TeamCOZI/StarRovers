@@ -12,7 +12,7 @@
 #include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "UObject/ConstructorHelpers.h"
-#include "Visual/SRCelestialRingMeshComponent.h"
+#include "Rendering/SRCelestialRingMeshComponent.h"
 
 namespace
 {

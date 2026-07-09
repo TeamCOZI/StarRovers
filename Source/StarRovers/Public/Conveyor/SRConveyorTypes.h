@@ -110,7 +110,7 @@ struct STARROVERS_API FSRConveyorItem
 };
 
 USTRUCT(BlueprintType)
-struct STARROVERS_API FSRConveyorVisualPath
+struct STARROVERS_API FSRConveyorBeltPath
 {
 	GENERATED_BODY()
 

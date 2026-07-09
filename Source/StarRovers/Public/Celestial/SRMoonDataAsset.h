@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Celestial/SRCelestialBodyDataTypes.h"
+#include "Celestial/SRCelestialBodyData.h"
 #include "SRMoonDataAsset.generated.h"
 
 class UMaterialInterface;
@@ -50,9 +50,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Gravity", meta = (DisplayName = "GravityRadiusRatio", ClampMin = "0.0"))
 	float GravityRadiusRatio = 100.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Orbit", meta = (DisplayName = "OrbitPeriod", ClampMin = "0.0", ToolTip = "Orbit period measured in simulation periods. Zero disables orbit movement."))
-	float OrbitPeriod = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "SurfaceGridHeightOffset", ClampMin = "0.0"))
 	float SurfaceGridHeightOffset = 0.0f;

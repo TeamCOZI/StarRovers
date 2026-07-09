@@ -1,6 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
-#include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
+#include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 
 using namespace StarRovers::Celestial::DynamicMesh;
 

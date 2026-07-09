@@ -5,7 +5,7 @@
 #include "Surface/SRPlanetSurfaceGridRuntimeState.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "Surface/SRPlanetTerrainTypes.h"
-#include "Visual/SRLineThicknessUtils.h"
+#include "Rendering/SRScreenSpaceLineThickness.h"
 #include "SRPlanetSurfaceGrid.generated.h"
 
 namespace UE::Geometry
@@ -316,7 +316,30 @@ protected:
     FSRPlanetSurfaceGridInteractionBatchState InteractionBatch;
 
 private:
+    void InitializeSurfaceGridDefaults();
+    void ConfigureSurfaceGridComponentDefaults();
+    void ApplyDefaultGridOverlayMaterial();
+    void ApplyRegisteredGridOverlayMaterial();
+    void RebuildGridOnRegisterIfNeeded();
+    void RebuildGridIfVisible();
+    void MarkGridMeshDirtyAndRefreshIfVisible();
+    void RefreshInteractionIfGridVisible();
     bool RebuildCellsFromOwnerGeneratedGrid();
+    void RebuildDefaultSurfaceCells();
+    void ResetSurfaceInteractionState();
+    void FinalizeGridRebuild();
+    void ApplyGridVisibilityState();
+    bool ShouldShowInteractionOverlayForCurrentState() const;
+    void ClearInteractionStateForHiddenGrid();
+    void PrepareGridForVisibleState();
+    void EnsureAssemblyGridCellsReady();
+    void ApplyEmptyPrimaryGridMeshIfNeeded();
+    void ClearGeneratedGridBuildHighlights();
+    void AssignGeneratedGridBuildCells(TArray<FSRPlanetSurfaceGridCell>&& NewCells);
+    void ApplyGeneratedGridCellIndex(TArray<int32>&& NewCellIndexByFlatId);
+    void RebuildGeneratedGridCellInfoIndex();
+    void RebuildGeneratedGridRaycastIndex();
+    void FinalizeGeneratedGridBuildMesh();
     void EnsureInteractionOverlay();
     void RequestInteractionHighlightRefresh();
     void RefreshInteractionHighlight();
@@ -327,6 +350,16 @@ private:
     int32 GetFlatCellIndex(const FSRPlanetSurfaceGridCellId& CellId) const;
     void RebuildCellIndex();
     void RebuildRaycastIndex();
+    bool IsInteractionCellIdValid(const FSRPlanetSurfaceGridCellId& CellId) const;
+    bool SetFocusedInteractionCell(const FSRPlanetSurfaceGridCellId& CellId, bool& bHasCell, FSRPlanetSurfaceGridCellId& StoredCellId);
+    bool ClearFocusedInteractionCell(bool& bHasCell, FSRPlanetSurfaceGridCellId& StoredCellId);
+    bool SetInteractionPreviewCellIds(const TArray<FSRPlanetSurfaceGridCellId>& CellIds, TArray<FSRPlanetSurfaceGridCellId>& StoredCellIds);
+    bool ClearInteractionPreviewCellIds(TArray<FSRPlanetSurfaceGridCellId>& StoredCellIds);
+    bool SetInteractionPortPreviewCellIds(
+        const TArray<FSRPlanetSurfaceGridCellId>& InputConnectionCellIds,
+        const TArray<FSRPlanetSurfaceGridCellId>& OutputConnectionCellIds);
+    bool ClearInteractionPortPreviewCellIds();
+    void NotifyInteractionStateChanged();
     void UpdateDebugTickState();
     void AppendInteractionCell(UE::Geometry::FDynamicMesh3& OverlayMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness) const;
     void AppendInteractionCellRegionBoundary(UE::Geometry::FDynamicMesh3& OverlayMesh, const TArray<FSRPlanetSurfaceGridCellId>& CellIds, const FLinearColor& LineColor, float LineThickness, bool bIncludeFill, TSet<uint64>* SharedDrawnEdges = nullptr) const;
@@ -343,7 +376,7 @@ private:
     void AppendGridWireEdge(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FLinearColor& LineColor, float LineThickness) const;
     void AppendGridWireSegment(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalPointA, const FVector& LocalPointB, const FLinearColor& LineColor, float LineThickness) const;
     float GetEffectiveWorldRadius() const;
-    void DrawDebugSurfaceLine(const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FColor& LineColor, float Duration, float LineThickness, const FSRCameraInfo& CameraInfo, float ReferenceViewDepth, float ReferenceFieldOfViewDegrees) const;
+    void DrawDebugSurfaceLine(const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FColor& LineColor, float Duration, float LineThickness, const FSRScreenSpaceLineViewInfo& CameraInfo, float ReferenceViewDepth, float ReferenceFieldOfViewDegrees) const;
     FVector ResolveLocalSurfacePoint(const FVector& LocalUnitDirection, float HeightOffset = 0.0f) const;
     FVector ResolveWorldSurfacePoint(const FVector& LocalUnitDirection, float HeightOffset = 0.0f) const;
     float ComputeProceduralDynamicMeshHeight(FVector LocalUnitDirection) const;

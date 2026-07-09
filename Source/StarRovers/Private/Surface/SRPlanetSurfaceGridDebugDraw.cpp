@@ -3,10 +3,10 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "SceneManagement.h"
-#include "Surface/SRPlanetSurfaceGridVisualHelpers.h"
-#include "Visual/SRLineThicknessUtils.h"
+#include "Surface/SRPlanetSurfaceGridWireGeometry.h"
+#include "Rendering/SRScreenSpaceLineThickness.h"
 
-using namespace StarRovers::SurfaceGridVisual;
+using namespace StarRovers::SurfaceGridWireGeometry;
 
 void USRPlanetSurfaceGrid::DrawDebugGrid(float Duration) const
 {
@@ -20,12 +20,12 @@ void USRPlanetSurfaceGrid::DrawDebugGrid(float Duration) const
 	const FColor HoverLineColor = HoveredCellColor.ToFColor(true);
 	const FColor SelectedLineColor = SelectedCellColor.ToFColor(true);
 
-	FSRCameraInfo CameraInfo;
-	FSRLineThicknessUtils::TryBuildPrimaryCameraInfo(GetWorld(), CameraInfo);
+	FSRScreenSpaceLineViewInfo CameraInfo;
+	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(GetWorld(), CameraInfo);
 
-	float ReferenceViewDepth = FSRLineThicknessUtils::DefaultReferenceViewDepth;
-	float ReferenceFieldOfViewDegrees = FSRLineThicknessUtils::DefaultReferenceFieldOfViewDegrees;
-	FSRLineThicknessUtils::ResolveReferenceView(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
+	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
+	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
 
 	TSet<uint64> DrawnEdges;
 	DrawnEdges.Reserve(Cells.Num() * 2);
@@ -86,7 +86,7 @@ void USRPlanetSurfaceGrid::DrawDebugSurfaceLine(
 	const FColor& LineColor,
 	float Duration,
 	float LineThickness,
-	const FSRCameraInfo& CameraInfo,
+	const FSRScreenSpaceLineViewInfo& CameraInfo,
 	float ReferenceViewDepth,
 	float ReferenceFieldOfViewDegrees) const
 {
@@ -118,7 +118,7 @@ void USRPlanetSurfaceGrid::DrawDebugSurfaceLine(
 
 		const FVector CurrentPoint = ResolveWorldSurfacePoint(SampleDirection, EffectiveSurfaceOffset);
 		const FVector SegmentMidpoint = (PreviousPoint + CurrentPoint) * 0.5f;
-		const float ScreenSpaceThickness = FSRLineThicknessUtils::ComputeWorldThicknessAtLocation(
+		const float ScreenSpaceThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
 			CameraInfo,
 			SegmentMidpoint,
 			LineThickness,

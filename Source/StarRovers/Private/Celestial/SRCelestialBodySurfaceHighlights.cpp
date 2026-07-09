@@ -14,6 +14,198 @@ namespace
 		return (static_cast<uint64>(static_cast<uint32>(MeshComponentIndex)) << 32)
 			| static_cast<uint64>(static_cast<uint32>(ElementId));
 	}
+
+	FVector4f ToDynamicMeshVectorColor(const FLinearColor& Color)
+	{
+		return FVector4f(Color.R, Color.G, Color.B, Color.A);
+	}
+
+	FLinearColor BlendSurfaceHighlightColor(const FLinearColor& BaseColor, const FLinearColor& HighlightColor)
+	{
+		constexpr float HighlightIntensity = 0.45f;
+		return FLinearColor(
+			FMath::Clamp(BaseColor.R + (HighlightColor.R * HighlightIntensity), 0.0f, 1.0f),
+			FMath::Clamp(BaseColor.G + (HighlightColor.G * HighlightIntensity), 0.0f, 1.0f),
+			FMath::Clamp(BaseColor.B + (HighlightColor.B * HighlightIntensity), 0.0f, 1.0f),
+			BaseColor.A);
+	}
+
+	struct FSRCelestialBodySurfaceHighlightTargets
+	{
+		TMap<uint64, FLinearColor> TargetColorsByElement;
+		TMap<uint64, FLinearColor> BaseColorByElement;
+		TSet<uint64> HighlightedElements;
+		TMap<int32, TMap<int32, FLinearColor>> TargetColorsByMesh;
+		TMap<int32, TSet<int32>> HighlightedElementsByMesh;
+		TSet<int32> MeshIndicesToEdit;
+	};
+
+	template <typename ElementArrayType>
+	void AddSurfaceHighlightColorElements(
+		const ElementArrayType& Elements,
+		const FLinearColor& HighlightColor,
+		FSRCelestialBodySurfaceHighlightTargets& Targets)
+	{
+		for (const FSRCelestialBodyDynamicMeshColorElement& Element : Elements)
+		{
+			if (Element.MeshComponentIndex == INDEX_NONE || Element.ElementId == INDEX_NONE)
+			{
+				continue;
+			}
+
+			const uint64 ElementKey = BuildDynamicMeshColorElementKey(Element.MeshComponentIndex, Element.ElementId);
+			Targets.TargetColorsByElement.Add(ElementKey, BlendSurfaceHighlightColor(Element.BaseColor, HighlightColor));
+			Targets.BaseColorByElement.Add(ElementKey, Element.BaseColor);
+		}
+	}
+
+	void AddSurfaceHighlightCell(
+		const FSRCelestialBodyDynamicMeshCellColorData* CellColorData,
+		const FLinearColor& HighlightColor,
+		FSRCelestialBodySurfaceHighlightTargets& Targets)
+	{
+		if (!CellColorData)
+		{
+			return;
+		}
+
+		AddSurfaceHighlightColorElements(CellColorData->SurfaceColorElements, HighlightColor, Targets);
+		AddSurfaceHighlightColorElements(CellColorData->SideColorElements, HighlightColor, Targets);
+	}
+
+	bool HasSurfaceHighlightElementChange(
+		const TSet<uint64>& PreviousHighlightedElements,
+		const TSet<uint64>& NextHighlightedElements)
+	{
+		for (const uint64 PreviousElementKey : PreviousHighlightedElements)
+		{
+			if (!NextHighlightedElements.Contains(PreviousElementKey))
+			{
+				return true;
+			}
+		}
+		for (const uint64 NextElementKey : NextHighlightedElements)
+		{
+			if (!PreviousHighlightedElements.Contains(NextElementKey))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void FinalizeSurfaceHighlightTargets(
+		const TSet<uint64>& PreviousHighlightedElements,
+		FSRCelestialBodySurfaceHighlightTargets& Targets)
+	{
+		for (const TPair<uint64, FLinearColor>& TargetColorPair : Targets.TargetColorsByElement)
+		{
+			Targets.HighlightedElements.Add(TargetColorPair.Key);
+
+			const int32 MeshComponentIndex = static_cast<int32>(TargetColorPair.Key >> 32);
+			const int32 ElementId = static_cast<int32>(TargetColorPair.Key & 0xffffffff);
+			Targets.TargetColorsByMesh.FindOrAdd(MeshComponentIndex).Add(ElementId, TargetColorPair.Value);
+		}
+
+		for (const uint64 NextElementKey : Targets.HighlightedElements)
+		{
+			const int32 MeshComponentIndex = static_cast<int32>(NextElementKey >> 32);
+			const int32 ElementId = static_cast<int32>(NextElementKey & 0xffffffff);
+			Targets.HighlightedElementsByMesh.FindOrAdd(MeshComponentIndex).Add(ElementId);
+		}
+
+		for (const uint64 PreviousElementKey : PreviousHighlightedElements)
+		{
+			Targets.MeshIndicesToEdit.Add(static_cast<int32>(PreviousElementKey >> 32));
+		}
+		for (const uint64 NextElementKey : Targets.HighlightedElements)
+		{
+			Targets.MeshIndicesToEdit.Add(static_cast<int32>(NextElementKey >> 32));
+		}
+	}
+
+	void ApplySurfaceHighlightColorsToMesh(
+		UE::Geometry::FDynamicMesh3& Mesh,
+		int32 MeshComponentIndex,
+		const TSet<uint64>& PreviousHighlightedElements,
+		const TMap<uint64, FLinearColor>& PreviousBaseColorByElement,
+		const TMap<int32, FLinearColor>* MeshTargetColors,
+		const TSet<int32>* MeshNextHighlightedElements)
+	{
+		if (!Mesh.HasAttributes())
+		{
+			return;
+		}
+
+		auto* ColorOverlay = Mesh.Attributes()->PrimaryColors();
+		if (!ColorOverlay)
+		{
+			return;
+		}
+
+		for (const uint64 PreviousElementKey : PreviousHighlightedElements)
+		{
+			if (static_cast<int32>(PreviousElementKey >> 32) != MeshComponentIndex)
+			{
+				continue;
+			}
+
+			const int32 PreviousElementId = static_cast<int32>(PreviousElementKey & 0xffffffff);
+			if (MeshNextHighlightedElements && MeshNextHighlightedElements->Contains(PreviousElementId))
+			{
+				continue;
+			}
+
+			if (const FLinearColor* BaseColor = PreviousBaseColorByElement.Find(PreviousElementKey))
+			{
+				ColorOverlay->SetElement(PreviousElementId, ToDynamicMeshVectorColor(*BaseColor));
+			}
+		}
+
+		if (MeshTargetColors)
+		{
+			for (const TPair<int32, FLinearColor>& TargetColorPair : *MeshTargetColors)
+			{
+				ColorOverlay->SetElement(TargetColorPair.Key, ToDynamicMeshVectorColor(TargetColorPair.Value));
+			}
+		}
+	}
+
+	TMap<int32, TArray<uint64>> GroupSurfaceHighlightElementsByMesh(const TSet<uint64>& HighlightedElements)
+	{
+		TMap<int32, TArray<uint64>> HighlightedElementsByMesh;
+		for (const uint64 ElementKey : HighlightedElements)
+		{
+			HighlightedElementsByMesh.FindOrAdd(static_cast<int32>(ElementKey >> 32)).Add(ElementKey);
+		}
+		return HighlightedElementsByMesh;
+	}
+
+	void RestoreSurfaceHighlightColorsOnMesh(
+		UE::Geometry::FDynamicMesh3& Mesh,
+		const TArray<uint64>& HighlightedElements,
+		const TMap<uint64, FLinearColor>& BaseColorByElement)
+	{
+		if (!Mesh.HasAttributes())
+		{
+			return;
+		}
+
+		auto* ColorOverlay = Mesh.Attributes()->PrimaryColors();
+		if (!ColorOverlay)
+		{
+			return;
+		}
+
+		for (const uint64 ElementKey : HighlightedElements)
+		{
+			const int32 ElementId = static_cast<int32>(ElementKey & 0xffffffff);
+			if (const FLinearColor* BaseColor = BaseColorByElement.Find(ElementKey))
+			{
+				ColorOverlay->SetElement(ElementId, ToDynamicMeshVectorColor(*BaseColor));
+			}
+		}
+	}
 }
 
 bool ASRCelestialBody::HasSurfaceCellRenderData(const FSRPlanetSurfaceGridCellId& CellId) const
@@ -50,110 +242,29 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 		return false;
 	}
 
-	TMap<uint64, FLinearColor> TargetColorsByElement;
-	TMap<uint64, FLinearColor> NextHighlightedBaseColorByElement;
-	auto BlendHighlightColor = [](const FLinearColor& BaseColor, const FLinearColor& HighlightColor)
-	{
-		constexpr float HighlightIntensity = 0.45f;
-		return FLinearColor(
-			FMath::Clamp(BaseColor.R + (HighlightColor.R * HighlightIntensity), 0.0f, 1.0f),
-			FMath::Clamp(BaseColor.G + (HighlightColor.G * HighlightIntensity), 0.0f, 1.0f),
-			FMath::Clamp(BaseColor.B + (HighlightColor.B * HighlightIntensity), 0.0f, 1.0f),
-			BaseColor.A);
-	};
-	auto AddCellHighlight = [this, &TargetColorsByElement, &NextHighlightedBaseColorByElement, &BlendHighlightColor](const FSRPlanetSurfaceGridCellId& CellId, const FLinearColor& HighlightColor)
-	{
-		const FSRCelestialBodyDynamicMeshCellColorData* CellColorData = FindDynamicMeshCellColorData(CellId);
-		if (!CellColorData)
-		{
-			return;
-		}
-
-		auto AddElements = [&TargetColorsByElement, &NextHighlightedBaseColorByElement, &HighlightColor, &BlendHighlightColor](const auto& Elements)
-		{
-			for (const FSRCelestialBodyDynamicMeshColorElement& Element : Elements)
-			{
-				if (Element.MeshComponentIndex != INDEX_NONE && Element.ElementId != INDEX_NONE)
-				{
-					const uint64 ElementKey = BuildDynamicMeshColorElementKey(Element.MeshComponentIndex, Element.ElementId);
-					TargetColorsByElement.Add(
-						ElementKey,
-						BlendHighlightColor(Element.BaseColor, HighlightColor));
-					NextHighlightedBaseColorByElement.Add(ElementKey, Element.BaseColor);
-				}
-			}
-		};
-
-		AddElements(CellColorData->SurfaceColorElements);
-		AddElements(CellColorData->SideColorElements);
-	};
+	FSRCelestialBodySurfaceHighlightTargets HighlightTargets;
 
 	if (bHasHoveredCell)
 	{
-		AddCellHighlight(HoveredCellId, HoveredCellColor);
+		AddSurfaceHighlightCell(FindDynamicMeshCellColorData(HoveredCellId), HoveredCellColor, HighlightTargets);
 	}
 	if (bHasSelectedCell)
 	{
-		AddCellHighlight(SelectedCellId, SelectedCellColor);
+		AddSurfaceHighlightCell(FindDynamicMeshCellColorData(SelectedCellId), SelectedCellColor, HighlightTargets);
 	}
 
-	TSet<uint64> NextHighlightedElements;
-	for (const TPair<uint64, FLinearColor>& TargetColorPair : TargetColorsByElement)
-	{
-		NextHighlightedElements.Add(TargetColorPair.Key);
-	}
-	bool bHasAnyColorChange = false;
-	for (const uint64 PreviousElementKey : DynamicMeshState.HighlightedColorElements)
-	{
-		if (!NextHighlightedElements.Contains(PreviousElementKey))
-		{
-			bHasAnyColorChange = true;
-			break;
-		}
-	}
-	if (!bHasAnyColorChange)
-	{
-		for (const uint64 NextElementKey : NextHighlightedElements)
-		{
-			if (!DynamicMeshState.HighlightedColorElements.Contains(NextElementKey))
-			{
-				bHasAnyColorChange = true;
-				break;
-			}
-		}
-	}
-	if (!bHasAnyColorChange && NextHighlightedElements.IsEmpty())
+	FinalizeSurfaceHighlightTargets(DynamicMeshState.HighlightedColorElements, HighlightTargets);
+	const bool bHasAnyColorChange = HasSurfaceHighlightElementChange(
+		DynamicMeshState.HighlightedColorElements,
+		HighlightTargets.HighlightedElements);
+	if (!bHasAnyColorChange && HighlightTargets.HighlightedElements.IsEmpty())
 	{
 		return true;
 	}
 
-	TMap<int32, TMap<int32, FLinearColor>> TargetColorsByMesh;
-	for (const TPair<uint64, FLinearColor>& TargetColorPair : TargetColorsByElement)
-	{
-		const int32 MeshComponentIndex = static_cast<int32>(TargetColorPair.Key >> 32);
-		const int32 ElementId = static_cast<int32>(TargetColorPair.Key & 0xffffffff);
-		TargetColorsByMesh.FindOrAdd(MeshComponentIndex).Add(ElementId, TargetColorPair.Value);
-	}
-
-	TMap<int32, TSet<int32>> NextHighlightedElementsByMesh;
-	for (const uint64 NextElementKey : NextHighlightedElements)
-	{
-		const int32 MeshComponentIndex = static_cast<int32>(NextElementKey >> 32);
-		const int32 ElementId = static_cast<int32>(NextElementKey & 0xffffffff);
-		NextHighlightedElementsByMesh.FindOrAdd(MeshComponentIndex).Add(ElementId);
-	}
-
-	TSet<int32> MeshIndicesToEdit;
-	for (const uint64 PreviousElementKey : DynamicMeshState.HighlightedColorElements)
-	{
-		MeshIndicesToEdit.Add(static_cast<int32>(PreviousElementKey >> 32));
-	}
-	for (const uint64 NextElementKey : NextHighlightedElements)
-	{
-		MeshIndicesToEdit.Add(static_cast<int32>(NextElementKey >> 32));
-	}
-
-	for (const int32 MeshComponentIndex : MeshIndicesToEdit)
+	const TSet<uint64>& PreviousHighlightedElements = DynamicMeshState.HighlightedColorElements;
+	const TMap<uint64, FLinearColor>& PreviousBaseColorByElement = DynamicMeshState.HighlightedBaseColorByElement;
+	for (const int32 MeshComponentIndex : HighlightTargets.MeshIndicesToEdit)
 	{
 		UDynamicMeshComponent* DynamicMeshComponent = GetDynamicMeshFaceComponent(MeshComponentIndex);
 		if (!IsValid(DynamicMeshComponent))
@@ -167,60 +278,27 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 			continue;
 		}
 
-		const TMap<int32, FLinearColor>* MeshTargetColors = TargetColorsByMesh.Find(MeshComponentIndex);
-		const TSet<int32>* MeshNextHighlightedElements = NextHighlightedElementsByMesh.Find(MeshComponentIndex);
+		const TMap<int32, FLinearColor>* MeshTargetColors = HighlightTargets.TargetColorsByMesh.Find(MeshComponentIndex);
+		const TSet<int32>* MeshNextHighlightedElements = HighlightTargets.HighlightedElementsByMesh.Find(MeshComponentIndex);
 		DynamicMeshObject->EditMesh(
-			[this, MeshComponentIndex, MeshTargetColors, MeshNextHighlightedElements](UE::Geometry::FDynamicMesh3& Mesh)
+			[MeshComponentIndex, MeshTargetColors, MeshNextHighlightedElements, &PreviousHighlightedElements, &PreviousBaseColorByElement](UE::Geometry::FDynamicMesh3& Mesh)
 			{
-				if (!Mesh.HasAttributes())
-				{
-					return;
-				}
-
-				auto* ColorOverlay = Mesh.Attributes()->PrimaryColors();
-				auto ToVectorColor = [](const FLinearColor& Color)
-				{
-					return FVector4f(Color.R, Color.G, Color.B, Color.A);
-				};
-
-				if (ColorOverlay)
-				{
-					for (const uint64 PreviousElementKey : DynamicMeshState.HighlightedColorElements)
-					{
-						if (static_cast<int32>(PreviousElementKey >> 32) != MeshComponentIndex)
-						{
-							continue;
-						}
-
-						const int32 PreviousElementId = static_cast<int32>(PreviousElementKey & 0xffffffff);
-						if (MeshNextHighlightedElements && MeshNextHighlightedElements->Contains(PreviousElementId))
-						{
-							continue;
-						}
-
-						if (const FLinearColor* BaseColor = DynamicMeshState.HighlightedBaseColorByElement.Find(PreviousElementKey))
-						{
-							ColorOverlay->SetElement(PreviousElementId, ToVectorColor(*BaseColor));
-						}
-					}
-
-					if (MeshTargetColors)
-					{
-						for (const TPair<int32, FLinearColor>& TargetColorPair : *MeshTargetColors)
-						{
-							ColorOverlay->SetElement(TargetColorPair.Key, ToVectorColor(TargetColorPair.Value));
-						}
-					}
-				}
+				ApplySurfaceHighlightColorsToMesh(
+					Mesh,
+					MeshComponentIndex,
+					PreviousHighlightedElements,
+					PreviousBaseColorByElement,
+					MeshTargetColors,
+					MeshNextHighlightedElements);
 			},
 			EDynamicMeshChangeType::DeformationEdit,
 			EDynamicMeshAttributeChangeFlags::VertexColors,
 			false);
 	}
 
-	DynamicMeshState.HighlightedColorElements = MoveTemp(NextHighlightedElements);
-	DynamicMeshState.HighlightedBaseColorByElement = MoveTemp(NextHighlightedBaseColorByElement);
-	return !TargetColorsByElement.IsEmpty() || bHasAnyColorChange;
+	DynamicMeshState.HighlightedColorElements = MoveTemp(HighlightTargets.HighlightedElements);
+	DynamicMeshState.HighlightedBaseColorByElement = MoveTemp(HighlightTargets.BaseColorByElement);
+	return !HighlightTargets.TargetColorsByElement.IsEmpty() || bHasAnyColorChange;
 }
 
 void ASRCelestialBody::ClearSurfaceCellHighlights()
@@ -232,11 +310,8 @@ void ASRCelestialBody::ClearSurfaceCellHighlights()
 		return;
 	}
 
-	TMap<int32, TArray<uint64>> HighlightedElementsByMesh;
-	for (const uint64 ElementKey : DynamicMeshState.HighlightedColorElements)
-	{
-		HighlightedElementsByMesh.FindOrAdd(static_cast<int32>(ElementKey >> 32)).Add(ElementKey);
-	}
+	TMap<int32, TArray<uint64>> HighlightedElementsByMesh = GroupSurfaceHighlightElementsByMesh(DynamicMeshState.HighlightedColorElements);
+	const TMap<uint64, FLinearColor>& HighlightedBaseColorByElement = DynamicMeshState.HighlightedBaseColorByElement;
 
 	for (const TPair<int32, TArray<uint64>>& HighlightedMeshPair : HighlightedElementsByMesh)
 	{
@@ -254,25 +329,9 @@ void ASRCelestialBody::ClearSurfaceCellHighlights()
 
 		const TArray<uint64>& MeshHighlightedElements = HighlightedMeshPair.Value;
 		DynamicMeshObject->EditMesh(
-			[this, &MeshHighlightedElements](UE::Geometry::FDynamicMesh3& Mesh)
+			[&MeshHighlightedElements, &HighlightedBaseColorByElement](UE::Geometry::FDynamicMesh3& Mesh)
 			{
-				if (!Mesh.HasAttributes())
-				{
-					return;
-				}
-
-				auto* ColorOverlay = Mesh.Attributes()->PrimaryColors();
-				if (ColorOverlay)
-				{
-					for (const uint64 ElementKey : MeshHighlightedElements)
-					{
-						const int32 ElementId = static_cast<int32>(ElementKey & 0xffffffff);
-						if (const FLinearColor* BaseColor = DynamicMeshState.HighlightedBaseColorByElement.Find(ElementKey))
-						{
-							ColorOverlay->SetElement(ElementId, FVector4f(BaseColor->R, BaseColor->G, BaseColor->B, BaseColor->A));
-						}
-					}
-				}
+				RestoreSurfaceHighlightColorsOnMesh(Mesh, MeshHighlightedElements, HighlightedBaseColorByElement);
 			},
 			EDynamicMeshChangeType::DeformationEdit,
 			EDynamicMeshAttributeChangeFlags::VertexColors,

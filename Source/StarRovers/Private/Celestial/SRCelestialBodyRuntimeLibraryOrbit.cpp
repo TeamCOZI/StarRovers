@@ -1,6 +1,6 @@
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 
-#include "SRCelestialBodyRuntimeLibraryInternal.h"
+#include "SRCelestialBodyRuntimeLibraryReflection.h"
 
 #include "Celestial/SRCelestialBody.h"
 #include "GameFramework/Actor.h"

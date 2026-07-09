@@ -4,7 +4,7 @@
 #include "Components/DynamicMeshComponent.h"
 #include "GameFramework/Actor.h"
 #include "Celestial/SRCelestialBodyCategory.h"
-#include "Celestial/SRCelestialBodyDataTypes.h"
+#include "Celestial/SRCelestialBodyData.h"
 #include "Celestial/SRCelestialBodyDynamicMeshTypes.h"
 #include "Simulation/SRNaturalStructureSpawnTypes.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
@@ -24,7 +24,6 @@ class USphereComponent;
 class USROrbit;
 class UStaticMesh;
 class UStaticMeshComponent;
-class UMeshComponent;
 class UPrimitiveComponent;
 class USRGravityParent;
 class USRCelestialRingMeshComponent;
@@ -184,9 +183,23 @@ protected:
 	bool ApplyToonOutlineToPrimitive(UPrimitiveComponent* PrimitiveComponent, bool bEnableToonOutline) const;
 
 private:
+	void InitializeCelestialBodyComponents();
+	void InitializeDynamicMeshComponents();
+	void InitializeGravityComponents();
+	void InitializeCelestialBodyDefaults();
+	void CopyBodyDataFields(const FSRCelestialBodyData& NewData);
+	void ApplyTerrainProfileData();
+	bool ShouldAutoApplyDataAfterSet() const;
+	void SanitizeBodyRuntimeValues();
+	void ApplyBodyMeshTransforms();
+	void UpdateDynamicMeshBuildStateForCurrentData();
+	bool ShouldBuildDynamicMeshForCurrentWorld() const;
+	void ApplyClickCollisionForCurrentBody();
+	FSRCelestialBodyData BuildBodyDataSnapshot() const;
 	void ApplyGravityLineSettings();
-	void EnsureCelestialBodyDynamicMeshVisuals(bool bBuildDynamicMesh);
-	bool BuildDynamicMeshFromBaseMetadata(uint32 DynamicMeshBuildHash, double TotalStart);
+	void EnsureCelestialBodyMeshRendering(bool bBuildDynamicMesh);
+	bool ApplyCelestialBodyMeshMaterials();
+	bool BuildDynamicMeshFromStaticMeshFallback(uint32 DynamicMeshBuildHash, double TotalStart);
 	bool BuildCelestialBodyDynamicMesh();
 	UDynamicMeshComponent* GetDynamicMeshFaceComponent(int32 FaceIndex) const;
 	void SyncDynamicMeshFaceComponentSettings();

@@ -1,4 +1,4 @@
-#include "Celestial/SRCelestialBodyDynamicMeshInternal.h"
+#include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 
 #include "HAL/CriticalSection.h"
 #include "Utility/SRTimingLog.h"
@@ -15,11 +15,11 @@ uint32 HashSourcePosition(const FVector& Position)
 	return HashCombine(HashCombine(::GetTypeHash(QuantizedX), ::GetTypeHash(QuantizedY)), ::GetTypeHash(QuantizedZ));
 }
 
-TSharedRef<const FSRCelestialBodyBaseSourceMetadataCacheEntry> BuildBaseSourceMetadataCacheEntry(
+TSharedRef<const FSRCelestialBodyDynamicMeshBaseSourceMetadataCacheEntry> BuildDynamicMeshBaseSourceMetadataCacheEntry(
 	int32 FaceResolution,
 	const TArray<FSRPlanetSurfaceGridCell>& BaseCells)
 {
-	TSharedRef<FSRCelestialBodyBaseSourceMetadataCacheEntry> CacheEntry = MakeShared<FSRCelestialBodyBaseSourceMetadataCacheEntry>();
+	TSharedRef<FSRCelestialBodyDynamicMeshBaseSourceMetadataCacheEntry> CacheEntry = MakeShared<FSRCelestialBodyDynamicMeshBaseSourceMetadataCacheEntry>();
 	CacheEntry->FaceResolution = FaceResolution;
 	CacheEntry->Cells.Reserve(BaseCells.Num());
 
@@ -35,21 +35,21 @@ TSharedRef<const FSRCelestialBodyBaseSourceMetadataCacheEntry> BuildBaseSourceMe
 	return CacheEntry;
 }
 
-const FSRCelestialBodyBaseSourceMetadataCacheEntry& GetBaseSourceMetadataCacheEntry(
+const FSRCelestialBodyDynamicMeshBaseSourceMetadataCacheEntry& GetDynamicMeshBaseSourceMetadataCacheEntry(
 	int32 FaceResolution,
 	const TArray<FSRPlanetSurfaceGridCell>& BaseCells)
 {
-	static TMap<int32, TSharedPtr<const FSRCelestialBodyBaseSourceMetadataCacheEntry>> CacheByResolution;
+	static TMap<int32, TSharedPtr<const FSRCelestialBodyDynamicMeshBaseSourceMetadataCacheEntry>> CacheByResolution;
 	static FCriticalSection CacheCriticalSection;
 
-	const double LockStart = SRCelestialNowSeconds();
+	const double LockStart = GetDynamicMeshTimingSeconds();
 	CacheCriticalSection.Lock();
-	const double LockWaitMs = SRCelestialElapsedMilliseconds(LockStart);
-	if (const TSharedPtr<const FSRCelestialBodyBaseSourceMetadataCacheEntry>* CachedEntry = CacheByResolution.Find(FaceResolution))
+	const double LockWaitMs = GetDynamicMeshTimingElapsedMilliseconds(LockStart);
+	if (const TSharedPtr<const FSRCelestialBodyDynamicMeshBaseSourceMetadataCacheEntry>* CachedEntry = CacheByResolution.Find(FaceResolution))
 	{
 		if (CachedEntry->IsValid())
 		{
-			const FSRCelestialBodyBaseSourceMetadataCacheEntry* Result = CachedEntry->Get();
+			const FSRCelestialBodyDynamicMeshBaseSourceMetadataCacheEntry* Result = CachedEntry->Get();
 			CacheCriticalSection.Unlock();
 			if (LockWaitMs > 1.0)
 			{
@@ -62,10 +62,10 @@ const FSRCelestialBodyBaseSourceMetadataCacheEntry& GetBaseSourceMetadataCacheEn
 		}
 	}
 
-	const double BuildStart = SRCelestialNowSeconds();
-	const TSharedRef<const FSRCelestialBodyBaseSourceMetadataCacheEntry> NewEntry =
-		BuildBaseSourceMetadataCacheEntry(FaceResolution, BaseCells);
-	const double BuildMs = SRCelestialElapsedMilliseconds(BuildStart);
+	const double BuildStart = GetDynamicMeshTimingSeconds();
+	const TSharedRef<const FSRCelestialBodyDynamicMeshBaseSourceMetadataCacheEntry> NewEntry =
+		BuildDynamicMeshBaseSourceMetadataCacheEntry(FaceResolution, BaseCells);
+	const double BuildMs = GetDynamicMeshTimingElapsedMilliseconds(BuildStart);
 	CacheByResolution.Add(FaceResolution, NewEntry);
 	CacheCriticalSection.Unlock();
 	FSRTimingLog::AddLine(FString::Printf(

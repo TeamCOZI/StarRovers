@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Automation/SRFacilityNetworkRuntimeState.h"
-#include "Automation/SRFacilityRuntimeTypes.h"
+#include "Automation/SRFacilityRuntimeData.h"
 #include "Components/SceneComponent.h"
 #include "SRFacilityNetworkComponent.generated.h"
 
@@ -163,61 +163,10 @@ private:
 
 	void BindToTimeControlSubsystem();
 	void UnbindFromTimeControlSubsystem();
-	int32 ApplyGameCycleToResources();
-	int32 ApplyGameCycleToInventory(TArray<FSRResourceInstance>& Inventory);
-	void InitializeFacilityPortInventories(FSRFacilityInstance& FacilityInstance);
-	void RefreshFacilityAggregateInventories(FSRFacilityInstance& FacilityInstance) const;
-	bool GatherPendingInputResources(const FSRFacilityInstance& FacilityInstance, TArray<FSRResourceInstance>& OutInputResources) const;
-	bool CanStoreOutputResources(const FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& OutputResources) const;
-	void StoreOutputResources(FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& OutputResources);
-	FSRFacilityPortInventory* FindInputPortInventoryForDirectAdd(FSRFacilityInstance& FacilityInstance, const FSRResourceInstance& ResourceInstance, int32 PreferredPortIndex = INDEX_NONE);
 
 	int32 ProcessFacilities(float DeltaTime);
-	FSRFacilityPortInventory* FindConnectedInputPortInventory(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		FSRFacilityInstance& FacilityInstance,
-		const FSRPlanetSurfaceGridCellId& ConveyorCellId,
-		const FSRResourceInstance& ResourceInstance);
-	FSRFacilityPortInventory* FindConnectedOutputPortInventory(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		FSRFacilityInstance& FacilityInstance,
-		const FSRPlanetSurfaceGridCellId& ConveyorCellId);
-	bool IsConveyorCellConnectedToPortInventory(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRFacilityInstance& FacilityInstance,
-		const FSRFacilityPortInventory& PortInventory,
-		const FSRPlanetSurfaceGridCellId& ConveyorCellId) const;
-	bool IsConveyorCellConnectedToFacilityPort(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRFacilityInstance& FacilityInstance,
-		const FSRPlanetSurfaceGridCellId& ConveyorCellId,
-		ESRFacilityPortKind PortKind) const;
-	bool IsConveyorCellConnectedToExplicitPort(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRFacilityInstance& FacilityInstance,
-		const FSRStructurePortSpec& PortSpec,
-		const FSRPlanetSurfaceGridCellId& ConveyorCellId) const;
-	bool GetNeighborCellIds(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRPlanetSurfaceGridCellId& CellId,
-		TArray<FSRPlanetSurfaceGridCellId>& OutNeighborCellIds) const;
-	bool CanFacilityRun(const FSRFacilityInstance& FacilityInstance) const;
-	bool CanMiningFacilityRun(const FSRFacilityInstance& FacilityInstance) const;
-	bool FindMiningTargetDeposit(const FSRFacilityInstance& FacilityInstance, FSRResourceDepositInstance& OutResourceDeposit) const;
-	bool TryCompleteMining(FSRFacilityInstance& FacilityInstance);
-	bool CanFacilityAdvanceProcessing(const FSRFacilityInstance& FacilityInstance) const;
-	int32 CountProducedOutputResources(const USRFacilityDataAsset* FacilityDataAsset) const;
-	int32 ResolvePrimaryOutputCount(const FSRFacilityInstance& FacilityInstance) const;
-	int32 ResolveRequiredOutputSlots(const FSRFacilityInstance& FacilityInstance) const;
-	void BuildFacilityOutputResources(const FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& InputResources, TArray<FSRResourceInstance>& OutOutputResources) const;
-	float ResolveProcessSeconds(const FSRFacilityInstance& FacilityInstance) const;
 	bool TryStartProcessing(FSRFacilityInstance& FacilityInstance);
 	bool TryCompleteProcessing(FSRFacilityInstance& FacilityInstance);
-	FSRResourceInstance BuildBaseOutputResource(const FSRFacilityInstance& FacilityInstance, const TArray<FSRResourceInstance>& ConsumedResources) const;
-	void ApplyFacilityEffects(const USRFacilityDataAsset* FacilityDataAsset, FSRResourceInstance& ResourceInstance, TArray<FSRResourceInstance>& OutAdditionalOutputs) const;
-	int32 ApplyFacilityCellTemperatureEffects(const FSRFacilityInstance& FacilityInstance);
-	void AddTagStack(FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag, int32 Count) const;
-	void RemoveTagStack(FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag, int32 Count) const;
 
 	UPROPERTY(Transient)
 	FSRFacilityNetworkRuntimeState RuntimeState;

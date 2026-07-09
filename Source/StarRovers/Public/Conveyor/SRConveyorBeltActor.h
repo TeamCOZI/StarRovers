@@ -26,18 +26,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
 	bool InitializeConveyorPath(
 		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRConveyorVisualPath& VisualPath,
+		const FSRConveyorBeltPath& BeltPath,
 		FName SplineComponentTag,
 		float SurfaceOffset);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor")
 	bool InitializeConveyorPaths(
 		USRPlanetSurfaceGrid* SurfaceGrid,
-		const TArray<FSRConveyorVisualPath>& VisualPaths,
+		const TArray<FSRConveyorBeltPath>& BeltPaths,
 		FName SplineComponentTag,
 		float SurfaceOffset);
 
-	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor|Visual")
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Conveyor|Rendering")
 	void SetConveyorGhostMode(bool bNewGhostMode, UMaterialInterface* InGhostMaterial);
 
 	bool IsConveyorGhostGenerationPending() const;
@@ -52,11 +52,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "PCGBoundsComponent"))
 	TObjectPtr<UBoxComponent> PCGBoundsComponent;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorVisualPath"))
-	FSRConveyorVisualPath ConveyorVisualPath;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorBeltPath"))
+	FSRConveyorBeltPath ConveyorBeltPath;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorVisualPaths"))
-	TArray<FSRConveyorVisualPath> ConveyorVisualPaths;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor", meta = (DisplayName = "ConveyorBeltPaths"))
+	TArray<FSRConveyorBeltPath> ConveyorBeltPaths;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|PCG", meta = (DisplayName = "bAutoGeneratePCG"))
 	bool bAutoGeneratePCG;
@@ -70,7 +70,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor|PCG", meta = (DisplayName = "ConveyorSurfaceOffset"))
 	float ConveyorSurfaceOffset;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor|Visual", meta = (DisplayName = "bConveyorGhostMode"))
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Conveyor|Rendering", meta = (DisplayName = "bConveyorGhostMode"))
 	bool bConveyorGhostMode;
 
 	UPROPERTY(Transient)
@@ -86,7 +86,7 @@ private:
 	void ClearUnusedConveyorSplineComponents(int32 FirstUnusedSplineIndex);
 	bool BuildConveyorPathPoints(
 		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRConveyorVisualPath& VisualPath,
+		const FSRConveyorBeltPath& BeltPath,
 		TArray<FVector>& OutWorldPoints,
 		TArray<FVector>& OutWorldNormals) const;
 	void UpdatePCGBoundsFromWorldBounds(const FBox& WorldBounds);

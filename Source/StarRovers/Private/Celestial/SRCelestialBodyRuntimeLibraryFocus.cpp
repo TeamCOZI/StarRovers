@@ -1,6 +1,6 @@
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 
-#include "SRCelestialBodyRuntimeLibraryInternal.h"
+#include "SRCelestialBodyRuntimeLibraryReflection.h"
 
 #include "Celestial/SRCelestialBody.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
@@ -238,15 +238,21 @@ FSRCelestialBodyFocusInfo USRCelestialBodyRuntimeLibrary::BuildCelestialBodyFocu
 		const FSRStellarFuelState FuelState = Star->GetStellarFuelState();
 		FocusInfo.bHasStarFuelInfo = true;
 		FocusInfo.StarFuelInfo.bIsValid = true;
+		FocusInfo.StarFuelInfo.EvolutionStage = FuelState.EvolutionStage;
 		FocusInfo.StarFuelInfo.StoredFuel = FuelState.StoredFuel;
+		FocusInfo.StarFuelInfo.InitialStageFuel = FuelState.InitialStageFuel;
+		FocusInfo.StarFuelInfo.InitialFuelDecreasePerSecond = FuelState.InitialFuelDecreasePerSecond;
 		FocusInfo.StarFuelInfo.RequiredFuelPerCycle = FuelState.RequiredFuelPerCycle;
 		FocusInfo.StarFuelInfo.RequirementGrowthPerCycle = FuelState.RequirementGrowthPerCycle;
+		FocusInfo.StarFuelInfo.LastFuelDecreaseRateCycleIndex = FuelState.LastFuelDecreaseRateCycleIndex;
 		FocusInfo.StarFuelInfo.RedGiantPressure = FuelState.RedGiantPressure;
 		FocusInfo.StarFuelInfo.RedGiantPressurePerMissingFuel = FuelState.RedGiantPressurePerMissingFuel;
-		FocusInfo.StarFuelInfo.LastSettledCycleIndex = FuelState.LastSettledCycleIndex;
-		FocusInfo.StarFuelInfo.LastCycleFuelConsumed = FuelState.LastCycleFuelConsumed;
-		FocusInfo.StarFuelInfo.LastCycleFuelDeficit = FuelState.LastCycleFuelDeficit;
-		FocusInfo.StarFuelInfo.bLastCycleMetRequirement = FuelState.bLastCycleMetRequirement;
+		FocusInfo.StarFuelInfo.LastSettledSecondIndex = FuelState.LastSettledSecondIndex;
+		FocusInfo.StarFuelInfo.LastSecondFuelConsumed = FuelState.LastSecondFuelConsumed;
+		FocusInfo.StarFuelInfo.LastSecondFuelDecrease = FuelState.LastSecondFuelDecrease;
+		FocusInfo.StarFuelInfo.LastSecondFuelDeficit = FuelState.LastSecondFuelDeficit;
+		FocusInfo.StarFuelInfo.bLastSecondSurvived = FuelState.bLastSecondSurvived;
+		FocusInfo.StarFuelInfo.bSupernovaGameOver = FuelState.bSupernovaGameOver;
 	}
 	if (USRPlanetSurfaceGrid* SurfaceGrid = FindPlanetSurfaceGrid(Actor))
 	{

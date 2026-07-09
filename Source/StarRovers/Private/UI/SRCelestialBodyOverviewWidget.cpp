@@ -111,7 +111,7 @@ void USRCelestialBodyOverviewWidget::NativeTick(const FGeometry& MyGeometry,
 FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
-	if (IsScreenPositionOverOverviewUi(ScreenPosition))
+	if (IsScreenPositionOverOverviewUI(ScreenPosition))
 	{
 		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: Overview NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
@@ -125,7 +125,7 @@ FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonDown(const FGeometry& 
 FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
-	if (IsScreenPositionOverOverviewUi(ScreenPosition))
+	if (IsScreenPositionOverOverviewUI(ScreenPosition))
 	{
 		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: Overview NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
@@ -138,7 +138,7 @@ FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonUp(const FGeometry& In
 
 FReply USRCelestialBodyOverviewWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (IsScreenPositionOverOverviewUi(InMouseEvent.GetScreenSpacePosition()))
+	if (IsScreenPositionOverOverviewUI(InMouseEvent.GetScreenSpacePosition()))
 	{
 		return FReply::Handled();
 	}
@@ -178,14 +178,14 @@ void USRCelestialBodyOverviewWidget::SetSelectedActor(
 	RebuildNameplateButtons();
 }
 
-bool USRCelestialBodyOverviewWidget::IsPointerOverOverviewUi() const
+bool USRCelestialBodyOverviewWidget::IsPointerOverOverviewUI() const
 {
 	if (!FSlateApplication::IsInitialized())
 	{
 		return false;
 	}
 
-	return IsScreenPositionOverOverviewUi(FSlateApplication::Get().GetCursorPos());
+	return IsScreenPositionOverOverviewUI(FSlateApplication::Get().GetCursorPos());
 }
 
 void USRCelestialBodyOverviewWidget::DispatchEntryClicked(
@@ -206,7 +206,7 @@ USRCelestialBodyOverviewWidget::OnCelestialBodyRequested()
 	return CelestialBodyRequestedEvent;
 }
 
-bool USRCelestialBodyOverviewWidget::IsScreenPositionOverOverviewUi(const FVector2D& ScreenPosition) const
+bool USRCelestialBodyOverviewWidget::IsScreenPositionOverOverviewUI(const FVector2D& ScreenPosition) const
 {
 	if (!IsVisible())
 	{

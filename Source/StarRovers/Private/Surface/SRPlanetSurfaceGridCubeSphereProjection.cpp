@@ -1,4 +1,4 @@
-#include "Surface/SRPlanetSurfaceGridCubeSphereHelpers.h"
+#include "Surface/SRPlanetSurfaceGridCubeSphereGeometry.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
 namespace StarRovers::SurfaceGrid::CubeSphere
 {

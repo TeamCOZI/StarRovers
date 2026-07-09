@@ -3,7 +3,7 @@
 #include "Celestial/SRCelestialBody.h"
 #include "Components/SceneComponent.h"
 #include "Simulation/SRTimeControlSubsystem.h"
-#include "Visual/SRCelestialRingMeshComponent.h"
+#include "Rendering/SRCelestialRingMeshComponent.h"
 
 namespace
 {

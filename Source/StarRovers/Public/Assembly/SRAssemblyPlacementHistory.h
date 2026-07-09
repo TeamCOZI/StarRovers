@@ -24,6 +24,8 @@ namespace StarRovers::Assembly
 		TWeakObjectPtr<USRStructureDataAsset> StructureDataAsset;
 		FSRPlanetSurfaceGridCellId OriginCellId;
 		int32 PlacementRotationSteps = 0;
+		bool bNaturalStructure = true;
+		bool bUseStaticMeshMaterials = true;
 	};
 
 	struct FSRAssemblyPlacementHistoryEntry
@@ -36,7 +38,7 @@ namespace StarRovers::Assembly
 		FSRPlanetSurfaceGridCellId OriginCellId;
 		int32 PlacementRotationSteps = 0;
 		FName OccupantId = NAME_None;
-		FSRConveyorVisualPath ConveyorVisualPath;
+		FSRConveyorBeltPath ConveyorBeltPath;
 		TArray<FSRPlanetSurfaceGridCellId> ConveyorPlacedCellIds;
 		TArray<FSRRestorableNaturalStructure> RemovedNaturalStructures;
 		TArray<FSRAssemblyPlacementHistoryEntry> ChildEntries;
@@ -61,16 +63,16 @@ namespace StarRovers::Assembly
 			USRStructureDataAsset* StructureDataAsset,
 			const FSRPlanetSurfaceGridCellId& OriginCellId,
 			int32 PlacementRotationSteps,
-			FName OccupantId);
+			FName OccupantId,
+			const TArray<FSRRestorableNaturalStructure>& RemovedNaturalStructures = TArray<FSRRestorableNaturalStructure>());
 		void RecordConveyor(
 			USRAssemblyComponent& Owner,
 			USRPlanetSurfaceGrid* SurfaceGrid,
 			USRConveyorNetworkComponent* ConveyorNetwork,
-			const FSRConveyorVisualPath& VisualPath,
+			const FSRConveyorBeltPath& BeltPath,
 			const TArray<FSRPlanetSurfaceGridCellId>& PlacedCellIds,
 			const TArray<FSRRestorableNaturalStructure>& RemovedNaturalStructures);
 		void BuildConveyorPlacementPayload(
-			const USRAssemblyComponent& Owner,
 			USRPlanetSurfaceGrid* SurfaceGrid,
 			USRConveyorNetworkComponent* ConveyorNetwork,
 			USRStructureDataAsset* StructureDataAsset,
@@ -78,7 +80,7 @@ namespace StarRovers::Assembly
 			int32 Layer,
 			float LayerHeight,
 			FName NetworkId,
-			FSRConveyorVisualPath& OutVisualPath,
+			FSRConveyorBeltPath& OutBeltPath,
 			TArray<FSRPlanetSurfaceGridCellId>& OutPlacedCellIds,
 			TArray<FSRRestorableNaturalStructure>& OutRemovedNaturalStructures) const;
 		bool TryUndo(USRAssemblyComponent& Owner);
