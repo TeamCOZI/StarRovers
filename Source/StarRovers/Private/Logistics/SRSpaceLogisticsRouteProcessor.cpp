@@ -17,7 +17,7 @@ namespace
 		return !Cargo.ResourceId.IsNone() && Cargo.StackCount > 0;
 	}
 
-	FSRSpaceLogisticsHubEndpoint SelectHubEndpointByDockSide(const FSRSpaceLogisticsHubRoute& HubRoute, ESRSpaceLogisticsHubRouteDockSide DockSide)
+	FSRSpaceLogisticsHubEndpoint SelectRouteProcessorHubEndpointByDockSide(const FSRSpaceLogisticsHubRoute& HubRoute, ESRSpaceLogisticsHubRouteDockSide DockSide)
 	{
 		return DockSide == ESRSpaceLogisticsHubRouteDockSide::Destination ? HubRoute.DestinationHub : HubRoute.SourceHub;
 	}
@@ -128,7 +128,7 @@ bool FSRSpaceLogisticsRouteProcessor::TryDepartFromDock(
 
 	HubRoute.CurrentDockSide = DockSide;
 	FSRResourceInstance LoadedCargo;
-	const FSRSpaceLogisticsHubEndpoint DockHub = SelectHubEndpointByDockSide(HubRoute, DockSide);
+	const FSRSpaceLogisticsHubEndpoint DockHub = SelectRouteProcessorHubEndpointByDockSide(HubRoute, DockSide);
 	if (TryLoadCargoFromHub(DockHub, HubRoute.MaxCargoStackCount, HubRoute.CargoResourceId, LoadedCargo))
 	{
 		HubRoute.Cargo = LoadedCargo;
@@ -164,7 +164,7 @@ bool FSRSpaceLogisticsRouteProcessor::TryUnloadAtDock(FSRSpaceLogisticsHubRoute&
 		return true;
 	}
 
-	const FSRSpaceLogisticsHubEndpoint DockHub = SelectHubEndpointByDockSide(HubRoute, DockSide);
+	const FSRSpaceLogisticsHubEndpoint DockHub = SelectRouteProcessorHubEndpointByDockSide(HubRoute, DockSide);
 	if (!TryUnloadCargoToHub(DockHub, HubRoute.Cargo))
 	{
 		HubRoute.Phase = ESRSpaceLogisticsHubRoutePhase::Blocked;
@@ -198,7 +198,7 @@ bool FSRSpaceLogisticsRouteProcessor::StartTravel(
 	HubRoute.TravelProgressSeconds = 0.0f;
 	HubRoute.TravelProgressRatio = 0.0f;
 
-	const FSRSpaceLogisticsHubEndpoint StartHub = SelectHubEndpointByDockSide(HubRoute, HubRoute.CurrentDockSide);
+	const FSRSpaceLogisticsHubEndpoint StartHub = SelectRouteProcessorHubEndpointByDockSide(HubRoute, HubRoute.CurrentDockSide);
 	if (!SpaceLogisticsSubsystem.ResolveHubEndpointSurfaceWorldLocation(StartHub, HubRoute.TravelStartWorldLocation))
 	{
 		HubRoute.bHasTravelStartWorldLocation = false;

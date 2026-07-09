@@ -4,6 +4,7 @@
 # Local editor/search state
 .ignore
 .vscode/
+*.code-workspace
 
 # Compiled Object files
 *.slo

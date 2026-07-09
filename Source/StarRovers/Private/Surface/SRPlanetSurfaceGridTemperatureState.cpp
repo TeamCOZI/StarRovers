@@ -2,7 +2,7 @@
 
 namespace
 {
-	void StoreUpdatedCellInfo(
+	void StoreUpdatedTemperatureCellInfo(
 		const FSRPlanetSurfaceGridCell& Cell,
 		StarRovers::SurfaceGridTemperatureState::FCellInfoBuilder BuildCellInfo,
 		StarRovers::SurfaceGridTemperatureState::FCellInfoQuery GetStoredCellInfoById,
@@ -93,7 +93,7 @@ bool StarRovers::SurfaceGridTemperatureState::SetCellTemperatureState(
 	FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
 	Cell.TemperatureState = TemperatureState;
 	Cell.SurfaceTemperature = GetRepresentativeSurfaceTemperature(TemperatureState);
-	StoreUpdatedCellInfo(Cell, BuildCellInfo, GetStoredCellInfoById, StoreCellInfo);
+	StoreUpdatedTemperatureCellInfo(Cell, BuildCellInfo, GetStoredCellInfoById, StoreCellInfo);
 	return true;
 }
 
@@ -115,6 +115,6 @@ bool StarRovers::SurfaceGridTemperatureState::SetCellSurfaceTemperature(
 	FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
 	Cell.SurfaceTemperature = FMath::Clamp(SurfaceTemperature, 0.0f, 1.0f);
 	Cell.TemperatureState = ResolveTemperatureStateFromSurfaceTemperature(Cell.SurfaceTemperature);
-	StoreUpdatedCellInfo(Cell, BuildCellInfo, GetStoredCellInfoById, StoreCellInfo);
+	StoreUpdatedTemperatureCellInfo(Cell, BuildCellInfo, GetStoredCellInfoById, StoreCellInfo);
 	return true;
 }

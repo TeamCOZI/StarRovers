@@ -8,7 +8,7 @@
 
 namespace
 {
-	void ResetProcessingState(FSRFacilityInstance& FacilityInstance)
+	void ResetStandardProcessingState(FSRFacilityInstance& FacilityInstance)
 	{
 		FacilityInstance.ProcessingInventory.Reset();
 		FacilityInstance.bProcessing = false;
@@ -93,7 +93,7 @@ bool FSRFacilityProcessingStepExecutor::TryCompleteProcessing(
 
 	if (!IsValid(FacilityDataAsset) || FacilityInstance.ProcessingInventory.IsEmpty())
 	{
-		ResetProcessingState(FacilityInstance);
+		ResetStandardProcessingState(FacilityInstance);
 		return false;
 	}
 
@@ -108,7 +108,7 @@ bool FSRFacilityProcessingStepExecutor::TryCompleteProcessing(
 
 	FSRFacilityProcessingInventoryRouter::StoreOutputResources(FacilityInstance, OutputResources);
 	const int32 CellTemperatureEffects = FSRFacilityCellTemperatureEffectApplier::ApplyEffects(OwnerComponent, FacilityInstance);
-	ResetProcessingState(FacilityInstance);
+	ResetStandardProcessingState(FacilityInstance);
 
 	if (OutCompletionResult)
 	{

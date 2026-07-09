@@ -9,7 +9,7 @@
 
 namespace
 {
-	void ResetProcessingState(FSRFacilityInstance& FacilityInstance)
+	void ResetMiningProgressState(FSRFacilityInstance& FacilityInstance)
 	{
 		FacilityInstance.bProcessing = false;
 		FacilityInstance.ProcessProgressSeconds = 0.0f;
@@ -18,7 +18,7 @@ namespace
 	void ResetMiningState(FSRFacilityInstance& FacilityInstance)
 	{
 		FacilityInstance.MiningTargetDepositOccupantId = NAME_None;
-		ResetProcessingState(FacilityInstance);
+		ResetMiningProgressState(FacilityInstance);
 	}
 }
 
@@ -113,7 +113,7 @@ bool FSRFacilityMiningProcessor::TryCompleteMining(
 		? UpdatedResourceDeposit.OccupantId
 		: NAME_None;
 	FacilityInstance.ProcessingInventory.Reset();
-	ResetProcessingState(FacilityInstance);
+	ResetMiningProgressState(FacilityInstance);
 
 	if (OutCompletionResult)
 	{

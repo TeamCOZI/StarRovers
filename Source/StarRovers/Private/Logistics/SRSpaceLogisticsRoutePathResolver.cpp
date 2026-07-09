@@ -211,7 +211,7 @@ namespace
 		return FMath::Min(SafeSegmentDistance, DistanceAfterAcceleration);
 	}
 
-	FSRSpaceLogisticsHubEndpoint SelectHubEndpointByDockSide(const FSRSpaceLogisticsHubRoute& HubRoute, ESRSpaceLogisticsHubRouteDockSide DockSide)
+	FSRSpaceLogisticsHubEndpoint SelectPathResolverHubEndpointByDockSide(const FSRSpaceLogisticsHubRoute& HubRoute, ESRSpaceLogisticsHubRouteDockSide DockSide)
 	{
 		return DockSide == ESRSpaceLogisticsHubRouteDockSide::Destination ? HubRoute.DestinationHub : HubRoute.SourceHub;
 	}
@@ -434,8 +434,8 @@ bool FSRSpaceLogisticsRoutePathResolver::ResolveVisualWorldLocation(
 	const ESRSpaceLogisticsHubRouteDockSide TargetDockSide = StartDockSide == ESRSpaceLogisticsHubRouteDockSide::Source
 		? ESRSpaceLogisticsHubRouteDockSide::Destination
 		: ESRSpaceLogisticsHubRouteDockSide::Source;
-	const FSRSpaceLogisticsHubEndpoint StartHub = SelectHubEndpointByDockSide(HubRoute, StartDockSide);
-	const FSRSpaceLogisticsHubEndpoint TargetHub = SelectHubEndpointByDockSide(HubRoute, TargetDockSide);
+	const FSRSpaceLogisticsHubEndpoint StartHub = SelectPathResolverHubEndpointByDockSide(HubRoute, StartDockSide);
+	const FSRSpaceLogisticsHubEndpoint TargetHub = SelectPathResolverHubEndpointByDockSide(HubRoute, TargetDockSide);
 
 	AActor* StartBodyActor = StartHub.BodyActor.Get();
 	AActor* TargetBodyActor = TargetHub.BodyActor.Get();

@@ -2,7 +2,7 @@
 
 namespace
 {
-	void StoreUpdatedCellInfo(
+	void StoreUpdatedOccupancyCellInfo(
 		const FSRPlanetSurfaceGridCell& Cell,
 		StarRovers::SurfaceGridOccupancyState::FCellInfoBuilder BuildCellInfo,
 		StarRovers::SurfaceGridOccupancyState::FCellInfoQuery GetStoredCellInfoById,
@@ -27,7 +27,7 @@ namespace
 	{
 		Cell.bOccupied = bOccupied;
 		Cell.OccupantId = bOccupied ? OccupantId : NAME_None;
-		StoreUpdatedCellInfo(Cell, BuildCellInfo, GetStoredCellInfoById, StoreCellInfo);
+		StoreUpdatedOccupancyCellInfo(Cell, BuildCellInfo, GetStoredCellInfoById, StoreCellInfo);
 	}
 }
 
