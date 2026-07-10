@@ -18,12 +18,30 @@ namespace
 		return ResourceInstance.ResourceKind == ESRResourceKind::Catalyst;
 	}
 
+	FSRResourceTagStack* FindTagStack(TArray<FSRResourceTagStack>& Tags, ESRResourceProcessTag Tag)
+	{
+		for (FSRResourceTagStack& TagStack : Tags)
+		{
+			if (TagStack.Tag == Tag)
+			{
+				return &TagStack;
+			}
+		}
+
+		return nullptr;
+	}
+
 	bool HasTag(const TArray<FSRResourceTagStack>& Tags, ESRResourceProcessTag Tag)
 	{
-		return Tags.ContainsByPredicate([Tag](const FSRResourceTagStack& TagStack)
+		for (const FSRResourceTagStack& TagStack : Tags)
 		{
-			return TagStack.Tag == Tag && TagStack.StackCount > 0;
-		});
+			if (TagStack.Tag == Tag && TagStack.StackCount > 0)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	bool HasTag(const FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag)
@@ -47,11 +65,7 @@ namespace
 				continue;
 			}
 
-			FSRResourceTagStack* ExistingTag = InOutTags.FindByPredicate([&TagToMerge](const FSRResourceTagStack& ExistingTagStack)
-			{
-				return ExistingTagStack.Tag == TagToMerge.Tag;
-			});
-			if (ExistingTag)
+			if (FSRResourceTagStack* ExistingTag = FindTagStack(InOutTags, TagToMerge.Tag))
 			{
 				ExistingTag->StackCount += TagToMerge.StackCount;
 				if (TagToMerge.RemainingCycles > 0)
@@ -76,7 +90,7 @@ namespace
 		}
 	}
 
-	void CountInputResourceKinds(const TArray<FSRResourceInstance>& InputResources, int32& OutEnergyCount, int32& OutCatalystCount)
+	bool TryCountInputResourceKinds(const TArray<FSRResourceInstance>& InputResources, int32& OutEnergyCount, int32& OutCatalystCount)
 	{
 		OutEnergyCount = 0;
 		OutCatalystCount = 0;
@@ -84,6 +98,10 @@ namespace
 		{
 			if (IsEnergyResource(ResourceInstance))
 			{
+				if (!CanEnergyResourceEnterFacility(ResourceInstance))
+				{
+					return false;
+				}
 				++OutEnergyCount;
 			}
 			else if (IsCatalystResource(ResourceInstance))
@@ -91,6 +109,8 @@ namespace
 				++OutCatalystCount;
 			}
 		}
+
+		return true;
 	}
 
 	void ConsumeEnergyForFacilityPass(FSRResourceInstance& ResourceInstance, ESRFacilityTemperatureState TemperatureState)
@@ -118,10 +138,15 @@ namespace
 
 	const FSRResourceInstance* FindFirstEnergyResource(const TArray<FSRResourceInstance>& ResourceInstances)
 	{
-		return ResourceInstances.FindByPredicate([](const FSRResourceInstance& ResourceInstance)
+		for (const FSRResourceInstance& ResourceInstance : ResourceInstances)
 		{
-			return IsEnergyResource(ResourceInstance);
-		});
+			if (IsEnergyResource(ResourceInstance))
+			{
+				return &ResourceInstance;
+			}
+		}
+
+		return nullptr;
 	}
 
 	bool FindSynthesisInputs(
@@ -231,17 +256,12 @@ bool FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(
 		return false;
 	}
 
-	for (const FSRResourceInstance& ResourceInstance : InputResources)
-	{
-		if (IsEnergyResource(ResourceInstance) && !CanEnergyResourceEnterFacility(ResourceInstance))
-		{
-			return false;
-		}
-	}
-
 	int32 EnergyCount = 0;
 	int32 CatalystCount = 0;
-	CountInputResourceKinds(InputResources, EnergyCount, CatalystCount);
+	if (!TryCountInputResourceKinds(InputResources, EnergyCount, CatalystCount))
+	{
+		return false;
+	}
 
 	switch (FacilityDataAsset->OperationKind)
 	{
@@ -324,6 +344,7 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 
 	FSRResourceInstance OutputResource = BuildBaseOutputResource(FacilityInstance, InputResources);
 	TArray<FSRResourceInstance> AdditionalOutputs;
+	AdditionalOutputs.Reserve(CountProducedOutputResources(FacilityInstance.FacilityDataAsset.Get()));
 	const TArray<FSRResourceTagStack> TagsBeforeFacilityEffects = OutputResource.Tags;
 	ApplyFacilityEffects(FacilityInstance.FacilityDataAsset.Get(), OutputResource, AdditionalOutputs);
 	ApplyExistingTagEffects(FacilityInstance.TemperatureState, TagsBeforeFacilityEffects, OutputResource);
@@ -389,6 +410,7 @@ FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
 	OutputResource.RemainingProcessLimit = FMath::Max(0, FirstEnergy->RemainingProcessLimit + SecondEnergy->RemainingProcessLimit);
 	OutputResource.ProcessCount = FirstEnergy->ProcessCount + SecondEnergy->ProcessCount;
 	OutputResource.Tags.Reset();
+	OutputResource.Tags.Reserve(FirstEnergy->Tags.Num() + SecondEnergy->Tags.Num());
 	MergeTagStacks(OutputResource.Tags, FirstEnergy->Tags);
 	MergeTagStacks(OutputResource.Tags, SecondEnergy->Tags);
 	return OutputResource;

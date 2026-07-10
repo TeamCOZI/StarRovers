@@ -247,6 +247,7 @@ namespace StarRovers::Celestial::DynamicMesh
 		const TArray<int32>& CachedCellIndexByFlatId;
 		TArray<FSRCelestialBodyDynamicMeshCellColorData>& PreparedColorDataByFlatId;
 		const FSRToonOutlineSettings& ToonOutlineSettings;
+		bool bFeatureToonOutlineEnabled = false;
 		TMap<uint64, FSRCelestialBodyDynamicMeshTerrainEdge> PendingEdges;
 		TMap<uint64, FSRCelestialBodyDynamicMeshSideWallFeatureMaskEdge> PendingSideWallFeatureMaskEdges;
 		FSRCelestialBodyDynamicMeshTerrainEdgeStats Stats;

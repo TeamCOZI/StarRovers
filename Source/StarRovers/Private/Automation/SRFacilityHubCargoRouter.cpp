@@ -73,15 +73,17 @@ void FSRFacilityHubCargoRouter::GetOutboundCargoResourceIds(
 	{
 		for (const FSRResourceInstance& ResourceInstance : InputPortInventory.Inventory)
 		{
-			if (ResourceInstance.ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
+			const FName ResourceId = ResourceInstance.ResourceId;
+			if (ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
 			{
 				continue;
 			}
 
-			if (!ResourceIdSet.Contains(ResourceInstance.ResourceId))
+			bool bAlreadyAdded = false;
+			ResourceIdSet.Add(ResourceId, &bAlreadyAdded);
+			if (!bAlreadyAdded)
 			{
-				ResourceIdSet.Add(ResourceInstance.ResourceId);
-				OutResourceIds.Add(ResourceInstance.ResourceId);
+				OutResourceIds.Add(ResourceId);
 			}
 		}
 	}

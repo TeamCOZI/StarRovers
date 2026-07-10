@@ -58,6 +58,8 @@ namespace StarRovers::Assembly
 
 		TSet<FSRPlanetSurfaceGridCellId> ReservedFootprintCellIds;
 		TSet<FName> ReplacementPreviewOccupantIds;
+		TSet<FSRPlanetSurfaceGridCellId> ReplacementPreviewConveyorCellIdSet;
+		TSet<FSRPlanetSurfaceGridCellId> ReplacementPreviewCellIdSet;
 		TArray<FSRPlanetSurfaceGridCellId> ReplacementPreviewConveyorCellIds;
 		TArray<FSRConveyorBeltPath> ReplacementPreviewConveyorBeltPaths;
 		TArray<FSRPlanetSurfaceGridCellId> ReplacementPreviewCellIds;
@@ -65,6 +67,11 @@ namespace StarRovers::Assembly
 		TArray<FSRStructurePlacementDragPreviewActor> NewPreviewActors;
 		NewPlacementCellIds.Reserve(CandidateCellIds.Num());
 		NewPreviewActors.Reserve(CandidateCellIds.Num());
+		ReservedFootprintCellIds.Reserve(CandidateCellIds.Num());
+		ReplacementPreviewConveyorCellIdSet.Reserve(CandidateCellIds.Num());
+		ReplacementPreviewCellIdSet.Reserve(CandidateCellIds.Num());
+		ReplacementPreviewConveyorCellIds.Reserve(CandidateCellIds.Num());
+		ReplacementPreviewCellIds.Reserve(CandidateCellIds.Num());
 
 		for (const FSRPlanetSurfaceGridCellId& CandidateCellId : CandidateCellIds)
 		{
@@ -155,7 +162,12 @@ namespace StarRovers::Assembly
 			ReplacementPreviewOccupantIds.Append(CandidateReplacementTargets.StructureOccupantIds);
 			for (const FSRPlanetSurfaceGridCellId& ConveyorCellId : CandidateReplacementTargets.ConveyorCellIds)
 			{
-				ReplacementPreviewConveyorCellIds.AddUnique(ConveyorCellId);
+				const int32 PreviousCellCount = ReplacementPreviewConveyorCellIdSet.Num();
+				ReplacementPreviewConveyorCellIdSet.Add(ConveyorCellId);
+				if (ReplacementPreviewConveyorCellIdSet.Num() != PreviousCellCount)
+				{
+					ReplacementPreviewConveyorCellIds.Add(ConveyorCellId);
+				}
 			}
 			TArray<FSRPlanetSurfaceGridCellId> CandidateReplacementPreviewCellIds;
 			ConstructionReplacement::CollectConstructionReplacementPreviewCellIds(
@@ -164,7 +176,12 @@ namespace StarRovers::Assembly
 				CandidateReplacementPreviewCellIds);
 			for (const FSRPlanetSurfaceGridCellId& ReplacementCellId : CandidateReplacementPreviewCellIds)
 			{
-				ReplacementPreviewCellIds.AddUnique(ReplacementCellId);
+				const int32 PreviousCellCount = ReplacementPreviewCellIdSet.Num();
+				ReplacementPreviewCellIdSet.Add(ReplacementCellId);
+				if (ReplacementPreviewCellIdSet.Num() != PreviousCellCount)
+				{
+					ReplacementPreviewCellIds.Add(ReplacementCellId);
+				}
 			}
 			ReplacementPreviewConveyorBeltPaths.Append(CandidateReplacementTargets.ConveyorBeltPaths);
 

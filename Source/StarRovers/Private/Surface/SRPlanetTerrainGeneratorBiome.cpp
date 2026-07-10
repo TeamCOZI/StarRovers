@@ -79,11 +79,12 @@ namespace StarRovers::Terrain
 		const uint32 LogKey = BuildNoMatchingBiomeLogKey(Settings);
 		{
 			FScopeLock Lock(&GNoMatchingBiomeLogCriticalSection);
-			if (GNoMatchingBiomeLogKeys.Contains(LogKey))
+			bool bAlreadyLogged = false;
+			GNoMatchingBiomeLogKeys.Add(LogKey, &bAlreadyLogged);
+			if (bAlreadyLogged)
 			{
 				return;
 			}
-			GNoMatchingBiomeLogKeys.Add(LogKey);
 		}
 
 		SR_LOG(Surface,

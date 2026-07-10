@@ -346,7 +346,7 @@ void USROrbit::EnsureOrbitRingVisual()
 		return;
 	}
 
-	TInlineComponentArray<USRCelestialRingMeshComponent*> RingComponents(Owner);
+	TInlineComponentArray<USRCelestialRingMeshComponent*> RingComponents;
 	Owner->GetComponents(RingComponents);
 	for (USRCelestialRingMeshComponent* RingComponent : RingComponents)
 	{
@@ -379,7 +379,7 @@ void USROrbit::EnsureOrbitLineBatchVisual()
 		return;
 	}
 
-	TInlineComponentArray<ULineBatchComponent*> LineBatchComponents(Owner);
+	TInlineComponentArray<ULineBatchComponent*> LineBatchComponents;
 	Owner->GetComponents(LineBatchComponents);
 	for (ULineBatchComponent* LineBatchComponent : LineBatchComponents)
 	{
@@ -443,12 +443,14 @@ bool USROrbit::DrawOrbitLineBatchVisual(
 	OrbitLineBatch->SetVisibility(true);
 	OrbitLineBatch->SetHiddenInGame(false);
 
+	UWorld* World = GetWorld();
 	FSRScreenSpaceLineViewInfo CameraInfo;
-	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(GetWorld(), CameraInfo);
+	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(World, CameraInfo);
 
 	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
 	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
-	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(World, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	const float ReferenceTanHalfFieldOfView = FSRScreenSpaceLineThickness::ComputeReferenceTanHalfFieldOfView(ReferenceFieldOfViewDegrees);
 
 	for (int32 SegmentIndex = 0; SegmentIndex < SafeSegmentCount; ++SegmentIndex)
 	{
@@ -456,21 +458,27 @@ bool USROrbit::DrawOrbitLineBatchVisual(
 		const float AlphaB = static_cast<float>(SegmentIndex + 1) / static_cast<float>(SafeSegmentCount);
 		const float AngleA = AlphaA * UE_TWO_PI;
 		const float AngleB = AlphaB * UE_TWO_PI;
+		float SinA = 0.0f;
+		float CosA = 1.0f;
+		float SinB = 0.0f;
+		float CosB = 1.0f;
+		FMath::SinCos(&SinA, &CosA, AngleA);
+		FMath::SinCos(&SinB, &CosB, AngleB);
 		const FVector StartPoint(
 			WorldCenter.X,
-			WorldCenter.Y + FMath::Cos(AngleA) * SafeRadius,
-			WorldCenter.Z + FMath::Sin(AngleA) * SafeRadius);
+			WorldCenter.Y + CosA * SafeRadius,
+			WorldCenter.Z + SinA * SafeRadius);
 		const FVector EndPoint(
 			WorldCenter.X,
-			WorldCenter.Y + FMath::Cos(AngleB) * SafeRadius,
-			WorldCenter.Z + FMath::Sin(AngleB) * SafeRadius);
+			WorldCenter.Y + CosB * SafeRadius,
+			WorldCenter.Z + SinB * SafeRadius);
 		const FVector SegmentMidpoint = (StartPoint + EndPoint) * 0.5f;
-		const float SegmentThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
+		const float SegmentThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
 			CameraInfo,
 			SegmentMidpoint,
 			SafeThickness,
 			ReferenceViewDepth,
-			ReferenceFieldOfViewDegrees);
+			ReferenceTanHalfFieldOfView);
 		OrbitLineBatch->DrawLine(StartPoint, EndPoint, Color, SROrbitLineDepthPriority, SegmentThickness, 0.0f);
 	}
 

@@ -66,6 +66,8 @@ void StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::MarkGroupsDirtyForB
 	FSRConveyorActorGroupRuntimeState& ActorGroupState,
 	const TArray<FSRConveyorBeltPath>& BeltPaths)
 {
+	TSet<FName> SeenActorGroupKeys;
+	SeenActorGroupKeys.Reserve(BeltPaths.Num());
 	for (const FSRConveyorBeltPath& BeltPath : BeltPaths)
 	{
 		if (!IsValid(BeltPath.StructureDataAsset) || BeltPath.CellIds.IsEmpty())
@@ -73,7 +75,21 @@ void StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::MarkGroupsDirtyForB
 			continue;
 		}
 
-		MarkGroupDirty(ActorGroupState, BeltPath.StructureDataAsset.Get(), BeltPath.Layer);
+		const FName ActorGroupKey = MakeGroupKey(BeltPath.StructureDataAsset.Get(), BeltPath.Layer);
+		if (ActorGroupKey.IsNone())
+		{
+			continue;
+		}
+
+		bool bAlreadySeen = false;
+		SeenActorGroupKeys.Add(ActorGroupKey, &bAlreadySeen);
+		if (bAlreadySeen)
+		{
+			continue;
+		}
+
+		FSRConveyorActorGroupState& ActorGroup = ActorGroupState.GroupsByKey.FindOrAdd(ActorGroupKey);
+		ActorGroup.bDirty = true;
 	}
 }
 
@@ -106,6 +122,7 @@ bool StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::RefreshDirtyGroups(
 	const int32 GroupBudget = MaxGroupCount == INDEX_NONE
 		? TNumericLimits<int32>::Max()
 		: FMath::Max(1, MaxGroupCount);
+	DirtyActorGroupKeys.Reserve(FMath::Min(ActorGroupState.GroupsByKey.Num(), GroupBudget));
 	for (const TPair<FName, FSRConveyorActorGroupState>& ActorGroupPair : ActorGroupState.GroupsByKey)
 	{
 		if (ActorGroupPair.Value.bDirty)
@@ -242,7 +259,7 @@ bool StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::RefreshGroup(
 		ActorGroup.Actor = SpawnActorForBeltPaths(SurfaceGrid, ActorGroup.BeltPaths, Settings);
 		if (IsValid(ActorGroup.Actor))
 		{
-			PlacedConveyorActors.AddUnique(ActorGroup.Actor);
+			PlacedConveyorActors.Add(ActorGroup.Actor);
 		}
 	}
 	else if (!ActorGroup.Actor->InitializeConveyorPaths(

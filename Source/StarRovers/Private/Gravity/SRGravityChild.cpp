@@ -31,25 +31,29 @@ void USRGravityChild::TickComponent(float DeltaTime, enum ELevelTick TickType, F
 	CurrentGravityAcceleration = FVector::ZeroVector;
 	CurrentPrimaryGravityActor = nullptr;
 
-	if (!bGravityEnabled || DeltaTime <= 0.0f || !GetOwner() || !GetWorld())
+	AActor* Owner = GetOwner();
+	UWorld* World = GetWorld();
+	if (!bGravityEnabled || DeltaTime <= 0.0f || !IsValid(Owner) || !World)
 	{
 		return;
 	}
 
 	TArray<USRGravityParent*> GravitySources;
-	USRGravityParent::GetRegisteredSourcesForWorld(GetWorld(), GravitySources);
+	USRGravityParent::GetRegisteredSourcesForWorld(World, GravitySources);
 
 	float StrongestAccelerationSizeSquared = -1.0f;
+	float CurrentAccelerationSizeSquared = -1.0f;
 	FVector SummedAcceleration = FVector::ZeroVector;
+	const FVector OwnerLocation = Owner->GetActorLocation();
 
 	for (USRGravityParent* GravitySource : GravitySources)
 	{
-		if (!IsValid(GravitySource) || GravitySource->GetOwner() == GetOwner())
+		if (!IsValid(GravitySource) || GravitySource->GetOwner() == Owner)
 		{
 			continue;
 		}
 
-		const FVector SourceAcceleration = GravitySource->GetGravityAccelerationAtWorldLocation(GetOwner()->GetActorLocation());
+		const FVector SourceAcceleration = GravitySource->GetGravityAccelerationAtWorldLocation(OwnerLocation);
 		const float SourceAccelerationSizeSquared = SourceAcceleration.SizeSquared();
 		if (SourceAccelerationSizeSquared <= KINDA_SMALL_NUMBER)
 		{
@@ -64,9 +68,10 @@ void USRGravityChild::TickComponent(float DeltaTime, enum ELevelTick TickType, F
 
 		if (bUseStrongestSourceOnly)
 		{
-			if (SourceAccelerationSizeSquared >= CurrentGravityAcceleration.SizeSquared())
+			if (SourceAccelerationSizeSquared >= CurrentAccelerationSizeSquared)
 			{
 				CurrentGravityAcceleration = SourceAcceleration;
+				CurrentAccelerationSizeSquared = SourceAccelerationSizeSquared;
 			}
 		}
 		else
@@ -100,7 +105,7 @@ void USRGravityChild::TickComponent(float DeltaTime, enum ELevelTick TickType, F
 		LinearVelocity *= FMath::Max(0.0f, 1.0f - (ManualLinearDamping * DeltaTime));
 	}
 
-	GetOwner()->AddActorWorldOffset(LinearVelocity * DeltaTime, true);
+	Owner->AddActorWorldOffset(LinearVelocity * DeltaTime, true);
 }
 
 void USRGravityChild::SetGravityEnabled(bool bEnabled)
@@ -141,12 +146,13 @@ void USRGravityChild::UpdateTickState()
 
 UPrimitiveComponent* USRGravityChild::FindSimulatingPrimitive() const
 {
-	if (!GetOwner())
+	const AActor* Owner = GetOwner();
+	if (!Owner)
 	{
 		return nullptr;
 	}
 
-	UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(GetOwner()->GetRootComponent());
+	UPrimitiveComponent* RootPrimitive = Cast<UPrimitiveComponent>(Owner->GetRootComponent());
 	return RootPrimitive && RootPrimitive->IsSimulatingPhysics()
 		? RootPrimitive
 		: nullptr;

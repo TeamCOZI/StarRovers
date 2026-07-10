@@ -82,9 +82,15 @@ namespace StarRovers::Assembly::ConstructionReplacement
 		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds)
 	{
 		OutCellIds.Reset();
+		TSet<FSRPlanetSurfaceGridCellId> CellIdSet;
+		CellIdSet.Reserve(Targets.ConveyorCellIds.Num());
 		for (const FSRPlanetSurfaceGridCellId& CellId : Targets.ConveyorCellIds)
 		{
-			OutCellIds.AddUnique(CellId);
+			if (!CellIdSet.Contains(CellId))
+			{
+				CellIdSet.Add(CellId);
+				OutCellIds.Add(CellId);
+			}
 		}
 
 		if (!IsValid(StructureInstanceManager))
@@ -102,7 +108,11 @@ namespace StarRovers::Assembly::ConstructionReplacement
 
 			for (const FSRPlanetSurfaceGridCellId& CellId : PlacedStructure.FootprintCellIds)
 			{
-				OutCellIds.AddUnique(CellId);
+				if (!CellIdSet.Contains(CellId))
+				{
+					CellIdSet.Add(CellId);
+					OutCellIds.Add(CellId);
+				}
 			}
 		}
 	}
@@ -144,6 +154,9 @@ namespace StarRovers::Assembly::ConstructionReplacement
 			return false;
 		}
 
+		TSet<FSRPlanetSurfaceGridCellId> ConveyorCellIdSet;
+		ConveyorCellIdSet.Reserve(CellIds.Num());
+		OutTargets.ConveyorCellIds.Reserve(CellIds.Num());
 		for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
 		{
 			FSRPlanetSurfaceGridCellInfo CellInfo;
@@ -171,7 +184,11 @@ namespace StarRovers::Assembly::ConstructionReplacement
 
 			if (HasGroundConveyorAtCell(ConveyorNetwork, CellId))
 			{
-				OutTargets.ConveyorCellIds.AddUnique(CellId);
+				if (!ConveyorCellIdSet.Contains(CellId))
+				{
+					ConveyorCellIdSet.Add(CellId);
+					OutTargets.ConveyorCellIds.Add(CellId);
+				}
 				continue;
 			}
 

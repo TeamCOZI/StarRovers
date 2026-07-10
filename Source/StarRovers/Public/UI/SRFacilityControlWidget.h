@@ -16,6 +16,7 @@ class UTextBlock;
 class UVerticalBox;
 class USRFacilityNetworkComponent;
 class USRFacilityControlWidget;
+class USRSpaceLogisticsSubsystem;
 struct FSRFacilityInstance;
 
 UCLASS()
@@ -339,6 +340,7 @@ private:
 	void RefreshOutputInventorySlots(const FSRFacilityInstance& FacilityInstance);
 	void RefreshHubRouteSection(USRFacilityNetworkComponent* FacilityNetwork, const FSRFacilityInstance& FacilityInstance);
 	USRFacilityNetworkComponent* GetFocusedFacilityNetwork() const;
+	USRSpaceLogisticsSubsystem* GetSpaceLogisticsSubsystem() const;
 	bool IsScreenPositionOverControlPanel(const FVector2D& ScreenPosition) const;
 
 	bool bUpdatingControls = false;

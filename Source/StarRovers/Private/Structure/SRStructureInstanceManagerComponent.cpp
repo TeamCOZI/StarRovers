@@ -293,6 +293,7 @@ bool USRStructureInstanceManagerComponent::CanBuildOverCellsForConstruction(
 void USRStructureInstanceManagerComponent::SetGhostedStructures(const TSet<FName>& OccupantIds)
 {
 	TSet<FName> NewGhostedStructureOccupantIds;
+	NewGhostedStructureOccupantIds.Reserve(OccupantIds.Num());
 	for (const FName OccupantId : OccupantIds)
 	{
 		if (PlacedStructuresByOccupantId.Contains(OccupantId))
@@ -336,6 +337,7 @@ void USRStructureInstanceManagerComponent::ClearGhostedStructures()
 void USRStructureInstanceManagerComponent::SetDeletePreviewedStructures(const TSet<FName>& OccupantIds)
 {
 	TSet<FName> NewDeletePreviewedStructureOccupantIds;
+	NewDeletePreviewedStructureOccupantIds.Reserve(OccupantIds.Num());
 	for (const FName OccupantId : OccupantIds)
 	{
 		if (IsDeletePreviewTarget(OccupantId))
@@ -369,6 +371,7 @@ void USRStructureInstanceManagerComponent::SetDeletePreviewedStructures(const TS
 void USRStructureInstanceManagerComponent::SetConstructionReplacementPreviewedStructures(const TSet<FName>& OccupantIds)
 {
 	TSet<FName> NewConstructionReplacementPreviewedStructureOccupantIds;
+	NewConstructionReplacementPreviewedStructureOccupantIds.Reserve(OccupantIds.Num());
 	for (const FName OccupantId : OccupantIds)
 	{
 		if (CanDestroyStructureForConstruction(OccupantId))
@@ -427,7 +430,7 @@ bool USRStructureInstanceManagerComponent::RemoveNonResourceStructuresByOccupant
 	{
 		if (IsDeletePreviewTarget(OccupantId))
 		{
-			OccupantIdsToRemove.AddUnique(OccupantId);
+			OccupantIdsToRemove.Add(OccupantId);
 		}
 	}
 
@@ -468,7 +471,7 @@ bool USRStructureInstanceManagerComponent::RemoveConstructionDestructibleStructu
 			continue;
 		}
 
-		OccupantIdsToRemove.AddUnique(OccupantId);
+		OccupantIdsToRemove.Add(OccupantId);
 		if (OutRemovedStructures)
 		{
 			FSRPlacedStructureInstance PlacedStructure;
@@ -498,6 +501,8 @@ bool USRStructureInstanceManagerComponent::TryRemoveConstructionDestructibleNatu
 	}
 
 	TArray<FName> OccupantIdsToRemove;
+	TSet<FName> OccupantIdSet;
+	OccupantIdSet.Reserve(CellIds.Num());
 	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
 	{
 		FSRPlanetSurfaceGridCellInfo CellInfo;
@@ -516,7 +521,11 @@ bool USRStructureInstanceManagerComponent::TryRemoveConstructionDestructibleNatu
 			return false;
 		}
 
-		OccupantIdsToRemove.AddUnique(CellInfo.OccupantId);
+		if (!OccupantIdSet.Contains(CellInfo.OccupantId))
+		{
+			OccupantIdSet.Add(CellInfo.OccupantId);
+			OccupantIdsToRemove.Add(CellInfo.OccupantId);
+		}
 	}
 
 	if (OccupantIdsToRemove.IsEmpty())
@@ -750,12 +759,10 @@ bool USRStructureInstanceManagerComponent::IsDeletePreviewTarget(FName OccupantI
 
 void USRStructureInstanceManagerComponent::RemoveStructureByOccupantId(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId)
 {
-	TArray<FName> OccupantIds;
-	OccupantIds.Add(OccupantId);
-	RemoveStructuresByOccupantIds(SurfaceGrid, OccupantIds);
+	RemoveStructuresByOccupantIds(SurfaceGrid, TConstArrayView<FName>(&OccupantId, 1));
 }
 
-void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FName>& OccupantIds)
+void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, TConstArrayView<FName> OccupantIds)
 {
 	if (OccupantIds.IsEmpty())
 	{
@@ -826,9 +833,16 @@ void USRStructureInstanceManagerComponent::RemoveVisualInstances(FName VisualKey
 		return;
 	}
 
-	VisualGroup->OccupantIds.RemoveAll([&RemovedOccupantIds](const FName OccupantId)
+	TSet<FName> RemovedOccupantIdSet;
+	RemovedOccupantIdSet.Reserve(RemovedOccupantIds.Num());
+	for (const FName RemovedOccupantId : RemovedOccupantIds)
 	{
-		return RemovedOccupantIds.Contains(OccupantId);
+		RemovedOccupantIdSet.Add(RemovedOccupantId);
+	}
+
+	VisualGroup->OccupantIds.RemoveAll([&RemovedOccupantIdSet](const FName OccupantId)
+	{
+		return RemovedOccupantIdSet.Contains(OccupantId);
 	});
 
 	VisualGroup->OccupantIds.RemoveAll([this](const FName OccupantId)
@@ -857,6 +871,12 @@ void USRStructureInstanceManagerComponent::RebuildVisualGroup(FName VisualKey)
 	VisualGroup->Component->ClearInstances();
 	TArray<FName> RebuiltOccupantIds;
 	RebuiltOccupantIds.Reserve(VisualGroup->OccupantIds.Num());
+	USRPlanetSurfaceGrid* SurfaceGrid = nullptr;
+	if (AActor* OwnerActor = GetOwner())
+	{
+		SurfaceGrid = OwnerActor->FindComponentByClass<USRPlanetSurfaceGrid>();
+	}
+
 	for (int32 OccupantIndex = 0; OccupantIndex < VisualGroup->OccupantIds.Num(); ++OccupantIndex)
 	{
 		const FName OccupantId = VisualGroup->OccupantIds[OccupantIndex];
@@ -864,12 +884,6 @@ void USRStructureInstanceManagerComponent::RebuildVisualGroup(FName VisualKey)
 		if (!PlacedStructure || !IsValid(PlacedStructure->StructureDataAsset))
 		{
 			continue;
-		}
-
-		USRPlanetSurfaceGrid* SurfaceGrid = nullptr;
-		if (AActor* OwnerActor = GetOwner())
-		{
-			SurfaceGrid = OwnerActor->FindComponentByClass<USRPlanetSurfaceGrid>();
 		}
 
 		FTransform PlacementTransform;
@@ -928,11 +942,9 @@ void USRStructureInstanceManagerComponent::RefreshVisualGroupsForPreviewState()
 		VisualGroup.OccupantIds.Add(PlacedStructurePair.Key);
 	}
 
-	TArray<FName> VisualKeys;
-	VisualGroupsByKey.GetKeys(VisualKeys);
-	for (const FName VisualKey : VisualKeys)
+	for (const TPair<FName, FSRStructureVisualGroup>& VisualGroupPair : VisualGroupsByKey)
 	{
-		RebuildVisualGroup(VisualKey);
+		RebuildVisualGroup(VisualGroupPair.Key);
 	}
 }
 

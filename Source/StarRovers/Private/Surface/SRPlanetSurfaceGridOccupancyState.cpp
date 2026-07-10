@@ -99,6 +99,18 @@ bool StarRovers::SurfaceGridOccupancyState::SetCellsOccupied(
 		return false;
 	}
 
+	if (CellIds.Num() == 1)
+	{
+		int32 CellIndex = INDEX_NONE;
+		if (!GetCellIndex(CellIds[0], CellIndex) || !Cells.IsValidIndex(CellIndex))
+		{
+			return false;
+		}
+
+		ApplyCellOccupancy(Cells[CellIndex], bOccupied, OccupantId, BuildCellInfo, GetStoredCellInfoById, StoreCellInfo);
+		return true;
+	}
+
 	TArray<int32> CellIndices;
 	CellIndices.Reserve(CellIds.Num());
 	for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)

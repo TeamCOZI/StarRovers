@@ -68,7 +68,11 @@ namespace
 			return;
 		}
 
-		const FVector SafeNormal = Normal.GetSafeNormal().IsNearlyZero() ? FVector::UpVector : Normal.GetSafeNormal();
+		FVector SafeNormal = Normal.GetSafeNormal();
+		if (SafeNormal.IsNearlyZero())
+		{
+			SafeNormal = FVector::UpVector;
+		}
 		FVector Tangent = FVector::CrossProduct(SafeNormal, FVector::UpVector).GetSafeNormal();
 		if (Tangent.IsNearlyZero())
 		{
@@ -116,6 +120,13 @@ namespace
 		const FVector ArrowBase = EndPoint - Direction * ArrowLength;
 		DrawDebugLine(LineBatchComponent, EndPoint, ArrowBase + Side * ArrowWidth, LineColor, LineThickness);
 		DrawDebugLine(LineBatchComponent, EndPoint, ArrowBase - Side * ArrowWidth, LineColor, LineThickness);
+	}
+
+	bool HasAnyInputDirection(const FSRConveyorSegment& Segment)
+	{
+		return Segment.InputDirection != ESRConveyorGridDirection::None
+			|| Segment.MergeInputDirection != ESRConveyorGridDirection::None
+			|| Segment.SecondMergeInputDirection != ESRConveyorGridDirection::None;
 	}
 }
 
@@ -187,9 +198,7 @@ void StarRovers::Conveyor::FSRConveyorDebugLineRenderer::Draw(
 		const FVector SegmentNormal = ResolveDebugNormal(SegmentCellInfo, SurfaceCenter);
 		const FVector SegmentPoint = ResolveDebugPoint(SegmentCellInfo, SurfaceCenter, HeightOffset);
 
-		TArray<ESRConveyorGridDirection> InputDirections;
-		FSRConveyorNetworkGeometry::CollectInputDirections(Segment, InputDirections);
-		if (InputDirections.IsEmpty())
+		if (!HasAnyInputDirection(Segment))
 		{
 			DrawDebugCross(LineBatchComponent, SegmentPoint, SegmentNormal, 80.0f * ConveyorDebugLineSizeScale, EndpointColor, LineThickness);
 		}

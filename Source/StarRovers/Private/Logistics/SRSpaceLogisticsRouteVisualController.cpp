@@ -13,6 +13,7 @@ void FSRSpaceLogisticsRouteVisualController::Refresh(
 	TMap<FName, TObjectPtr<ASRSpaceshipActor>>& SpaceshipActorsByRouteId)
 {
 	TSet<FName> ActiveRouteIds;
+	ActiveRouteIds.Reserve(HubRoutes.Num());
 	for (FSRSpaceLogisticsHubRoute& HubRoute : HubRoutes)
 	{
 		if (!IsRouteTraveling(HubRoute))
@@ -50,6 +51,7 @@ void FSRSpaceLogisticsRouteVisualController::Refresh(
 	}
 
 	TArray<FName> InactiveRouteIds;
+	InactiveRouteIds.Reserve(SpaceshipActorsByRouteId.Num());
 	for (const TPair<FName, TObjectPtr<ASRSpaceshipActor>>& Pair : SpaceshipActorsByRouteId)
 	{
 		if (!ActiveRouteIds.Contains(Pair.Key))

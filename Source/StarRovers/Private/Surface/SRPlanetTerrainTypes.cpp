@@ -305,8 +305,12 @@ FSRDynamicMeshGeneration::FSRDynamicMeshGeneration()
 void FSRDynamicMeshGeneration::NormalizeBiomeMaterials(const TArray<TObjectPtr<USRPlanetBiomeDataAsset>>& AllowedBiomeDataAssets)
 {
 	BiomeDataAssets.Reset();
+	BiomeDataAssets.Reserve(AllowedBiomeDataAssets.Num());
+
 	TMap<FName, UMaterialInterface*> ExistingMaterialsById;
 	TMap<USRPlanetBiomeDataAsset*, UMaterialInterface*> ExistingMaterialsByAsset;
+	ExistingMaterialsById.Reserve(BiomeMaterials.Num());
+	ExistingMaterialsByAsset.Reserve(BiomeMaterials.Num());
 	for (const FSRBiomeMaterialEntry& Entry : BiomeMaterials)
 	{
 		if (IsValid(Entry.BiomeDataAsset.Get()) && !ExistingMaterialsByAsset.Contains(Entry.BiomeDataAsset.Get()))
@@ -320,6 +324,9 @@ void FSRDynamicMeshGeneration::NormalizeBiomeMaterials(const TArray<TObjectPtr<U
 	}
 
 	BiomeMaterials.Reset();
+	BiomeMaterials.Reserve(AllowedBiomeDataAssets.Num());
+	TSet<USRPlanetBiomeDataAsset*> AddedBiomeDataAssets;
+	AddedBiomeDataAssets.Reserve(AllowedBiomeDataAssets.Num());
 	for (USRPlanetBiomeDataAsset* BiomeDataAsset : AllowedBiomeDataAssets)
 	{
 		if (!IsValid(BiomeDataAsset))
@@ -327,7 +334,9 @@ void FSRDynamicMeshGeneration::NormalizeBiomeMaterials(const TArray<TObjectPtr<U
 			continue;
 		}
 
-		if (!BiomeDataAssets.Contains(BiomeDataAsset))
+		bool bAlreadyAdded = false;
+		AddedBiomeDataAssets.Add(BiomeDataAsset, &bAlreadyAdded);
+		if (!bAlreadyAdded)
 		{
 			BiomeDataAssets.Add(BiomeDataAsset);
 		}

@@ -9,15 +9,18 @@
 
 namespace
 {
-	void AppendHoveredCellIdIfPresent(
+	bool AppendHoveredCellIdIfPresent(
 		const TArray<FSRPlanetSurfaceGridCellId>& SourceCellIds,
 		const FSRPlanetSurfaceGridCellId& HoveredCellId,
 		TArray<FSRPlanetSurfaceGridCellId>& TargetCellIds)
 	{
-		if (SourceCellIds.Contains(HoveredCellId))
+		if (TargetCellIds.IsEmpty() && SourceCellIds.Contains(HoveredCellId))
 		{
-			TargetCellIds.AddUnique(HoveredCellId);
+			TargetCellIds.Add(HoveredCellId);
+			return true;
 		}
+
+		return false;
 	}
 }
 
@@ -53,6 +56,8 @@ bool StarRovers::Assembly::FSRAssemblyConveyorPortPreviewUpdater::Update(
 
 	TArray<FSRPlanetSurfaceGridCellId> InputConnectionCellIds;
 	TArray<FSRPlanetSurfaceGridCellId> OutputConnectionCellIds;
+	InputConnectionCellIds.Reserve(1);
+	OutputConnectionCellIds.Reserve(1);
 	for (const FSRPlacedStructureInstance& PlacedStructure : PlacedStructures)
 	{
 		USRStructureDataAsset* StructureDataAsset = PlacedStructure.StructureDataAsset.Get();
@@ -97,6 +102,10 @@ bool StarRovers::Assembly::FSRAssemblyConveyorPortPreviewUpdater::Update(
 			StructureOutputConnectionCellIds);
 		AppendHoveredCellIdIfPresent(StructureInputConnectionCellIds, HoveredCell.CellId, InputConnectionCellIds);
 		AppendHoveredCellIdIfPresent(StructureOutputConnectionCellIds, HoveredCell.CellId, OutputConnectionCellIds);
+		if (!InputConnectionCellIds.IsEmpty() && !OutputConnectionCellIds.IsEmpty())
+		{
+			break;
+		}
 	}
 
 	if (InputConnectionCellIds.IsEmpty() && OutputConnectionCellIds.IsEmpty())

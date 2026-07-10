@@ -77,12 +77,33 @@ void FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(
 	OutReferenceFieldOfViewDegrees = CameraPawn->GetScreenSpaceThicknessReferenceFieldOfView();
 }
 
+float FSRScreenSpaceLineThickness::ComputeReferenceTanHalfFieldOfView(float ReferenceFieldOfViewDegrees)
+{
+	const float SafeReferenceFieldOfView = FMath::Clamp(ReferenceFieldOfViewDegrees, 5.0f, 170.0f);
+	return FMath::Tan(FMath::DegreesToRadians(SafeReferenceFieldOfView * 0.5f));
+}
+
 float FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
 	const FSRScreenSpaceLineViewInfo& CameraInfo,
 	const FVector& WorldLocation,
 	float ReferenceWorldThickness,
 	float ReferenceViewDepth,
 	float ReferenceFieldOfViewDegrees)
+{
+	return ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
+		CameraInfo,
+		WorldLocation,
+		ReferenceWorldThickness,
+		ReferenceViewDepth,
+		ComputeReferenceTanHalfFieldOfView(ReferenceFieldOfViewDegrees));
+}
+
+float FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
+	const FSRScreenSpaceLineViewInfo& CameraInfo,
+	const FVector& WorldLocation,
+	float ReferenceWorldThickness,
+	float ReferenceViewDepth,
+	float ReferenceTanHalfFieldOfView)
 {
 	const float SafeReferenceWorldThickness = FMath::Max(0.0f, ReferenceWorldThickness);
 	if (!CameraInfo.bIsValid || SafeReferenceWorldThickness <= KINDA_SMALL_NUMBER)
@@ -91,8 +112,6 @@ float FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
 	}
 
 	const float SafeReferenceViewDepth = FMath::Max(1.0f, ReferenceViewDepth);
-	const float SafeReferenceFieldOfView = FMath::Clamp(ReferenceFieldOfViewDegrees, 5.0f, 170.0f);
-	const float ReferenceTanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(SafeReferenceFieldOfView * 0.5f));
 	if (ReferenceTanHalfFieldOfView <= UE_SMALL_NUMBER)
 	{
 		return SafeReferenceWorldThickness;

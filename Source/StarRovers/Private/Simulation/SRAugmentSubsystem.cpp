@@ -76,6 +76,7 @@ void USRAugmentSubsystem::RegisterStructureDataAssets(const TArray<USRStructureD
 	bool bUnlockedAny = false;
 
 	TSet<FName> RegisteredStructureIds;
+	RegisteredStructureIds.Reserve(RegisteredStructureDataAssets.Num() + StructureDataAssets.Num());
 	for (const USRStructureDataAsset* RegisteredStructureDataAsset : RegisteredStructureDataAssets)
 	{
 		if (!IsValid(RegisteredStructureDataAsset))
@@ -90,6 +91,7 @@ void USRAugmentSubsystem::RegisterStructureDataAssets(const TArray<USRStructureD
 		}
 	}
 
+	RegisteredStructureDataAssets.Reserve(RegisteredStructureDataAssets.Num() + StructureDataAssets.Num());
 	for (USRStructureDataAsset* StructureDataAsset : StructureDataAssets)
 	{
 		if (!IsValid(StructureDataAsset))
@@ -98,22 +100,28 @@ void USRAugmentSubsystem::RegisterStructureDataAssets(const TArray<USRStructureD
 		}
 
 		const FSRStructureData StructureData = StructureDataAsset->BuildData();
-		if (StructureData.StructureId.IsNone() || RegisteredStructureIds.Contains(StructureData.StructureId))
+		if (StructureData.StructureId.IsNone())
+		{
+			continue;
+		}
+
+		bool bAlreadyRegistered = false;
+		RegisteredStructureIds.Add(StructureData.StructureId, &bAlreadyRegistered);
+		if (bAlreadyRegistered)
 		{
 			continue;
 		}
 
 		RegisteredStructureDataAssets.Add(StructureDataAsset);
-		RegisteredStructureIds.Add(StructureData.StructureId);
 		bRegisteredAny = true;
 
 		if (StructureData.bAvailableForConstruction
 			&& !StructureData.bIsResourceDeposit
-			&& !IsStructureUnlockControlled(StructureDataAsset)
-			&& !UnlockedStructureIds.Contains(StructureData.StructureId))
+			&& !IsStructureUnlockControlled(StructureDataAsset))
 		{
-			UnlockedStructureIds.Add(StructureData.StructureId);
-			bUnlockedAny = true;
+			bool bAlreadyUnlocked = false;
+			UnlockedStructureIds.Add(StructureData.StructureId, &bAlreadyUnlocked);
+			bUnlockedAny |= !bAlreadyUnlocked;
 		}
 	}
 
@@ -174,9 +182,9 @@ void USRAugmentSubsystem::GenerateAugmentChoices(int32 CycleIndex)
 		return;
 	}
 
-	CurrentChoices = GeneratedChoices;
-	CurrentAugmentChoiceCycleIndex = CycleIndex;
 	UpdateHighTechBonusAfterOffer(InitialCandidates, GeneratedChoices);
+	CurrentChoices = MoveTemp(GeneratedChoices);
+	CurrentAugmentChoiceCycleIndex = CycleIndex;
 	SR_LOG(Augment, LogTemp, Log, TEXT("USRAugmentSubsystem generated %d augment choices for cycle %d from %d candidates."),
 		CurrentChoices.Num(),
 		CurrentAugmentChoiceCycleIndex,
@@ -244,12 +252,13 @@ bool USRAugmentSubsystem::UnlockStructure(USRStructureDataAsset* StructureDataAs
 		return false;
 	}
 
-	if (UnlockedStructureIds.Contains(StructureData.StructureId))
+	bool bAlreadyUnlocked = false;
+	UnlockedStructureIds.Add(StructureData.StructureId, &bAlreadyUnlocked);
+	if (bAlreadyUnlocked)
 	{
 		return true;
 	}
 
-	UnlockedStructureIds.Add(StructureData.StructureId);
 	OnUnlockedStructuresChanged.Broadcast();
 	SR_LOG(Augment, LogTemp, Log, TEXT("USRAugmentSubsystem unlocked structure '%s'."), *StructureData.StructureId.ToString());
 	return true;
@@ -268,12 +277,17 @@ bool USRAugmentSubsystem::IsStructureUnlocked(const USRStructureDataAsset* Struc
 		return false;
 	}
 
-	if (IsDebugUnlockableFacility(StructureDataAsset))
+	const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
+	const bool bAvailableFacility = StructureData.bAvailableForConstruction
+		&& !StructureData.bIsResourceDeposit
+		&& IsValid(FacilityDataAsset);
+
+	if (bDebugUnlockAllFacilitiesWithoutAugments && bAvailableFacility)
 	{
 		return true;
 	}
 
-	if (!IsStructureUnlockControlled(StructureDataAsset))
+	if (!bAvailableFacility || FacilityDataAsset->FacilityKind != ESRFacilityKind::Standard)
 	{
 		return true;
 	}
@@ -414,21 +428,28 @@ bool USRAugmentSubsystem::IsDebugUnlockableFacility(const USRStructureDataAsset*
 
 bool USRAugmentSubsystem::IsAugmentCandidate(const USRStructureDataAsset* StructureDataAsset) const
 {
-	if (!IsStructureUnlockControlled(StructureDataAsset))
-	{
-		return false;
-	}
-
-	if (IsDebugUnlockableFacility(StructureDataAsset))
+	if (!IsValid(StructureDataAsset))
 	{
 		return false;
 	}
 
 	const FSRStructureData StructureData = StructureDataAsset->BuildData();
 	const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
+	if (!StructureData.bAvailableForConstruction
+		|| StructureData.bIsResourceDeposit
+		|| !IsValid(FacilityDataAsset)
+		|| FacilityDataAsset->FacilityKind != ESRFacilityKind::Standard)
+	{
+		return false;
+	}
+
+	if (bDebugUnlockAllFacilitiesWithoutAugments)
+	{
+		return false;
+	}
+
 	return !StructureData.StructureId.IsNone()
 		&& !UnlockedStructureIds.Contains(StructureData.StructureId)
-		&& IsValid(FacilityDataAsset)
 		&& FacilityDataAsset->Rarity != ESRFacilityRarity::Innovation;
 }
 

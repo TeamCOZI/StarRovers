@@ -175,13 +175,14 @@ void ASRPlanet::RefreshRotationAxisLineVisual()
 	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
 	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
 	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	const float ReferenceTanHalfFieldOfView = FSRScreenSpaceLineThickness::ComputeReferenceTanHalfFieldOfView(ReferenceFieldOfViewDegrees);
 
-	const float CenterThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
+	const float CenterThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
 		CameraInfo,
 		GetActorLocation(),
 		RotationAxisLineThickness,
 		ReferenceViewDepth,
-		ReferenceFieldOfViewDegrees);
+		ReferenceTanHalfFieldOfView);
 	const float SurfaceClearance = FMath::Max(
 		SurfaceRadius * RotationAxisSurfaceClearanceRatio,
 		FMath::Max(0.0f, CenterThickness) * 4.0f);
@@ -219,12 +220,12 @@ void ASRPlanet::RefreshRotationAxisLineVisual()
 	auto ComputeAdaptiveThickness = [&](const FVector& LocalStart, const FVector& LocalEnd)
 	{
 		const FVector WorldMidpoint = GetActorTransform().TransformPosition((LocalStart + LocalEnd) * 0.5f);
-		return FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
+		return FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
 			CameraInfo,
 			WorldMidpoint,
 			RotationAxisLineThickness,
 			ReferenceViewDepth,
-			ReferenceFieldOfViewDegrees);
+			ReferenceTanHalfFieldOfView);
 	};
 
 	const FVector NorthStart = FVector::UpVector * SegmentStartRadius;

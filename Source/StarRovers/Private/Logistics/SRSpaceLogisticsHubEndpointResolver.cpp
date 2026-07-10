@@ -28,6 +28,33 @@ namespace
 		}
 		return OutwardNormal;
 	}
+
+	bool BuildHubEndpointFromPlacedStructure(
+		AActor* BodyActor,
+		const FSRPlacedStructureInstance& PlacedStructure,
+		FSRSpaceLogisticsHubEndpoint& OutHubEndpoint)
+	{
+		OutHubEndpoint = FSRSpaceLogisticsHubEndpoint();
+		if (!IsValid(BodyActor)
+			|| PlacedStructure.OccupantId.IsNone()
+			|| !IsValid(PlacedStructure.StructureDataAsset.Get()))
+		{
+			return false;
+		}
+
+		const FSRStructureData StructureData = PlacedStructure.StructureDataAsset->BuildData();
+		OutHubEndpoint.BodyActor = BodyActor;
+		OutHubEndpoint.HubOccupantId = PlacedStructure.OccupantId;
+		OutHubEndpoint.StructureId = PlacedStructure.StructureId.IsNone()
+			? StructureData.StructureId
+			: PlacedStructure.StructureId;
+		OutHubEndpoint.DisplayName = StructureData.DisplayName.IsEmpty()
+			? FText::FromName(OutHubEndpoint.StructureId)
+			: StructureData.DisplayName;
+		OutHubEndpoint.OriginCellId = PlacedStructure.OriginCellId;
+		OutHubEndpoint.FootprintCellIds = PlacedStructure.FootprintCellIds;
+		return OutHubEndpoint.IsValid();
+	}
 }
 
 void FSRSpaceLogisticsHubEndpointResolver::Rebuild(UWorld* World, TArray<FSRSpaceLogisticsHubEndpoint>& OutHubEndpoints)
@@ -53,6 +80,7 @@ void FSRSpaceLogisticsHubEndpointResolver::Rebuild(UWorld* World, TArray<FSRSpac
 		CelestialRegistry->GetCelestialBodies(BodyActors);
 	}
 
+	OutHubEndpoints.Reserve(BodyActors.Num());
 	for (AActor* BodyActor : BodyActors)
 	{
 		if (!IsValid(BodyActor))
@@ -79,7 +107,7 @@ void FSRSpaceLogisticsHubEndpointResolver::Rebuild(UWorld* World, TArray<FSRSpac
 			}
 
 			FSRSpaceLogisticsHubEndpoint HubEndpoint;
-			if (Build(BodyActor, PlacedStructure.OccupantId, HubEndpoint))
+			if (BuildHubEndpointFromPlacedStructure(BodyActor, PlacedStructure, HubEndpoint))
 			{
 				OutHubEndpoints.Add(HubEndpoint);
 			}
@@ -112,18 +140,7 @@ bool FSRSpaceLogisticsHubEndpointResolver::Build(
 		return false;
 	}
 
-	const FSRStructureData StructureData = PlacedStructure.StructureDataAsset->BuildData();
-	OutHubEndpoint.BodyActor = BodyActor;
-	OutHubEndpoint.HubOccupantId = HubOccupantId;
-	OutHubEndpoint.StructureId = PlacedStructure.StructureId.IsNone()
-		? StructureData.StructureId
-		: PlacedStructure.StructureId;
-	OutHubEndpoint.DisplayName = StructureData.DisplayName.IsEmpty()
-		? FText::FromName(OutHubEndpoint.StructureId)
-		: StructureData.DisplayName;
-	OutHubEndpoint.OriginCellId = PlacedStructure.OriginCellId;
-	OutHubEndpoint.FootprintCellIds = PlacedStructure.FootprintCellIds;
-	return OutHubEndpoint.IsValid();
+	return BuildHubEndpointFromPlacedStructure(BodyActor, PlacedStructure, OutHubEndpoint);
 }
 
 bool FSRSpaceLogisticsHubEndpointResolver::BuildSaveData(
@@ -212,16 +229,16 @@ bool FSRSpaceLogisticsHubEndpointResolver::ResolveWorldLocationWithHeightOffset(
 
 	const FVector SurfaceCenter = SurfaceGrid->GetComponentTransform().GetLocation();
 	FSRPlanetSurfaceGridCellId OriginCellId = HubEndpoint.OriginCellId;
-	TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds = HubEndpoint.FootprintCellIds;
+	const TArray<FSRPlanetSurfaceGridCellId>* FootprintCellIds = &HubEndpoint.FootprintCellIds;
+	FSRPlacedStructureInstance CurrentPlacedStructure;
 	if (IsValid(StructureInstanceManager))
 	{
-		FSRPlacedStructureInstance PlacedStructure;
-		if (StructureInstanceManager->GetPlacedStructure(HubEndpoint.HubOccupantId, PlacedStructure))
+		if (StructureInstanceManager->GetPlacedStructure(HubEndpoint.HubOccupantId, CurrentPlacedStructure))
 		{
-			OriginCellId = PlacedStructure.OriginCellId;
-			if (!PlacedStructure.FootprintCellIds.IsEmpty())
+			OriginCellId = CurrentPlacedStructure.OriginCellId;
+			if (!CurrentPlacedStructure.FootprintCellIds.IsEmpty())
 			{
-				FootprintCellIds = PlacedStructure.FootprintCellIds;
+				FootprintCellIds = &CurrentPlacedStructure.FootprintCellIds;
 			}
 		}
 	}
@@ -234,7 +251,7 @@ bool FSRSpaceLogisticsHubEndpointResolver::ResolveWorldLocationWithHeightOffset(
 		return true;
 	}
 
-	if (FootprintCellIds.IsEmpty())
+	if (!FootprintCellIds || FootprintCellIds->IsEmpty())
 	{
 		return false;
 	}
@@ -242,7 +259,7 @@ bool FSRSpaceLogisticsHubEndpointResolver::ResolveWorldLocationWithHeightOffset(
 	FVector CenterSum = FVector::ZeroVector;
 	FVector NormalSum = FVector::ZeroVector;
 	int32 ValidCellCount = 0;
-	for (const FSRPlanetSurfaceGridCellId& CellId : FootprintCellIds)
+	for (const FSRPlanetSurfaceGridCellId& CellId : *FootprintCellIds)
 	{
 		FSRPlanetSurfaceGridCellInfo CellInfo;
 		if (!SurfaceGrid->GetCellInfoById(CellId, CellInfo))

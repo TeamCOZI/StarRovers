@@ -187,14 +187,23 @@ namespace StarRovers::Assembly
 		OutBeltPath.NetworkId = NetworkId;
 		OutBeltPath.StructureDataAsset = StructureDataAsset;
 
+		TSet<FSRPlanetSurfaceGridCellId> EvaluatedCellIdSet;
+		EvaluatedCellIdSet.Reserve(PathCellIds.Num());
+		OutPlacedCellIds.Reserve(PathCellIds.Num());
+		FSRConveyorLaneKey LaneKey;
+		LaneKey.Layer = SafeLayer;
 		for (const FSRPlanetSurfaceGridCellId& CellId : PathCellIds)
 		{
-			FSRConveyorLaneKey LaneKey;
+			if (EvaluatedCellIdSet.Contains(CellId))
+			{
+				continue;
+			}
+			EvaluatedCellIdSet.Add(CellId);
+
 			LaneKey.CellId = CellId;
-			LaneKey.Layer = SafeLayer;
 			if (!ConveyorNetwork->HasConveyorSegment(LaneKey))
 			{
-				OutPlacedCellIds.AddUnique(CellId);
+				OutPlacedCellIds.Add(CellId);
 			}
 		}
 

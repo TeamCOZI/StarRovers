@@ -41,85 +41,75 @@ This section is a compact file-structure map. Use it to find the relevant source
 ### 3.1 Project Root
 
 - `StarRovers.uproject`: Unreal project file
-- `StarRovers.code-workspace`: VS Code build/debug workspace
-- `.gitignore`: generated files, build outputs, local editor files
+- `Source/`: Star Rovers C++ module source
+- `Content/`: project assets
+- `Config/`: Unreal project configuration
+- `Docs/`: planning/reference notes
+- `.gitignore`, `.gitattributes`: repository rules
+
+Generated or local-only directories such as `Binaries/`, `Intermediate/`, `Saved/`, `DerivedDataCache/`, and `.vs/` are not part of the source structure map.
 
 ### 3.2 Source Layout
 
 C++ code lives under `Source/StarRovers`.
 
+- `StarRovers.Build.cs`: module build rules
 - `Public/`: public headers, runtime types, component/actor APIs
-- `Private/`: implementation files, split by feature owner
-- `Private/<Feature>/*.h`: private helper headers named by owner and responsibility
+- `Private/`: implementation files and private helper headers
 
-Current source roots:
+Source folders are organized by owner:
 
-- `Assembly`: build mode, placement, deletion, area selection/copy, undo/redo
-- `Automation`: facilities, resources, processing, inventories
-- `Camera`: player controller, camera pawn, focus, input, UI coordination
-- `Celestial`: star/planet/moon actors, dynamic mesh, orbit-facing runtime data
-- `Conveyor`: conveyor graph, placement, visuals, transport, PCG
-- `Gravity`: gravity parent/child components
-- `Logistics`: space logistics and spaceship runtime
-- `Performance`: lightweight visual/runtime performance helpers
-- `Rendering`: render-facing components and screen-space visual utilities
-- `Simulation`: solar system generation, runtime settings, augment system
-- `Structure`: structure data, placed structure instances, placement helpers
-- `Surface`: planet surface grid, terrain generation, cell state
-- `UI`: native widget classes
+- `Assembly`: build/placement mode owner
+- `Automation`: facility/resource processing owner
+- `Camera`: pawn, controller, focus, input, and UI routing owner
+- `Celestial`: celestial actors, runtime data, and dynamic mesh owner
+- `Conveyor`: conveyor network, placement, visuals, and transport owner
+- `Gravity`: gravity relationship components
+- `Logistics`: space route and spaceship logistics owner
+- `Performance`: lightweight performance configuration/helpers
+- `Rendering`: render-facing components and visual utilities
+- `Simulation`: run/system simulation owner
+- `Structure`: structure data and placed-instance owner
+- `Surface`: planet grid, terrain, interaction, and cell-state owner
+- `UI`: native widget owners
 - `Utility`: diagnostics, timing, shared utility helpers
 - `Editor`: editor-only commandlets and tools
 
-### 3.3 Split Implementation Pattern
+`Editor` and `Performance` currently exist only under `Private/`.
 
-Large owners are split across multiple `.cpp` files. Private helper headers use the same owner/responsibility naming.
+### 3.3 Finding Files
 
-Common responsibility suffixes:
+Use this section as a navigation rule before editing:
 
-- `Input`
-- `UI`
-- `Selection`
-- `Focus`
-- `SurfaceInteraction`
-- `Placement`
-- `Deletion`
-- `AreaSelection`
-- `AreaCopy`
-- `History`
-- `DynamicMesh`
-- `Runtime`
-- `Spawn`
-- `Path`
-- `Transport`
-- `PCG`
-- `Diagnostics`
-- `Rendering`
-- `Display`
-- `Pipeline`
+1. Start from the owner folder that matches the feature area.
+2. Read the public owner header first when one exists, usually under `Public/<Owner>/`.
+3. Read the matching primary implementation under `Private/<Owner>/`.
+4. For large owners, related logic is split into `Private/<Owner>/<ClassOrOwner><Responsibility>.cpp`.
+5. Private helper headers live beside implementation files under `Private/<Owner>/`.
+6. If the exact split file is unclear, search by the public class/function name inside the owner folder first.
 
-Read the owner header first, then open the matching split `.cpp`.
+Do not assume a responsibility suffix is exhaustive. The actual split files are the source of truth.
 
 ### 3.4 Content Layout
 
 Main project assets live under `Content`.
 
-- `Content/StarRovers/Core/Blueprints`: core gameplay Blueprint classes
+- `Content/StarRovers/Core`: core gameplay Blueprint classes
 - `Content/StarRovers/Input`: input actions and mapping contexts
-- `Content/StarRovers/Generation/Blueprints`: solar system generator Blueprint
-- `Content/StarRovers/Celestial`: celestial body Blueprints, meshes, and star/planet/moon data
+- `Content/StarRovers/Generation`: generator Blueprints
+- `Content/StarRovers/Celestial`: celestial Blueprints, meshes, and data assets
 - `Content/StarRovers/Surface`: terrain profiles and biome data
 - `Content/StarRovers/Automation`: facility and resource data
 - `Content/StarRovers/Structure`: structure Blueprints and structure data
 - `Content/StarRovers/Conveyor`: conveyor Blueprint and PCG assets
-- `Content/StarRovers/Logistics`: spaceship Blueprint and logistics VFX assets
+- `Content/StarRovers/Logistics`: spaceship Blueprint and logistics VFX
 - `Content/StarRovers/Rendering`: space rendering Blueprint and meshes
-- `Content/StarRovers/UI/Widgets`: widget Blueprints
+- `Content/StarRovers/UI`: widget Blueprints
 - `Content/Effect`: VFX assets
-- `Content/Externals/Space`: external space textures
+- `Content/Externals`: external/reference assets
 - `Content/Levels`: playable/test maps
 - `Content/Materials`: shared materials
-- `Content/Objects/Natural`: natural structure meshes/materials
-- `Content/Objects/Structure`: structure meshes/assets
+- `Content/Objects`: shared object meshes/materials
 
 Generated dynamic mesh cache assets matching `DA_DynamicMeshBase_*.uasset` are ignored by Git.
 

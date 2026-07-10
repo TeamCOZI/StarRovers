@@ -23,6 +23,7 @@ public:
 
 	static bool TryBuildPrimaryCameraViewInfo(const UWorld* World, FSRScreenSpaceLineViewInfo& OutCameraInfo);
 	static void ResolveReferenceViewParameters(const UWorld* World, float& OutReferenceViewDepth, float& OutReferenceFieldOfViewDegrees);
+	static float ComputeReferenceTanHalfFieldOfView(float ReferenceFieldOfViewDegrees);
 
 	// Treat ReferenceWorldThickness as the authored world thickness at the reference view,
 	// then scale it by the current frustum so the line keeps a consistent on-screen thickness.
@@ -32,4 +33,10 @@ public:
 		float ReferenceWorldThickness,
 		float ReferenceViewDepth,
 		float ReferenceFieldOfViewDegrees);
+	static float ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
+		const FSRScreenSpaceLineViewInfo& CameraInfo,
+		const FVector& WorldLocation,
+		float ReferenceWorldThickness,
+		float ReferenceViewDepth,
+		float ReferenceTanHalfFieldOfView);
 };

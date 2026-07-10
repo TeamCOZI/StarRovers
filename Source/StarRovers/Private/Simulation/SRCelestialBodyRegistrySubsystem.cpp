@@ -7,6 +7,18 @@ namespace
 {
 	bool AreActorListsEquivalent(const TArray<TObjectPtr<AActor>>& PreviousActors, const TArray<TObjectPtr<AActor>>& CurrentActors)
 	{
+		TSet<const AActor*> CurrentValidActors;
+		CurrentValidActors.Reserve(CurrentActors.Num());
+		int32 CurrentValidActorCount = 0;
+		for (const TObjectPtr<AActor>& CurrentActor : CurrentActors)
+		{
+			if (IsValid(CurrentActor))
+			{
+				++CurrentValidActorCount;
+				CurrentValidActors.Add(CurrentActor.Get());
+			}
+		}
+
 		int32 PreviousValidActorCount = 0;
 		for (const TObjectPtr<AActor>& PreviousActor : PreviousActors)
 		{
@@ -16,18 +28,9 @@ namespace
 			}
 
 			++PreviousValidActorCount;
-			if (!CurrentActors.Contains(PreviousActor))
+			if (!CurrentValidActors.Contains(PreviousActor.Get()))
 			{
 				return false;
-			}
-		}
-
-		int32 CurrentValidActorCount = 0;
-		for (const TObjectPtr<AActor>& CurrentActor : CurrentActors)
-		{
-			if (IsValid(CurrentActor))
-			{
-				++CurrentValidActorCount;
 			}
 		}
 
@@ -119,6 +122,9 @@ void USRCelestialBodyRegistrySubsystem::RefreshCelestialBodies()
 		return;
 	}
 
+	AActor* FirstStarActor = nullptr;
+	AActor* PreviousPrimaryStarActor = PrimaryStarActor.Get();
+	bool bFoundPreviousPrimaryStarActor = false;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		AActor* BodyActor = *It;
@@ -128,27 +134,20 @@ void USRCelestialBodyRegistrySubsystem::RefreshCelestialBodies()
 		}
 
 		CelestialBodies.Add(BodyActor);
-	}
-
-	AActor* ResolvedPrimaryStarActor = nullptr;
-	if (IsValid(PrimaryStarActor)
-		&& USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(PrimaryStarActor)
-		&& CelestialBodies.Contains(PrimaryStarActor))
-	{
-		ResolvedPrimaryStarActor = PrimaryStarActor;
-	}
-	else
-	{
-		for (AActor* BodyActor : CelestialBodies)
+		if (USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(BodyActor))
 		{
-			if (IsValid(BodyActor) && USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(BodyActor))
+			if (!FirstStarActor)
 			{
-				ResolvedPrimaryStarActor = BodyActor;
-				break;
+				FirstStarActor = BodyActor;
+			}
+			if (BodyActor == PreviousPrimaryStarActor)
+			{
+				bFoundPreviousPrimaryStarActor = true;
 			}
 		}
 	}
 
+	AActor* ResolvedPrimaryStarActor = bFoundPreviousPrimaryStarActor ? PreviousPrimaryStarActor : FirstStarActor;
 	SetResolvedPrimaryStarActor(ResolvedPrimaryStarActor, true);
 	if (!AreActorListsEquivalent(PreviousCelestialBodies, CelestialBodies))
 	{

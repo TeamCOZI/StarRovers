@@ -25,8 +25,28 @@ void StarRovers::Conveyor::FSRConveyorItemLabelUpdater::Refresh(
 
 	TSet<FSRConveyorLaneKey> ActiveLaneKeys;
 	ActiveLaneKeys.Reserve(TransportState.ItemsByLane.Num());
+	TransportState.ItemLabelsByLane.Reserve(TransportState.ItemsByLane.Num());
 
 	const float TimeSeconds = World ? World->GetTimeSeconds() : 0.0f;
+	bool bUseCameraFacingRotation = false;
+	FRotator CameraFacingRotation = FRotator::ZeroRotator;
+	if (World)
+	{
+		if (APlayerController* PlayerController = World->GetFirstPlayerController())
+		{
+			FRotator CameraRotation = FRotator::ZeroRotator;
+			FVector UnusedCameraLocation = FVector::ZeroVector;
+			PlayerController->GetPlayerViewPoint(UnusedCameraLocation, CameraRotation);
+			const FVector CameraFacingNormal = -CameraRotation.Vector();
+			const FVector CameraUp = CameraRotation.RotateVector(FVector::UpVector).GetSafeNormal();
+			if (!CameraFacingNormal.IsNearlyZero() && !CameraUp.IsNearlyZero())
+			{
+				CameraFacingRotation = FRotationMatrix::MakeFromXZ(CameraFacingNormal, CameraUp).Rotator();
+				bUseCameraFacingRotation = true;
+			}
+		}
+	}
+
 	for (const TPair<FSRConveyorLaneKey, FSRConveyorItem>& ItemPair : TransportState.ItemsByLane)
 	{
 		const FSRConveyorLaneKey& LaneKey = ItemPair.Key;
@@ -54,22 +74,7 @@ void StarRovers::Conveyor::FSRConveyorItemLabelUpdater::Refresh(
 
 		ActiveLaneKeys.Add(LaneKey);
 
-		FRotator LabelRotation = WorldNormal.Rotation();
-		if (World)
-		{
-			if (APlayerController* PlayerController = World->GetFirstPlayerController())
-			{
-				FRotator CameraRotation = FRotator::ZeroRotator;
-				FVector UnusedCameraLocation = FVector::ZeroVector;
-				PlayerController->GetPlayerViewPoint(UnusedCameraLocation, CameraRotation);
-				const FVector CameraFacingNormal = -CameraRotation.Vector();
-				const FVector CameraUp = CameraRotation.RotateVector(FVector::UpVector).GetSafeNormal();
-				if (!CameraFacingNormal.IsNearlyZero() && !CameraUp.IsNearlyZero())
-				{
-					LabelRotation = FRotationMatrix::MakeFromXZ(CameraFacingNormal, CameraUp).Rotator();
-				}
-			}
-		}
+		const FRotator LabelRotation = bUseCameraFacingRotation ? CameraFacingRotation : WorldNormal.Rotation();
 
 		LabelComponent->SetText(FSRConveyorItemLabelResolver::BuildLabelText(Item.ResourceInstance));
 		LabelComponent->SetTextRenderColor(FSRConveyorItemLabelResolver::ResolveLabelColor(Item.ResourceInstance, LabelSettings));
@@ -79,23 +84,18 @@ void StarRovers::Conveyor::FSRConveyorItemLabelUpdater::Refresh(
 		LabelComponent->SetHiddenInGame(false);
 	}
 
-	TArray<FSRConveyorLaneKey> ExistingLabelLaneKeys;
-	TransportState.ItemLabelsByLane.GetKeys(ExistingLabelLaneKeys);
-	for (const FSRConveyorLaneKey& ExistingLaneKey : ExistingLabelLaneKeys)
+	for (auto LabelIterator = TransportState.ItemLabelsByLane.CreateIterator(); LabelIterator; ++LabelIterator)
 	{
-		if (ActiveLaneKeys.Contains(ExistingLaneKey))
+		if (ActiveLaneKeys.Contains(LabelIterator.Key()))
 		{
 			continue;
 		}
 
-		if (TObjectPtr<UTextRenderComponent>* LabelComponentPtr = TransportState.ItemLabelsByLane.Find(ExistingLaneKey))
+		if (IsValid(LabelIterator.Value()))
 		{
-			if (IsValid(*LabelComponentPtr))
-			{
-				(*LabelComponentPtr)->DestroyComponent();
-			}
+			LabelIterator.Value()->DestroyComponent();
 		}
-		TransportState.ItemLabelsByLane.Remove(ExistingLaneKey);
+		LabelIterator.RemoveCurrent();
 	}
 }
 

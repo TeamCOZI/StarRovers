@@ -42,6 +42,7 @@ void FSRSpaceLogisticsHubEndpointMotionTracker::Update(
 	}
 
 	TArray<FString> StaleSampleKeys;
+	StaleSampleKeys.Reserve(HubEndpointMotionSamples.Num());
 	for (const TPair<FString, FSRSpaceLogisticsHubEndpointMotionSample>& Pair : HubEndpointMotionSamples)
 	{
 		if (!ActiveSampleKeys.Contains(Pair.Key))

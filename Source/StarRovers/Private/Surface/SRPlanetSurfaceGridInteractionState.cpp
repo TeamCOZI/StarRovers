@@ -12,9 +12,15 @@ namespace
 		SeenCellIds.Reserve(CellIds.Num());
 		for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
 		{
-			if (IsValidCell(CellId) && !SeenCellIds.Contains(CellId))
+			if (!IsValidCell(CellId))
 			{
-				SeenCellIds.Add(CellId);
+				continue;
+			}
+
+			bool bAlreadySeen = false;
+			SeenCellIds.Add(CellId, &bAlreadySeen);
+			if (!bAlreadySeen)
+			{
 				ValidCellIds.Add(CellId);
 			}
 		}

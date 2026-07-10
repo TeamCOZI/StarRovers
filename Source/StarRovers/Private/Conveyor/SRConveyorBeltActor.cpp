@@ -433,26 +433,6 @@ void ASRConveyorBeltActor::HandlePCGGraphGenerated(UPCGComponent* InPCGComponent
 	}
 }
 
-void ASRConveyorBeltActor::CollectGeneratedSplineMeshes(TArray<USplineMeshComponent*>& OutGeneratedSplineMeshes) const
-{
-	OutGeneratedSplineMeshes.Reset();
-	if (!IsValid(PCGComponent))
-	{
-		return;
-	}
-
-	GetComponents<USplineMeshComponent>(OutGeneratedSplineMeshes);
-	const FName PCGComponentName = PCGComponent->GetFName();
-	OutGeneratedSplineMeshes.RemoveAll([PCGComponentName](const USplineMeshComponent* SplineMeshComponent)
-	{
-		return !IsGeneratedSplineMeshForPCG(SplineMeshComponent, PCGComponentName, false);
-	});
-	OutGeneratedSplineMeshes.Sort([](const USplineMeshComponent& Left, const USplineMeshComponent& Right)
-	{
-		return Left.GetFName().LexicalLess(Right.GetFName());
-	});
-}
-
 void ASRConveyorBeltActor::CollectAllGeneratedSplineMeshes(TArray<USplineMeshComponent*>& OutGeneratedSplineMeshes) const
 {
 	OutGeneratedSplineMeshes.Reset();
@@ -522,10 +502,24 @@ void ASRConveyorBeltActor::RebaseGeneratedSplineMeshes()
 		return;
 	}
 
-	HideGeneratedSplineMeshes();
-
 	TArray<USplineMeshComponent*> GeneratedSplineMeshes;
-	CollectGeneratedSplineMeshes(GeneratedSplineMeshes);
+	CollectAllGeneratedSplineMeshes(GeneratedSplineMeshes);
+	for (USplineMeshComponent* SplineMeshComponent : GeneratedSplineMeshes)
+	{
+		SplineMeshComponent->SetVisibility(false);
+		SplineMeshComponent->SetHiddenInGame(true);
+		SplineMeshComponent->UpdateMesh();
+	}
+
+	const FName PCGComponentName = PCGComponent->GetFName();
+	GeneratedSplineMeshes.RemoveAll([PCGComponentName](const USplineMeshComponent* SplineMeshComponent)
+	{
+		return !IsGeneratedSplineMeshForPCG(SplineMeshComponent, PCGComponentName, false);
+	});
+	GeneratedSplineMeshes.Sort([](const USplineMeshComponent& Left, const USplineMeshComponent& Right)
+	{
+		return Left.GetFName().LexicalLess(Right.GetFName());
+	});
 
 	const int32 SegmentCount = FMath::Min(GeneratedSplineMeshes.Num(), ConveyorSplineComponents.Num());
 	for (int32 SegmentIndex = 0; SegmentIndex < SegmentCount; ++SegmentIndex)

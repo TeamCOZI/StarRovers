@@ -59,9 +59,11 @@ namespace
 	void AppendGhostPortPreviewCell(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const TArray<FSRPlanetSurfaceGridCellId>& FootprintCellIds,
+		const TSet<FSRPlanetSurfaceGridCellId>& FootprintCellIdSet,
 		int32 FootprintCellsX,
 		int32 FootprintCellsY,
 		const FSRStructurePortSpec& PortSpec,
+		TSet<FSRPlanetSurfaceGridCellId>& OutConnectionCellIdSet,
 		TArray<FSRPlanetSurfaceGridCellId>& OutConnectionCellIds)
 	{
 		FSRPlanetSurfaceGridCellId PortFootprintCellId;
@@ -72,12 +74,14 @@ namespace
 
 		FSRPlanetSurfaceGridCellId ConnectionCellId;
 		if (!GetGhostPortNeighborCellId(SurfaceGrid, PortFootprintCellId, PortSpec.Direction, ConnectionCellId)
-			|| FootprintCellIds.Contains(ConnectionCellId))
+			|| FootprintCellIdSet.Contains(ConnectionCellId)
+			|| OutConnectionCellIdSet.Contains(ConnectionCellId))
 		{
 			return;
 		}
 
-		OutConnectionCellIds.AddUnique(ConnectionCellId);
+		OutConnectionCellIdSet.Add(ConnectionCellId);
+		OutConnectionCellIds.Add(ConnectionCellId);
 	}
 }
 
@@ -108,6 +112,19 @@ void FSRAssemblyStructurePreviewState::UpdateGhostPortPreview(
 
 	TArray<FSRPlanetSurfaceGridCellId> InputConnectionCellIds;
 	TArray<FSRPlanetSurfaceGridCellId> OutputConnectionCellIds;
+	TSet<FSRPlanetSurfaceGridCellId> FootprintCellIdSet;
+	TSet<FSRPlanetSurfaceGridCellId> InputConnectionCellIdSet;
+	TSet<FSRPlanetSurfaceGridCellId> OutputConnectionCellIdSet;
+	FootprintCellIdSet.Reserve(FootprintCellIds.Num());
+	InputConnectionCellIds.Reserve(StructureData.InputPorts.Num());
+	OutputConnectionCellIds.Reserve(StructureData.OutputPorts.Num());
+	InputConnectionCellIdSet.Reserve(StructureData.InputPorts.Num());
+	OutputConnectionCellIdSet.Reserve(StructureData.OutputPorts.Num());
+	for (const FSRPlanetSurfaceGridCellId& FootprintCellId : FootprintCellIds)
+	{
+		FootprintCellIdSet.Add(FootprintCellId);
+	}
+
 	const int32 SafeFootprintCellsX = StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacementRotationSteps);
 	const int32 SafeFootprintCellsY = StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, PlacementRotationSteps);
 
@@ -117,9 +134,11 @@ void FSRAssemblyStructurePreviewState::UpdateGhostPortPreview(
 		AppendGhostPortPreviewCell(
 			SurfaceGrid,
 			FootprintCellIds,
+			FootprintCellIdSet,
 			SafeFootprintCellsX,
 			SafeFootprintCellsY,
 			RotatedInputPort,
+			InputConnectionCellIdSet,
 			InputConnectionCellIds);
 	}
 
@@ -129,9 +148,11 @@ void FSRAssemblyStructurePreviewState::UpdateGhostPortPreview(
 		AppendGhostPortPreviewCell(
 			SurfaceGrid,
 			FootprintCellIds,
+			FootprintCellIdSet,
 			SafeFootprintCellsX,
 			SafeFootprintCellsY,
 			RotatedOutputPort,
+			OutputConnectionCellIdSet,
 			OutputConnectionCellIds);
 	}
 

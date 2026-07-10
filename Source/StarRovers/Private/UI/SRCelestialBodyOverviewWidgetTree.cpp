@@ -166,6 +166,7 @@ void USRCelestialBodyOverviewWidget::RebuildStarSystemScrollBox()
 	EntryActions.Reset();
 
 	TSet<AActor*> CelestialBodySet;
+	CelestialBodySet.Reserve(CelestialBodies.Num());
 	for (AActor* CelestialBodyActor : CelestialBodies)
 	{
 		if (IsValid(CelestialBodyActor))
@@ -176,6 +177,8 @@ void USRCelestialBodyOverviewWidget::RebuildStarSystemScrollBox()
 
 	TArray<TObjectPtr<AActor>> RootStarSystemBodies;
 	TMap<AActor*, TArray<AActor*>> ChildrenByParent;
+	RootStarSystemBodies.Reserve(CelestialBodies.Num());
+	ChildrenByParent.Reserve(CelestialBodies.Num());
 	for (AActor* CelestialBodyActor : CelestialBodies)
 	{
 		if (!IsValid(CelestialBodyActor))
@@ -199,17 +202,10 @@ void USRCelestialBodyOverviewWidget::RebuildStarSystemScrollBox()
 	SortStarSystemBodies(RootStarSystemBodies);
 	for (TPair<AActor*, TArray<AActor*>>& Pair : ChildrenByParent)
 	{
-		TArray<TObjectPtr<AActor>> SortedChildren;
-		for (AActor* ChildBody : Pair.Value)
+		Pair.Value.Sort([this](const AActor& Left, const AActor& Right)
 		{
-			SortedChildren.Add(ChildBody);
-		}
-		SortStarSystemBodies(SortedChildren);
-		Pair.Value.Reset();
-		for (AActor* ChildBody : SortedChildren)
-		{
-			Pair.Value.Add(ChildBody);
-		}
+			return CompareStarSystemBodies(Left, Right);
+		});
 	}
 
 	for (AActor* RootStarSystemBody : RootStarSystemBodies)
@@ -405,7 +401,15 @@ void USRCelestialBodyOverviewWidget::SortStarSystemBodies(
 	TArray<TObjectPtr<AActor>>& StarSystemBodiesToSort) const
 {
 	StarSystemBodiesToSort.Sort([this](const AActor& Left, const AActor& Right)
-								{
+	{
+		return CompareStarSystemBodies(Left, Right);
+	});
+}
+
+bool USRCelestialBodyOverviewWidget::CompareStarSystemBodies(
+	const AActor& Left,
+	const AActor& Right) const
+{
     AActor *LeftParent = nullptr;
     AActor *RightParent = nullptr;
     const bool bLeftHasParent =
@@ -431,5 +435,5 @@ void USRCelestialBodyOverviewWidget::SortStarSystemBodies(
     }
 
     return GetStarSystemNameplateText(&Left).ToString() <
-           GetStarSystemNameplateText(&Right).ToString(); });
+           GetStarSystemNameplateText(&Right).ToString();
 }

@@ -5,6 +5,59 @@
 #include "Conveyor/SRConveyorNetworkGeometry.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
+namespace
+{
+	bool HasAnyInputDirection(const FSRConveyorSegment& Segment)
+	{
+		return Segment.InputDirection != ESRConveyorGridDirection::None
+			|| Segment.MergeInputDirection != ESRConveyorGridDirection::None
+			|| Segment.SecondMergeInputDirection != ESRConveyorGridDirection::None;
+	}
+
+	int32 CountUniqueInputDirections(const FSRConveyorSegment& Segment)
+	{
+		int32 InputDirectionCount = 0;
+		if (Segment.InputDirection != ESRConveyorGridDirection::None)
+		{
+			++InputDirectionCount;
+		}
+		if (Segment.MergeInputDirection != ESRConveyorGridDirection::None
+			&& Segment.MergeInputDirection != Segment.InputDirection)
+		{
+			++InputDirectionCount;
+		}
+		if (Segment.SecondMergeInputDirection != ESRConveyorGridDirection::None
+			&& Segment.SecondMergeInputDirection != Segment.InputDirection
+			&& Segment.SecondMergeInputDirection != Segment.MergeInputDirection)
+		{
+			++InputDirectionCount;
+		}
+		return InputDirectionCount;
+	}
+
+	bool HasInputDirection(const FSRConveyorSegment& Segment, ESRConveyorGridDirection Direction)
+	{
+		return Direction != ESRConveyorGridDirection::None
+			&& (Segment.InputDirection == Direction
+				|| Segment.MergeInputDirection == Direction
+				|| Segment.SecondMergeInputDirection == Direction);
+	}
+
+	bool TryResolveOutputLane(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRConveyorSegment& Segment,
+		ESRConveyorGridDirection OutputDirection,
+		FSRConveyorLaneKey& OutLaneKey)
+	{
+		return OutputDirection != ESRConveyorGridDirection::None
+			&& StarRovers::Conveyor::FSRConveyorConnectionQuery::TryResolveLaneByDirection(
+				SurfaceGrid,
+				Segment,
+				OutputDirection,
+				OutLaneKey);
+	}
+}
+
 void StarRovers::Conveyor::FSRConveyorTransportProcessor::Process(
 	USRPlanetSurfaceGrid* SurfaceGrid,
 	USRFacilityNetworkComponent* FacilityNetwork,
@@ -26,6 +79,7 @@ void StarRovers::Conveyor::FSRConveyorTransportProcessor::Process(
 	int32 TransferCount = 0;
 	const int32 MaxTransferCount = FMath::Max(1, Settings.MaxItemTransfersPerTick);
 	TMap<FSRConveyorLaneKey, FSRConveyorItem> NextItemsByLane;
+	NextItemsByLane.Reserve(TransportState.ItemsByLane.Num() + MaxTransferCount);
 	const float ProgressDelta = ClampedDeltaTime * FMath::Max(0.01f, Settings.ItemSpeedCellsPerSecond);
 	for (const FSRConveyorLaneKey& LaneKey : ItemLaneKeys)
 	{
@@ -65,32 +119,33 @@ void StarRovers::Conveyor::FSRConveyorTransportProcessor::Process(
 		NextItemsByLane.Add(LaneKey, Item);
 	}
 
-	TArray<FSRConveyorLaneKey> SegmentLaneKeys;
-	Segments.GetKeys(SegmentLaneKeys);
-	FSRConveyorNetworkGeometry::SortLaneKeys(SegmentLaneKeys);
-	for (const FSRConveyorLaneKey& LaneKey : SegmentLaneKeys)
+	if (TransferCount < MaxTransferCount)
 	{
-		if (TransferCount >= MaxTransferCount)
+		TArray<FSRConveyorLaneKey> SegmentLaneKeys;
+		Segments.GetKeys(SegmentLaneKeys);
+		FSRConveyorNetworkGeometry::SortLaneKeys(SegmentLaneKeys);
+		for (const FSRConveyorLaneKey& LaneKey : SegmentLaneKeys)
 		{
-			break;
-		}
+			if (TransferCount >= MaxTransferCount)
+			{
+				break;
+			}
 
-		const FSRConveyorSegment* Segment = Segments.Find(LaneKey);
-		if (!Segment || NextItemsByLane.Contains(LaneKey))
-		{
-			continue;
-		}
+			const FSRConveyorSegment* Segment = Segments.Find(LaneKey);
+			if (!Segment || NextItemsByLane.Contains(LaneKey))
+			{
+				continue;
+			}
 
-		TArray<ESRConveyorGridDirection> InputDirections;
-		FSRConveyorNetworkGeometry::CollectInputDirections(*Segment, InputDirections);
-		if (!InputDirections.IsEmpty())
-		{
-			continue;
-		}
+			if (HasAnyInputDirection(*Segment))
+			{
+				continue;
+			}
 
-		if (TryPullFacilityOutputToConveyor(SurfaceGrid, FacilityNetwork, LaneKey, NextItemsByLane))
-		{
-			++TransferCount;
+			if (TryPullFacilityOutputToConveyor(SurfaceGrid, FacilityNetwork, LaneKey, NextItemsByLane))
+			{
+				++TransferCount;
+			}
 		}
 	}
 
@@ -102,12 +157,17 @@ bool StarRovers::Conveyor::FSRConveyorTransportProcessor::HasConnectedOutputLane
 	const TMap<FSRConveyorLaneKey, FSRConveyorSegment>& Segments,
 	const FSRConveyorSegment& Segment)
 {
-	TArray<ESRConveyorGridDirection> OutputDirections;
-	FSRConveyorNetworkGeometry::CollectOutputDirections(Segment, OutputDirections);
+	const ESRConveyorGridDirection OutputDirections[] =
+	{
+		Segment.OutputDirection,
+		Segment.BranchOutputDirection,
+		Segment.SecondBranchOutputDirection,
+	};
+
 	for (const ESRConveyorGridDirection OutputDirection : OutputDirections)
 	{
 		FSRConveyorLaneKey CandidateLaneKey;
-		if (FSRConveyorConnectionQuery::TryResolveLaneByDirection(SurfaceGrid, Segment, OutputDirection, CandidateLaneKey)
+		if (TryResolveOutputLane(SurfaceGrid, Segment, OutputDirection, CandidateLaneKey)
 			&& Segments.Contains(CandidateLaneKey))
 		{
 			return true;
@@ -177,22 +237,22 @@ bool StarRovers::Conveyor::FSRConveyorTransportProcessor::CanTransferIntoMergeCo
 	ESRConveyorGridDirection IncomingInputDirection,
 	const TMap<FSRConveyorLaneKey, FSRConveyorItem>& NextItemsByLane)
 {
-	TArray<ESRConveyorGridDirection> InputDirections;
-	FSRConveyorNetworkGeometry::CollectInputDirections(MergeSegment, InputDirections);
-	if (InputDirections.IsEmpty())
+	const int32 InputCount = CountUniqueInputDirections(MergeSegment);
+	if (InputCount == 0)
 	{
 		return true;
 	}
-	if (!InputDirections.Contains(IncomingInputDirection))
+	if (!HasInputDirection(MergeSegment, IncomingInputDirection))
 	{
 		return false;
 	}
-	if (InputDirections.Num() <= 1)
+	if (InputCount <= 1)
 	{
 		return true;
 	}
 
-	const int32 InputCount = InputDirections.Num();
+	TArray<ESRConveyorGridDirection> InputDirections;
+	FSRConveyorNetworkGeometry::CollectInputDirections(MergeSegment, InputDirections);
 	const int32 StartIndex = FMath::Clamp(MergeSegment.NextInputDirectionIndex, 0, InputCount - 1);
 	for (int32 AttemptIndex = 0; AttemptIndex < InputCount; ++AttemptIndex)
 	{

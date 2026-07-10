@@ -59,16 +59,23 @@ bool StarRovers::Conveyor::FSRConveyorPlacementPlanner::BuildPlacementPlan(
 	OutPlan.Layer = SafeLayer;
 	OutPlan.PreviousBeltPathCount = CurrentBeltPathCount;
 
+	TSet<FSRPlanetSurfaceGridCellId> DestructibleStructureCellIdSet;
+	if (SafeLayer == 0)
+	{
+		DestructibleStructureCellIdSet.Reserve(PathCellIds.Num());
+		OutPlan.DestructibleStructureCellIds.Reserve(PathCellIds.Num());
+	}
+
 	for (const FSRPlanetSurfaceGridCellId& CellId : PathCellIds)
 	{
 		const FSRConveyorLaneKey LaneKey = FSRConveyorNetworkGeometry::MakeLaneKey(CellId, SafeLayer);
-		if (!Segments.Contains(LaneKey)
-			&& !FSRConveyorPlacementValidator::CanPlaceNewLane(SurfaceGrid, Segments, LaneKey))
+		const FSRConveyorSegment* ExistingSegment = Segments.Find(LaneKey);
+		if (!ExistingSegment && !FSRConveyorPlacementValidator::CanPlaceNewLane(SurfaceGrid, Segments, LaneKey))
 		{
 			return false;
 		}
 
-		if (const FSRConveyorSegment* ExistingSegment = Segments.Find(LaneKey))
+		if (ExistingSegment)
 		{
 			OutPlan.PreviousSegments.Add(LaneKey, *ExistingSegment);
 			continue;
@@ -85,7 +92,11 @@ bool StarRovers::Conveyor::FSRConveyorPlacementPlanner::BuildPlacementPlan(
 			if (CellInfo.bOccupied
 				&& FSRConveyorPlacementValidator::CanDestroyStructureForPlacement(SurfaceGrid, CellInfo.OccupantId))
 			{
-				OutPlan.DestructibleStructureCellIds.AddUnique(CellId);
+				if (!DestructibleStructureCellIdSet.Contains(CellId))
+				{
+					DestructibleStructureCellIdSet.Add(CellId);
+					OutPlan.DestructibleStructureCellIds.Add(CellId);
+				}
 			}
 		}
 	}

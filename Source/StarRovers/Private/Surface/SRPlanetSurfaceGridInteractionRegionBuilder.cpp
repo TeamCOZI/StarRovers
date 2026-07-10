@@ -37,11 +37,12 @@ namespace
 		}
 
 		const uint64 EdgeKey = BuildGridEdgeKey(DrawPointA, DrawPointB);
-		if (DrawnEdges.Contains(EdgeKey))
+		bool bAlreadyDrawn = false;
+		DrawnEdges.Add(EdgeKey, &bAlreadyDrawn);
+		if (bAlreadyDrawn)
 		{
 			return;
 		}
-		DrawnEdges.Add(EdgeKey);
 
 		if (bUsingGeneratedGridCells)
 		{

@@ -52,7 +52,7 @@ bool FSRCameraCelestialAvoidanceResolver::ResolveAvoidanceSphere(
 
 	OutCenter = Actor->GetActorLocation();
 
-	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(Actor);
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents;
 	Actor->GetComponents(PrimitiveComponents);
 	float BestRadius = 0.0f;
 	for (const UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)

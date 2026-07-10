@@ -40,6 +40,15 @@ bool FSRCameraDynamicMeshVisibilityController::Apply(
 	ASRCelestialBody* FocusedDynamicBody = nullptr;
 	ASRCelestialBody* BestNonFocusedDynamicBody = nullptr;
 	float BestDynamicMeshTargetScreenSizeRatio = 0.0f;
+	const bool bHasCamera = Camera != nullptr;
+	const FVector CameraLocation = bHasCamera ? Camera->GetComponentLocation() : FVector::ZeroVector;
+	const FVector CameraForward = bHasCamera ? Camera->GetForwardVector().GetSafeNormal() : FVector::ForwardVector;
+	const FVector CameraRight = bHasCamera ? Camera->GetRightVector() : FVector::RightVector;
+	const FVector CameraUp = bHasCamera ? Camera->GetUpVector() : FVector::UpVector;
+	const float CameraFieldOfViewDegrees = bHasCamera ? Camera->FieldOfView : 90.0f;
+	const float SafeFieldOfViewDegrees = FMath::Clamp(CameraFieldOfViewDegrees, 5.0f, 170.0f);
+	const float TanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(SafeFieldOfViewDegrees * 0.5f));
+	const float AspectRatio = ResolveViewportAspectRatio(PlayerController);
 	for (AActor* BodyActor : CelestialBodies)
 	{
 		ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(BodyActor);
@@ -50,7 +59,18 @@ bool FSRCameraDynamicMeshVisibilityController::Apply(
 
 		ValidCelestialBodies.Add(CelestialBody);
 		float ScreenSizeRatio = 0.0f;
-		if (!ShouldUseDynamicMesh(BodyActor, Camera, PlayerController, FocusedActor, ScreenSizeRatio)
+		if (!ShouldUseDynamicMesh(
+				BodyActor,
+				bHasCamera,
+				CameraLocation,
+				CameraForward,
+				CameraRight,
+				CameraUp,
+				CameraFieldOfViewDegrees,
+				TanHalfFieldOfView,
+				AspectRatio,
+				FocusedActor,
+				ScreenSizeRatio)
 			|| USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(BodyActor))
 		{
 			continue;
@@ -122,8 +142,14 @@ bool FSRCameraDynamicMeshVisibilityController::Apply(
 
 bool FSRCameraDynamicMeshVisibilityController::ShouldUseDynamicMesh(
 	const AActor* BodyActor,
-	const UCameraComponent* Camera,
-	const APlayerController* PlayerController,
+	bool bHasCamera,
+	const FVector& CameraLocation,
+	const FVector& CameraForward,
+	const FVector& CameraRight,
+	const FVector& CameraUp,
+	float CameraFieldOfViewDegrees,
+	float TanHalfFieldOfView,
+	float AspectRatio,
 	const AActor* FocusedActor,
 	float& OutScreenSizeRatio)
 {
@@ -131,13 +157,11 @@ bool FSRCameraDynamicMeshVisibilityController::ShouldUseDynamicMesh(
 
 	OutScreenSizeRatio = 0.0f;
 	const ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(BodyActor);
-	if (!IsValid(CelestialBody) || !Camera)
+	if (!IsValid(CelestialBody) || !bHasCamera)
 	{
 		return false;
 	}
 
-	const FVector CameraLocation = Camera->GetComponentLocation();
-	const FVector CameraForward = Camera->GetForwardVector().GetSafeNormal();
 	const FVector CameraToBody = BodyActor->GetActorLocation() - CameraLocation;
 	const float Depth = FVector::DotProduct(CameraToBody, CameraForward);
 	if (Depth <= KINDA_SMALL_NUMBER)
@@ -151,18 +175,15 @@ bool FSRCameraDynamicMeshVisibilityController::ShouldUseDynamicMesh(
 		return false;
 	}
 
-	const float SafeFieldOfViewDegrees = FMath::Clamp(Camera->FieldOfView, 5.0f, 170.0f);
-	const float TanHalfFieldOfView = FMath::Tan(FMath::DegreesToRadians(SafeFieldOfViewDegrees * 0.5f));
 	if (TanHalfFieldOfView <= UE_SMALL_NUMBER)
 	{
 		return false;
 	}
 
-	const float AspectRatio = ResolveViewportAspectRatio(PlayerController);
 	const float HalfFrustumHeight = Depth * TanHalfFieldOfView;
 	const float HalfFrustumWidth = HalfFrustumHeight * FMath::Max(AspectRatio, UE_SMALL_NUMBER);
-	const float HorizontalOffset = FMath::Abs(FVector::DotProduct(CameraToBody, Camera->GetRightVector()));
-	const float VerticalOffset = FMath::Abs(FVector::DotProduct(CameraToBody, Camera->GetUpVector()));
+	const float HorizontalOffset = FMath::Abs(FVector::DotProduct(CameraToBody, CameraRight));
+	const float VerticalOffset = FMath::Abs(FVector::DotProduct(CameraToBody, CameraUp));
 	if (HorizontalOffset > HalfFrustumWidth + BodyRadius || VerticalOffset > HalfFrustumHeight + BodyRadius)
 	{
 		return false;
@@ -172,7 +193,7 @@ bool FSRCameraDynamicMeshVisibilityController::ShouldUseDynamicMesh(
 		BodyActor,
 		CameraLocation,
 		CameraForward,
-		Camera->FieldOfView);
+		CameraFieldOfViewDegrees);
 	if (BodyActor == FocusedActor)
 	{
 		return true;

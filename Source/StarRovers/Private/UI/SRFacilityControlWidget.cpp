@@ -253,6 +253,9 @@ namespace
 		CelestialRegistry->GetCelestialBodies(CelestialBodies);
 
 		TArray<AActor*> StarOrbitBodies;
+		TSet<AActor*> UniqueStarOrbitBodies;
+		StarOrbitBodies.Reserve(CelestialBodies.Num());
+		UniqueStarOrbitBodies.Reserve(CelestialBodies.Num());
 		for (AActor* CelestialBody : CelestialBodies)
 		{
 			if (!IsValid(CelestialBody) || CelestialBody == PrimaryStarActor)
@@ -263,7 +266,12 @@ namespace
 			AActor* StarOrbitBody = ResolvePrimaryStarOrbitBody(CelestialBody, PrimaryStarActor);
 			if (IsValid(StarOrbitBody))
 			{
-				StarOrbitBodies.AddUnique(StarOrbitBody);
+				bool bAlreadyAdded = false;
+				UniqueStarOrbitBodies.Add(StarOrbitBody, &bAlreadyAdded);
+				if (!bAlreadyAdded)
+				{
+					StarOrbitBodies.Add(StarOrbitBody);
+				}
 			}
 		}
 
@@ -1005,6 +1013,26 @@ namespace
 		return IsValid(Widget)
 			&& Widget->IsVisible()
 			&& Widget->GetCachedGeometry().IsUnderLocation(ScreenPosition);
+	}
+
+	void ClearHubRouteButtonsAndActions(
+		UHorizontalBox* ButtonBox,
+		TArray<TObjectPtr<USRHubRouteDestinationAction>>& DestinationActions,
+		TArray<TObjectPtr<USRHubRouteLaunchAction>>& LaunchActions,
+		TArray<TObjectPtr<USRHubRouteRemovalAction>>& RemovalActions,
+		TArray<TObjectPtr<USRHubRouteDebugOrbitAction>>& DebugOrbitActions,
+		TArray<TObjectPtr<USRHubRouteSettingAction>>& SettingActions)
+	{
+		if (ButtonBox)
+		{
+			ButtonBox->ClearChildren();
+		}
+
+		DestinationActions.Reset();
+		LaunchActions.Reset();
+		RemovalActions.Reset();
+		DebugOrbitActions.Reset();
+		SettingActions.Reset();
 	}
 
 	void BindInputSlotDebugButton(
@@ -1907,10 +1935,7 @@ bool USRFacilityControlWidget::SelectRouteDestinationHubEndpoint(const FSRSpaceL
 		return false;
 	}
 
-	UWorld* World = GetWorld();
-	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
-		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
-		: nullptr;
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = GetSpaceLogisticsSubsystem();
 	if (!IsValid(SpaceLogisticsSubsystem))
 	{
 		LastHubRouteStatus = TEXT("Destination select failed: logistics subsystem unavailable.");
@@ -1953,10 +1978,7 @@ bool USRFacilityControlWidget::CreateRouteToHubEndpoint(const FSRSpaceLogisticsH
 		return false;
 	}
 
-	UWorld* World = GetWorld();
-	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
-		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
-		: nullptr;
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = GetSpaceLogisticsSubsystem();
 	if (!IsValid(SpaceLogisticsSubsystem))
 	{
 		LastHubRouteStatus = TEXT("Route failed: logistics subsystem unavailable.");
@@ -2002,10 +2024,7 @@ bool USRFacilityControlWidget::LaunchDebugLocalOrbitRoute()
 		return false;
 	}
 
-	UWorld* World = GetWorld();
-	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
-		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
-		: nullptr;
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = GetSpaceLogisticsSubsystem();
 	if (!IsValid(SpaceLogisticsSubsystem))
 	{
 		LastHubRouteStatus = TEXT("Debug orbit failed: logistics subsystem unavailable.");
@@ -2042,10 +2061,7 @@ bool USRFacilityControlWidget::RemoveHubRoute(FName RouteId)
 		return false;
 	}
 
-	UWorld* World = GetWorld();
-	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
-		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
-		: nullptr;
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = GetSpaceLogisticsSubsystem();
 	if (!IsValid(SpaceLogisticsSubsystem))
 	{
 		LastHubRouteStatus = TEXT("Remove failed: logistics subsystem unavailable.");
@@ -2071,10 +2087,7 @@ bool USRFacilityControlWidget::SetHubRouteMaxCargoStackCount(FName RouteId, int3
 		return false;
 	}
 
-	UWorld* World = GetWorld();
-	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
-		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
-		: nullptr;
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = GetSpaceLogisticsSubsystem();
 	if (!IsValid(SpaceLogisticsSubsystem))
 	{
 		LastHubRouteStatus = TEXT("Stack update failed: logistics subsystem unavailable.");
@@ -2101,10 +2114,7 @@ bool USRFacilityControlWidget::SetHubRouteReturnEmptyWhenNoCargo(FName RouteId, 
 		return false;
 	}
 
-	UWorld* World = GetWorld();
-	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
-		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
-		: nullptr;
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = GetSpaceLogisticsSubsystem();
 	if (!IsValid(SpaceLogisticsSubsystem))
 	{
 		LastHubRouteStatus = TEXT("Return setting failed: logistics subsystem unavailable.");
@@ -2130,10 +2140,7 @@ bool USRFacilityControlWidget::SetHubRouteCargoResourceId(FName RouteId, FName C
 		return false;
 	}
 
-	UWorld* World = GetWorld();
-	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
-		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
-		: nullptr;
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = GetSpaceLogisticsSubsystem();
 	if (!IsValid(SpaceLogisticsSubsystem))
 	{
 		LastHubRouteStatus = TEXT("Cargo filter failed: logistics subsystem unavailable.");
@@ -2154,6 +2161,14 @@ USRFacilityNetworkComponent* USRFacilityControlWidget::GetFocusedFacilityNetwork
 {
 	AActor* Actor = FocusedActor.Get();
 	return IsValid(Actor) ? Actor->FindComponentByClass<USRFacilityNetworkComponent>() : nullptr;
+}
+
+USRSpaceLogisticsSubsystem* USRFacilityControlWidget::GetSpaceLogisticsSubsystem() const
+{
+	UWorld* World = GetWorld();
+	return IsValid(World)
+		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
+		: nullptr;
 }
 
 bool USRFacilityControlWidget::IsScreenPositionOverControlPanel(const FVector2D& ScreenPosition) const
@@ -2849,12 +2864,13 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		if (HubRoutePanelSignature != TEXT("NotHub"))
 		{
 			HubRoutePanelSignature = TEXT("NotHub");
-			HubDestinationButtonBox->ClearChildren();
-			HubRouteDestinationActions.Reset();
-			HubRouteLaunchActions.Reset();
-			HubRouteRemovalActions.Reset();
-			HubRouteDebugOrbitActions.Reset();
-			HubRouteSettingActions.Reset();
+			ClearHubRouteButtonsAndActions(
+				HubDestinationButtonBox,
+				HubRouteDestinationActions,
+				HubRouteLaunchActions,
+				HubRouteRemovalActions,
+				HubRouteDebugOrbitActions,
+				HubRouteSettingActions);
 		}
 		return;
 	}
@@ -2870,12 +2886,13 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		if (HubRoutePanelSignature != TEXT("NoSubsystem"))
 		{
 			HubRoutePanelSignature = TEXT("NoSubsystem");
-			HubDestinationButtonBox->ClearChildren();
-			HubRouteDestinationActions.Reset();
-			HubRouteLaunchActions.Reset();
-			HubRouteRemovalActions.Reset();
-			HubRouteDebugOrbitActions.Reset();
-			HubRouteSettingActions.Reset();
+			ClearHubRouteButtonsAndActions(
+				HubDestinationButtonBox,
+				HubRouteDestinationActions,
+				HubRouteLaunchActions,
+				HubRouteRemovalActions,
+				HubRouteDebugOrbitActions,
+				HubRouteSettingActions);
 		}
 		return;
 	}
@@ -2888,12 +2905,13 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		if (HubRoutePanelSignature != TEXT("NoSourceEndpoint"))
 		{
 			HubRoutePanelSignature = TEXT("NoSourceEndpoint");
-			HubDestinationButtonBox->ClearChildren();
-			HubRouteDestinationActions.Reset();
-			HubRouteLaunchActions.Reset();
-			HubRouteRemovalActions.Reset();
-			HubRouteDebugOrbitActions.Reset();
-			HubRouteSettingActions.Reset();
+			ClearHubRouteButtonsAndActions(
+				HubDestinationButtonBox,
+				HubRouteDestinationActions,
+				HubRouteLaunchActions,
+				HubRouteRemovalActions,
+				HubRouteDebugOrbitActions,
+				HubRouteSettingActions);
 		}
 		return;
 	}
@@ -3023,12 +3041,17 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 	}
 
 	HubRoutePanelSignature = NewSignature;
-	HubDestinationButtonBox->ClearChildren();
-	HubRouteDestinationActions.Reset();
-	HubRouteLaunchActions.Reset();
-	HubRouteRemovalActions.Reset();
-	HubRouteDebugOrbitActions.Reset();
-	HubRouteSettingActions.Reset();
+	ClearHubRouteButtonsAndActions(
+		HubDestinationButtonBox,
+		HubRouteDestinationActions,
+		HubRouteLaunchActions,
+		HubRouteRemovalActions,
+		HubRouteDebugOrbitActions,
+		HubRouteSettingActions);
+	HubRouteDestinationActions.Reserve(DestinationCount);
+	HubRouteLaunchActions.Reserve(bHasSelectedHubRouteDestination ? 1 : 0);
+	HubRouteRemovalActions.Reserve(ConnectedRouteCount);
+	HubRouteSettingActions.Reserve(ConnectedRouteCount * (AvailableCargoResourceIds.Num() + 3));
 
 	for (const FSRSpaceLogisticsHubEndpoint& HubEndpoint : HubEndpoints)
 	{
@@ -3163,12 +3186,13 @@ void USRFacilityControlWidget::RefreshControlText()
 		}
 		if (HubDestinationButtonBox)
 		{
-			HubDestinationButtonBox->ClearChildren();
-			HubRouteDestinationActions.Reset();
-			HubRouteLaunchActions.Reset();
-			HubRouteRemovalActions.Reset();
-			HubRouteDebugOrbitActions.Reset();
-			HubRouteSettingActions.Reset();
+			ClearHubRouteButtonsAndActions(
+				HubDestinationButtonBox,
+				HubRouteDestinationActions,
+				HubRouteLaunchActions,
+				HubRouteRemovalActions,
+				HubRouteDebugOrbitActions,
+				HubRouteSettingActions);
 			HubRoutePanelSignature.Reset();
 		}
 		if (HubRouteTextBlock)

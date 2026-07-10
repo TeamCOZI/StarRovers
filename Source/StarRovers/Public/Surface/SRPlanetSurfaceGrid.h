@@ -385,7 +385,7 @@ private:
     void AppendGridWireEdge(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FLinearColor& LineColor, float LineThickness) const;
     void AppendGridWireSegment(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalPointA, const FVector& LocalPointB, const FLinearColor& LineColor, float LineThickness) const;
     float GetEffectiveWorldRadius() const;
-    void DrawDebugSurfaceLine(const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FColor& LineColor, float Duration, float LineThickness, const FSRScreenSpaceLineViewInfo& CameraInfo, float ReferenceViewDepth, float ReferenceFieldOfViewDegrees) const;
+    void DrawDebugSurfaceLine(const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FColor& LineColor, float Duration, float LineThickness, const FSRScreenSpaceLineViewInfo& CameraInfo, float ReferenceViewDepth, float ReferenceTanHalfFieldOfView) const;
     FVector ResolveLocalSurfacePoint(const FVector& LocalUnitDirection, float HeightOffset = 0.0f) const;
     FVector ResolveWorldSurfacePoint(const FVector& LocalUnitDirection, float HeightOffset = 0.0f) const;
     float ComputeProceduralDynamicMeshHeight(FVector LocalUnitDirection) const;

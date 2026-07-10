@@ -12,15 +12,20 @@ void StarRovers::Assembly::FSRAssemblySingleCellDeletion::BuildCandidateConveyor
 	TArray<int32>& OutLayers)
 {
 	OutLayers.Reset();
+	OutLayers.Reserve(2);
 	if (IsValid(SelectedStructureDataAsset))
 	{
 		const FSRStructureData SelectedStructureData = SelectedStructureDataAsset->BuildData();
 		if (SelectedStructureData.BuildKind == ESRStructureBuildKind::Conveyor)
 		{
-			OutLayers.Add(FMath::Max(0, SelectedStructureData.ConveyorLayer));
+			const int32 SelectedLayer = FMath::Max(0, SelectedStructureData.ConveyorLayer);
+			if (SelectedLayer > 0)
+			{
+				OutLayers.Add(SelectedLayer);
+			}
 		}
 	}
-	OutLayers.AddUnique(0);
+	OutLayers.Add(0);
 }
 
 bool StarRovers::Assembly::FSRAssemblySingleCellDeletion::TryDeleteStructureAtCell(

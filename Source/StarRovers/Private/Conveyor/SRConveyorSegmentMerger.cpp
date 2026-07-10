@@ -2,6 +2,67 @@
 
 #include "Conveyor/SRConveyorNetworkGeometry.h"
 
+namespace
+{
+	bool TryAddUniqueDirection(
+		ESRConveyorGridDirection Direction,
+		ESRConveyorGridDirection& FirstDirection,
+		ESRConveyorGridDirection& SecondDirection,
+		ESRConveyorGridDirection& ThirdDirection,
+		int32& DirectionCount)
+	{
+		if (Direction == ESRConveyorGridDirection::None
+			|| Direction == FirstDirection
+			|| Direction == SecondDirection
+			|| Direction == ThirdDirection)
+		{
+			return true;
+		}
+
+		if (DirectionCount >= 3)
+		{
+			return false;
+		}
+
+		if (DirectionCount == 0)
+		{
+			FirstDirection = Direction;
+		}
+		else if (DirectionCount == 1)
+		{
+			SecondDirection = Direction;
+		}
+		else
+		{
+			ThirdDirection = Direction;
+		}
+
+		++DirectionCount;
+		return true;
+	}
+
+	bool TryCountMergedDirections(
+		ESRConveyorGridDirection ExistingFirstDirection,
+		ESRConveyorGridDirection ExistingSecondDirection,
+		ESRConveyorGridDirection ExistingThirdDirection,
+		ESRConveyorGridDirection IncomingFirstDirection,
+		ESRConveyorGridDirection IncomingSecondDirection,
+		ESRConveyorGridDirection IncomingThirdDirection,
+		int32& OutDirectionCount)
+	{
+		ESRConveyorGridDirection FirstDirection = ESRConveyorGridDirection::None;
+		ESRConveyorGridDirection SecondDirection = ESRConveyorGridDirection::None;
+		ESRConveyorGridDirection ThirdDirection = ESRConveyorGridDirection::None;
+		OutDirectionCount = 0;
+		return TryAddUniqueDirection(ExistingFirstDirection, FirstDirection, SecondDirection, ThirdDirection, OutDirectionCount)
+			&& TryAddUniqueDirection(ExistingSecondDirection, FirstDirection, SecondDirection, ThirdDirection, OutDirectionCount)
+			&& TryAddUniqueDirection(ExistingThirdDirection, FirstDirection, SecondDirection, ThirdDirection, OutDirectionCount)
+			&& TryAddUniqueDirection(IncomingFirstDirection, FirstDirection, SecondDirection, ThirdDirection, OutDirectionCount)
+			&& TryAddUniqueDirection(IncomingSecondDirection, FirstDirection, SecondDirection, ThirdDirection, OutDirectionCount)
+			&& TryAddUniqueDirection(IncomingThirdDirection, FirstDirection, SecondDirection, ThirdDirection, OutDirectionCount);
+	}
+}
+
 bool StarRovers::Conveyor::FSRConveyorSegmentMerger::CanMergeSegment(
 	const TMap<FSRConveyorLaneKey, FSRConveyorSegment>& Segments,
 	const FSRConveyorSegment& Segment)
@@ -12,36 +73,29 @@ bool StarRovers::Conveyor::FSRConveyorSegmentMerger::CanMergeSegment(
 		return true;
 	}
 
-	TArray<ESRConveyorGridDirection> InputDirections;
-	TArray<ESRConveyorGridDirection> OutputDirections;
-	FSRConveyorNetworkGeometry::CollectInputDirections(*ExistingSegment, InputDirections);
-	FSRConveyorNetworkGeometry::CollectOutputDirections(*ExistingSegment, OutputDirections);
-	auto CanAddDirection = [](TArray<ESRConveyorGridDirection>& Directions, ESRConveyorGridDirection IncomingDirection)
-	{
-		if (IncomingDirection == ESRConveyorGridDirection::None || Directions.Contains(IncomingDirection))
-		{
-			return true;
-		}
-		if (Directions.Num() >= 3)
-		{
-			return false;
-		}
-
-		Directions.Add(IncomingDirection);
-		return true;
-	};
-
-	if (!CanAddDirection(InputDirections, Segment.InputDirection)
-		|| !CanAddDirection(InputDirections, Segment.MergeInputDirection)
-		|| !CanAddDirection(InputDirections, Segment.SecondMergeInputDirection)
-		|| !CanAddDirection(OutputDirections, Segment.OutputDirection)
-		|| !CanAddDirection(OutputDirections, Segment.BranchOutputDirection)
-		|| !CanAddDirection(OutputDirections, Segment.SecondBranchOutputDirection))
+	int32 InputDirectionCount = 0;
+	int32 OutputDirectionCount = 0;
+	if (!TryCountMergedDirections(
+		ExistingSegment->InputDirection,
+		ExistingSegment->MergeInputDirection,
+		ExistingSegment->SecondMergeInputDirection,
+		Segment.InputDirection,
+		Segment.MergeInputDirection,
+		Segment.SecondMergeInputDirection,
+		InputDirectionCount)
+		|| !TryCountMergedDirections(
+			ExistingSegment->OutputDirection,
+			ExistingSegment->BranchOutputDirection,
+			ExistingSegment->SecondBranchOutputDirection,
+			Segment.OutputDirection,
+			Segment.BranchOutputDirection,
+			Segment.SecondBranchOutputDirection,
+			OutputDirectionCount))
 	{
 		return false;
 	}
 
-	return AreBranchCountsValid(InputDirections.Num(), OutputDirections.Num());
+	return AreBranchCountsValid(InputDirectionCount, OutputDirectionCount);
 }
 
 void StarRovers::Conveyor::FSRConveyorSegmentMerger::MergeSegment(

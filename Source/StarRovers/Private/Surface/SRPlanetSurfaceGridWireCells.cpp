@@ -18,12 +18,13 @@ void StarRovers::SurfaceGridWireCells::AppendGeneratedGridCell(
 	auto AppendDedupedSegment = [&GridMesh, &LineColor, LineThickness, &DrawnEdges](const FVector& PointA, const FVector& PointB)
 	{
 		const uint64 EdgeKey = BuildGridEdgeKey(PointA, PointB);
-		if (DrawnEdges.Contains(EdgeKey))
+		bool bAlreadyDrawn = false;
+		DrawnEdges.Add(EdgeKey, &bAlreadyDrawn);
+		if (bAlreadyDrawn)
 		{
 			return;
 		}
 
-		DrawnEdges.Add(EdgeKey);
 		SurfaceGridWirePrimitives::AppendGridWireSegment(GridMesh, PointA, PointB, LineColor, LineThickness);
 	};
 
@@ -66,11 +67,12 @@ void StarRovers::SurfaceGridWireCells::AppendGridWireCell(
 		if (bIncludeInEdgeSet && DrawnEdges)
 		{
 			const uint64 EdgeKey = BuildGridEdgeKey(PointA, PointB);
-			if (DrawnEdges->Contains(EdgeKey))
+			bool bAlreadyDrawn = false;
+			DrawnEdges->Add(EdgeKey, &bAlreadyDrawn);
+			if (bAlreadyDrawn)
 			{
 				return;
 			}
-			DrawnEdges->Add(EdgeKey);
 		}
 
 		SurfaceGridWirePrimitives::AppendGridWireSegment(GridMesh, PointA, PointB, LineColor, LineThickness);
@@ -143,11 +145,12 @@ void StarRovers::SurfaceGridWireCells::AppendGridWireCell(
 		if (bIncludeInEdgeSet && DrawnEdges)
 		{
 			const uint64 EdgeKey = BuildGridEdgeKey(CornerA, CornerB);
-			if (DrawnEdges->Contains(EdgeKey))
+			bool bAlreadyDrawn = false;
+			DrawnEdges->Add(EdgeKey, &bAlreadyDrawn);
+			if (bAlreadyDrawn)
 			{
 				return;
 			}
-			DrawnEdges->Add(EdgeKey);
 		}
 
 		SurfaceGridWirePrimitives::AppendGridWireEdge(

@@ -151,13 +151,21 @@ void USRCelestialBodyOverviewWidget::SetCelestialBodies(
 	const TArray<AActor*>& NewCelestialBodies)
 {
 	CelestialBodies.Reset();
+	CelestialBodies.Reserve(NewCelestialBodies.Num());
+	TSet<AActor*> UniqueCelestialBodies;
+	UniqueCelestialBodies.Reserve(NewCelestialBodies.Num());
 	for (AActor* CelestialBodyActor : NewCelestialBodies)
 	{
 		if (IsValid(CelestialBodyActor) &&
 			USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(
 				CelestialBodyActor))
 		{
-			CelestialBodies.AddUnique(CelestialBodyActor);
+			const int32 PreviousBodyCount = UniqueCelestialBodies.Num();
+			UniqueCelestialBodies.Add(CelestialBodyActor);
+			if (UniqueCelestialBodies.Num() != PreviousBodyCount)
+			{
+				CelestialBodies.Add(CelestialBodyActor);
+			}
 		}
 	}
 

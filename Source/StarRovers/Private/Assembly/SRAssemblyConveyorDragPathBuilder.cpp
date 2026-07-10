@@ -161,6 +161,30 @@ namespace StarRovers::Assembly
 			return ResolvedRole;
 		}
 
+		int32 CountUniqueConveyorDirections(
+			ESRConveyorGridDirection FirstDirection,
+			ESRConveyorGridDirection SecondDirection,
+			ESRConveyorGridDirection ThirdDirection)
+		{
+			int32 DirectionCount = 0;
+			if (FirstDirection != ESRConveyorGridDirection::None)
+			{
+				++DirectionCount;
+			}
+			if (SecondDirection != ESRConveyorGridDirection::None
+				&& SecondDirection != FirstDirection)
+			{
+				++DirectionCount;
+			}
+			if (ThirdDirection != ESRConveyorGridDirection::None
+				&& ThirdDirection != FirstDirection
+				&& ThirdDirection != SecondDirection)
+			{
+				++DirectionCount;
+			}
+			return DirectionCount;
+		}
+
 		ESRConveyorPlacementEndpointRole ResolveExistingConveyorEndpointRole(
 			const USRConveyorNetworkComponent* ConveyorNetwork,
 			const FSRPlanetSurfaceGridCellId& CellId,
@@ -181,43 +205,20 @@ namespace StarRovers::Assembly
 				return ESRConveyorPlacementEndpointRole::None;
 			}
 
-			TArray<ESRConveyorGridDirection> InputDirections;
-			if (Segment.InputDirection != ESRConveyorGridDirection::None)
-			{
-				InputDirections.Add(Segment.InputDirection);
-			}
-			if (Segment.MergeInputDirection != ESRConveyorGridDirection::None
-				&& Segment.MergeInputDirection != Segment.InputDirection)
-			{
-				InputDirections.Add(Segment.MergeInputDirection);
-			}
-			if (Segment.SecondMergeInputDirection != ESRConveyorGridDirection::None
-				&& !InputDirections.Contains(Segment.SecondMergeInputDirection))
-			{
-				InputDirections.Add(Segment.SecondMergeInputDirection);
-			}
-
-			TArray<ESRConveyorGridDirection> OutputDirections;
-			if (Segment.OutputDirection != ESRConveyorGridDirection::None)
-			{
-				OutputDirections.Add(Segment.OutputDirection);
-			}
-			if (Segment.BranchOutputDirection != ESRConveyorGridDirection::None
-				&& Segment.BranchOutputDirection != Segment.OutputDirection)
-			{
-				OutputDirections.Add(Segment.BranchOutputDirection);
-			}
-			if (Segment.SecondBranchOutputDirection != ESRConveyorGridDirection::None
-				&& !OutputDirections.Contains(Segment.SecondBranchOutputDirection))
-			{
-				OutputDirections.Add(Segment.SecondBranchOutputDirection);
-			}
+			const int32 InputDirectionCount = CountUniqueConveyorDirections(
+				Segment.InputDirection,
+				Segment.MergeInputDirection,
+				Segment.SecondMergeInputDirection);
+			const int32 OutputDirectionCount = CountUniqueConveyorDirections(
+				Segment.OutputDirection,
+				Segment.BranchOutputDirection,
+				Segment.SecondBranchOutputDirection);
 
 			ESRConveyorPlacementEndpointRole ResolvedRole = ESRConveyorPlacementEndpointRole::None;
-			const bool bCanAddOutput = OutputDirections.Num() < 3
-				&& (InputDirections.Num() <= 1 || OutputDirections.IsEmpty());
-			const bool bCanAddInput = InputDirections.Num() < 3
-				&& (OutputDirections.Num() <= 1 || InputDirections.IsEmpty());
+			const bool bCanAddOutput = OutputDirectionCount < 3
+				&& (InputDirectionCount <= 1 || OutputDirectionCount == 0);
+			const bool bCanAddInput = InputDirectionCount < 3
+				&& (OutputDirectionCount <= 1 || InputDirectionCount == 0);
 			if (bCanAddOutput)
 			{
 				ResolvedRole = CombineEndpointRole(ResolvedRole, ESRConveyorPlacementEndpointRole::Source);
@@ -311,11 +312,11 @@ namespace StarRovers::Assembly
 			}
 
 			const int32 SafeLayer = FMath::Max(0, Layer);
+			FSRConveyorLaneKey LaneKey;
+			LaneKey.Layer = SafeLayer;
 			for (const FSRPlanetSurfaceGridCellId& PathCellId : PathCellIds)
 			{
-				FSRConveyorLaneKey LaneKey;
 				LaneKey.CellId = PathCellId;
-				LaneKey.Layer = SafeLayer;
 				if (!ConveyorNetwork->HasConveyorSegment(LaneKey))
 				{
 					return true;

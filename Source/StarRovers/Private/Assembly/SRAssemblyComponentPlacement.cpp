@@ -32,10 +32,11 @@ void USRAssemblyComponent::ProcessQueuedStructurePlacements()
 			continue;
 		}
 
-		if (!BatchedSurfaceGrids.Contains(SurfaceGrid))
+		const int32 PreviousBatchedSurfaceGridCount = BatchedSurfaceGrids.Num();
+		BatchedSurfaceGrids.Add(SurfaceGrid);
+		if (BatchedSurfaceGrids.Num() != PreviousBatchedSurfaceGridCount)
 		{
 			SurfaceGrid->BeginInteractionHighlightBatch();
-			BatchedSurfaceGrids.Add(SurfaceGrid);
 		}
 
 		FSRPlanetSurfaceGridCell TargetCell;

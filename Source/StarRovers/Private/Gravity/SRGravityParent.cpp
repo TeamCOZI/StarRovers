@@ -123,12 +123,13 @@ float USRGravityParent::GetGravityRadius() const
 
 FVector USRGravityParent::GetGravityAccelerationAtWorldLocation(const FVector& WorldLocation) const
 {
-	if (!GetOwner())
+	const AActor* Owner = GetOwner();
+	if (!Owner)
 	{
 		return FVector::ZeroVector;
 	}
 
-	const FVector SourceLocation = GetOwner()->GetActorLocation();
+	const FVector SourceLocation = Owner->GetActorLocation();
 	const FVector ToSource = SourceLocation - WorldLocation;
 	const float DistanceSquared = ToSource.SizeSquared();
 	if (DistanceSquared <= KINDA_SMALL_NUMBER)
@@ -136,14 +137,13 @@ FVector USRGravityParent::GetGravityAccelerationAtWorldLocation(const FVector& W
 		return FVector::ZeroVector;
 	}
 
-	const float Distance = FMath::Sqrt(DistanceSquared);
-	if (GravityRadius > 0.0f && Distance > GravityRadius)
+	if (GravityRadius > 0.0f && DistanceSquared > FMath::Square(GravityRadius))
 	{
 		return FVector::ZeroVector;
 	}
 
 	const float AccelerationMagnitude = Gravity / FMath::Max(DistanceSquared, 1.0f);
-	return ToSource / Distance * AccelerationMagnitude;
+	return ToSource * (FMath::InvSqrt(DistanceSquared) * AccelerationMagnitude);
 }
 
 bool USRGravityParent::ShouldShowGravityLine() const
@@ -176,7 +176,8 @@ void USRGravityParent::RefreshGravityLine()
 	EnsureGravityRingVisual();
 	EnsureGravityLineBatchVisual();
 
-	if (!ShouldShowGravityLine() || !IsValid(GetOwner()))
+	AActor* Owner = GetOwner();
+	if (!ShouldShowGravityLine() || !IsValid(Owner))
 	{
 		if (IsValid(GravityRingVisual))
 		{
@@ -187,7 +188,7 @@ void USRGravityParent::RefreshGravityLine()
 		return;
 	}
 
-	const FVector OwnerLocation = GetOwner()->GetActorLocation();
+	const FVector OwnerLocation = Owner->GetActorLocation();
 	const FLinearColor LineColor(GravityLineColor.R, GravityLineColor.G, GravityLineColor.B, GetGravityLineOpacity());
 	if (DrawGravityLineBatchVisual(OwnerLocation, GravityRadius, LineColor, GetGravityLineThickness(), GetGravityLineSegments()))
 	{
@@ -212,7 +213,6 @@ void USRGravityParent::RefreshGravityLine()
 		return;
 	}
 
-	const AActor* Owner = GetOwner();
 	if (IsValid(Owner) && Owner->HasActorBegunPlay())
 	{
 		SR_LOG(Gravity, LogTemp,
@@ -227,6 +227,7 @@ void USRGravityParent::RefreshGravityLine()
 void USRGravityParent::GetRegisteredSourcesForWorld(const UWorld* World, TArray<USRGravityParent*>& OutSources)
 {
 	OutSources.Reset();
+	OutSources.Reserve(RegisteredSources.Num());
 
 	for (int32 Index = RegisteredSources.Num() - 1; Index >= 0; --Index)
 	{
@@ -254,7 +255,7 @@ void USRGravityParent::EnsureGravityRingVisual()
 		return;
 	}
 
-	TInlineComponentArray<USRCelestialRingMeshComponent*> RingComponents(Owner);
+	TInlineComponentArray<USRCelestialRingMeshComponent*> RingComponents;
 	Owner->GetComponents(RingComponents);
 	for (USRCelestialRingMeshComponent* RingComponent : RingComponents)
 	{
@@ -287,7 +288,7 @@ void USRGravityParent::EnsureGravityLineBatchVisual()
 		return;
 	}
 
-	TInlineComponentArray<ULineBatchComponent*> LineBatchComponents(Owner);
+	TInlineComponentArray<ULineBatchComponent*> LineBatchComponents;
 	Owner->GetComponents(LineBatchComponents);
 	for (ULineBatchComponent* LineBatchComponent : LineBatchComponents)
 	{
@@ -351,12 +352,14 @@ bool USRGravityParent::DrawGravityLineBatchVisual(
 	GravityLineBatch->SetVisibility(true);
 	GravityLineBatch->SetHiddenInGame(false);
 
+	UWorld* World = GetWorld();
 	FSRScreenSpaceLineViewInfo CameraInfo;
-	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(GetWorld(), CameraInfo);
+	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(World, CameraInfo);
 
 	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
 	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
-	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(World, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	const float ReferenceTanHalfFieldOfView = FSRScreenSpaceLineThickness::ComputeReferenceTanHalfFieldOfView(ReferenceFieldOfViewDegrees);
 
 	for (int32 SegmentIndex = 0; SegmentIndex < SafeSegmentCount; ++SegmentIndex)
 	{
@@ -364,21 +367,27 @@ bool USRGravityParent::DrawGravityLineBatchVisual(
 		const float AlphaB = static_cast<float>(SegmentIndex + 1) / static_cast<float>(SafeSegmentCount);
 		const float AngleA = AlphaA * UE_TWO_PI;
 		const float AngleB = AlphaB * UE_TWO_PI;
+		float SinA = 0.0f;
+		float CosA = 1.0f;
+		float SinB = 0.0f;
+		float CosB = 1.0f;
+		FMath::SinCos(&SinA, &CosA, AngleA);
+		FMath::SinCos(&SinB, &CosB, AngleB);
 		const FVector StartPoint(
 			WorldCenter.X,
-			WorldCenter.Y + FMath::Cos(AngleA) * SafeRadius,
-			WorldCenter.Z + FMath::Sin(AngleA) * SafeRadius);
+			WorldCenter.Y + CosA * SafeRadius,
+			WorldCenter.Z + SinA * SafeRadius);
 		const FVector EndPoint(
 			WorldCenter.X,
-			WorldCenter.Y + FMath::Cos(AngleB) * SafeRadius,
-			WorldCenter.Z + FMath::Sin(AngleB) * SafeRadius);
+			WorldCenter.Y + CosB * SafeRadius,
+			WorldCenter.Z + SinB * SafeRadius);
 		const FVector SegmentMidpoint = (StartPoint + EndPoint) * 0.5f;
-		const float SegmentThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
+		const float SegmentThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
 			CameraInfo,
 			SegmentMidpoint,
 			SafeThickness,
 			ReferenceViewDepth,
-			ReferenceFieldOfViewDegrees);
+			ReferenceTanHalfFieldOfView);
 		GravityLineBatch->DrawLine(StartPoint, EndPoint, Color, SRGravityLineDepthPriority, SegmentThickness, 0.0f);
 	}
 

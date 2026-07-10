@@ -236,6 +236,7 @@ void USRStructureSelectionWidget::NativeConstruct()
 	EnsureDefaultStructureTabIndicatorTexture();
 	ApplyCategoryButtonIconBrushes();
 	RefreshStructureTabIndicatorBrushes();
+	RebuildBuildOptionIndex();
 	RebuildCategorizedBuildOptions();
 	RefreshFacilityButtonLabels();
 	RefreshCategoryButtonStyles();
@@ -258,6 +259,7 @@ void USRStructureSelectionWidget::NativePreConstruct()
 	EnsureDefaultStructureTabIndicatorTexture();
 	ApplyCategoryButtonIconBrushes();
 	RefreshStructureTabIndicatorBrushes();
+	RebuildBuildOptionIndex();
 	RebuildCategorizedBuildOptions();
 	RefreshFacilityButtonLabels();
 	RefreshCategoryButtonStyles();
@@ -331,6 +333,7 @@ FReply USRStructureSelectionWidget::NativeOnMouseWheel(const FGeometry& InGeomet
 void USRStructureSelectionWidget::SetBuildOptions(const TArray<FSRStructureBuildOption>& NewBuildOptions)
 {
 	BuildOptions = NewBuildOptions;
+	RebuildBuildOptionIndex();
 	if (bHasSelectedStructureId && !FindBuildOption(SelectedStructureId))
 	{
 		ClearSelectedStructureId();
@@ -1138,6 +1141,7 @@ void USRStructureSelectionWidget::RebuildBuildOptions()
 
 	BuildOptionsScrollBox->ClearChildren();
 	EntryActions.Reset();
+	EntryActions.Reserve(BuildOptions.Num());
 
 	for (const FSRStructureBuildOption& BuildOption : BuildOptions)
 	{
@@ -1201,6 +1205,8 @@ void USRStructureSelectionWidget::RebuildCategorizedBuildOptions()
 	MinerBuildOptionId = NAME_None;
 	ProcessingBuildOptionIds.Reset();
 	SynthesisBuildOptionIds.Reset();
+	ProcessingBuildOptionIds.Reserve(BuildOptions.Num());
+	SynthesisBuildOptionIds.Reserve(BuildOptions.Num());
 
 	for (const FSRStructureBuildOption& BuildOption : BuildOptions)
 	{
@@ -1264,6 +1270,23 @@ void USRStructureSelectionWidget::RebuildCategorizedBuildOptions()
 		&& !IsBuildOptionSelectable(GetFacilityButtonStructureId(SelectedFacilityButtonIndex)))
 	{
 		SelectedFacilityButtonIndex = INDEX_NONE;
+	}
+}
+
+void USRStructureSelectionWidget::RebuildBuildOptionIndex()
+{
+	BuildOptionIndexByStructureId.Reset();
+	BuildOptionIndexByStructureId.Reserve(BuildOptions.Num());
+
+	for (int32 BuildOptionIndex = 0; BuildOptionIndex < BuildOptions.Num(); ++BuildOptionIndex)
+	{
+		const FName StructureId = BuildOptions[BuildOptionIndex].StructureId;
+		if (StructureId.IsNone() || BuildOptionIndexByStructureId.Contains(StructureId))
+		{
+			continue;
+		}
+
+		BuildOptionIndexByStructureId.Add(StructureId, BuildOptionIndex);
 	}
 }
 
@@ -1953,10 +1976,10 @@ const FSRStructureBuildOption* USRStructureSelectionWidget::FindBuildOption(FNam
 		return nullptr;
 	}
 
-	return BuildOptions.FindByPredicate([StructureId](const FSRStructureBuildOption& BuildOption)
-	{
-		return BuildOption.StructureId == StructureId;
-	});
+	const int32* BuildOptionIndex = BuildOptionIndexByStructureId.Find(StructureId);
+	return BuildOptionIndex && BuildOptions.IsValidIndex(*BuildOptionIndex)
+		? &BuildOptions[*BuildOptionIndex]
+		: nullptr;
 }
 
 bool USRStructureSelectionWidget::IsScreenPositionOverStructureSelectionPanel(const FVector2D& ScreenPosition) const

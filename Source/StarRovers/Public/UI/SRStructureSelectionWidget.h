@@ -332,6 +332,7 @@ private:
 	void EnsureDefaultStructureTabIndicatorTexture();
 	void RefreshStructureTabIndicatorBrushes();
 	void RefreshStructureTabIndicatorStyles();
+	void RebuildBuildOptionIndex();
 	void SetStructureSelectionTabIndex(int32 NewTabIndex);
 	void SelectStructureCategory(int32 CategoryIndex);
 	void SelectFacilityButton(int32 FacilityButtonIndex);
@@ -411,6 +412,7 @@ private:
 
 	FSRStarRoversStructureBuildOptionSelectedSignature BuildOptionSelectedEvent;
 
+	TMap<FName, int32> BuildOptionIndexByStructureId;
 	FName ConveyorBuildOptionId = NAME_None;
 	FName MinerBuildOptionId = NAME_None;
 	TArray<FName> ProcessingBuildOptionIds;
