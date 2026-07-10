@@ -1,7 +1,10 @@
 #include "Assembly/SRAssemblyStructureDragPreviewUpdater.h"
 
+#include "Assembly/SRAssemblyConstructionReplacement.h"
 #include "Assembly/SRAssemblyPlacementDragState.h"
+#include "Assembly/SRAssemblyPreviewMaterial.h"
 #include "Assembly/SRAssemblyPreviewState.h"
+#include "Conveyor/SRConveyorNetworkComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Structure/SRBuildableStructureInterface.h"
@@ -22,6 +25,7 @@ namespace StarRovers::Assembly
 		int32 PlacementRotationSteps,
 		float AdditionalYawDegrees,
 		FSRAssemblyPlacementDragState& PlacementDrag,
+		FSRAssemblyConveyorPreviewState& ConveyorPreview,
 		FSRAssemblyStructurePreviewState& StructurePreview)
 	{
 		if (!IsValid(World)
@@ -48,9 +52,15 @@ namespace StarRovers::Assembly
 		USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(SurfaceOwner)
 			? SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>()
 			: nullptr;
+		USRConveyorNetworkComponent* ConveyorNetwork = IsValid(SurfaceOwner)
+			? SurfaceOwner->FindComponentByClass<USRConveyorNetworkComponent>()
+			: nullptr;
 
 		TSet<FSRPlanetSurfaceGridCellId> ReservedFootprintCellIds;
 		TSet<FName> ReplacementPreviewOccupantIds;
+		TArray<FSRPlanetSurfaceGridCellId> ReplacementPreviewConveyorCellIds;
+		TArray<FSRConveyorBeltPath> ReplacementPreviewConveyorBeltPaths;
+		TArray<FSRPlanetSurfaceGridCellId> ReplacementPreviewCellIds;
 		TArray<FSRPlanetSurfaceGridCellId> NewPlacementCellIds;
 		TArray<FSRStructurePlacementDragPreviewActor> NewPreviewActors;
 		NewPlacementCellIds.Reserve(CandidateCellIds.Num());
@@ -60,16 +70,20 @@ namespace StarRovers::Assembly
 		{
 			FSRPlanetSurfaceGridCellInfo CandidateCellInfo;
 			TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
-			TSet<FName> CandidateReplaceableOccupantIds;
+			ConstructionReplacement::FSRConstructionReplacementTargets CandidateReplacementTargets;
 			if (!SurfaceGrid->GetCellInfoById(CandidateCellId, CandidateCellInfo)
-				|| !CandidateCellInfo.bCanConstruct
 				|| !SurfaceGrid->GetFootprintCellIds(CandidateCellId, FootprintCellsX, FootprintCellsY, FootprintCellIds))
 			{
 				continue;
 			}
 
 			const bool bCanBuildOverCells = IsValid(StructureInstanceManager)
-				? StructureInstanceManager->CanBuildOverCellsForConstruction(SurfaceGrid, FootprintCellIds, CandidateReplaceableOccupantIds)
+				? ConstructionReplacement::CanBuildOverCellsForStructureConstruction(
+					SurfaceGrid,
+					StructureInstanceManager,
+					ConveyorNetwork,
+					FootprintCellIds,
+					CandidateReplacementTargets)
 				: SurfaceGrid->CanOccupyCells(FootprintCellIds);
 			if (!bCanBuildOverCells)
 			{
@@ -119,10 +133,12 @@ namespace StarRovers::Assembly
 
 			FSRPlanetSurfaceGridCellInfo PreviewCellInfo = CandidateCellInfo;
 			if (PreviewCellInfo.bOccupied
-				&& !PreviewCellInfo.OccupantId.IsNone()
-				&& CandidateReplaceableOccupantIds.Contains(PreviewCellInfo.OccupantId))
+				&& ((!PreviewCellInfo.OccupantId.IsNone()
+					&& CandidateReplacementTargets.StructureOccupantIds.Contains(PreviewCellInfo.OccupantId))
+					|| CandidateReplacementTargets.ConveyorCellIds.Contains(CandidateCellId)))
 			{
 				PreviewCellInfo.bOccupied = false;
+				PreviewCellInfo.bCanConstruct = true;
 				PreviewCellInfo.OccupantId = NAME_None;
 			}
 
@@ -136,9 +152,28 @@ namespace StarRovers::Assembly
 			{
 				ReservedFootprintCellIds.Add(FootprintCellId);
 			}
-			ReplacementPreviewOccupantIds.Append(CandidateReplaceableOccupantIds);
+			ReplacementPreviewOccupantIds.Append(CandidateReplacementTargets.StructureOccupantIds);
+			for (const FSRPlanetSurfaceGridCellId& ConveyorCellId : CandidateReplacementTargets.ConveyorCellIds)
+			{
+				ReplacementPreviewConveyorCellIds.AddUnique(ConveyorCellId);
+			}
+			TArray<FSRPlanetSurfaceGridCellId> CandidateReplacementPreviewCellIds;
+			ConstructionReplacement::CollectConstructionReplacementPreviewCellIds(
+				StructureInstanceManager,
+				CandidateReplacementTargets,
+				CandidateReplacementPreviewCellIds);
+			for (const FSRPlanetSurfaceGridCellId& ReplacementCellId : CandidateReplacementPreviewCellIds)
+			{
+				ReplacementPreviewCellIds.AddUnique(ReplacementCellId);
+			}
+			ReplacementPreviewConveyorBeltPaths.Append(CandidateReplacementTargets.ConveyorBeltPaths);
 
 			ISRBuildableStructureInterface::Execute_SetStructureGhostMode(PreviewActor, true);
+			PreviewMaterials::ApplyToActor(
+				PreviewActor,
+				CandidateReplacementTargets.HasAny()
+					? PreviewMaterials::ResolveReplaceableMaterial(StructureData)
+					: PreviewMaterials::ResolveGhostMaterial(StructureData));
 			PreviewActor->SetActorTransform(PreviewTransform);
 			PreviewActor->SetActorEnableCollision(false);
 			PreviewActor->SetActorHiddenInGame(false);
@@ -164,6 +199,24 @@ namespace StarRovers::Assembly
 		{
 			StructureInstanceManager->SetConstructionReplacementPreviewedStructures(ReplacementPreviewOccupantIds);
 		}
+		if (ReplacementPreviewCellIds.IsEmpty())
+		{
+			SurfaceGrid->ClearConstructionReplacementPreviewCells();
+		}
+		else
+		{
+			SurfaceGrid->SetConstructionReplacementPreviewCells(ReplacementPreviewCellIds);
+		}
+		const FSRPlanetSurfaceGridCellId ConveyorReplacementPreviewTargetCellId = ReplacementPreviewConveyorCellIds.IsEmpty()
+			? FSRPlanetSurfaceGridCellId()
+			: ReplacementPreviewConveyorCellIds[0];
+		ConstructionReplacement::ApplyConveyorReplacementPreview(
+			SurfaceGrid,
+			ConveyorNetwork,
+			ConveyorPreview,
+			ReplacementPreviewConveyorCellIds,
+			ReplacementPreviewConveyorBeltPaths,
+			ConveyorReplacementPreviewTargetCellId);
 		return true;
 	}
 }

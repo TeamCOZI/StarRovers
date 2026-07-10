@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "Utility/SRLog.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/DynamicMeshComponent.h"
 #include "Components/SceneComponent.h"
@@ -115,7 +116,7 @@ void ASRCelestialBody::ApplyTerrainProfileData()
 
 	if (IsProceduralTerrainBody(BodyCategory))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Celestial body '%s' requires TerrainProfileDataAsset for procedural terrain."), *GetName());
+		SR_LOG(Celestial, LogTemp, Error, TEXT("Celestial body '%s' requires TerrainProfileDataAsset for procedural terrain."), *GetName());
 	}
 }
 

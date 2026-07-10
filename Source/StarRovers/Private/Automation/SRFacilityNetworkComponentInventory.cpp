@@ -3,6 +3,7 @@
 #include "SRFacilityDirectInventoryRouter.h"
 #include "SRFacilityHubCargoRouter.h"
 #include "SRFacilityResourceOperations.h"
+#include "Utility/SRLog.h"
 
 bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRResourceInstance& ResourceInstance)
 {
@@ -12,7 +13,7 @@ bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRRe
 	{
 		if (bLogFacilityNetworkEvents)
 		{
-			UE_LOG(
+			SR_LOG(FacilityNetwork,
 				LogTemp,
 				Warning,
 				TEXT("[FacilityNetwork] AddInputResource failed: OccupantId=%s ResourceId=%s StackCount=%d Owner=%s Reason=InvalidInputOrFacility"),
@@ -27,7 +28,7 @@ bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRRe
 	SetComponentTickEnabled(bAutoProcessFacilities);
 	if (bLogFacilityNetworkEvents)
 	{
-		UE_LOG(
+		SR_LOG(FacilityNetwork,
 			LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Input added: OccupantId=%s Port=%s ResourceId=%s StackCount=%d PortInputCount=%d InputCount=%d Owner=%s"),
@@ -62,7 +63,7 @@ bool USRFacilityNetworkComponent::ExtractOutputResource(FName OccupantId, FSRRes
 		OutResourceInstance = FSRResourceInstance();
 		if (bLogFacilityNetworkEvents)
 		{
-			UE_LOG(
+			SR_LOG(FacilityNetwork,
 				LogTemp,
 				Warning,
 				TEXT("[FacilityNetwork] ExtractOutputResource failed: OccupantId=%s Owner=%s Reason=MissingFacilityOrEmptyOutput"),
@@ -74,7 +75,7 @@ bool USRFacilityNetworkComponent::ExtractOutputResource(FName OccupantId, FSRRes
 
 	if (bLogFacilityNetworkEvents)
 	{
-		UE_LOG(
+		SR_LOG(FacilityNetwork,
 			LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Output extracted: OccupantId=%s Port=%s ResourceId=%s RemainingPortOutput=%d RemainingOutputCount=%d Owner=%s"),
@@ -112,7 +113,7 @@ bool USRFacilityNetworkComponent::TryTakeHubOutboundCargoByResource(FName Occupa
 
 	if (bLogFacilityNetworkEvents)
 	{
-		UE_LOG(
+		SR_LOG(FacilityNetwork,
 			LogTemp,
 			Display,
 			TEXT("[FacilityNetwork][Hub] Outbound cargo taken: OccupantId=%s Port=%s ResourceId=%s RequestedResourceId=%s StackCount=%d RemainingPortInput=%d Owner=%s"),
@@ -155,7 +156,7 @@ bool USRFacilityNetworkComponent::TryStoreHubInboundCargo(FName OccupantId, cons
 
 	if (bLogFacilityNetworkEvents)
 	{
-		UE_LOG(
+		SR_LOG(FacilityNetwork,
 			LogTemp,
 			Display,
 			TEXT("[FacilityNetwork][Hub] Inbound cargo stored: OccupantId=%s ResourceId=%s StackCount=%d OutputCount=%d Owner=%s"),

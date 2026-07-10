@@ -229,5 +229,6 @@ private:
 	TMap<FName, FSRStructureVisualGroup> VisualGroupsByKey;
 	TSet<FName> GhostedStructureOccupantIds;
 	TSet<FName> DeletePreviewedStructureOccupantIds;
+	TSet<FName> ConstructionReplacementPreviewedStructureOccupantIds;
 	int32 NextStructureInstanceSequence;
 };

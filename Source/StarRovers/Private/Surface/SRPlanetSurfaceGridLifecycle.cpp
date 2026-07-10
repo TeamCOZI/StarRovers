@@ -38,11 +38,6 @@ void USRPlanetSurfaceGrid::ConfigureSurfaceGridComponentDefaults()
 
 void USRPlanetSurfaceGrid::ApplyDefaultGridOverlayMaterial()
 {
-	if (UMaterialInterface* DefaultGridOverlayMaterial = SurfaceGridMaterialState::LoadDefaultGridOverlayMaterial())
-	{
-		GridOverlayMaterial = DefaultGridOverlayMaterial;
-		SurfaceGridMaterialState::ApplyGridOverlayMaterial(*this, nullptr, GridOverlayMaterial.Get());
-	}
 }
 
 void USRPlanetSurfaceGrid::ApplyRegisteredGridOverlayMaterial()

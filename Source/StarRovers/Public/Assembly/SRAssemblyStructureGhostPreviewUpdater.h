@@ -6,6 +6,7 @@ class AActor;
 class UWorld;
 class USRPlanetSurfaceGrid;
 class USRStructureDataAsset;
+struct FSRAssemblyConveyorPreviewState;
 struct FSRAssemblyStructurePreviewState;
 
 namespace StarRovers::Assembly
@@ -28,6 +29,7 @@ namespace StarRovers::Assembly
 			USRStructureDataAsset* StructureDataAsset,
 			int32 RotationSteps,
 			float AdditionalYawDegrees,
+			FSRAssemblyConveyorPreviewState& ConveyorPreview,
 			FSRAssemblyStructurePreviewState& StructurePreview);
 	};
 }

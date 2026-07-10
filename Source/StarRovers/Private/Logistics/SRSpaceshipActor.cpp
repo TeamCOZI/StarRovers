@@ -7,7 +7,6 @@
 #include "Materials/MaterialInterface.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
-#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -55,24 +54,6 @@ ASRSpaceshipActor::ASRSpaceshipActor()
 	TrailNiagaraComponent->SetHiddenInGame(true);
 	TrailNiagaraComponent->SetVisibility(false, true);
 	TrailNiagaraComponent->ComponentTags.Add(TEXT("StarRovers.SpaceshipTrail"));
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> DefaultMeshFinder(TEXT("/Engine/BasicShapes/Cone.Cone"));
-	if (DefaultMeshFinder.Succeeded())
-	{
-		SpaceshipMesh->SetStaticMesh(DefaultMeshFinder.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> DefaultTrailFinder(TEXT("/Game/StarRovers/Logistics/VFX/NS_SpaceshipTrail.NS_SpaceshipTrail"));
-	if (DefaultTrailFinder.Succeeded())
-	{
-		TrailNiagaraSystem = DefaultTrailFinder.Object;
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> DefaultTrailMaterialFinder(TEXT("/Game/Materials/M_SpaceshipTrail.M_SpaceshipTrail"));
-	if (DefaultTrailMaterialFinder.Succeeded())
-	{
-		TrailMaterial = DefaultTrailMaterialFinder.Object;
-	}
 
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);

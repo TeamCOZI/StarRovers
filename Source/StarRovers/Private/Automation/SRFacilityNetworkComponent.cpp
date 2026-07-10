@@ -1,5 +1,6 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
+#include "Utility/SRLog.h"
 #include "SRFacilityPortInventoryBuilder.h"
 #include "SRFacilityTemperatureSynchronizer.h"
 #include "SRFacilityResourceOperations.h"
@@ -65,8 +66,7 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 	{
 		if (bLogFacilityNetworkEvents)
 		{
-			UE_LOG(
-				LogTemp,
+			SR_LOG(FacilityNetwork, LogTemp,
 				Warning,
 				TEXT("[FacilityNetwork] Register failed: OccupantId=%s Structure=%s Owner=%s Reason=InvalidInput"),
 				*OccupantId.ToString(),
@@ -102,8 +102,7 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 	SetComponentTickEnabled(bAutoProcessFacilities);
 	if (bLogFacilityNetworkEvents)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Registered: OccupantId=%s Structure=%s Facility=%s Owner=%s Origin=(%s) FootprintCells=%d"),
 			*OccupantId.ToString(),
@@ -125,8 +124,7 @@ bool USRFacilityNetworkComponent::UnregisterFacility(FName OccupantId)
 	}
 	if (bRemoved && bLogFacilityNetworkEvents)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Unregistered: OccupantId=%s Owner=%s RemainingFacilities=%d"),
 			*OccupantId.ToString(),
@@ -143,8 +141,7 @@ void USRFacilityNetworkComponent::ClearFacilities()
 	SetComponentTickEnabled(false);
 	if (bLogFacilityNetworkEvents)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Cleared: Owner=%s RemovedFacilities=%d"),
 			*GetNameSafe(GetOwner()),

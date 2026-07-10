@@ -4,7 +4,6 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
 #include "Materials/MaterialInterface.h"
-#include "UObject/ConstructorHelpers.h"
 #include "Rendering/SRScreenSpaceLineThickness.h"
 
 namespace
@@ -112,12 +111,6 @@ USRCelestialRingMeshComponent::USRCelestialRingMeshComponent()
 	SetUsingAbsoluteRotation(true);
 	SetUsingAbsoluteScale(true);
 
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> VertexColorMaterialFinder(
-		TEXT("/Engine/EngineDebugMaterials/VertexColorMaterial.VertexColorMaterial"));
-	if (VertexColorMaterialFinder.Succeeded())
-	{
-		SetMaterial(0, VertexColorMaterialFinder.Object);
-	}
 }
 
 void USRCelestialRingMeshComponent::UpdateRingVisual(

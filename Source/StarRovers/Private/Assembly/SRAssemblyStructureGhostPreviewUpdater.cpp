@@ -1,6 +1,9 @@
 #include "Assembly/SRAssemblyStructureGhostPreviewUpdater.h"
 
+#include "Assembly/SRAssemblyConstructionReplacement.h"
 #include "Assembly/SRAssemblyPreviewState.h"
+#include "Assembly/SRAssemblyPreviewMaterial.h"
+#include "Conveyor/SRConveyorNetworkComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Structure/SRStructureDataAsset.h"
@@ -18,6 +21,7 @@ namespace StarRovers::Assembly
 		USRStructureDataAsset* StructureDataAsset,
 		int32 RotationSteps,
 		float AdditionalYawDegrees,
+		FSRAssemblyConveyorPreviewState& ConveyorPreview,
 		FSRAssemblyStructurePreviewState& StructurePreview)
 	{
 		if (!bAssemblyModeActive
@@ -35,8 +39,7 @@ namespace StarRovers::Assembly
 		}
 
 		FSRPlanetSurfaceGridCellInfo HoveredCellInfo;
-		if (!HoveredSurfaceGrid->GetCellInfoById(HoveredCell.CellId, HoveredCellInfo)
-			|| !HoveredCellInfo.bCanConstruct)
+		if (!HoveredSurfaceGrid->GetCellInfoById(HoveredCell.CellId, HoveredCellInfo))
 		{
 			return ESRAssemblyStructureGhostPreviewUpdateResult::DestroyPreview;
 		}
@@ -60,29 +63,52 @@ namespace StarRovers::Assembly
 		USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(SurfaceOwner)
 			? SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>()
 			: nullptr;
-		TSet<FName> ReplaceableOccupantIds;
+		USRConveyorNetworkComponent* ConveyorNetwork = IsValid(SurfaceOwner)
+			? SurfaceOwner->FindComponentByClass<USRConveyorNetworkComponent>()
+			: nullptr;
+		ConstructionReplacement::FSRConstructionReplacementTargets ReplacementTargets;
 		const bool bCanBuildOverCells = IsValid(StructureInstanceManager)
-			? StructureInstanceManager->CanBuildOverCellsForConstruction(HoveredSurfaceGrid, FootprintCellIds, ReplaceableOccupantIds)
+			? ConstructionReplacement::CanBuildOverCellsForStructureConstruction(
+				HoveredSurfaceGrid,
+				StructureInstanceManager,
+				ConveyorNetwork,
+				FootprintCellIds,
+				ReplacementTargets)
 			: HoveredSurfaceGrid->CanOccupyCells(FootprintCellIds);
 		if (!bCanBuildOverCells)
 		{
 			if (IsValid(StructureInstanceManager))
 			{
-				StructureInstanceManager->SetConstructionReplacementPreviewedStructures(ReplaceableOccupantIds);
+				StructureInstanceManager->SetConstructionReplacementPreviewedStructures(TSet<FName>());
 			}
+			HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
+			ConveyorPreview.ClearBulkDeletionPreview();
 			return ESRAssemblyStructureGhostPreviewUpdateResult::DestroyPreview;
 		}
 		if (IsValid(StructureInstanceManager))
 		{
-			StructureInstanceManager->SetConstructionReplacementPreviewedStructures(ReplaceableOccupantIds);
+			StructureInstanceManager->SetConstructionReplacementPreviewedStructures(ReplacementTargets.StructureOccupantIds);
 		}
+		ConstructionReplacement::ApplyConstructionReplacementPreview(
+			HoveredSurfaceGrid,
+			StructureInstanceManager,
+			ReplacementTargets);
+		ConstructionReplacement::ApplyConveyorReplacementPreview(
+			HoveredSurfaceGrid,
+			ConveyorNetwork,
+			ConveyorPreview,
+			ReplacementTargets.ConveyorCellIds,
+			ReplacementTargets.ConveyorBeltPaths,
+			HoveredCell.CellId);
 
 		FSRPlanetSurfaceGridCellInfo PreviewCellInfo = HoveredCellInfo;
 		if (PreviewCellInfo.bOccupied
-			&& !PreviewCellInfo.OccupantId.IsNone()
-			&& ReplaceableOccupantIds.Contains(PreviewCellInfo.OccupantId))
+			&& ((!PreviewCellInfo.OccupantId.IsNone()
+				&& ReplacementTargets.StructureOccupantIds.Contains(PreviewCellInfo.OccupantId))
+				|| ReplacementTargets.ConveyorCellIds.Contains(HoveredCell.CellId)))
 		{
 			PreviewCellInfo.bOccupied = false;
+			PreviewCellInfo.bCanConstruct = true;
 			PreviewCellInfo.OccupantId = NAME_None;
 		}
 
@@ -97,7 +123,18 @@ namespace StarRovers::Assembly
 			return ESRAssemblyStructureGhostPreviewUpdateResult::DestroyPreview;
 		}
 
-		if (!StructurePreview.UpdateGhostActor(World, PreviewOwner, HoveredSurfaceGrid, StructureDataAsset, StructureData, GhostTransform, PreviewCellInfo))
+		UMaterialInterface* PreviewMaterial = ReplacementTargets.HasAny()
+			? PreviewMaterials::ResolveReplaceableMaterial(StructureData)
+			: PreviewMaterials::ResolveGhostMaterial(StructureData);
+		if (!StructurePreview.UpdateGhostActor(
+			World,
+			PreviewOwner,
+			HoveredSurfaceGrid,
+			StructureDataAsset,
+			StructureData,
+			GhostTransform,
+			PreviewCellInfo,
+			PreviewMaterial))
 		{
 			return ESRAssemblyStructureGhostPreviewUpdateResult::NoChange;
 		}

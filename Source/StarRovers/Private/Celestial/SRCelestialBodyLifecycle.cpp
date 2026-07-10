@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "Utility/SRLog.h"
 #include "SRCelestialBodyLog.h"
 #include "Engine/World.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
@@ -73,8 +74,7 @@ void ASRCelestialBody::LogMissingDataErrorOnce(const TCHAR* Context) const
 	}
 
 	bHasLoggedMissingDataError = true;
-	UE_LOG(
-		LogStarRoversCelestial,
+	SR_LOG(Celestial, LogStarRoversCelestial,
 		Error,
 		TEXT("%s '%s' requires body data before runtime use. SetData() was never called. Configure it through a data asset-driven spawn path instead of Blueprint defaults."),
 		Context ? Context : TEXT("ASRCelestialBody"),

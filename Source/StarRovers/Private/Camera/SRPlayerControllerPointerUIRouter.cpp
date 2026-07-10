@@ -1,5 +1,6 @@
 #include "SRPlayerControllerPointerUIRouter.h"
 
+#include "Utility/SRLog.h"
 #include "UI/SRAugmentChoiceWidget.h"
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 #include "UI/SRCelestialBodyOverviewWidget.h"
@@ -59,7 +60,7 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 	ConsiderBlockingUILayer(bOverAugmentChoice, ESRPlayerUILayer::AugmentChoice, TEXT("AugmentChoice"));
 	ConsiderBlockingUILayer(bOverStructureSelection, ESRPlayerUILayer::StructureSelection, TEXT("StructureSelection"));
 
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick Mouse=(%.1f, %.1f) HasMouse=%s FacilityControl=%s FocusInfo=%s Overview=%s TimeControl=%s AugmentChoice=%s StructureSelection=%s TopBlockingUI=%s TopZOrder=%d"),
+	SR_LOG(Camera, LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick Mouse=(%.1f, %.1f) HasMouse=%s FacilityControl=%s FocusInfo=%s Overview=%s TimeControl=%s AugmentChoice=%s StructureSelection=%s TopBlockingUI=%s TopZOrder=%d"),
 		MouseX,
 		MouseY,
 		bHasMousePosition ? TEXT("true") : TEXT("false"),
@@ -81,7 +82,7 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 		&& FacilityControlWidget
 		&& FacilityControlWidget->TryHandleFacilityControlPointerClick())
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick handled by top FacilityControl UI."));
+		SR_LOG(Camera, LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick handled by top FacilityControl UI."));
 		return true;
 	}
 
@@ -89,10 +90,10 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 		&& StructureSelectionWidget
 		&& StructureSelectionWidget->TryHandleStructureSelectionPointerClick())
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick handled by top StructureSelection UI."));
+		SR_LOG(Camera, LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick handled by top StructureSelection UI."));
 		return true;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick blocked by top UI hit test: %s."), TopBlockingUIName);
+	SR_LOG(Camera, LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick blocked by top UI hit test: %s."), TopBlockingUIName);
 	return true;
 }

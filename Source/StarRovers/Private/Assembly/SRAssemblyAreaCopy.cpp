@@ -1,6 +1,8 @@
 #include "Assembly/SRAssemblyAreaCopy.h"
 
+#include "Assembly/SRAssemblyConstructionReplacement.h"
 #include "Assembly/SRAssemblyPlacementRestoration.h"
+#include "Assembly/SRAssemblyPreviewState.h"
 #include "Components/MeshComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Conveyor/SRConveyorBeltActor.h"
@@ -352,6 +354,8 @@ namespace StarRovers::Assembly
 	{
 		bHasLastPreviewHoverCell = false;
 		LastReplaceableOccupantIds.Reset();
+		LastReplaceableOccupiedCellIds.Reset();
+		LastReplaceableConveyorCellIds.Reset();
 	}
 
 	void FSRAssemblyAreaCopy::StorePreviewEvaluation(
@@ -362,6 +366,8 @@ namespace StarRovers::Assembly
 		bHasLastPreviewHoverCell = true;
 		LastPreviewState = Evaluation.PreviewState;
 		LastReplaceableOccupantIds = Evaluation.ReplaceableOccupantIds;
+		LastReplaceableOccupiedCellIds = Evaluation.ReplaceableOccupiedCellIds;
+		LastReplaceableConveyorCellIds = Evaluation.ReplaceableConveyorCellIds;
 	}
 
 	void FSRAssemblyAreaCopy::SetPreviewState(ESRAssemblyAreaCopyPlacementPreviewState PreviewState)
@@ -373,6 +379,7 @@ namespace StarRovers::Assembly
 	{
 		if (IsValid(HoveredSurfaceGrid))
 		{
+			HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
 			if (AActor* SurfaceOwner = HoveredSurfaceGrid->GetOwner())
 			{
 				if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
@@ -529,7 +536,8 @@ namespace StarRovers::Assembly
 
 	bool FSRAssemblyAreaCopy::UpdatePlacementPreview(
 		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRPlanetSurfaceGridCellId& HoverCellId)
+		const FSRPlanetSurfaceGridCellId& HoverCellId,
+		FSRAssemblyConveyorPreviewState& ConveyorPreview)
 	{
 		if (!IsPlacementActive() || !HasPayload() || !IsValid(SurfaceGrid))
 		{
@@ -547,6 +555,22 @@ namespace StarRovers::Assembly
 			{
 				StructureInstanceManager->SetConstructionReplacementPreviewedStructures(LastReplaceableOccupantIds);
 			}
+			SurfaceGrid->SetConstructionReplacementPreviewCells(LastReplaceableOccupiedCellIds.Array());
+			USRConveyorNetworkComponent* ConveyorNetwork = IsValid(SurfaceOwner)
+				? SurfaceOwner->FindComponentByClass<USRConveyorNetworkComponent>()
+				: nullptr;
+			TArray<FSRConveyorBeltPath> ReplaceableConveyorBeltPaths;
+			ConstructionReplacement::CollectGroundConveyorBeltPaths(
+				ConveyorNetwork,
+				LastReplaceableConveyorCellIds,
+				ReplaceableConveyorBeltPaths);
+			ConstructionReplacement::ApplyConveyorReplacementPreview(
+				SurfaceGrid,
+				ConveyorNetwork,
+				ConveyorPreview,
+				LastReplaceableConveyorCellIds,
+				ReplaceableConveyorBeltPaths,
+				HoverCellId);
 
 			TArray<FSRPlanetSurfaceGridCellId> TargetOriginCellIds;
 			TargetOriginCellIds.SetNum(CopiedStructures.Num());
@@ -569,21 +593,31 @@ namespace StarRovers::Assembly
 			{
 				StructureInstanceManager->ClearDeletePreviewedStructures();
 			}
+			SurfaceGrid->ClearConstructionReplacementPreviewCells();
+			ConveyorPreview.ClearBulkDeletionPreview();
 			ApplyPreviewState(ESRAssemblyAreaCopyPlacementPreviewState::Blocked);
 			return false;
 		}
 
+		USRConveyorNetworkComponent* ConveyorNetwork = IsValid(SurfaceOwner)
+			? SurfaceOwner->FindComponentByClass<USRConveyorNetworkComponent>()
+			: nullptr;
 		StorePreviewEvaluation(HoverCellId, Evaluation);
 		if (IsValid(StructureInstanceManager))
 		{
 			StructureInstanceManager->SetConstructionReplacementPreviewedStructures(Evaluation.ReplaceableOccupantIds);
 		}
+		SurfaceGrid->SetConstructionReplacementPreviewCells(Evaluation.ReplaceableOccupiedCellIds.Array());
+		ConstructionReplacement::ApplyConveyorReplacementPreview(
+			SurfaceGrid,
+			ConveyorNetwork,
+			ConveyorPreview,
+			Evaluation.ReplaceableConveyorCellIds,
+			Evaluation.ReplaceableConveyorBeltPaths,
+			HoverCellId);
 		ApplyPreviewState(Evaluation.PreviewState);
 		UpdateStructurePreviewActors(SurfaceGrid, Evaluation.TargetOriginCellIds, Evaluation.PreviewState);
 
-		USRConveyorNetworkComponent* ConveyorNetwork = IsValid(SurfaceOwner)
-			? SurfaceOwner->FindComponentByClass<USRConveyorNetworkComponent>()
-			: nullptr;
 		for (int32 CopyIndex = 0; CopyIndex < CopiedConveyorPaths.Num(); ++CopyIndex)
 		{
 			if (!Evaluation.TargetConveyorBeltPaths.IsValidIndex(CopyIndex))
@@ -686,8 +720,8 @@ namespace StarRovers::Assembly
 				? StructureData.GhostMaterial.Get()
 				: StructureData.Material.Get();
 		case ESRAssemblyAreaCopyPlacementPreviewState::Replaceable:
-			return IsValid(StructureData.CopyReplaceableMaterial.Get())
-				? StructureData.CopyReplaceableMaterial.Get()
+			return IsValid(StructureData.ReplaceableMaterial.Get())
+				? StructureData.ReplaceableMaterial.Get()
 				: IsValid(StructureData.DeleteMaterial.Get())
 				? StructureData.DeleteMaterial.Get()
 				: IsValid(StructureData.GhostMaterial.Get())
@@ -836,14 +870,20 @@ namespace StarRovers::Assembly
 					continue;
 				}
 
-				if (CellInfo.OccupantId.IsNone()
-					|| !IsReplaceableOccupant(StructureInstanceManager, CellInfo.OccupantId))
+				if (!CellInfo.OccupantId.IsNone()
+					&& IsReplaceableOccupant(StructureInstanceManager, CellInfo.OccupantId))
 				{
-					bBlocked = true;
+					OutEvaluation.ReplaceableOccupantIds.Add(CellInfo.OccupantId);
 					continue;
 				}
 
-				OutEvaluation.ReplaceableOccupantIds.Add(CellInfo.OccupantId);
+				if (ConstructionReplacement::HasGroundConveyorAtCell(ConveyorNetwork, FootprintCellId))
+				{
+					OutEvaluation.ReplaceableConveyorCellIds.AddUnique(FootprintCellId);
+					continue;
+				}
+
+				bBlocked = true;
 			}
 		}
 
@@ -851,6 +891,14 @@ namespace StarRovers::Assembly
 			StructureInstanceManager,
 			OutEvaluation.ReplaceableOccupantIds,
 			OutEvaluation.ReplaceableOccupiedCellIds);
+		for (const FSRPlanetSurfaceGridCellId& ConveyorCellId : OutEvaluation.ReplaceableConveyorCellIds)
+		{
+			OutEvaluation.ReplaceableOccupiedCellIds.Add(ConveyorCellId);
+		}
+		ConstructionReplacement::CollectGroundConveyorBeltPaths(
+			ConveyorNetwork,
+			OutEvaluation.ReplaceableConveyorCellIds,
+			OutEvaluation.ReplaceableConveyorBeltPaths);
 
 		if (!CopiedConveyorPaths.IsEmpty() && !IsValid(ConveyorNetwork))
 		{
@@ -969,8 +1017,9 @@ namespace StarRovers::Assembly
 		}
 
 		OutEvaluation.PreviewState = OutEvaluation.ReplaceableOccupantIds.IsEmpty()
-			? ESRAssemblyAreaCopyPlacementPreviewState::Placeable
-			: ESRAssemblyAreaCopyPlacementPreviewState::Replaceable;
+			&& OutEvaluation.ReplaceableConveyorCellIds.IsEmpty()
+				? ESRAssemblyAreaCopyPlacementPreviewState::Placeable
+				: ESRAssemblyAreaCopyPlacementPreviewState::Replaceable;
 		OutEvaluation.bCanPlace = true;
 		return true;
 	}
@@ -1015,6 +1064,7 @@ namespace StarRovers::Assembly
 		SurfaceGrid->BeginInteractionHighlightBatch();
 		TArray<FSRPlacedStructureInstance> RemovedStructures;
 		TArray<FSRRestorableNaturalStructure> RemovedRestorableStructures;
+		TArray<FSRConveyorBeltPath> RemovedConveyorBeltPaths = Evaluation.ReplaceableConveyorBeltPaths;
 		if (!Evaluation.ReplaceableOccupantIds.IsEmpty() && IsValid(StructureInstanceManager))
 		{
 			StructureInstanceManager->RemoveConstructionDestructibleStructuresByOccupantIds(
@@ -1022,6 +1072,31 @@ namespace StarRovers::Assembly
 				Evaluation.ReplaceableOccupantIds,
 				&RemovedStructures);
 			AppendRestorableStructures(RemovedStructures, RemovedRestorableStructures);
+		}
+		if (!Evaluation.ReplaceableConveyorCellIds.IsEmpty())
+		{
+			if (!IsValid(ConveyorNetwork))
+			{
+				RestoreRemovedStructures(SurfaceGrid, StructureInstanceManager, RemovedStructures);
+				SurfaceGrid->EndInteractionHighlightBatch();
+				return true;
+			}
+
+			bool bRemovedAnyConveyor = false;
+			for (const FSRPlanetSurfaceGridCellId& ConveyorCellId : Evaluation.ReplaceableConveyorCellIds)
+			{
+				bRemovedAnyConveyor |= ConveyorNetwork->TryRemoveConveyorAtCell(
+					SurfaceGrid,
+					ConveyorCellId,
+					ConstructionReplacement::GroundConveyorLayer);
+			}
+
+			if (!bRemovedAnyConveyor)
+			{
+				RestoreRemovedStructures(SurfaceGrid, StructureInstanceManager, RemovedStructures);
+				SurfaceGrid->EndInteractionHighlightBatch();
+				return true;
+			}
 		}
 
 		TArray<FSRAssemblyPlacementHistoryEntry> AreaCopyHistoryEntries;
@@ -1120,12 +1195,18 @@ namespace StarRovers::Assembly
 		if (!OutResult.bPlacedAny)
 		{
 			RestoreRemovedStructures(SurfaceGrid, StructureInstanceManager, RemovedStructures);
+			ConstructionReplacement::RestoreConveyorBeltPaths(SurfaceGrid, ConveyorNetwork, RemovedConveyorBeltPaths);
 			return true;
 		}
 
 		if (!RemovedRestorableStructures.IsEmpty() && !AreaCopyHistoryEntries.IsEmpty())
 		{
 			AreaCopyHistoryEntries[0].RemovedNaturalStructures.Append(RemovedRestorableStructures);
+		}
+		if (!RemovedConveyorBeltPaths.IsEmpty() && !AreaCopyHistoryEntries.IsEmpty())
+		{
+			AreaCopyHistoryEntries[0].RemovedConveyorBeltPaths.Append(RemovedConveyorBeltPaths);
+			AreaCopyHistoryEntries[0].ConveyorNetwork = ConveyorNetwork;
 		}
 
 		OutResult.SurfaceOwner = SurfaceOwner;

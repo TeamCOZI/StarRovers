@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 
+#include "Utility/SRLog.h"
 #include "SRCelestialBodyLog.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
@@ -18,7 +19,7 @@ bool ValidatePreparedDynamicMeshBaseDataAsset(
 
 	if (DynamicMeshBaseDataAsset->BaseShape != ESRDynamicMeshBaseShape::CubeSphere)
 	{
-		UE_LOG(LogStarRoversCelestial, Warning, TEXT("Celestial body '%s' has unsupported DynamicMeshBase shape."), *BodyName);
+		SR_LOG(DynamicMesh, LogStarRoversCelestial, Warning, TEXT("Celestial body '%s' has unsupported DynamicMeshBase shape."), *BodyName);
 		return false;
 	}
 	return true;

@@ -1,5 +1,6 @@
 #include "SRPlanetSurfaceGridTerrainState.h"
 
+#include "Utility/SRLog.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
 #include "Surface/SRPlanetTerrainGenerator.h"
 
@@ -102,7 +103,7 @@ void StarRovers::SurfaceGridTerrainState::ApplyTerrainConfig(
 	Settings = SanitizeTerrainConfig(NewSettings);
 	if (Settings.BiomeDataAssets.IsEmpty())
 	{
-		UE_LOG(LogTemp, Error, TEXT("Planet surface grid terrain requires Profile BiomeDataAssets."));
+		SR_LOG(Surface, LogTemp, Error, TEXT("Planet surface grid terrain requires Profile BiomeDataAssets."));
 	}
 	else
 	{

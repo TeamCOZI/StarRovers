@@ -1,5 +1,6 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
+#include "Utility/SRLog.h"
 #include "SRFacilityMiningTargetQuery.h"
 #include "SRFacilityOperationStateController.h"
 #include "SRFacilityOutputPreviewQuery.h"
@@ -12,8 +13,7 @@ bool USRFacilityNetworkComponent::SetFacilityTemperatureState(FName OccupantId, 
 	{
 		if (bLogFacilityNetworkEvents)
 		{
-			UE_LOG(
-				LogTemp,
+			SR_LOG(FacilityNetwork, LogTemp,
 				Warning,
 				TEXT("[FacilityNetwork] SetTemperature failed: OccupantId=%s Owner=%s Reason=MissingFacility"),
 				*OccupantId.ToString(),
@@ -24,8 +24,7 @@ bool USRFacilityNetworkComponent::SetFacilityTemperatureState(FName OccupantId, 
 
 	if (bLogFacilityNetworkEvents)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Temperature set: OccupantId=%s TemperatureState=%d Owner=%s"),
 			*OccupantId.ToString(),
@@ -85,8 +84,7 @@ bool USRFacilityNetworkComponent::TryStartProcessing(FSRFacilityInstance& Facili
 
 	if (StartResult.StepKind == ESRFacilityProcessingStepKind::Mining)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Mining started: OccupantId=%s Facility=%s Deposit=%s ResourceId=%s Remaining=%d/%d Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
@@ -101,8 +99,7 @@ bool USRFacilityNetworkComponent::TryStartProcessing(FSRFacilityInstance& Facili
 
 	if (StartResult.StepKind == ESRFacilityProcessingStepKind::Standard)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Processing started: OccupantId=%s Facility=%s ProcessingInputs=%d RemainingInputs=%d Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
@@ -134,8 +131,7 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 
 	if (CompletionResult.StepKind == ESRFacilityProcessingStepKind::Mining)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Mining completed: OccupantId=%s Facility=%s Deposit=%s ResourceId=%s Remaining=%d/%d Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
@@ -150,8 +146,7 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 
 	if (CompletionResult.StepKind == ESRFacilityProcessingStepKind::Standard)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Processing completed: OccupantId=%s Facility=%s OutputResourceId=%s OutputCount=%d AdditionalOutputs=%d CellTemperatureEffects=%d Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),

@@ -62,6 +62,7 @@ void StarRovers::SurfaceGridGeneratedGridState::ResetGeneratedGridInteractionSta
 	TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& OutputPortPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& DeletionPreviewCellIds,
+	TArray<FSRPlanetSurfaceGridCellId>& ConstructionReplacementPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& InvalidPreviewCellIds)
 {
 	bHasHoveredCell = false;
@@ -71,5 +72,6 @@ void StarRovers::SurfaceGridGeneratedGridState::ResetGeneratedGridInteractionSta
 	InputPortPreviewCellIds.Reset();
 	OutputPortPreviewCellIds.Reset();
 	DeletionPreviewCellIds.Reset();
+	ConstructionReplacementPreviewCellIds.Reset();
 	InvalidPreviewCellIds.Reset();
 }

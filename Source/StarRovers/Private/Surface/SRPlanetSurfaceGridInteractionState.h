@@ -43,6 +43,7 @@ namespace StarRovers::SurfaceGridInteractionState
 		const TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& OutputPortPreviewCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& DeletionPreviewCellIds,
+		const TArray<FSRPlanetSurfaceGridCellId>& ConstructionReplacementPreviewCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& InvalidPreviewCellIds);
 
 	void ResetInteractionState(
@@ -56,5 +57,6 @@ namespace StarRovers::SurfaceGridInteractionState
 		TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& OutputPortPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& DeletionPreviewCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& ConstructionReplacementPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& InvalidPreviewCellIds);
 }

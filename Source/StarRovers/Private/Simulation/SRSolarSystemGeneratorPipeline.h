@@ -11,6 +11,7 @@
 #include "Engine/StaticMesh.h"
 #include "Misc/Guid.h"
 #include "Surface/SRPlanetTerrainProfileDataAsset.h"
+#include "Utility/SRLog.h"
 
 namespace StarRovers::Simulation::SolarSystemGeneration
 {
@@ -61,7 +62,7 @@ namespace StarRovers::Simulation::SolarSystemGeneration
 
 	inline void LogGeneratorMissingData(const UObject* SourceObject, const TCHAR* FieldName)
 	{
-		UE_LOG(
+		SR_LOG(SolarSystem,
 			LogTemp,
 			Error,
 			TEXT("Solar system generation requires %s on '%s'."),
@@ -87,7 +88,7 @@ namespace StarRovers::Simulation::SolarSystemGeneration
 			return true;
 		}
 
-		UE_LOG(LogTemp, Error, TEXT("Solar system generation requires StaticMesh or DynamicMeshBaseDataAsset for '%s'."), *CelestialBodyRequest.BodyData.VariableName.ToString());
+		SR_LOG(SolarSystem, LogTemp, Error, TEXT("Solar system generation requires StaticMesh or DynamicMeshBaseDataAsset for '%s'."), *CelestialBodyRequest.BodyData.VariableName.ToString());
 		return false;
 	}
 
@@ -140,7 +141,7 @@ namespace StarRovers::Simulation::SolarSystemGeneration
 	{
 		if (!BodyClass || BodyClass == ASRCelestialBody::StaticClass())
 		{
-			UE_LOG(LogTemp, Error, TEXT("Solar system generation requires a concrete celestial body class."));
+			SR_LOG(SolarSystem, LogTemp, Error, TEXT("Solar system generation requires a concrete celestial body class."));
 			return false;
 		}
 
@@ -217,7 +218,7 @@ namespace StarRovers::Simulation::SolarSystemGeneration
 			return ConfiguredClass;
 		}
 
-		UE_LOG(LogTemp, Error, TEXT("Solar system generation requires a configured %s class."), ClassPurpose ? ClassPurpose : TEXT("celestial body"));
+		SR_LOG(SolarSystem, LogTemp, Error, TEXT("Solar system generation requires a configured %s class."), ClassPurpose ? ClassPurpose : TEXT("celestial body"));
 		return nullptr;
 	}
 
@@ -322,7 +323,7 @@ namespace StarRovers::Simulation::SolarSystemGeneration
 
 		if (ValidAssets.IsEmpty())
 		{
-			UE_LOG(LogTemp, Error, TEXT("ASRSolarSystemGenerator requires at least one valid %s data asset."), AssetTypeName ? AssetTypeName : TEXT("celestial body"));
+			SR_LOG(SolarSystem, LogTemp, Error, TEXT("ASRSolarSystemGenerator requires at least one valid %s data asset."), AssetTypeName ? AssetTypeName : TEXT("celestial body"));
 			return nullptr;
 		}
 

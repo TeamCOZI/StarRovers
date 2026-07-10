@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
+#include "Utility/SRLog.h"
 
 float ASRCameraPawn::GetMaxZoomDistance() const
 {
@@ -19,7 +20,7 @@ float ASRCameraPawn::GetScreenSpaceInputScale(float CurrentZoomDistance) const
 	const float ReferenceFieldOfView = FMath::Clamp(GetScreenSpaceThicknessReferenceFieldOfView(), 5.0f, 170.0f);
 	if (!Camera)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires Camera to compute screen-space input scale."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRCameraPawn requires Camera to compute screen-space input scale."));
 		return 1.0f;
 	}
 

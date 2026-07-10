@@ -1,5 +1,6 @@
 #include "Simulation/SRSolarSystemGenerator.h"
 
+#include "Utility/SRLog.h"
 #include "Simulation/SRSolarSystemGeneratorPipeline.h"
 
 #include "Structure/SRStructureDataAsset.h"
@@ -164,7 +165,7 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 			if (!bLoggedMissingStructureDataAsset)
 			{
 				bLoggedMissingStructureDataAsset = true;
-				UE_LOG(LogTemp, Error, TEXT("Natural structure generation for '%s' has one or more rules without StructureDataAsset."), *GetNameSafe(Body));
+				SR_LOG(SolarSystem, LogTemp, Error, TEXT("Natural structure generation for '%s' has one or more rules without StructureDataAsset."), *GetNameSafe(Body));
 			}
 			return;
 		}

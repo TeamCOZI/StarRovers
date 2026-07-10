@@ -11,7 +11,6 @@
 #include "Simulation/SROrbit.h"
 #include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
-#include "UObject/ConstructorHelpers.h"
 #include "Rendering/SRCelestialRingMeshComponent.h"
 
 namespace
@@ -53,12 +52,6 @@ ASRPlanet::ASRPlanet()
 	AtmosphereDynamicMeshBaseDataAsset = nullptr;
 	AtmosphereMaterial = nullptr;
 	AtmosphereScaleMultiplier = 1.0f;
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> RotationAxisCylinderMeshFinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-	if (RotationAxisCylinderMeshFinder.Succeeded())
-	{
-		RotationAxisSplineMesh = RotationAxisCylinderMeshFinder.Object;
-	}
 
 	Orbit = CreateDefaultSubobject<USROrbit>(TEXT("Orbit"));
 

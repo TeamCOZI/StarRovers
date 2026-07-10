@@ -4,6 +4,8 @@
 #include "Engine/DeveloperSettings.h"
 #include "SRSimulationSettings.generated.h"
 
+class ASRSpaceshipActor;
+
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "Star Rovers Simulation"))
 class STARROVERS_API USRSimulationSettings : public UDeveloperSettings
 {
@@ -39,4 +41,10 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Augment", meta = (DisplayName = "Augment Random Seed"))
 	int32 AugmentRandomSeed = 47219;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Debug", meta = (DisplayName = "Unlock All Facilities Without Augments", ToolTip = "Treats every buildable facility structure as unlocked without selecting augments. Intended for editor/debug playtests."))
+	bool bDebugUnlockAllFacilitiesWithoutAugments = false;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Space Logistics", meta = (DisplayName = "Spaceship Actor Class", ToolTip = "Optional visual actor class spawned for active space logistics routes. Uses the native ASRSpaceshipActor when unset."))
+	TSoftClassPtr<ASRSpaceshipActor> SpaceshipActorClass;
 };

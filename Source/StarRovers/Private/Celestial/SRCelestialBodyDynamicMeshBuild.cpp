@@ -17,7 +17,7 @@ namespace
 
 	TAutoConsoleVariable<int32> CVarSRDynamicMeshBuildBreakdownTimings(
 		TEXT("sr.DynamicMesh.BuildBreakdownTimings"),
-		1,
+		0,
 		TEXT("Log detailed dynamic mesh build stage timings. Set 0 to disable per-cell timing probes."));
 
 	constexpr int32 DynamicMeshOceanLevelSampleCount = 512;

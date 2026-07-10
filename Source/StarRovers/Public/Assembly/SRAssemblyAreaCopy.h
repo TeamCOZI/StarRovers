@@ -13,6 +13,7 @@ class USRStructureDataAsset;
 class USRStructureInstanceManagerComponent;
 class UMaterialInterface;
 class UWorld;
+struct FSRAssemblyConveyorPreviewState;
 
 namespace StarRovers::Assembly
 {
@@ -48,6 +49,8 @@ namespace StarRovers::Assembly
 		TArray<FSRConveyorBeltPath> TargetConveyorBeltPaths;
 		TSet<FName> ReplaceableOccupantIds;
 		TSet<FSRPlanetSurfaceGridCellId> ReplaceableOccupiedCellIds;
+		TArray<FSRPlanetSurfaceGridCellId> ReplaceableConveyorCellIds;
+		TArray<FSRConveyorBeltPath> ReplaceableConveyorBeltPaths;
 		bool bCanPlace = false;
 	};
 
@@ -91,7 +94,8 @@ namespace StarRovers::Assembly
 		void ApplyPreviewState(ESRAssemblyAreaCopyPlacementPreviewState PreviewState);
 		bool UpdatePlacementPreview(
 			USRPlanetSurfaceGrid* SurfaceGrid,
-			const FSRPlanetSurfaceGridCellId& HoverCellId);
+			const FSRPlanetSurfaceGridCellId& HoverCellId,
+			FSRAssemblyConveyorPreviewState& ConveyorPreview);
 		void UpdateStructurePreviewActors(
 			USRPlanetSurfaceGrid* SurfaceGrid,
 			const TArray<FSRPlanetSurfaceGridCellId>& TargetOriginCellIds,
@@ -115,6 +119,8 @@ namespace StarRovers::Assembly
 		TArray<FSRAssemblyAreaCopiedStructure> CopiedStructures;
 		TArray<FSRAssemblyAreaCopiedConveyorPath> CopiedConveyorPaths;
 		TSet<FName> LastReplaceableOccupantIds;
+		TSet<FSRPlanetSurfaceGridCellId> LastReplaceableOccupiedCellIds;
+		TArray<FSRPlanetSurfaceGridCellId> LastReplaceableConveyorCellIds;
 		FSRPlanetSurfaceGridCellId LastPreviewHoverCellId;
 		ESRAssemblyAreaCopyPlacementPreviewState LastPreviewState = ESRAssemblyAreaCopyPlacementPreviewState::Blocked;
 		bool bIsPlacementActive = false;

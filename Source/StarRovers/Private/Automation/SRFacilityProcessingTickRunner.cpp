@@ -9,15 +9,17 @@ int32 FSRFacilityProcessingTickRunner::ProcessFacilities(
 	TFunctionRef<bool(FSRFacilityInstance&)> TryStartProcessing,
 	TFunctionRef<bool(FSRFacilityInstance&)> TryCompleteProcessing)
 {
-	if (RuntimeState.FacilityInstancesByOccupantId.IsEmpty())
+	const int32 FacilityProcessLimit = FMath::Max(0, MaxFacilitiesProcessed);
+	if (RuntimeState.FacilityInstancesByOccupantId.IsEmpty() || FacilityProcessLimit <= 0)
 	{
 		return 0;
 	}
 
+	const float SafeDeltaTime = FMath::Max(0.0f, DeltaTime);
 	int32 ProcessedCount = 0;
 	for (TPair<FName, FSRFacilityInstance>& FacilityPair : RuntimeState.FacilityInstancesByOccupantId)
 	{
-		if (ProcessedCount >= MaxFacilitiesProcessed)
+		if (ProcessedCount >= FacilityProcessLimit)
 		{
 			break;
 		}
@@ -30,7 +32,7 @@ int32 FSRFacilityProcessingTickRunner::ProcessFacilities(
 
 		if (FacilityInstance.bProcessing && FSRFacilityProcessingRuleEvaluator::CanAdvanceProcessing(FacilityInstance))
 		{
-			FacilityInstance.ProcessProgressSeconds += FMath::Max(0.0f, DeltaTime);
+			FacilityInstance.ProcessProgressSeconds += SafeDeltaTime;
 			if (FacilityInstance.ProcessProgressSeconds >= FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(FacilityInstance))
 			{
 				TryCompleteProcessing(FacilityInstance);

@@ -20,6 +20,7 @@
 #include "Simulation/SRTimeControlSubsystem.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "Styling/SlateColor.h"
+#include "Utility/SRLog.h"
 
 namespace
 {
@@ -633,7 +634,7 @@ FReply USRTimeControlWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	if (IsScreenPositionOverTimeControlPanel(ScreenPosition))
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: TimeControl NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: TimeControl NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
 			ScreenPosition.Y);
 		return FReply::Handled();
@@ -647,7 +648,7 @@ FReply USRTimeControlWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, 
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	if (IsScreenPositionOverTimeControlPanel(ScreenPosition))
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: TimeControl NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: TimeControl NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
 			ScreenPosition.Y);
 		return FReply::Handled();
@@ -1620,7 +1621,7 @@ bool USRTimeControlWidget::IsScreenPositionOverTimeControlPanel(const FVector2D&
 
 void USRTimeControlWidget::HandlePauseClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: TimeControl PauseButton OnClicked"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: TimeControl PauseButton OnClicked"));
 
 	if (USRTimeControlSubsystem* TimeControlSubsystem = GetTimeControlSubsystem())
 	{
@@ -1632,7 +1633,7 @@ void USRTimeControlWidget::HandlePauseClicked()
 
 void USRTimeControlWidget::HandlePlayClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: TimeControl PlayButton OnClicked"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: TimeControl PlayButton OnClicked"));
 
 	if (USRTimeControlSubsystem* TimeControlSubsystem = GetTimeControlSubsystem())
 	{
@@ -1644,7 +1645,7 @@ void USRTimeControlWidget::HandlePlayClicked()
 
 void USRTimeControlWidget::HandleFastForwardClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: TimeControl FastForwardButton OnClicked"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: TimeControl FastForwardButton OnClicked"));
 
 	if (USRTimeControlSubsystem* TimeControlSubsystem = GetTimeControlSubsystem())
 	{

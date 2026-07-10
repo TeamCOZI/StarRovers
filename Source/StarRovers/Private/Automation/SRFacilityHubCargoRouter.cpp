@@ -67,6 +67,8 @@ void FSRFacilityHubCargoRouter::GetOutboundCargoResourceIds(
 		return;
 	}
 
+	TSet<FName> ResourceIdSet;
+	ResourceIdSet.Reserve(FacilityInstance.InputPortInventories.Num());
 	for (const FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
 	{
 		for (const FSRResourceInstance& ResourceInstance : InputPortInventory.Inventory)
@@ -76,7 +78,11 @@ void FSRFacilityHubCargoRouter::GetOutboundCargoResourceIds(
 				continue;
 			}
 
-			OutResourceIds.AddUnique(ResourceInstance.ResourceId);
+			if (!ResourceIdSet.Contains(ResourceInstance.ResourceId))
+			{
+				ResourceIdSet.Add(ResourceInstance.ResourceId);
+				OutResourceIds.Add(ResourceInstance.ResourceId);
+			}
 		}
 	}
 }

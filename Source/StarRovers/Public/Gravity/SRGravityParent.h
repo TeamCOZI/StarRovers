@@ -9,6 +9,7 @@ struct FPropertyChangedEvent;
 #endif
 
 class USRCelestialRingMeshComponent;
+class ULineBatchComponent;
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
 class STARROVERS_API USRGravityParent : public UActorComponent
@@ -104,10 +105,21 @@ protected:
 
 private:
 	void EnsureGravityRingVisual();
+	void EnsureGravityLineBatchVisual();
+	void ClearGravityLineBatchVisual() const;
+	bool DrawGravityLineBatchVisual(
+		const FVector& WorldCenter,
+		float Radius,
+		const FLinearColor& Color,
+		float LineThickness,
+		int32 SegmentCount) const;
 	void ReleaseGravityRingVisual();
 
 	static TArray<TWeakObjectPtr<USRGravityParent>> RegisteredSources;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USRCelestialRingMeshComponent> GravityRingVisual;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULineBatchComponent> GravityLineBatch;
 };

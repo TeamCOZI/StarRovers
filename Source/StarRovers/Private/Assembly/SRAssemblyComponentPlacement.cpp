@@ -338,7 +338,8 @@ bool USRAssemblyComponent::TryPlaceSelectedStructure(
 					TargetCell.CellId,
 					PlacementRotationSteps,
 					PlacementResult.OccupantId,
-					PlacementResult.RemovedNaturalStructures);
+					PlacementResult.RemovedNaturalStructures,
+					PlacementResult.RemovedConveyorBeltPaths);
 			}
 		}
 	}

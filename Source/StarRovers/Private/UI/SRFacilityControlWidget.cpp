@@ -1,5 +1,6 @@
 #include "UI/SRFacilityControlWidget.h"
 
+#include "Utility/SRLog.h"
 #include "Automation/SRFacilityNetworkComponent.h"
 #include "Automation/SRFacilityResourceOperations.h"
 #include "Blueprint/WidgetTree.h"
@@ -1397,7 +1398,7 @@ void USRFacilityInputSlotDebugAction::Initialize(USRFacilityControlWidget* InOwn
 
 void USRFacilityInputSlotDebugAction::HandleClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl InputSlotDebug OnClicked InputPortIndex=%d ResourceId=%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl InputSlotDebug OnClicked InputPortIndex=%d ResourceId=%s"),
 		InputPortIndex,
 		*ResourceId.ToString());
 
@@ -1419,7 +1420,7 @@ void USRHubRouteDestinationAction::Initialize(
 
 void USRHubRouteDestinationAction::HandleClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteDestination OnClicked Destination=%s/%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteDestination OnClicked Destination=%s/%s"),
 		*GetNameSafe(DestinationHub.BodyActor.Get()),
 		*DestinationHub.HubOccupantId.ToString());
 
@@ -1454,7 +1455,7 @@ void USRHubRouteLaunchAction::Initialize(
 
 void USRHubRouteLaunchAction::HandleClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteLaunch OnClicked Destination=%s/%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteLaunch OnClicked Destination=%s/%s"),
 		*GetNameSafe(DestinationHub.BodyActor.Get()),
 		*DestinationHub.HubOccupantId.ToString());
 
@@ -1486,7 +1487,7 @@ void USRHubRouteRemovalAction::Initialize(USRFacilityControlWidget* InOwnerWidge
 
 void USRHubRouteRemovalAction::HandleClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteRemoval OnClicked RouteId=%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteRemoval OnClicked RouteId=%s"),
 		*RouteId.ToString());
 
 	if (IsValid(OwnerWidget))
@@ -1516,7 +1517,7 @@ void USRHubRouteDebugOrbitAction::Initialize(USRFacilityControlWidget* InOwnerWi
 
 void USRHubRouteDebugOrbitAction::HandleClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteDebugOrbit OnClicked"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteDebugOrbit OnClicked"));
 
 	if (IsValid(OwnerWidget))
 	{
@@ -1584,7 +1585,7 @@ void USRHubRouteSettingAction::InitializeCargoResourceId(
 
 void USRHubRouteSettingAction::HandleClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteSetting OnClicked RouteId=%s SetStack=%s Stack=%d SetReturnEmpty=%s ReturnEmpty=%s SetCargoResource=%s CargoResourceId=%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteSetting OnClicked RouteId=%s SetStack=%s Stack=%d SetReturnEmpty=%s ReturnEmpty=%s SetCargoResource=%s CargoResourceId=%s"),
 		*RouteId.ToString(),
 		bSetMaxCargoStackCount ? TEXT("true") : TEXT("false"),
 		MaxCargoStackCount,
@@ -1670,7 +1671,7 @@ FReply USRFacilityControlWidget::NativeOnMouseButtonDown(const FGeometry& InGeom
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	if (IsScreenPositionOverControlPanel(ScreenPosition))
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
 			ScreenPosition.Y);
 		return FReply::Handled();
@@ -1684,7 +1685,7 @@ FReply USRFacilityControlWidget::NativeOnMouseButtonUp(const FGeometry& InGeomet
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	if (IsScreenPositionOverControlPanel(ScreenPosition))
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
 			ScreenPosition.Y);
 		return FReply::Handled();
@@ -1759,13 +1760,13 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 		return false;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl TryHandleFacilityControlPointerClick Mouse=(%.1f, %.1f)"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl TryHandleFacilityControlPointerClick Mouse=(%.1f, %.1f)"),
 		ScreenPosition.X,
 		ScreenPosition.Y);
 
 	if (IsWidgetUnderScreenPosition(CloseButton, ScreenPosition) && CloseButton->GetIsEnabled())
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved CloseButton"));
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved CloseButton"));
 		HandleCloseClicked();
 		return true;
 	}
@@ -1773,7 +1774,7 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 	if (IsWidgetUnderScreenPosition(ProcessCheckBox, ScreenPosition) && ProcessCheckBox->GetIsEnabled())
 	{
 		const bool bNewChecked = !ProcessCheckBox->IsChecked();
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved ProcessCheckBox bNewChecked=%s"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved ProcessCheckBox bNewChecked=%s"),
 			bNewChecked ? TEXT("true") : TEXT("false"));
 		HandleProcessCheckStateChanged(bNewChecked);
 		return true;
@@ -1782,7 +1783,7 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 	if (IsWidgetUnderScreenPosition(DeliverCheckBox, ScreenPosition) && DeliverCheckBox->GetIsEnabled())
 	{
 		const bool bNewChecked = !DeliverCheckBox->IsChecked();
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DeliverCheckBox bNewChecked=%s"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DeliverCheckBox bNewChecked=%s"),
 			bNewChecked ? TEXT("true") : TEXT("false"));
 		HandleDeliverCheckStateChanged(bNewChecked);
 		return true;
@@ -1790,21 +1791,21 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 
 	if (IsWidgetUnderScreenPosition(DebugAddTerriteButton, ScreenPosition) && DebugAddTerriteButton->GetIsEnabled())
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddTerriteButton"));
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddTerriteButton"));
 		HandleDebugAddTerriteClicked();
 		return true;
 	}
 
 	if (IsWidgetUnderScreenPosition(DebugAddAquidButton, ScreenPosition) && DebugAddAquidButton->GetIsEnabled())
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddAquidButton"));
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddAquidButton"));
 		HandleDebugAddAquidClicked();
 		return true;
 	}
 
 	if (IsWidgetUnderScreenPosition(DebugAddNitainButton, ScreenPosition) && DebugAddNitainButton->GetIsEnabled())
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddNitainButton"));
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddNitainButton"));
 		HandleDebugAddNitainClicked();
 		return true;
 	}
@@ -1813,7 +1814,7 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 	{
 		if (IsValid(HubRouteDestinationAction) && HubRouteDestinationAction->TryHandleManualClick(ScreenPosition))
 		{
-			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteDestinationButton"));
+			SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteDestinationButton"));
 			return true;
 		}
 	}
@@ -1822,7 +1823,7 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 	{
 		if (IsValid(HubRouteLaunchAction) && HubRouteLaunchAction->TryHandleManualClick(ScreenPosition))
 		{
-			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteLaunchButton"));
+			SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteLaunchButton"));
 			return true;
 		}
 	}
@@ -1831,7 +1832,7 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 	{
 		if (IsValid(HubRouteRemovalAction) && HubRouteRemovalAction->TryHandleManualClick(ScreenPosition))
 		{
-			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteRemoveButton"));
+			SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteRemoveButton"));
 			return true;
 		}
 	}
@@ -1840,7 +1841,7 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 	{
 		if (IsValid(HubRouteDebugOrbitAction) && HubRouteDebugOrbitAction->TryHandleManualClick(ScreenPosition))
 		{
-			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteDebugOrbitButton"));
+			SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteDebugOrbitButton"));
 			return true;
 		}
 	}
@@ -1849,12 +1850,12 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 	{
 		if (IsValid(HubRouteSettingAction) && HubRouteSettingAction->TryHandleManualClick(ScreenPosition))
 		{
-			UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteSettingButton"));
+			SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubRouteSettingButton"));
 			return true;
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click consumed panel background."));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click consumed panel background."));
 	return true;
 }
 
@@ -2164,7 +2165,7 @@ bool USRFacilityControlWidget::IsScreenPositionOverControlPanel(const FVector2D&
 
 void USRFacilityControlWidget::HandleCloseClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl CloseButton OnClicked"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl CloseButton OnClicked"));
 
 	if (ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetOwningPlayer()))
 	{
@@ -2177,7 +2178,7 @@ void USRFacilityControlWidget::HandleCloseClicked()
 
 void USRFacilityControlWidget::HandleProcessCheckStateChanged(bool bIsChecked)
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl ProcessCheckBox changed bIsChecked=%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl ProcessCheckBox changed bIsChecked=%s"),
 		bIsChecked ? TEXT("true") : TEXT("false"));
 
 	if (bUpdatingControls)
@@ -2194,7 +2195,7 @@ void USRFacilityControlWidget::HandleProcessCheckStateChanged(bool bIsChecked)
 
 void USRFacilityControlWidget::HandleDeliverCheckStateChanged(bool bIsChecked)
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DeliverCheckBox changed bIsChecked=%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DeliverCheckBox changed bIsChecked=%s"),
 		bIsChecked ? TEXT("true") : TEXT("false"));
 
 	if (bUpdatingControls)
@@ -2211,7 +2212,7 @@ void USRFacilityControlWidget::HandleDeliverCheckStateChanged(bool bIsChecked)
 
 void USRFacilityControlWidget::HandleDebugAddTerriteClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DebugAddTerriteButton OnClicked"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DebugAddTerriteButton OnClicked"));
 
 	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
 	if (!IsValid(FacilityNetwork) || FocusedOccupantId.IsNone())
@@ -2227,7 +2228,7 @@ void USRFacilityControlWidget::HandleDebugAddTerriteClicked()
 
 void USRFacilityControlWidget::HandleDebugAddAquidClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DebugAddAquidButton OnClicked"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DebugAddAquidButton OnClicked"));
 
 	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
 	if (!IsValid(FacilityNetwork) || FocusedOccupantId.IsNone())
@@ -2243,7 +2244,7 @@ void USRFacilityControlWidget::HandleDebugAddAquidClicked()
 
 void USRFacilityControlWidget::HandleDebugAddNitainClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DebugAddNitainButton OnClicked"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DebugAddNitainButton OnClicked"));
 
 	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
 	if (!IsValid(FacilityNetwork) || FocusedOccupantId.IsNone())

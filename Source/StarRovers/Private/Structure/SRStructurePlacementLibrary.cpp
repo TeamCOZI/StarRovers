@@ -1,5 +1,6 @@
 #include "Structure/SRStructurePlacementLibrary.h"
 
+#include "Utility/SRLog.h"
 #include "Automation/SRFacilityNetworkComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -128,13 +129,13 @@ bool USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
 	UClass* StructureActorClass = StructureData.StructureActorClass.Get();
 	if (!IsValid(StructureActorClass))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Cannot place structure from '%s': StructureActorClass is not set."), *GetNameSafe(StructureDataAsset));
+		SR_LOG(Structure, LogTemp, Error, TEXT("Cannot place structure from '%s': StructureActorClass is not set."), *GetNameSafe(StructureDataAsset));
 		return false;
 	}
 
 	if (!StructureActorClass->ImplementsInterface(USRBuildableStructureInterface::StaticClass()))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Cannot place structure from '%s': StructureActorClass does not implement ISRBuildableStructureInterface."), *GetNameSafe(StructureDataAsset));
+		SR_LOG(Structure, LogTemp, Error, TEXT("Cannot place structure from '%s': StructureActorClass does not implement ISRBuildableStructureInterface."), *GetNameSafe(StructureDataAsset));
 		return false;
 	}
 

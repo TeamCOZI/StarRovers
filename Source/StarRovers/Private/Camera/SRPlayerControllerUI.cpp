@@ -1,5 +1,6 @@
 #include "Camera/SRPlayerController.h"
 
+#include "Utility/SRLog.h"
 #include "Assembly/SRAssemblyComponent.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "SRPlayerControllerStructureBuildSelectionState.h"
@@ -81,14 +82,14 @@ void ASRPlayerController::CreateFocusInfoWidget()
 	}
 	if (!FocusInfoWidgetClass)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires FocusInfoWidgetClass to create the focus widget."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController requires FocusInfoWidgetClass to create the focus widget."));
 		return;
 	}
 
 	FocusInfoWidget = CreateWidget<USRCelestialBodyFocusInfoWidget>(this, FocusInfoWidgetClass);
 	if (!FocusInfoWidget)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController failed to create FocusInfoWidget from '%s'."), *GetNameSafe(FocusInfoWidgetClass));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController failed to create FocusInfoWidget from '%s'."), *GetNameSafe(FocusInfoWidgetClass));
 		return;
 	}
 
@@ -127,14 +128,14 @@ void ASRPlayerController::CreateOverviewWidget()
 	}
 	if (!OverviewWidgetClass)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires OverviewWidgetClass to create the overview widget."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController requires OverviewWidgetClass to create the overview widget."));
 		return;
 	}
 
 	OverviewWidget = CreateWidget<USRCelestialBodyOverviewWidget>(this, OverviewWidgetClass);
 	if (!OverviewWidget)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController failed to create OverviewWidget from '%s'."), *GetNameSafe(OverviewWidgetClass));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController failed to create OverviewWidget from '%s'."), *GetNameSafe(OverviewWidgetClass));
 		return;
 	}
 
@@ -179,14 +180,14 @@ void ASRPlayerController::CreateTimeControlWidget()
 	}
 	if (!TimeControlWidgetClass)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires TimeControlWidgetClass to create the time control widget."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController requires TimeControlWidgetClass to create the time control widget."));
 		return;
 	}
 
 	TimeControlWidget = CreateWidget<USRTimeControlWidget>(this, TimeControlWidgetClass);
 	if (!TimeControlWidget)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController failed to create TimeControlWidget from '%s'."), *GetNameSafe(TimeControlWidgetClass));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController failed to create TimeControlWidget from '%s'."), *GetNameSafe(TimeControlWidgetClass));
 		return;
 	}
 
@@ -210,7 +211,7 @@ void ASRPlayerController::CreateAugmentChoiceWidget()
 	AugmentChoiceWidget = CreateWidget<USRAugmentChoiceWidget>(this, WidgetClass);
 	if (!AugmentChoiceWidget)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController failed to create AugmentChoiceWidget from '%s'."), *GetNameSafe(WidgetClass));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController failed to create AugmentChoiceWidget from '%s'."), *GetNameSafe(WidgetClass));
 		return;
 	}
 
@@ -270,7 +271,7 @@ void ASRPlayerController::HandleAugmentChoicesReady(const TArray<FSRAugmentChoic
 
 	if (ResolvedChoices.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController received an augment choice event without choices for cycle %d."), CycleIndex);
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController received an augment choice event without choices for cycle %d."), CycleIndex);
 		return;
 	}
 
@@ -280,7 +281,7 @@ void ASRPlayerController::HandleAugmentChoicesReady(const TArray<FSRAugmentChoic
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("ASRPlayerController showing %d augment choices for cycle %d."), ResolvedChoices.Num(), ResolvedCycleIndex);
+	SR_LOG(Camera, LogTemp, Log, TEXT("ASRPlayerController showing %d augment choices for cycle %d."), ResolvedChoices.Num(), ResolvedCycleIndex);
 	AugmentChoiceWidget->SetAugmentChoices(ResolvedChoices, ResolvedCycleIndex);
 	AugmentChoiceWidget->SetVisibility(ESlateVisibility::Visible);
 }
@@ -310,14 +311,14 @@ void ASRPlayerController::CreateStructureSelectionWidget()
 
 	if (!StructureSelectionWidgetClass)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires StructureSelectionWidgetClass to create the structure selection widget."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController requires StructureSelectionWidgetClass to create the structure selection widget."));
 		return;
 	}
 
 	StructureSelectionWidget = CreateWidget<USRStructureSelectionWidget>(this, StructureSelectionWidgetClass);
 	if (!StructureSelectionWidget)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController failed to create StructureSelectionWidget from '%s'."), *GetNameSafe(StructureSelectionWidgetClass));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController failed to create StructureSelectionWidget from '%s'."), *GetNameSafe(StructureSelectionWidgetClass));
 		return;
 	}
 
@@ -378,14 +379,14 @@ void ASRPlayerController::CreateFacilityControlWidget()
 
 	if (!FacilityControlWidgetClass)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires FacilityControlWidgetClass to create the facility control widget."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController requires FacilityControlWidgetClass to create the facility control widget."));
 		return;
 	}
 
 	FacilityControlWidget = CreateWidget<USRFacilityControlWidget>(this, FacilityControlWidgetClass);
 	if (!FacilityControlWidget)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController failed to create FacilityControlWidget from '%s'."), *GetNameSafe(FacilityControlWidgetClass));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController failed to create FacilityControlWidget from '%s'."), *GetNameSafe(FacilityControlWidgetClass));
 		return;
 	}
 

@@ -1,5 +1,7 @@
 #include "Editor/SRConfigureSpaceshipTrailCommandlet.h"
 
+#include "Utility/SRLog.h"
+
 #if WITH_EDITOR
 
 #include "EdGraph/EdGraph.h"
@@ -7,6 +9,7 @@
 #include "EdGraphSchema_Niagara.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/PackageName.h"
+#include "Misc/Parse.h"
 #include "NiagaraConstants.h"
 #include "NiagaraEmitter.h"
 #include "NiagaraEmitterHandle.h"
@@ -29,13 +32,6 @@
 
 namespace
 {
-	const TCHAR* SpaceshipTrailSystemPath = TEXT("/Game/StarRovers/Logistics/VFX/NS_SpaceshipTrail.NS_SpaceshipTrail");
-	const TCHAR* SpaceshipTrailMaterialPath = TEXT("/Game/Materials/M_SpaceshipTrail.M_SpaceshipTrail");
-	const TCHAR* EmitterStateModulePath = TEXT("/Niagara/Modules/Emitter/EmitterState.EmitterState");
-	const TCHAR* SpawnRateModulePath = TEXT("/Niagara/Modules/Emitter/SpawnRate.SpawnRate");
-	const TCHAR* SystemLocationModulePath = TEXT("/Niagara/Modules/Spawn/Location/SystemLocation.SystemLocation");
-	const TCHAR* UpdateAgeModulePath = TEXT("/Niagara/Modules/Update/Lifetime/UpdateAge.UpdateAge");
-
 	const FName NiagaraDynamicAddPinSubCategory(TEXT("DynamicAddPin"));
 	const FName NiagaraParameterPinSubCategory(TEXT("ParameterPin"));
 	const FName TrailMaterialUserParameter(TEXT("User.TrailMaterial"));
@@ -44,12 +40,24 @@ namespace
 	constexpr float DefaultTrailLifetime = 3.0f;
 	constexpr float DefaultTrailSpawnRate = 60.0f;
 
-	UNiagaraScript* LoadNiagaraModuleScript(const TCHAR* ModulePath)
+	bool TryReadRequiredObjectPath(const FString& Params, const TCHAR* ParameterName, FString& OutPath)
 	{
-		UNiagaraScript* ModuleScript = LoadObject<UNiagaraScript>(nullptr, ModulePath);
+		const FString ParameterKey = FString::Printf(TEXT("%s="), ParameterName);
+		if (FParse::Value(*Params, *ParameterKey, OutPath) && !OutPath.IsEmpty())
+		{
+			return true;
+		}
+
+		SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("Missing required commandlet parameter: -%s=<ObjectPath>"), ParameterName);
+		return false;
+	}
+
+	UNiagaraScript* LoadNiagaraModuleScript(const FString& ModulePath)
+	{
+		UNiagaraScript* ModuleScript = LoadObject<UNiagaraScript>(nullptr, *ModulePath);
 		if (!ModuleScript)
 		{
-			UE_LOG(LogTemp, Error, TEXT("Could not load Niagara module script: %s"), ModulePath);
+			SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("Could not load Niagara module script: %s"), *ModulePath);
 		}
 		return ModuleScript;
 	}
@@ -131,7 +139,7 @@ namespace
 
 	UNiagaraNodeFunctionCall* EnsureModule(
 		UNiagaraNodeOutput& OutputNode,
-		const TCHAR* ModulePath,
+		const FString& ModulePath,
 		int32 TargetIndex,
 		bool& bChanged,
 		int32& AddedModuleCount)
@@ -479,17 +487,33 @@ USRConfigureSpaceshipTrailCommandlet::USRConfigureSpaceshipTrailCommandlet()
 
 int32 USRConfigureSpaceshipTrailCommandlet::Main(const FString& Params)
 {
-	UNiagaraSystem* TrailSystem = LoadObject<UNiagaraSystem>(nullptr, SpaceshipTrailSystemPath);
-	if (!TrailSystem)
+	FString SpaceshipTrailSystemPath;
+	FString SpaceshipTrailMaterialPath;
+	FString EmitterStateModulePath;
+	FString SpawnRateModulePath;
+	FString SystemLocationModulePath;
+	FString UpdateAgeModulePath;
+	if (!TryReadRequiredObjectPath(Params, TEXT("TrailSystem"), SpaceshipTrailSystemPath)
+		|| !TryReadRequiredObjectPath(Params, TEXT("TrailMaterial"), SpaceshipTrailMaterialPath)
+		|| !TryReadRequiredObjectPath(Params, TEXT("EmitterStateModule"), EmitterStateModulePath)
+		|| !TryReadRequiredObjectPath(Params, TEXT("SpawnRateModule"), SpawnRateModulePath)
+		|| !TryReadRequiredObjectPath(Params, TEXT("SystemLocationModule"), SystemLocationModulePath)
+		|| !TryReadRequiredObjectPath(Params, TEXT("UpdateAgeModule"), UpdateAgeModulePath))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Could not load spaceship trail Niagara system: %s"), SpaceshipTrailSystemPath);
 		return 1;
 	}
 
-	UMaterialInterface* TrailMaterial = LoadObject<UMaterialInterface>(nullptr, SpaceshipTrailMaterialPath);
+	UNiagaraSystem* TrailSystem = LoadObject<UNiagaraSystem>(nullptr, *SpaceshipTrailSystemPath);
+	if (!TrailSystem)
+	{
+		SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("Could not load spaceship trail Niagara system: %s"), *SpaceshipTrailSystemPath);
+		return 1;
+	}
+
+	UMaterialInterface* TrailMaterial = LoadObject<UMaterialInterface>(nullptr, *SpaceshipTrailMaterialPath);
 	if (!TrailMaterial)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Could not load spaceship trail material: %s"), SpaceshipTrailMaterialPath);
+		SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("Could not load spaceship trail material: %s"), *SpaceshipTrailMaterialPath);
 		return 1;
 	}
 
@@ -548,7 +572,7 @@ int32 USRConfigureSpaceshipTrailCommandlet::Main(const FString& Params)
 		UNiagaraGraph* Graph = GraphSource ? GraphSource->NodeGraph : nullptr;
 		if (!Graph)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Emitter %s has no editable Niagara graph source"), *EmitterHandle.GetUniqueInstanceName());
+			SR_LOG(EditorCommandlet, LogTemp, Warning, TEXT("Emitter %s has no editable Niagara graph source"), *EmitterHandle.GetUniqueInstanceName());
 		}
 		else
 		{
@@ -574,7 +598,7 @@ int32 USRConfigureSpaceshipTrailCommandlet::Main(const FString& Params)
 			}
 			else
 			{
-				UE_LOG(LogTemp, Warning, TEXT("No Emitter Update output found in %s"), *EmitterHandle.GetUniqueInstanceName());
+				SR_LOG(EditorCommandlet, LogTemp, Warning, TEXT("No Emitter Update output found in %s"), *EmitterHandle.GetUniqueInstanceName());
 			}
 
 			if (ParticleSpawnOutputNode)
@@ -616,7 +640,7 @@ int32 USRConfigureSpaceshipTrailCommandlet::Main(const FString& Params)
 			}
 			else
 			{
-				UE_LOG(LogTemp, Warning, TEXT("No Particle Spawn output found in %s"), *EmitterHandle.GetUniqueInstanceName());
+				SR_LOG(EditorCommandlet, LogTemp, Warning, TEXT("No Particle Spawn output found in %s"), *EmitterHandle.GetUniqueInstanceName());
 			}
 
 			if (ParticleUpdateOutputNode)
@@ -625,7 +649,7 @@ int32 USRConfigureSpaceshipTrailCommandlet::Main(const FString& Params)
 			}
 			else
 			{
-				UE_LOG(LogTemp, Warning, TEXT("No Particle Update output found in %s"), *EmitterHandle.GetUniqueInstanceName());
+				SR_LOG(EditorCommandlet, LogTemp, Warning, TEXT("No Particle Update output found in %s"), *EmitterHandle.GetUniqueInstanceName());
 			}
 
 			Graph->NotifyGraphChanged();
@@ -676,7 +700,7 @@ int32 USRConfigureSpaceshipTrailCommandlet::Main(const FString& Params)
 
 	if (RibbonRendererCount == 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("No Ribbon Renderer found in %s"), SpaceshipTrailSystemPath);
+		SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("No Ribbon Renderer found in %s"), *SpaceshipTrailSystemPath);
 		return 1;
 	}
 
@@ -697,16 +721,16 @@ int32 USRConfigureSpaceshipTrailCommandlet::Main(const FString& Params)
 	const bool bSaved = UPackage::SavePackage(Package, TrailSystem, *PackageFilename, SaveArgs);
 	if (!bSaved)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Failed to save %s"), *PackageFilename);
+		SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("Failed to save %s"), *PackageFilename);
 		return 1;
 	}
 
-	UE_LOG(LogTemp, Display, TEXT("Configured %d Ribbon Renderer(s) in %s to use %s through %s"),
+	SR_LOG(EditorCommandlet, LogTemp, Display, TEXT("Configured %d Ribbon Renderer(s) in %s to use %s through %s"),
 		RibbonRendererCount,
-		SpaceshipTrailSystemPath,
-		SpaceshipTrailMaterialPath,
+		*SpaceshipTrailSystemPath,
+		*SpaceshipTrailMaterialPath,
 		*TrailMaterialUserParameter.ToString());
-	UE_LOG(LogTemp, Display, TEXT("Trail stack changes: added modules=%d, added assignments=%d, updated assignments=%d, linked user params=%d, width=%s default %.1f, lifetime=%.1f, spawnRate=%.1f"),
+	SR_LOG(EditorCommandlet, LogTemp, Display, TEXT("Trail stack changes: added modules=%d, added assignments=%d, updated assignments=%d, linked user params=%d, width=%s default %.1f, lifetime=%.1f, spawnRate=%.1f"),
 		AddedModuleCount,
 		AddedAssignmentCount,
 		UpdatedAssignmentCount,
@@ -733,7 +757,7 @@ USRConfigureSpaceshipTrailCommandlet::USRConfigureSpaceshipTrailCommandlet()
 
 int32 USRConfigureSpaceshipTrailCommandlet::Main(const FString& Params)
 {
-	UE_LOG(LogTemp, Error, TEXT("SRConfigureSpaceshipTrailCommandlet is only available in editor builds."));
+	SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("SRConfigureSpaceshipTrailCommandlet is only available in editor builds."));
 	return 1;
 }
 

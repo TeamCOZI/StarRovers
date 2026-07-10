@@ -34,6 +34,7 @@ namespace StarRovers::SurfaceGridInteractionOverlayBuilder
 		const TArray<FSRPlanetSurfaceGridCellId>* OutputPortPreviewCellIds = nullptr;
 		const TArray<FSRPlanetSurfaceGridCellId>* OccupiedPreviewCellIds = nullptr;
 		const TArray<FSRPlanetSurfaceGridCellId>* DeletionPreviewCellIds = nullptr;
+		const TArray<FSRPlanetSurfaceGridCellId>* ConstructionReplacementPreviewCellIds = nullptr;
 		const TArray<FSRPlanetSurfaceGridCellId>* InvalidPreviewCellIds = nullptr;
 	};
 

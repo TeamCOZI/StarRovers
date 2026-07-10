@@ -1,5 +1,6 @@
 #include "Utility/SRTimingLog.h"
 
+#include "Utility/SRLog.h"
 #include "HAL/CriticalSection.h"
 #include "Misc/ScopeLock.h"
 
@@ -12,6 +13,11 @@ namespace
 
 	thread_local int32 SRTimingLogSuppressDepth = 0;
 	thread_local TArray<TArray<FString>*> SRTimingLogCaptureStack;
+
+	bool IsSRTimingLogEnabled()
+	{
+		return SR_LOG_ENABLED(Timing);
+	}
 }
 
 bool FSRTimingLog::IsActive()
@@ -23,6 +29,14 @@ bool FSRTimingLog::IsActive()
 void FSRTimingLog::BeginSession(const FString& Title)
 {
 	FScopeLock Lock(&SRTimingLogCriticalSection);
+	if (!IsSRTimingLogEnabled())
+	{
+		bSRTimingLogActive = false;
+		SRTimingLogTitle.Reset();
+		SRTimingLogLines.Reset();
+		return;
+	}
+
 	bSRTimingLogActive = true;
 	SRTimingLogTitle = Title;
 	SRTimingLogLines.Reset();
@@ -30,6 +44,11 @@ void FSRTimingLog::BeginSession(const FString& Title)
 
 void FSRTimingLog::AddLine(const FString& Line)
 {
+	if (!IsSRTimingLogEnabled())
+	{
+		return;
+	}
+
 	if (SRTimingLogSuppressDepth > 0)
 	{
 		if (!SRTimingLogCaptureStack.IsEmpty() && SRTimingLogCaptureStack.Last())
@@ -42,7 +61,7 @@ void FSRTimingLog::AddLine(const FString& Line)
 	FScopeLock Lock(&SRTimingLogCriticalSection);
 	if (!bSRTimingLogActive)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[SR Timing] %s"), *Line);
+		SR_LOG(Timing, LogTemp, Log, TEXT("[SR Timing] %s"), *Line);
 		return;
 	}
 
@@ -52,6 +71,14 @@ void FSRTimingLog::AddLine(const FString& Line)
 void FSRTimingLog::EndSessionAndLog()
 {
 	FScopeLock Lock(&SRTimingLogCriticalSection);
+	if (!IsSRTimingLogEnabled())
+	{
+		bSRTimingLogActive = false;
+		SRTimingLogTitle.Reset();
+		SRTimingLogLines.Reset();
+		return;
+	}
+
 	if (!bSRTimingLogActive)
 	{
 		return;
@@ -65,7 +92,7 @@ void FSRTimingLog::EndSessionAndLog()
 		Summary += Line;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[SR Timing]%s%s"), LINE_TERMINATOR, *Summary);
+	SR_LOG(Timing, LogTemp, Log, TEXT("[SR Timing]%s%s"), LINE_TERMINATOR, *Summary);
 
 	bSRTimingLogActive = false;
 	SRTimingLogTitle.Reset();
@@ -84,7 +111,7 @@ void FSRTimingLog::PopSuppressLines()
 
 FSRTimingLogSession::FSRTimingLogSession(const FString& Title)
 {
-	if (!FSRTimingLog::IsActive())
+	if (IsSRTimingLogEnabled() && !FSRTimingLog::IsActive())
 	{
 		FSRTimingLog::BeginSession(Title);
 		bOwnsSession = true;

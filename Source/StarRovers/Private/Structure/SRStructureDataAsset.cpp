@@ -32,7 +32,7 @@ FSRStructureData USRStructureDataAsset::BuildData() const
 	Result.GhostMaterial = GhostMaterial;
 	Result.DeleteMaterial = DeleteMaterial;
 	Result.CopyPlaceableMaterial = CopyPlaceableMaterial;
-	Result.CopyReplaceableMaterial = CopyReplaceableMaterial;
+	Result.ReplaceableMaterial = ReplaceableMaterial;
 	Result.CopyBlockedMaterial = CopyBlockedMaterial;
 	Result.MeshRelativeLocation = MeshRelativeLocation;
 	Result.MeshRelativeRotation = MeshRelativeRotation;

@@ -1,5 +1,6 @@
 #include "Camera/SRCameraPawn.h"
 
+#include "Utility/SRLog.h"
 #include "SRCameraFocusSurfaceRigAlignmentController.h"
 #include "SRCameraInputInteractionGate.h"
 #include "SRCameraScreenDragResolver.h"
@@ -9,10 +10,170 @@
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
+#include "InputAction.h"
+#include "InputCoreTypes.h"
+#include "InputMappingContext.h"
 #include "GameFramework/SpringArmComponent.h"
+
+namespace
+{
+	constexpr int32 RuntimeCameraInputMappingPriority = 0;
+	constexpr TCHAR RuntimeCameraInputMappingContextName[] = TEXT("IMC_RuntimeCameraInput");
+	constexpr TCHAR RuntimeDragHoldActionName[] = TEXT("IA_RuntimeCameraDragHoldAction");
+	constexpr TCHAR RuntimeFocusSurfaceDragHoldActionName[] = TEXT("IA_RuntimeFocusSurfaceDragHoldAction");
+	constexpr TCHAR RuntimeDragDeltaActionName[] = TEXT("IA_RuntimeCameraDragDeltaAction");
+	constexpr TCHAR RuntimeZoomActionName[] = TEXT("IA_RuntimeCameraZoomAction");
+
+	bool EnsureRuntimeInputAction(
+		UObject* Owner,
+		TObjectPtr<UInputAction>& Action,
+		const TCHAR* ActionName,
+		EInputActionValueType ValueType,
+		const FText& Description)
+	{
+		if (Action)
+		{
+			return false;
+		}
+
+		Action = NewObject<UInputAction>(Owner, ActionName);
+		if (Action)
+		{
+			Action->ValueType = ValueType;
+			Action->bConsumeInput = false;
+			Action->ActionDescription = Description;
+		}
+		return Action != nullptr;
+	}
+
+	UInputAction* FindMappedInputActionByKey(const UInputMappingContext* MappingContext, const FKey& Key)
+	{
+		if (!MappingContext)
+		{
+			return nullptr;
+		}
+
+		for (const FEnhancedActionKeyMapping& Mapping : MappingContext->GetMappings())
+		{
+			if (Mapping.Key == Key && Mapping.Action)
+			{
+				return const_cast<UInputAction*>(Mapping.Action.Get());
+			}
+		}
+
+		return nullptr;
+	}
+
+	bool IsInputActionMappedToKey(const UInputMappingContext* MappingContext, const UInputAction* Action, const FKey& Key)
+	{
+		if (!MappingContext || !Action)
+		{
+			return false;
+		}
+
+		for (const FEnhancedActionKeyMapping& Mapping : MappingContext->GetMappings())
+		{
+			if (Mapping.Key == Key && Mapping.Action == Action)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	bool ResolveMappedInputActionByKey(
+		const UInputMappingContext* MappingContext,
+		const FKey& Key,
+		TObjectPtr<UInputAction>& Action)
+	{
+		if (IsInputActionMappedToKey(MappingContext, Action.Get(), Key))
+		{
+			return false;
+		}
+
+		if (UInputAction* MappedAction = FindMappedInputActionByKey(MappingContext, Key))
+		{
+			Action = MappedAction;
+			return true;
+		}
+
+		return false;
+	}
+}
+
+void ASRCameraPawn::EnsureRuntimeCameraInputActions()
+{
+	ResolveMappedInputActionByKey(DefaultMappingContext, EKeys::LeftMouseButton, DragHoldAction);
+	ResolveMappedInputActionByKey(DefaultMappingContext, EKeys::RightMouseButton, FocusSurfaceDragHoldAction);
+	ResolveMappedInputActionByKey(DefaultMappingContext, EKeys::Mouse2D, DragDeltaAction);
+	ResolveMappedInputActionByKey(DefaultMappingContext, EKeys::MouseWheelAxis, ZoomAction);
+
+	const bool bMapAllCameraActions = !DefaultMappingContext;
+	const bool bCreatedDragHoldAction = bMapAllCameraActions && EnsureRuntimeInputAction(
+		this,
+		DragHoldAction,
+		RuntimeDragHoldActionName,
+		EInputActionValueType::Boolean,
+		NSLOCTEXT("StarRovers", "RuntimeCameraDragHoldActionDescription", "Hold left mouse button for camera and assembly drag"));
+	const bool bCreatedFocusSurfaceDragHoldAction = bMapAllCameraActions && EnsureRuntimeInputAction(
+		this,
+		FocusSurfaceDragHoldAction,
+		RuntimeFocusSurfaceDragHoldActionName,
+		EInputActionValueType::Boolean,
+		NSLOCTEXT("StarRovers", "RuntimeFocusSurfaceDragHoldActionDescription", "Hold right mouse button for focused surface drag"));
+	const bool bCreatedDragDeltaAction = bMapAllCameraActions && EnsureRuntimeInputAction(
+		this,
+		DragDeltaAction,
+		RuntimeDragDeltaActionName,
+		EInputActionValueType::Axis2D,
+		NSLOCTEXT("StarRovers", "RuntimeCameraDragDeltaActionDescription", "Mouse drag delta"));
+	const bool bCreatedZoomAction = bMapAllCameraActions && EnsureRuntimeInputAction(
+		this,
+		ZoomAction,
+		RuntimeZoomActionName,
+		EInputActionValueType::Axis1D,
+		NSLOCTEXT("StarRovers", "RuntimeCameraZoomActionDescription", "Mouse wheel zoom"));
+
+	const bool bNeedsRuntimeMappingContext = bMapAllCameraActions
+		|| bCreatedDragHoldAction
+		|| bCreatedFocusSurfaceDragHoldAction
+		|| bCreatedDragDeltaAction
+		|| bCreatedZoomAction;
+	if (!bNeedsRuntimeMappingContext || RuntimeCameraInputMappingContext)
+	{
+		return;
+	}
+
+	RuntimeCameraInputMappingContext = NewObject<UInputMappingContext>(this, RuntimeCameraInputMappingContextName);
+	if (!RuntimeCameraInputMappingContext)
+	{
+		return;
+	}
+
+	if (DragHoldAction && (bMapAllCameraActions || bCreatedDragHoldAction))
+	{
+		RuntimeCameraInputMappingContext->MapKey(DragHoldAction.Get(), EKeys::LeftMouseButton);
+	}
+	if (FocusSurfaceDragHoldAction && (bMapAllCameraActions || bCreatedFocusSurfaceDragHoldAction))
+	{
+		RuntimeCameraInputMappingContext->MapKey(FocusSurfaceDragHoldAction.Get(), EKeys::RightMouseButton);
+	}
+	if (DragDeltaAction && (bMapAllCameraActions || bCreatedDragDeltaAction))
+	{
+		RuntimeCameraInputMappingContext->MapKey(DragDeltaAction.Get(), EKeys::Mouse2D);
+	}
+	if (ZoomAction && (bMapAllCameraActions || bCreatedZoomAction))
+	{
+		RuntimeCameraInputMappingContext->MapKey(ZoomAction.Get(), EKeys::MouseWheelAxis);
+	}
+}
+
 void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	EnsureRuntimeCameraInputActions();
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
@@ -24,7 +185,7 @@ void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 		}
 		else
 		{
-			UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires DragHoldAction before input binding."));
+			SR_LOG(Camera, LogTemp, Error, TEXT("ASRCameraPawn requires DragHoldAction before input binding."));
 		}
 
 		if (FocusSurfaceDragHoldAction)
@@ -35,7 +196,7 @@ void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusSurfaceDragHoldAction before left-click focus surface drag binding."));
+			SR_LOG(Camera, LogTemp, Warning, TEXT("ASRCameraPawn requires FocusSurfaceDragHoldAction before left-click focus surface drag binding."));
 		}
 
 		if (DragDeltaAction)
@@ -44,7 +205,7 @@ void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 		}
 		else
 		{
-			UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires DragDeltaAction before input binding."));
+			SR_LOG(Camera, LogTemp, Error, TEXT("ASRCameraPawn requires DragDeltaAction before input binding."));
 		}
 
 		if (ZoomAction)
@@ -53,7 +214,7 @@ void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 		}
 		else
 		{
-			UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires ZoomAction before input binding."));
+			SR_LOG(Camera, LogTemp, Error, TEXT("ASRCameraPawn requires ZoomAction before input binding."));
 		}
 
 		if (FocusSurfaceAction)
@@ -64,7 +225,7 @@ void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusSurfaceAction before focus surface input binding."));
+			SR_LOG(Camera, LogTemp, Warning, TEXT("ASRCameraPawn requires FocusSurfaceAction before focus surface input binding."));
 		}
 
 		if (ResetFocusAction)
@@ -73,7 +234,7 @@ void ASRCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusAction before focus reset input binding."));
+			SR_LOG(Camera, LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusAction before focus reset input binding."));
 		}
 	}
 }
@@ -84,11 +245,8 @@ void ASRCameraPawn::ApplyMappingContext()
 	{
 		return;
 	}
-	if (!DefaultMappingContext)
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires DefaultMappingContext before applying input mapping."));
-		return;
-	}
+
+	EnsureRuntimeCameraInputActions();
 
 	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (!PlayerController)
@@ -100,7 +258,23 @@ void ASRCameraPawn::ApplyMappingContext()
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
 		{
-			InputSubsystem->AddMappingContext(DefaultMappingContext, 0);
+			bool bAddedMappingContext = false;
+			if (DefaultMappingContext)
+			{
+				InputSubsystem->AddMappingContext(DefaultMappingContext, 0);
+				bAddedMappingContext = true;
+			}
+			if (RuntimeCameraInputMappingContext)
+			{
+				InputSubsystem->AddMappingContext(RuntimeCameraInputMappingContext, RuntimeCameraInputMappingPriority);
+				bAddedMappingContext = true;
+			}
+			if (!bAddedMappingContext)
+			{
+				SR_LOG(Camera, LogTemp, Error, TEXT("ASRCameraPawn requires a DefaultMappingContext or runtime camera input mapping before applying input mapping."));
+				return;
+			}
+
 			bMappingContextApplied = true;
 		}
 	}

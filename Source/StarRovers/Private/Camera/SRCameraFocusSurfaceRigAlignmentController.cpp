@@ -14,6 +14,24 @@ bool FSRCameraFocusSurfaceRigAlignmentController::StartRigAlignment(
 		return false;
 	}
 
+	if (FocusSurface.bIsAligningRig)
+	{
+		const FVector ExistingAlignmentAxis = FocusSurface.RigAlignmentAxis.GetSafeNormal();
+		const float AxisDot = FVector::DotProduct(ExistingAlignmentAxis, SafeAlignmentAxis);
+		if (!ExistingAlignmentAxis.IsNearlyZero() && FMath::Abs(AxisDot) >= 0.999f)
+		{
+			const float SignedAlignmentAngleRadians = AxisDot >= 0.0f
+				? AlignmentAngleRadians
+				: -AlignmentAngleRadians;
+			FocusSurface.RigAlignmentTargetAngleRadians += SignedAlignmentAngleRadians;
+			const FQuat TargetDelta(ExistingAlignmentAxis, FocusSurface.RigAlignmentTargetAngleRadians);
+			FocusSurface.TargetRotation = (TargetDelta * FocusSurface.RigAlignmentStartRotation.GetNormalized()).GetNormalized();
+			FocusSurface.RotationSmoothVelocity = FVector::ZeroVector;
+			FocusSurface.bIsResettingRotation = true;
+			return true;
+		}
+	}
+
 	const FQuat CurrentSurfaceRotation = FocusSurface.Rotation.GetNormalized();
 	const FQuat AlignmentDelta(SafeAlignmentAxis, AlignmentAngleRadians);
 	FocusSurface.TargetRotation = (AlignmentDelta * CurrentSurfaceRotation).GetNormalized();

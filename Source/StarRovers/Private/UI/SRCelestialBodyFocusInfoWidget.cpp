@@ -1,5 +1,6 @@
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 
+#include "Utility/SRLog.h"
 #include "Blueprint/WidgetTree.h"
 #include "Celestial/SRStar.h"
 #include "Components/Border.h"
@@ -243,7 +244,7 @@ FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonDown(const FGeometry&
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	if (IsScreenPositionOverFocusInfoUI(ScreenPosition))
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
 			ScreenPosition.Y);
 		return FReply::Handled();
@@ -257,7 +258,7 @@ FReply USRCelestialBodyFocusInfoWidget::NativeOnMouseButtonUp(const FGeometry& I
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	if (IsScreenPositionOverFocusInfoUI(ScreenPosition))
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
 			ScreenPosition.Y);
 		return FReply::Handled();
@@ -752,7 +753,7 @@ void USRCelestialBodyFocusInfoWidget::RefreshAssemblyModeButton()
 
 void USRCelestialBodyFocusInfoWidget::HandleAssemblyModeButtonClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo AssemblyModeButton OnClicked"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FocusInfo AssemblyModeButton OnClicked"));
 	AssemblyModeRequestedEvent.Broadcast();
 }
 

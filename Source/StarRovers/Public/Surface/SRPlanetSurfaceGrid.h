@@ -153,6 +153,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Deletion")
     void ClearDeletionPreviewCells();
 
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Replacement")
+    void SetConstructionReplacementPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Replacement")
+    void ClearConstructionReplacementPreviewCells();
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Invalid")
     void SetInvalidPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
 
@@ -297,6 +303,9 @@ protected:
 
     UPROPERTY()
     FLinearColor DeletionPreviewCellColor;
+
+    UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> ConstructionReplacementPreviewCellIds;
 
     UPROPERTY()
     TArray<FSRPlanetSurfaceGridCellId> InvalidPreviewCellIds;

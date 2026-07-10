@@ -6,6 +6,7 @@
 
 class USRTimeControlSubsystem;
 class USRCelestialRingMeshComponent;
+class ULineBatchComponent;
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
 class STARROVERS_API USROrbit : public UActorComponent
@@ -76,6 +77,14 @@ public:
 
 private:
 	void EnsureOrbitRingVisual();
+	void EnsureOrbitLineBatchVisual();
+	void ClearOrbitLineBatchVisual() const;
+	bool DrawOrbitLineBatchVisual(
+		const FVector& WorldCenter,
+		float Radius,
+		const FLinearColor& Color,
+		float LineThickness,
+		int32 SegmentCount) const;
 	void ReleaseOrbitRingVisual();
 	USRTimeControlSubsystem* FindTimeControlSubsystem() const;
 	float ResolveSecondsPerPeriod() const;
@@ -126,6 +135,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USRCelestialRingMeshComponent> OrbitRingVisual;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULineBatchComponent> OrbitLineBatch;
 
 	mutable TWeakObjectPtr<USRTimeControlSubsystem> CachedTimeControlSubsystem;
 };

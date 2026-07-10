@@ -1,5 +1,6 @@
 #include "Camera/SRCameraPawn.h"
 
+#include "Utility/SRLog.h"
 #include "SRCameraFocusArcTransitionController.h"
 #include "SRCameraFocusSurfaceRigAlignmentController.h"
 #include "SRCameraFocusZoomResolver.h"
@@ -36,7 +37,7 @@ void ASRCameraPawn::FocusActorWithTransition(AActor* NewFocusActor, bool bUseArc
 
 		if (!Camera)
 		{
-			UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires Camera before focusing an actor."));
+			SR_LOG(Camera, LogTemp, Error, TEXT("ASRCameraPawn requires Camera before focusing an actor."));
 			BroadcastFocusedActorChangedIfNeeded(PreviousFocusedActor);
 			return;
 		}
@@ -167,7 +168,7 @@ void ASRCameraPawn::ResetFocus()
 
 	if (!Camera)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires Camera before resetting focused camera view."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRCameraPawn requires Camera before resetting focused camera view."));
 		return;
 	}
 

@@ -3,20 +3,6 @@
 #include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "InputAction.h"
-#include "InputMappingContext.h"
-#include "UObject/ConstructorHelpers.h"
-
-namespace StarRoversInputPaths
-{
-	static constexpr TCHAR DefaultMappingContext[] = TEXT("/Game/StarRovers/Input/IMC_SR.IMC_SR");
-	static constexpr TCHAR DragHoldAction[] = TEXT("/Game/StarRovers/Input/IA_LeftClick.IA_LeftClick");
-	static constexpr TCHAR FocusSurfaceDragHoldAction[] = TEXT("/Game/StarRovers/Input/IA_DragHold.IA_DragHold");
-	static constexpr TCHAR DragDeltaAction[] = TEXT("/Game/StarRovers/Input/IA_DragDelta.IA_DragDelta");
-	static constexpr TCHAR ZoomAction[] = TEXT("/Game/StarRovers/Input/IA_Zoom.IA_Zoom");
-	static constexpr TCHAR FocusSurfaceAction[] = TEXT("/Game/StarRovers/Input/IA_FocusSurface.IA_FocusSurface");
-	static constexpr TCHAR ResetFocusAction[] = TEXT("/Game/StarRovers/Input/IA_ResetFocus.IA_ResetFocus");
-}
 
 namespace
 {
@@ -96,77 +82,4 @@ void ASRCameraPawn::InitializeCameraDefaults()
 	DragStartMouseScreenPosition = FVector2D::ZeroVector;
 	DragStartFocusDragOffset = FVector::ZeroVector;
 	DragStartTargetLocation = FVector::ZeroVector;
-}
-
-void ASRCameraPawn::LoadDefaultInputAssets()
-{
-	static ConstructorHelpers::FObjectFinder<UInputMappingContext> DefaultMappingContextFinder(StarRoversInputPaths::DefaultMappingContext);
-	if (DefaultMappingContextFinder.Succeeded())
-	{
-		DefaultMappingContext = DefaultMappingContextFinder.Object;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires DefaultMappingContext at '%s'."), StarRoversInputPaths::DefaultMappingContext);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UInputAction> DragHoldFinder(StarRoversInputPaths::DragHoldAction);
-	if (DragHoldFinder.Succeeded())
-	{
-		DragHoldAction = DragHoldFinder.Object;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires DragHoldAction at '%s'."), StarRoversInputPaths::DragHoldAction);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UInputAction> FocusSurfaceDragHoldFinder(StarRoversInputPaths::FocusSurfaceDragHoldAction);
-	if (FocusSurfaceDragHoldFinder.Succeeded())
-	{
-		FocusSurfaceDragHoldAction = FocusSurfaceDragHoldFinder.Object;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusSurfaceDragHoldAction at '%s' for left-click focus surface drag."), StarRoversInputPaths::FocusSurfaceDragHoldAction);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UInputAction> DragDeltaFinder(StarRoversInputPaths::DragDeltaAction);
-	if (DragDeltaFinder.Succeeded())
-	{
-		DragDeltaAction = DragDeltaFinder.Object;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires DragDeltaAction at '%s'."), StarRoversInputPaths::DragDeltaAction);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UInputAction> ZoomFinder(StarRoversInputPaths::ZoomAction);
-	if (ZoomFinder.Succeeded())
-	{
-		ZoomAction = ZoomFinder.Object;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires ZoomAction at '%s'."), StarRoversInputPaths::ZoomAction);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UInputAction> FocusSurfaceFinder(StarRoversInputPaths::FocusSurfaceAction);
-	if (FocusSurfaceFinder.Succeeded())
-	{
-		FocusSurfaceAction = FocusSurfaceFinder.Object;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires FocusSurfaceAction at '%s' for focus surface camera input."), StarRoversInputPaths::FocusSurfaceAction);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UInputAction> ResetFocusFinder(StarRoversInputPaths::ResetFocusAction);
-	if (ResetFocusFinder.Succeeded())
-	{
-		ResetFocusAction = ResetFocusFinder.Object;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRCameraPawn requires ResetFocusAction at '%s' for focus reset."), StarRoversInputPaths::ResetFocusAction);
-	}
 }

@@ -1,5 +1,6 @@
 #include "Celestial/SRMoonDataAsset.h"
 
+#include "Utility/SRLog.h"
 #include "Celestial/SRCelestialBodyCategory.h"
 #include "Celestial/SRPlanetShapeDataAsset.h"
 #include "Surface/SRPlanetTerrainProfileDataAsset.h"
@@ -45,8 +46,7 @@ void USRMoonDataAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyCha
 	}
 	if (IsValid(ShapeDataAsset.Get()) && !ShapeDataAsset->IsDynamicMeshBaseShapeCompatible())
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(Celestial, LogTemp,
 			Warning,
 			TEXT("MoonDataAsset '%s' uses ShapeDataAsset '%s' with an incompatible DynamicMeshBaseDataAsset shape."),
 			*GetName(),

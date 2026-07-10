@@ -6,6 +6,7 @@
 #include "Celestial/SRPlanetDataAsset.h"
 #include "Celestial/SRStarDataAsset.h"
 #include "Gravity/SRGravityParent.h"
+#include "Utility/SRLog.h"
 
 using namespace StarRovers::Simulation::SolarSystemGeneration;
 ASRCelestialBody* ASRSolarSystemGenerator::SpawnPrimaryStar(FRandomStream& RandomStream, const USRStarDataAsset*& OutSelectedStarDataAsset)
@@ -133,7 +134,7 @@ bool ASRSolarSystemGenerator::TrySolvePackedOrbitRadii(ASRCelestialBody* ParentB
 	const USRGravityParent* ParentGravityParent = ParentBody->GetGravityParent();
 	if (!IsValid(ParentGravityParent))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Solar system generation requires GravityParent on '%s'."), *ParentBody->GetName());
+		SR_LOG(SolarSystem, LogTemp, Error, TEXT("Solar system generation requires GravityParent on '%s'."), *ParentBody->GetName());
 		return false;
 	}
 	const float ParentGravityRadius = ParentGravityParent->GetGravityRadius();
@@ -175,7 +176,7 @@ bool ASRSolarSystemGenerator::TrySolvePackedOrbitRadii(ASRCelestialBody* ParentB
 
 	if (ParentGravityRadius + KINDA_SMALL_NUMBER < RequiredParentGravityRadius)
 	{
-		UE_LOG(
+		SR_LOG(SolarSystem,
 			LogTemp,
 			Error,
 			TEXT("Solar system generation requires '%s' gravity radius %.2f to be at least %.2f for %d orbiting bodies."),
@@ -199,7 +200,7 @@ void ASRSolarSystemGenerator::EnsureParentGravityContainsOrbitingBody(ASRCelesti
 	const USRGravityParent* ParentGravityParent = ParentBody->GetGravityParent();
 	if (!IsValid(ParentGravityParent))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Solar system generation requires GravityParent on '%s'."), *ParentBody->GetName());
+		SR_LOG(SolarSystem, LogTemp, Error, TEXT("Solar system generation requires GravityParent on '%s'."), *ParentBody->GetName());
 		return;
 	}
 	const float ParentGravityRadius = ParentGravityParent->GetGravityRadius();
@@ -209,7 +210,7 @@ void ASRSolarSystemGenerator::EnsureParentGravityContainsOrbitingBody(ASRCelesti
 	const USRGravityParent* OrbitingBodyGravityParent = OrbitingBody->GetGravityParent();
 	if (!IsValid(OrbitingBodyGravityParent))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Solar system generation requires GravityParent on '%s'."), *OrbitingBody->GetName());
+		SR_LOG(SolarSystem, LogTemp, Error, TEXT("Solar system generation requires GravityParent on '%s'."), *OrbitingBody->GetName());
 		return;
 	}
 	const float OrbitingBodyGravityRadius = OrbitingBodyGravityParent->GetGravityRadius();
@@ -220,7 +221,7 @@ void ASRSolarSystemGenerator::EnsureParentGravityContainsOrbitingBody(ASRCelesti
 		return;
 	}
 
-	UE_LOG(
+	SR_LOG(SolarSystem,
 		LogTemp,
 		Error,
 		TEXT("Solar system generation requires '%s' gravity radius %.2f to be at least %.2f to contain orbiting body '%s'."),

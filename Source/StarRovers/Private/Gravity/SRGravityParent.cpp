@@ -1,13 +1,18 @@
 #include "Gravity/SRGravityParent.h"
 
+#include "Utility/SRLog.h"
+#include "Components/LineBatchComponent.h"
 #include "Components/SceneComponent.h"
 #include "GameFramework/Actor.h"
 #include "Rendering/SRCelestialRingMeshComponent.h"
+#include "Rendering/SRScreenSpaceLineThickness.h"
+#include "SceneManagement.h"
 
 namespace
 {
 	const FName SRGravityParentLineTag(TEXT("StarRovers.GravityLine"));
 	const FName SRGravityParentLineRootTag(TEXT("StarRovers.GravityLineRoot"));
+	constexpr uint8 SRGravityLineDepthPriority = SDPG_Foreground;
 }
 
 TArray<TWeakObjectPtr<USRGravityParent>> USRGravityParent::RegisteredSources;
@@ -169,37 +174,54 @@ float USRGravityParent::GetGravityLineThickness() const
 void USRGravityParent::RefreshGravityLine()
 {
 	EnsureGravityRingVisual();
-	if (!IsValid(GravityRingVisual))
-	{
-		const AActor* Owner = GetOwner();
-		if (IsValid(Owner) && Owner->HasActorBegunPlay() && ShouldShowGravityLine())
-		{
-			UE_LOG(
-				LogTemp,
-				Error,
-				TEXT("USRGravityParent cannot draw gravity line for owner '%s': GravityRingVisual is null after lookup, ShowGravityLine=true, GravityRadius=%.2f, and no registered USRCelestialRingMeshComponent named 'GravityRingVisual' was available."),
-				*Owner->GetName(),
-				GravityRadius);
-		}
-		SetComponentTickEnabled(false);
-		return;
-	}
+	EnsureGravityLineBatchVisual();
 
 	if (!ShouldShowGravityLine() || !IsValid(GetOwner()))
 	{
-		GravityRingVisual->ClearRingVisual();
+		if (IsValid(GravityRingVisual))
+		{
+			GravityRingVisual->ClearRingVisual();
+		}
+		ClearGravityLineBatchVisual();
 		SetComponentTickEnabled(false);
 		return;
 	}
 
-	GravityRingVisual->UpdateRingVisual(
-		GetOwner()->GetActorLocation(),
-		GravityRadius,
-		FLinearColor(GravityLineColor.R, GravityLineColor.G, GravityLineColor.B, GetGravityLineOpacity()),
-		GetGravityLineThickness(),
-		GravityLineSegments);
+	const FVector OwnerLocation = GetOwner()->GetActorLocation();
+	const FLinearColor LineColor(GravityLineColor.R, GravityLineColor.G, GravityLineColor.B, GetGravityLineOpacity());
+	if (DrawGravityLineBatchVisual(OwnerLocation, GravityRadius, LineColor, GetGravityLineThickness(), GetGravityLineSegments()))
+	{
+		if (IsValid(GravityRingVisual))
+		{
+			GravityRingVisual->ClearRingVisual();
+		}
+		SetComponentTickEnabled(true);
+		return;
+	}
 
-	SetComponentTickEnabled(true);
+	if (IsValid(GravityRingVisual))
+	{
+		GravityRingVisual->UpdateRingVisual(
+			OwnerLocation,
+			GravityRadius,
+			LineColor,
+			GetGravityLineThickness(),
+			GetGravityLineSegments());
+
+		SetComponentTickEnabled(true);
+		return;
+	}
+
+	const AActor* Owner = GetOwner();
+	if (IsValid(Owner) && Owner->HasActorBegunPlay())
+	{
+		SR_LOG(Gravity, LogTemp,
+			Error,
+			TEXT("USRGravityParent cannot draw gravity line for owner '%s': no GravityLineBatch or GravityRingVisual was available."),
+			*Owner->GetName());
+	}
+
+	SetComponentTickEnabled(false);
 }
 
 void USRGravityParent::GetRegisteredSourcesForWorld(const UWorld* World, TArray<USRGravityParent*>& OutSources)
@@ -257,8 +279,117 @@ void USRGravityParent::EnsureGravityRingVisual()
 	return;
 }
 
+void USRGravityParent::EnsureGravityLineBatchVisual()
+{
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || IsValid(GravityLineBatch))
+	{
+		return;
+	}
+
+	TInlineComponentArray<ULineBatchComponent*> LineBatchComponents(Owner);
+	Owner->GetComponents(LineBatchComponents);
+	for (ULineBatchComponent* LineBatchComponent : LineBatchComponents)
+	{
+		if (IsValid(LineBatchComponent) && LineBatchComponent->GetFName() == TEXT("GravityLineBatch"))
+		{
+			GravityLineBatch = LineBatchComponent;
+			break;
+		}
+	}
+
+	if (!IsValid(GravityLineBatch))
+	{
+		return;
+	}
+
+	GravityLineBatch->SetMobility(EComponentMobility::Movable);
+	GravityLineBatch->SetUsingAbsoluteLocation(true);
+	GravityLineBatch->SetUsingAbsoluteRotation(true);
+	GravityLineBatch->SetUsingAbsoluteScale(true);
+	GravityLineBatch->ComponentTags.AddUnique(SRGravityParentLineTag);
+	GravityLineBatch->ComponentTags.AddUnique(SRGravityParentLineRootTag);
+}
+
+void USRGravityParent::ClearGravityLineBatchVisual() const
+{
+	if (!IsValid(GravityLineBatch))
+	{
+		return;
+	}
+
+	GravityLineBatch->Flush();
+	GravityLineBatch->SetVisibility(false);
+	GravityLineBatch->SetHiddenInGame(true);
+}
+
+bool USRGravityParent::DrawGravityLineBatchVisual(
+	const FVector& WorldCenter,
+	float Radius,
+	const FLinearColor& Color,
+	float LineThickness,
+	int32 SegmentCount) const
+{
+	if (!IsValid(GravityLineBatch))
+	{
+		return false;
+	}
+
+	const float SafeRadius = FMath::Max(0.0f, Radius);
+	const float SafeThickness = FMath::Max(0.0f, LineThickness);
+	const int32 SafeSegmentCount = FMath::Max(3, SegmentCount);
+	if (SafeRadius <= KINDA_SMALL_NUMBER || SafeThickness <= KINDA_SMALL_NUMBER || Color.A <= KINDA_SMALL_NUMBER)
+	{
+		ClearGravityLineBatchVisual();
+		return true;
+	}
+
+	GravityLineBatch->Flush();
+	GravityLineBatch->SetWorldLocation(FVector::ZeroVector);
+	GravityLineBatch->SetWorldRotation(FRotator::ZeroRotator);
+	GravityLineBatch->SetWorldScale3D(FVector::OneVector);
+	GravityLineBatch->SetVisibility(true);
+	GravityLineBatch->SetHiddenInGame(false);
+
+	FSRScreenSpaceLineViewInfo CameraInfo;
+	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(GetWorld(), CameraInfo);
+
+	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
+	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
+	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+
+	for (int32 SegmentIndex = 0; SegmentIndex < SafeSegmentCount; ++SegmentIndex)
+	{
+		const float AlphaA = static_cast<float>(SegmentIndex) / static_cast<float>(SafeSegmentCount);
+		const float AlphaB = static_cast<float>(SegmentIndex + 1) / static_cast<float>(SafeSegmentCount);
+		const float AngleA = AlphaA * UE_TWO_PI;
+		const float AngleB = AlphaB * UE_TWO_PI;
+		const FVector StartPoint(
+			WorldCenter.X,
+			WorldCenter.Y + FMath::Cos(AngleA) * SafeRadius,
+			WorldCenter.Z + FMath::Sin(AngleA) * SafeRadius);
+		const FVector EndPoint(
+			WorldCenter.X,
+			WorldCenter.Y + FMath::Cos(AngleB) * SafeRadius,
+			WorldCenter.Z + FMath::Sin(AngleB) * SafeRadius);
+		const FVector SegmentMidpoint = (StartPoint + EndPoint) * 0.5f;
+		const float SegmentThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
+			CameraInfo,
+			SegmentMidpoint,
+			SafeThickness,
+			ReferenceViewDepth,
+			ReferenceFieldOfViewDegrees);
+		GravityLineBatch->DrawLine(StartPoint, EndPoint, Color, SRGravityLineDepthPriority, SegmentThickness, 0.0f);
+	}
+
+	return true;
+}
+
 void USRGravityParent::ReleaseGravityRingVisual()
 {
+	ClearGravityLineBatchVisual();
+	GravityLineBatch = nullptr;
+
 	if (!IsValid(GravityRingVisual))
 	{
 		return;

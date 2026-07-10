@@ -1,5 +1,6 @@
 #include "Simulation/SRAugmentSubsystem.h"
 
+#include "Utility/SRLog.h"
 #include "Simulation/SRSimulationSettings.h"
 #include "Simulation/SRTimeControlSubsystem.h"
 #include "Structure/SRStructureDataAsset.h"
@@ -55,6 +56,7 @@ void USRAugmentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		HighTechPityCapPercent = FMath::Clamp(SimulationSettings->AugmentHighTechPityCapPercent, 0.0f, 100.0f);
 		bPauseSimulationDuringChoice = SimulationSettings->bPauseSimulationDuringAugmentChoice;
 		AugmentRandomSeed = SimulationSettings->AugmentRandomSeed;
+		bDebugUnlockAllFacilitiesWithoutAugments = SimulationSettings->bDebugUnlockAllFacilitiesWithoutAugments;
 	}
 
 	Collection.InitializeDependency(USRTimeControlSubsystem::StaticClass());
@@ -117,10 +119,10 @@ void USRAugmentSubsystem::RegisterStructureDataAssets(const TArray<USRStructureD
 
 	if (bRegisteredAny)
 	{
-		UE_LOG(LogTemp, Log, TEXT("USRAugmentSubsystem registered %d structure data assets."), RegisteredStructureDataAssets.Num());
+		SR_LOG(Augment, LogTemp, Log, TEXT("USRAugmentSubsystem registered %d structure data assets."), RegisteredStructureDataAssets.Num());
 	}
 
-	if (bUnlockedAny)
+	if (bUnlockedAny || (bRegisteredAny && bDebugUnlockAllFacilitiesWithoutAugments))
 	{
 		OnUnlockedStructuresChanged.Broadcast();
 	}
@@ -136,7 +138,7 @@ void USRAugmentSubsystem::GenerateAugmentChoices(int32 CycleIndex)
 	TArray<USRStructureDataAsset*> InitialCandidates = GetEligibleAugmentCandidates();
 	if (InitialCandidates.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("USRAugmentSubsystem could not generate augment choices for cycle %d because no eligible structure candidates remain."), CycleIndex);
+		SR_LOG(Augment, LogTemp, Warning, TEXT("USRAugmentSubsystem could not generate augment choices for cycle %d because no eligible structure candidates remain."), CycleIndex);
 		return;
 	}
 
@@ -175,7 +177,7 @@ void USRAugmentSubsystem::GenerateAugmentChoices(int32 CycleIndex)
 	CurrentChoices = GeneratedChoices;
 	CurrentAugmentChoiceCycleIndex = CycleIndex;
 	UpdateHighTechBonusAfterOffer(InitialCandidates, GeneratedChoices);
-	UE_LOG(LogTemp, Log, TEXT("USRAugmentSubsystem generated %d augment choices for cycle %d from %d candidates."),
+	SR_LOG(Augment, LogTemp, Log, TEXT("USRAugmentSubsystem generated %d augment choices for cycle %d from %d candidates."),
 		CurrentChoices.Num(),
 		CurrentAugmentChoiceCycleIndex,
 		InitialCandidates.Num());
@@ -249,7 +251,7 @@ bool USRAugmentSubsystem::UnlockStructure(USRStructureDataAsset* StructureDataAs
 
 	UnlockedStructureIds.Add(StructureData.StructureId);
 	OnUnlockedStructuresChanged.Broadcast();
-	UE_LOG(LogTemp, Log, TEXT("USRAugmentSubsystem unlocked structure '%s'."), *StructureData.StructureId.ToString());
+	SR_LOG(Augment, LogTemp, Log, TEXT("USRAugmentSubsystem unlocked structure '%s'."), *StructureData.StructureId.ToString());
 	return true;
 }
 
@@ -266,6 +268,11 @@ bool USRAugmentSubsystem::IsStructureUnlocked(const USRStructureDataAsset* Struc
 		return false;
 	}
 
+	if (IsDebugUnlockableFacility(StructureDataAsset))
+	{
+		return true;
+	}
+
 	if (!IsStructureUnlockControlled(StructureDataAsset))
 	{
 		return true;
@@ -276,7 +283,34 @@ bool USRAugmentSubsystem::IsStructureUnlocked(const USRStructureDataAsset* Struc
 
 bool USRAugmentSubsystem::IsStructureUnlockedById(FName StructureId) const
 {
-	return !StructureId.IsNone() && UnlockedStructureIds.Contains(StructureId);
+	if (StructureId.IsNone())
+	{
+		return false;
+	}
+
+	if (UnlockedStructureIds.Contains(StructureId))
+	{
+		return true;
+	}
+
+	if (bDebugUnlockAllFacilitiesWithoutAugments)
+	{
+		for (const USRStructureDataAsset* StructureDataAsset : RegisteredStructureDataAssets)
+		{
+			if (!IsValid(StructureDataAsset))
+			{
+				continue;
+			}
+
+			const FSRStructureData StructureData = StructureDataAsset->BuildData();
+			if (StructureData.StructureId == StructureId && IsDebugUnlockableFacility(StructureDataAsset))
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 bool USRAugmentSubsystem::IsAugmentChoicePending() const
@@ -365,9 +399,27 @@ bool USRAugmentSubsystem::IsStructureUnlockControlled(const USRStructureDataAsse
 		&& FacilityDataAsset->FacilityKind == ESRFacilityKind::Standard;
 }
 
+bool USRAugmentSubsystem::IsDebugUnlockableFacility(const USRStructureDataAsset* StructureDataAsset) const
+{
+	if (!bDebugUnlockAllFacilitiesWithoutAugments || !IsValid(StructureDataAsset))
+	{
+		return false;
+	}
+
+	const FSRStructureData StructureData = StructureDataAsset->BuildData();
+	return StructureData.bAvailableForConstruction
+		&& !StructureData.bIsResourceDeposit
+		&& IsValid(StructureData.FacilityDataAsset.Get());
+}
+
 bool USRAugmentSubsystem::IsAugmentCandidate(const USRStructureDataAsset* StructureDataAsset) const
 {
 	if (!IsStructureUnlockControlled(StructureDataAsset))
+	{
+		return false;
+	}
+
+	if (IsDebugUnlockableFacility(StructureDataAsset))
 	{
 		return false;
 	}

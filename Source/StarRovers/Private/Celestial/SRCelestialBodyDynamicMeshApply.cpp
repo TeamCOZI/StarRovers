@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "Utility/SRLog.h"
 #include "SRCelestialBodyLog.h"
 #include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
@@ -104,7 +105,7 @@ namespace
 			return BuildBaseMetadata(DynamicMeshBuildHash, TotalStart);
 		}
 
-		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires DynamicMeshBaseDataAsset for metadata terrain generation."), *BodyName);
+		SR_LOG(DynamicMesh, LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires DynamicMeshBaseDataAsset for metadata terrain generation."), *BodyName);
 		return false;
 	}
 }

@@ -1,5 +1,6 @@
 #include "Conveyor/SRConveyorActorGroupCoordinator.h"
 
+#include "Utility/SRLog.h"
 #include "SRConveyorDeletionDiagnostics.h"
 #include "Conveyor/SRConveyorBeltActor.h"
 #include "Engine/World.h"
@@ -151,7 +152,7 @@ ASRConveyorBeltActor* StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::Sp
 	UClass* ConveyorActorClass = StructureData.StructureActorClass.Get();
 	if (!IsValid(SurfaceOwner) || !World || !IsValid(ConveyorActorClass) || !ConveyorActorClass->IsChildOf(ASRConveyorBeltActor::StaticClass()))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Cannot place conveyor from '%s': StructureActorClass must be set to a subclass of ASRConveyorBeltActor."), *GetNameSafe(FirstBeltPath.StructureDataAsset));
+		SR_LOG(Conveyor, LogTemp, Error, TEXT("Cannot place conveyor from '%s': StructureActorClass must be set to a subclass of ASRConveyorBeltActor."), *GetNameSafe(FirstBeltPath.StructureDataAsset));
 		return nullptr;
 	}
 
@@ -208,6 +209,7 @@ bool StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::RefreshGroup(
 	const bool bLogPlacementDiagnostics = ActorGroupState.PendingPlacementDiagnosticKeys.Remove(ActorGroupKey) > 0;
 	const bool bLogDeletionDiagnostics = ActorGroupState.PendingDeletionDiagnosticKeys.Remove(ActorGroupKey) > 0;
 	ActorGroup.BeltPaths.Reset();
+	ActorGroup.BeltPaths.Reserve(BeltPaths.Num());
 	for (const FSRConveyorBeltPath& BeltPath : BeltPaths)
 	{
 		if (MakeGroupKey(BeltPath.StructureDataAsset.Get(), BeltPath.Layer) == ActorGroupKey)

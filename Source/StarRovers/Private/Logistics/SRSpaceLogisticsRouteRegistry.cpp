@@ -3,6 +3,7 @@
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
 #include "SRSpaceLogisticsRoutePathResolver.h"
 #include "SRSpaceLogisticsRouteVisualController.h"
+#include "Utility/SRLog.h"
 
 bool FSRSpaceLogisticsRouteRegistry::AreHubEndpointKeysEqual(
 	const FSRSpaceLogisticsHubEndpoint& Left,
@@ -72,7 +73,7 @@ bool FSRSpaceLogisticsRouteRegistry::CreateHubRoute(
 	HubRoute.Cargo = FSRResourceInstance();
 	OutRouteId = HubRoute.RouteId;
 
-	UE_LOG(
+	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
 		TEXT("[SpaceLogistics] Hub route created: RouteId=%s Source=%s/%s Destination=%s/%s MaxCargoStackCount=%d InitialSpeed=%.2f LaunchAcceleration=%.2f ReturnEmpty=%s"),
@@ -148,7 +149,7 @@ bool FSRSpaceLogisticsRouteRegistry::CreateDebugLocalOrbitRoute(
 		HubRoute);
 	OutRouteId = HubRoute.RouteId;
 
-	UE_LOG(
+	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
 		TEXT("[SpaceLogistics] Debug local orbit route created: RouteId=%s Source=%s/%s InitialSpeed=%.2f LaunchAcceleration=%.2f Duration=%.2f"),
@@ -179,7 +180,7 @@ bool FSRSpaceLogisticsRouteRegistry::RemoveHubRoute(
 	if (RemovedCount > 0)
 	{
 		FSRSpaceLogisticsRouteVisualController::DestroyRouteActor(RouteId, SpaceshipActorsByRouteId);
-		UE_LOG(LogTemp, Display, TEXT("[SpaceLogistics] Hub route removed: RouteId=%s"), *RouteId.ToString());
+		SR_LOG(SpaceLogistics, LogTemp, Display, TEXT("[SpaceLogistics] Hub route removed: RouteId=%s"), *RouteId.ToString());
 	}
 	return RemovedCount > 0;
 }
@@ -196,7 +197,7 @@ bool FSRSpaceLogisticsRouteRegistry::SetHubRouteMaxCargoStackCount(
 	}
 
 	HubRoute->MaxCargoStackCount = FMath::Max(1, MaxCargoStackCount);
-	UE_LOG(
+	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
 		TEXT("[SpaceLogistics] Hub route max cargo stack count updated: RouteId=%s MaxCargoStackCount=%d"),
@@ -217,7 +218,7 @@ bool FSRSpaceLogisticsRouteRegistry::SetHubRouteReturnEmptyWhenNoCargo(
 	}
 
 	HubRoute->bReturnEmptyWhenNoCargo = bReturnEmptyWhenNoCargo;
-	UE_LOG(
+	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
 		TEXT("[SpaceLogistics] Hub route return empty setting updated: RouteId=%s ReturnEmpty=%s"),
@@ -238,7 +239,7 @@ bool FSRSpaceLogisticsRouteRegistry::SetHubRouteCargoResourceId(
 	}
 
 	HubRoute->CargoResourceId = CargoResourceId;
-	UE_LOG(
+	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
 		TEXT("[SpaceLogistics] Hub route cargo resource filter updated: RouteId=%s CargoResourceId=%s"),
@@ -256,7 +257,7 @@ void FSRSpaceLogisticsRouteRegistry::ClearHubRoutes(
 	FSRSpaceLogisticsRouteVisualController::Clear(SpaceshipActorsByRouteId);
 	if (RemovedCount > 0)
 	{
-		UE_LOG(LogTemp, Display, TEXT("[SpaceLogistics] Hub routes cleared: Removed=%d"), RemovedCount);
+		SR_LOG(SpaceLogistics, LogTemp, Display, TEXT("[SpaceLogistics] Hub routes cleared: Removed=%d"), RemovedCount);
 	}
 }
 

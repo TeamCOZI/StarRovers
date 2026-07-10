@@ -1,5 +1,6 @@
 #include "Celestial/SRStar.h"
 
+#include "Utility/SRLog.h"
 #include "Automation/SRFacilityNetworkComponent.h"
 #include "Celestial/SRCelestialBodyCategory.h"
 #include "Components/DynamicMeshComponent.h"
@@ -380,7 +381,7 @@ void ASRStar::AdvanceStellarEvolutionStage()
 	{
 		SetStellarEvolutionStage(ESRStellarEvolutionStage::RedGiant);
 		StoredStellarFuel = InitialStageStellarFuel;
-		UE_LOG(LogTemp, Warning, TEXT("Star '%s' evolved from main sequence to red giant at stellar fuel second %d."), *GetName(), LastSettledSecondIndex);
+		SR_LOG(Celestial, LogTemp, Warning, TEXT("Star '%s' evolved from main sequence to red giant at stellar fuel second %d."), *GetName(), LastSettledSecondIndex);
 		return;
 	}
 
@@ -405,6 +406,6 @@ void ASRStar::TriggerSupernovaGameOver()
 		TimeControlSubsystem->PauseSimulation();
 	}
 
-	UE_LOG(LogTemp, Error, TEXT("Star '%s' reached supernova at stellar fuel second %d. Game over."), *GetName(), LastSettledSecondIndex);
+	SR_LOG(Celestial, LogTemp, Error, TEXT("Star '%s' reached supernova at stellar fuel second %d. Game over."), *GetName(), LastSettledSecondIndex);
 	OnStellarSupernovaGameOver.Broadcast(this);
 }

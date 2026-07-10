@@ -2,12 +2,9 @@
 
 #include "Logistics/SRSpaceshipActor.h"
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
+#include "Simulation/SRSimulationSettings.h"
 #include "SRSpaceLogisticsRoutePathResolver.h"
-
-namespace
-{
-	const TCHAR* DefaultSpaceshipActorClassPath = TEXT("/Game/StarRovers/Logistics/Blueprints/BP_SpaceshipActor.BP_SpaceshipActor_C");
-}
+#include "Utility/SRLog.h"
 
 void FSRSpaceLogisticsRouteVisualController::Refresh(
 	const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
@@ -163,23 +160,41 @@ ASRSpaceshipActor* FSRSpaceLogisticsRouteVisualController::FindOrSpawn(
 TSubclassOf<ASRSpaceshipActor> FSRSpaceLogisticsRouteVisualController::ResolveActorClass()
 {
 	static TWeakObjectPtr<UClass> CachedSpaceshipActorClass;
-	if (CachedSpaceshipActorClass.IsValid())
+	static FSoftObjectPath CachedSpaceshipActorClassPath;
+
+	const USRSimulationSettings* SimulationSettings = GetDefault<USRSimulationSettings>();
+	const FSoftObjectPath ConfiguredSpaceshipActorClassPath = SimulationSettings
+		? SimulationSettings->SpaceshipActorClass.ToSoftObjectPath()
+		: FSoftObjectPath();
+
+	if (ConfiguredSpaceshipActorClassPath.IsNull())
+	{
+		CachedSpaceshipActorClass.Reset();
+		CachedSpaceshipActorClassPath.Reset();
+		return ASRSpaceshipActor::StaticClass();
+	}
+
+	if (CachedSpaceshipActorClass.IsValid()
+		&& CachedSpaceshipActorClassPath == ConfiguredSpaceshipActorClassPath)
 	{
 		return CachedSpaceshipActorClass.Get();
 	}
 
-	UClass* LoadedClass = LoadClass<ASRSpaceshipActor>(nullptr, DefaultSpaceshipActorClassPath);
+	UClass* LoadedClass = SimulationSettings->SpaceshipActorClass.LoadSynchronous();
 	if (IsValid(LoadedClass) && LoadedClass->IsChildOf(ASRSpaceshipActor::StaticClass()))
 	{
 		CachedSpaceshipActorClass = LoadedClass;
+		CachedSpaceshipActorClassPath = ConfiguredSpaceshipActorClassPath;
 		return LoadedClass;
 	}
 
-	UE_LOG(
+	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Warning,
-		TEXT("[SpaceLogistics] Failed to load BP spaceship actor class at '%s'. Falling back to ASRSpaceshipActor."),
-		DefaultSpaceshipActorClassPath);
+		TEXT("[SpaceLogistics] Failed to load configured spaceship actor class '%s'. Falling back to ASRSpaceshipActor."),
+		*ConfiguredSpaceshipActorClassPath.ToString());
+	CachedSpaceshipActorClass.Reset();
+	CachedSpaceshipActorClassPath.Reset();
 	return ASRSpaceshipActor::StaticClass();
 }
 

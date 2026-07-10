@@ -50,7 +50,7 @@ C++ code lives under `Source/StarRovers`.
 
 - `Public/`: public headers, runtime types, component/actor APIs
 - `Private/`: implementation files, split by feature owner
-- `Private/*Internal.h`: private shared helpers for large split implementations
+- `Private/<Feature>/*.h`: private helper headers named by owner and responsibility
 
 Current source roots:
 
@@ -72,9 +72,9 @@ Current source roots:
 
 ### 3.3 Split Implementation Pattern
 
-Large owners are split across multiple `.cpp` files.
+Large owners are split across multiple `.cpp` files. Private helper headers use the same owner/responsibility naming.
 
-Common split suffixes:
+Common responsibility suffixes:
 
 - `Input`
 - `UI`
@@ -93,7 +93,9 @@ Common split suffixes:
 - `Transport`
 - `PCG`
 - `Diagnostics`
-- `Visuals`
+- `Rendering`
+- `Display`
+- `Pipeline`
 
 Read the owner header first, then open the matching split `.cpp`.
 
@@ -287,26 +289,23 @@ Trials pressure the player's automation infrastructure during a run.
 
 Trials force the player to modify existing infrastructure or discover new automation solutions.
 
-## 5. Current Development Status
+## 5. Star Rovers Logs
 
-### 5.1 Development Plan
+Star Rovers C++ logs are disabled by default. Enable one channel with `sr.Log.<Channel> 1`, disable it with `0`, or enable all with `sr.Log.All 1`.
 
-1. Random Star System Generation
-2. Celestial Surface Automation Infrastructure
-3. Stellar Fuel Supply Automation
-4. Spaceship Routes / Interplanetary Logistics
-5. Augment System
-6. Technology System
-7. Trial System
-8. Roguelike Run Progression
-
-### 5.2 Current Status
-
-Current active work:
-
-- Define the actual facility infrastructure gameplay.
-- Improve Resource / Facility / Structure DA values.
-- Verify gameplay flow between Conveyor and Facility input/output.
-- Complete the basic extraction / processing / transport loop.
-- Improve Surface Grid-based structure placement UX and performance.
-- Clarify Natural Structure and normal Structure placement flow.
+- `sr.Log.Assembly`: build mode placement, hover, copy/delete, undo/redo diagnostics.
+- `sr.Log.FacilityNetwork`: facility registration, inventories, processing, transfer, and debug actions.
+- `sr.Log.Camera`: camera, player controller, focus, input, and UI routing diagnostics.
+- `sr.Log.UIClickTrace`: widget click and pointer handling traces.
+- `sr.Log.Celestial`: celestial body setup, materials, outline, and star lifecycle logs.
+- `sr.Log.DynamicMesh`: dynamic mesh build, cache, base data, and mesh validation logs.
+- `sr.Log.SolarSystem`: star system generation, spawn validation, and natural structure generation logs.
+- `sr.Log.Surface`: surface grid, terrain, biome, and patch overlay logs.
+- `sr.Log.SpaceLogistics`: hub routes, cargo travel, route visuals, and save/load logs.
+- `sr.Log.Structure`: structure placement validation logs.
+- `sr.Log.Conveyor`: conveyor path and actor-group placement logs.
+- `sr.Log.Gravity`: gravity/orbit visual diagnostics.
+- `sr.Log.Augment`: augment candidate generation and unlock logs.
+- `sr.Log.Timing`: `[SR Timing]` performance summaries.
+- `sr.Log.Memory`: `[SR Memory]` memory snapshots and tracked object counts.
+- `sr.Log.EditorCommandlet`: editor commandlet diagnostics.

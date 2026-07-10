@@ -20,9 +20,15 @@ bool StarRovers::Conveyor::FSRConveyorBeltPathQuery::GatherConnectedCellIds(
 	}
 
 	OutCellIds.Reserve(ConnectedLaneKeys.Num());
+	TSet<FSRPlanetSurfaceGridCellId> ConnectedCellIdSet;
+	ConnectedCellIdSet.Reserve(ConnectedLaneKeys.Num());
 	for (const FSRConveyorLaneKey& LaneKey : ConnectedLaneKeys)
 	{
-		OutCellIds.AddUnique(LaneKey.CellId);
+		if (!ConnectedCellIdSet.Contains(LaneKey.CellId))
+		{
+			ConnectedCellIdSet.Add(LaneKey.CellId);
+			OutCellIds.Add(LaneKey.CellId);
+		}
 	}
 	return !OutCellIds.IsEmpty();
 }

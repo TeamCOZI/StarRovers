@@ -65,6 +65,12 @@ void USRPlanetSurfaceGrid::RefreshInteractionHighlight()
 
 void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighlightOverlay)
 {
+	if (!bGridVisible)
+	{
+		SetInteractionOverlayVisible(false);
+		return;
+	}
+
 	EnsureInteractionOverlay();
 	if (!InteractionOverlayMesh)
 	{
@@ -97,6 +103,7 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighli
 	BuildInput.OutputPortPreviewCellIds = &OutputPortPreviewCellIds;
 	BuildInput.OccupiedPreviewCellIds = &OccupiedPreviewCellIds;
 	BuildInput.DeletionPreviewCellIds = &DeletionPreviewCellIds;
+	BuildInput.ConstructionReplacementPreviewCellIds = &ConstructionReplacementPreviewCellIds;
 	BuildInput.InvalidPreviewCellIds = &InvalidPreviewCellIds;
 
 	const bool bShouldShowInteractionOverlay = SurfaceGridInteractionOverlayBuilder::BuildInteractionOverlayMesh(

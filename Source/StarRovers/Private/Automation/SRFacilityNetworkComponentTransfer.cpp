@@ -1,5 +1,6 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
+#include "Utility/SRLog.h"
 #include "Conveyor/SRConveyorNetworkComponent.h"
 #include "GameFramework/Actor.h"
 #include "SRFacilityConveyorPortConnector.h"
@@ -45,8 +46,7 @@ bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 		SetComponentTickEnabled(bAutoProcessFacilities);
 		if (bLogFacilityNetworkEvents)
 		{
-			UE_LOG(
-				LogTemp,
+			SR_LOG(FacilityNetwork, LogTemp,
 				Display,
 				TEXT("[FacilityNetwork] Transfer accepted input: OccupantId=%s Port=%s ResourceId=%s PortInputCount=%d InputCount=%d Owner=%s"),
 				*FacilityInstance.OccupantId.ToString(),
@@ -98,8 +98,7 @@ bool USRFacilityNetworkComponent::TryPullOutputResourceToConveyorCell(
 		FSRFacilityPortInventoryBuilder::RefreshAggregateInventories(FacilityInstance);
 		if (bLogFacilityNetworkEvents)
 		{
-			UE_LOG(
-				LogTemp,
+			SR_LOG(FacilityNetwork, LogTemp,
 				Display,
 				TEXT("[FacilityNetwork] Transfer provided output: OccupantId=%s Port=%s ResourceId=%s RemainingPortOutput=%d RemainingOutput=%d Owner=%s"),
 				*FacilityInstance.OccupantId.ToString(),

@@ -3,6 +3,7 @@
 #include "SRSpaceLogisticsRoutePathResolver.h"
 #include "SRSpaceLogisticsRouteRegistry.h"
 #include "SRSpaceLogisticsRouteVisualController.h"
+#include "Utility/SRLog.h"
 
 void FSRSpaceLogisticsSaveAdapter::ExportSaveData(
 	const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
@@ -46,7 +47,7 @@ bool FSRSpaceLogisticsSaveAdapter::ImportSaveData(
 		}
 	}
 
-	UE_LOG(
+	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
 		TEXT("[SpaceLogistics] Save data imported: ImportedRoutes=%d SavedRoutes=%d NextRouteSequence=%d"),

@@ -2,6 +2,7 @@
 
 #include "SRFacilityResourceOperations.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "Utility/SRLog.h"
 
 void USRFacilityNetworkComponent::SetFacilityDebugLoggingEnabled(bool bEnabled)
 {
@@ -30,7 +31,7 @@ bool USRFacilityNetworkComponent::DebugAddInputResourceFromDataAsset(
 {
 	if (!IsValid(ResourceDataAsset))
 	{
-		UE_LOG(
+		SR_LOG(FacilityNetwork,
 			LogTemp,
 			Warning,
 			TEXT("[FacilityNetwork][Debug] AddInputFromDataAsset failed: OccupantId=%s Owner=%s Reason=InvalidResourceDataAsset"),
@@ -44,7 +45,7 @@ bool USRFacilityNetworkComponent::DebugAddInputResourceFromDataAsset(
 	const bool bAdded = AddInputResource(OccupantId, ResourceInstance);
 	if (bAdded)
 	{
-		UE_LOG(
+		SR_LOG(FacilityNetwork,
 			LogTemp,
 			Display,
 			TEXT("[FacilityNetwork][Debug] Added input from DA: OccupantId=%s %s Owner=%s"),
@@ -64,7 +65,7 @@ bool USRFacilityNetworkComponent::DebugAddRawEnergyInputResource(
 {
 	if (ResourceId.IsNone())
 	{
-		UE_LOG(
+		SR_LOG(FacilityNetwork,
 			LogTemp,
 			Warning,
 			TEXT("[FacilityNetwork][Debug] AddRawEnergyInput failed: OccupantId=%s Owner=%s Reason=InvalidResourceId"),
@@ -86,7 +87,7 @@ bool USRFacilityNetworkComponent::DebugAddRawEnergyInputResource(
 	const bool bAdded = AddInputResource(OccupantId, ResourceInstance);
 	if (bAdded)
 	{
-		UE_LOG(
+		SR_LOG(FacilityNetwork,
 			LogTemp,
 			Display,
 			TEXT("[FacilityNetwork][Debug] Added raw energy input: OccupantId=%s %s Owner=%s"),
@@ -107,7 +108,7 @@ bool USRFacilityNetworkComponent::DebugStepFacilities(float DeltaTime, int32 Ste
 		TotalProcessedCount += ProcessFacilities(SafeDeltaTime);
 	}
 
-	UE_LOG(
+	SR_LOG(FacilityNetwork,
 		LogTemp,
 		Display,
 		TEXT("[FacilityNetwork][Debug] StepFacilities: Owner=%s DeltaTime=%.3f StepCount=%d ProcessedCount=%d RegisteredFacilities=%d"),
@@ -124,7 +125,7 @@ bool USRFacilityNetworkComponent::DebugDumpFacilityState(FName OccupantId) const
 	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	if (!FacilityInstance)
 	{
-		UE_LOG(
+		SR_LOG(FacilityNetwork,
 			LogTemp,
 			Warning,
 			TEXT("[FacilityNetwork][Debug] Dump failed: OccupantId=%s Owner=%s Reason=MissingFacility"),
@@ -133,7 +134,7 @@ bool USRFacilityNetworkComponent::DebugDumpFacilityState(FName OccupantId) const
 		return false;
 	}
 
-	UE_LOG(
+	SR_LOG(FacilityNetwork,
 		LogTemp,
 		Display,
 		TEXT("[FacilityNetwork][Debug] Dump: OccupantId=%s Structure=%s Facility=%s Owner=%s Input=%d Processing=%d Output=%d bProcessing=%s ProcessEnabled=%s DeliverEnabled=%s Progress=%.3f Temperature=%d Origin=(%s)"),
@@ -153,15 +154,15 @@ bool USRFacilityNetworkComponent::DebugDumpFacilityState(FName OccupantId) const
 
 	if (!FacilityInstance->InputInventory.IsEmpty())
 	{
-		UE_LOG(LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstInput: %s"), *StarRovers::FacilityResources::BuildResourceDebugString(FacilityInstance->InputInventory[0]));
+		SR_LOG(FacilityNetwork, LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstInput: %s"), *StarRovers::FacilityResources::BuildResourceDebugString(FacilityInstance->InputInventory[0]));
 	}
 	if (!FacilityInstance->ProcessingInventory.IsEmpty())
 	{
-		UE_LOG(LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstProcessing: %s"), *StarRovers::FacilityResources::BuildResourceDebugString(FacilityInstance->ProcessingInventory[0]));
+		SR_LOG(FacilityNetwork, LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstProcessing: %s"), *StarRovers::FacilityResources::BuildResourceDebugString(FacilityInstance->ProcessingInventory[0]));
 	}
 	if (!FacilityInstance->OutputInventory.IsEmpty())
 	{
-		UE_LOG(LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstOutput: %s"), *StarRovers::FacilityResources::BuildResourceDebugString(FacilityInstance->OutputInventory[0]));
+		SR_LOG(FacilityNetwork, LogTemp, Display, TEXT("[FacilityNetwork][Debug]   FirstOutput: %s"), *StarRovers::FacilityResources::BuildResourceDebugString(FacilityInstance->OutputInventory[0]));
 	}
 	return true;
 }
@@ -171,7 +172,7 @@ bool USRFacilityNetworkComponent::DebugExtractAndLogOutputResource(FName Occupan
 	const bool bExtracted = ExtractOutputResource(OccupantId, OutResourceInstance);
 	if (bExtracted)
 	{
-		UE_LOG(
+		SR_LOG(FacilityNetwork,
 			LogTemp,
 			Display,
 			TEXT("[FacilityNetwork][Debug] Extracted output: OccupantId=%s %s Owner=%s"),

@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "Utility/SRLog.h"
 #include "SRCelestialBodyLog.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/DynamicMeshComponent.h"
@@ -36,7 +37,7 @@ void ASRCelestialBody::EnsureCelestialBodyMeshRendering(bool bBuildDynamicMesh)
 	}
 	if (!IsValid(DesiredMesh) && !IsValid(DynamicMeshBaseDataAsset.Get()))
 	{
-		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires StaticMesh or DynamicMeshBaseDataAsset."), *GetName());
+		SR_LOG(Celestial, LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires StaticMesh or DynamicMeshBaseDataAsset."), *GetName());
 		return;
 	}
 

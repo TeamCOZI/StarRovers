@@ -122,6 +122,7 @@ private:
 	void UnbindTimeControlSubsystem();
 	TArray<USRStructureDataAsset*> GetEligibleAugmentCandidates() const;
 	bool IsStructureUnlockControlled(const USRStructureDataAsset* StructureDataAsset) const;
+	bool IsDebugUnlockableFacility(const USRStructureDataAsset* StructureDataAsset) const;
 	bool IsAugmentCandidate(const USRStructureDataAsset* StructureDataAsset) const;
 	bool DrawCandidateIndex(const TArray<USRStructureDataAsset*>& Candidates, FRandomStream& RandomStream, int32& OutCandidateIndex) const;
 	FSRAugmentChoice BuildAugmentChoice(USRStructureDataAsset* StructureDataAsset) const;
@@ -146,4 +147,6 @@ private:
 
 	UPROPERTY(Transient)
 	bool bPausedSimulationForCurrentChoice = false;
+
+	bool bDebugUnlockAllFacilitiesWithoutAugments = false;
 };
