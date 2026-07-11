@@ -77,9 +77,7 @@ bool USRFacilityNetworkComponent::DebugAddRawEnergyInputResource(
 	FSRResourceInstance ResourceInstance;
 	ResourceInstance.ResourceInstanceId = FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits));
 	ResourceInstance.ResourceId = ResourceId;
-	ResourceInstance.ResourceKind = ESRResourceKind::Energy;
 	ResourceInstance.EnergyValue = EnergyValue;
-	ResourceInstance.CatalystOperator = ESRResourceCatalystOperator::None;
 	ResourceInstance.RemainingProcessLimit = FMath::Max(0, RemainingProcessLimit);
 	ResourceInstance.ProcessCount = 0;
 	ResourceInstance.StackCount = FMath::Max(1, StackCount);

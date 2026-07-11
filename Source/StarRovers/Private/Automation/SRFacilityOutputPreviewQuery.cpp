@@ -52,7 +52,10 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 		}
 	}
 
-	if (!FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(FacilityInstance->FacilityDataAsset.Get(), PreviewInputs))
+	if (!FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(
+		FacilityInstance->FacilityDataAsset.Get(),
+		PreviewInputs,
+		FacilityInstance->TemperatureState))
 	{
 		return false;
 	}

@@ -159,63 +159,37 @@ The core surface automation model is cell occupancy and item flow.
 - Facilities use Structure DA ports as resource slots: Input Port equals Input Inventory slot, and Output Port equals Output Inventory slot.
 - Conveyors build paths using cell and layer data.
 - Conveyors move resources from a facility Output Port to another facility Input Port.
-- Facility UI shows process state, process/deliver toggles, per-port input/output resource slots, output preview, and port inventories.
+- Facility input, processing, and output behavior can depend on Cell temperature, resource process tags, and Facility DA effects.
+- Facility UI shows process state, process/deliver toggles, per-port resource slots, output preview, and compact process-tag state.
 - The player combines limited space and resource flow to raise stellar fuel production.
 
 ### 4.3 Stellar Fuel Production
 
-Stellar fuel is produced through multiple resource and processing stages.
+Stellar fuel is produced through Energy-resource automation stages.
 
 - Basic resource extraction
 - Intermediate resource processing
-- Catalyst resource usage
+- Energy-based synthesis
 - Stellar fuel recipes
-- Production changes from facilities, environment, and Augments
+- Production changes from facilities, environment, resource tags, and Augments
 - Production management to satisfy each stellar fuel cycle requirement
 
-Resources are broadly split into:
-
-- Energy Resource: has an `EnergyValue` / Energy Total, Remaining Process Limit, process count, stack count, and process tags.
-- Catalyst Resource: has a catalyst operator. Aquid is `+`, and Nitain is `*`.
-
-Energy resources can pass through facilities only while their Remaining Process Limit allows it. When an Energy resource moves from input inventory into processing/output, its process limit is reduced. Hot temperature applies an additional process limit reduction. Energy has no lower bound, so negative Energy Total values are valid.
+Resources are Energy resources with an `EnergyValue`, Remaining Process Limit, process count, stack count, and process tags. Waste is a normal resource/byproduct rather than a tag.
 
 Facilities are broadly split into:
 
-- Processing facility: usually consumes one Energy resource and amplifies its Energy Total.
-- Synthesis facility: usually consumes two Energy resources plus one Catalyst resource, then applies the catalyst operator to produce one Energy result.
-- Split facility: usually consumes one Energy resource and splits it into multiple Energy outputs.
+- Processing facility: processes input resources and applies tag/facility effects.
+- Synthesis facility: combines processed input resources into one output resource.
+- Split facility: consumes one resource and splits it into multiple outputs.
 
-Facility processing result order:
-
-1. Reduce consumed Energy resource process limit.
-2. Apply facility operation: processing, synthesis, or split.
-3. Apply facility effects such as Energy/process-limit arithmetic, tag add/remove, byproduct production, or cell temperature effects.
-4. Apply existing resource tag effects.
-
-Resources can gain process tags:
-
-- Responsive
-- HalfLife
-- Volatile
-- Singularity
-
-Tag effects:
-
-- Responsive: passing through a facility in Hot temperature adds extra Energy Total.
-- HalfLife: after 3 game cycles, Energy Total is halved.
-- Volatile: passing through a facility reduces Energy Total.
-- Singularity: the resource cannot enter another facility.
-
-Waste is not a tag. It is an Energy resource / byproduct with a low starting Energy Total.
+Resource processing is affected by Remaining Process Limit, Cell temperature, process tags, and Facility DA effects. Synthesis uses processed input Energy values to produce a combined output.
 
 Facility temperature states affect processing:
 
-- Frozen: facility stops.
-- Cold: process time is doubled.
+- Frozen / Overheated: facility stops.
+- Cold: processing is slower and enables cold-only resource behavior.
 - Normal: no special modifier.
-- Hot: consumed Energy resources lose additional Remaining Process Limit.
-- Overheated: facility stops.
+- Hot: consumed resources lose additional Remaining Process Limit.
 
 ### 4.4 Spaceship Routes / Interplanetary Logistics
 

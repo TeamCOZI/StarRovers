@@ -32,8 +32,9 @@ int32 FSRFacilityProcessingTickRunner::ProcessFacilities(
 
 		if (FacilityInstance.bProcessing && FSRFacilityProcessingRuleEvaluator::CanAdvanceProcessing(FacilityInstance))
 		{
+			const float ProcessSeconds = FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(FacilityInstance);
 			FacilityInstance.ProcessProgressSeconds += SafeDeltaTime;
-			if (FacilityInstance.ProcessProgressSeconds >= FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(FacilityInstance))
+			if (FacilityInstance.ProcessProgressSeconds >= ProcessSeconds)
 			{
 				TryCompleteProcessing(FacilityInstance);
 			}

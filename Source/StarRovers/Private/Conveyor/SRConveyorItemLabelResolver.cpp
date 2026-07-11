@@ -20,23 +20,6 @@ namespace
 		return FString::Printf(TEXT("%.2f"), Value);
 	}
 
-	FString GetCatalystOperatorText(ESRResourceCatalystOperator CatalystOperator)
-	{
-		switch (CatalystOperator)
-		{
-		case ESRResourceCatalystOperator::Add:
-			return TEXT("+");
-		case ESRResourceCatalystOperator::Multiply:
-			return TEXT("*");
-		case ESRResourceCatalystOperator::Subtract:
-			return TEXT("-");
-		case ESRResourceCatalystOperator::Divide:
-			return TEXT("/");
-		default:
-			return TEXT("?");
-		}
-	}
-
 	bool ResolveOutwardNormal(
 		const USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlanetSurfaceGridCellInfo& CellInfo,
@@ -247,23 +230,13 @@ bool StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveWorldLocation(
 FText StarRovers::Conveyor::FSRConveyorItemLabelResolver::BuildLabelText(
 	const FSRResourceInstance& ResourceInstance)
 {
-	if (ResourceInstance.ResourceKind == ESRResourceKind::Energy)
-	{
-		return FText::FromString(FString::Printf(TEXT("E %s"), *FormatEnergyValue(ResourceInstance.EnergyValue)));
-	}
-
-	return FText::FromString(FString::Printf(TEXT("CAT %s"), *GetCatalystOperatorText(ResourceInstance.CatalystOperator)));
+	return FText::FromString(FString::Printf(TEXT("E %s"), *FormatEnergyValue(ResourceInstance.EnergyValue)));
 }
 
 FColor StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveLabelColor(
 	const FSRResourceInstance& ResourceInstance,
 	const FSRConveyorItemLabelSettings& Settings)
 {
-	if (ResourceInstance.ResourceKind != ESRResourceKind::Energy)
-	{
-		return FLinearColor(0.25f, 1.0f, 0.8f, 1.0f).ToFColor(true);
-	}
-
 	if (ResourceInstance.EnergyValue < 0.0)
 	{
 		return Settings.ItemEnergyNegativeColor.ToFColor(true);
@@ -280,9 +253,7 @@ float StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveLabelWorldSize(
 	float TimeSeconds,
 	const FSRConveyorItemLabelSettings& Settings)
 {
-	const double EnergyMagnitude = ResourceInstance.ResourceKind == ESRResourceKind::Energy
-		? FMath::Abs(ResourceInstance.EnergyValue)
-		: 0.0;
+	const double EnergyMagnitude = FMath::Abs(ResourceInstance.EnergyValue);
 	const float EnergyScale = FMath::Clamp(
 		1.0f + static_cast<float>(FMath::Loge(1.0 + EnergyMagnitude)) * 0.18f,
 		1.0f,

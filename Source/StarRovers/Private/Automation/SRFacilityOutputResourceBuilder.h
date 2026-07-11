@@ -10,7 +10,8 @@ class FSRFacilityOutputResourceBuilder
 public:
 	static bool DoesInputSetMatchOperation(
 		const USRFacilityDataAsset* FacilityDataAsset,
-		const TArray<FSRResourceInstance>& InputResources);
+		const TArray<FSRResourceInstance>& InputResources,
+		ESRFacilityTemperatureState TemperatureState);
 
 	static int32 CountProducedOutputResources(const USRFacilityDataAsset* FacilityDataAsset);
 	static int32 ResolvePrimaryOutputCount(const FSRFacilityInstance& FacilityInstance);

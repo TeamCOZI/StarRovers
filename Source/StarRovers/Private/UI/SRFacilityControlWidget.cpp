@@ -47,51 +47,26 @@ namespace
 		}
 	}
 
-	const TCHAR* GetResourceKindLabel(ESRResourceKind ResourceKind)
-	{
-		switch (ResourceKind)
-		{
-		case ESRResourceKind::Energy:
-			return TEXT("Energy");
-		case ESRResourceKind::Catalyst:
-			return TEXT("Catalyst");
-		default:
-			return TEXT("Unknown");
-		}
-	}
-
-	const TCHAR* GetCatalystOperatorLabel(ESRResourceCatalystOperator CatalystOperator)
-	{
-		switch (CatalystOperator)
-		{
-		case ESRResourceCatalystOperator::Add:
-			return TEXT("+");
-		case ESRResourceCatalystOperator::Multiply:
-			return TEXT("*");
-		case ESRResourceCatalystOperator::Subtract:
-			return TEXT("-");
-		case ESRResourceCatalystOperator::Divide:
-			return TEXT("/");
-		case ESRResourceCatalystOperator::None:
-		default:
-			return TEXT("None");
-		}
-	}
-
 	const TCHAR* GetResourceProcessTagLabel(ESRResourceProcessTag ResourceTag)
 	{
 		switch (ResourceTag)
 		{
 		case ESRResourceProcessTag::Responsive:
-			return TEXT("Responsive");
+			return TEXT("HeatResponsive");
 		case ESRResourceProcessTag::HalfLife:
 			return TEXT("HalfLife");
 		case ESRResourceProcessTag::Volatile:
 			return TEXT("Volatile");
 		case ESRResourceProcessTag::Singularity:
 			return TEXT("Singularity");
+		case ESRResourceProcessTag::Supercooled:
+			return TEXT("Supercooled");
+		case ESRResourceProcessTag::HighActivity:
+			return TEXT("HighActivity");
+		case ESRResourceProcessTag::Charge:
+			return TEXT("Charge");
 		case ESRResourceProcessTag::Waste:
-			return TEXT("Waste");
+			return TEXT("DeprecatedWaste");
 		default:
 			return TEXT("Tag");
 		}
@@ -388,23 +363,12 @@ namespace
 		}
 
 		FString Summary = FString::Printf(
-			TEXT("%s [%s] x%d"),
+			TEXT("%s x%d\nEnergy Total: %.2f\nLimit: %d\nUsed: %d"),
 			*BuildResourceDisplayName(ResourceInstance),
-			GetResourceKindLabel(ResourceInstance.ResourceKind),
-			FMath::Max(0, ResourceInstance.StackCount));
-
-		if (ResourceInstance.ResourceKind == ESRResourceKind::Catalyst)
-		{
-			Summary += FString::Printf(TEXT("\nOp: %s"), GetCatalystOperatorLabel(ResourceInstance.CatalystOperator));
-		}
-		else
-		{
-			Summary += FString::Printf(
-				TEXT("\nEnergy Total: %.2f\nLimit: %d\nUsed: %d"),
-				ResourceInstance.EnergyValue,
-				ResourceInstance.RemainingProcessLimit,
-				ResourceInstance.ProcessCount);
-		}
+			FMath::Max(0, ResourceInstance.StackCount),
+			ResourceInstance.EnergyValue,
+			ResourceInstance.RemainingProcessLimit,
+			ResourceInstance.ProcessCount);
 
 		if (!ResourceInstance.Tags.IsEmpty())
 		{
@@ -421,12 +385,6 @@ namespace
 		}
 
 		FString Summary = BuildResourceDisplayName(*ResourceInstance);
-		if (ResourceInstance->ResourceKind == ESRResourceKind::Catalyst)
-		{
-			Summary += FString::Printf(TEXT("\nCatalyst  Op: %s"), GetCatalystOperatorLabel(ResourceInstance->CatalystOperator));
-			return Summary;
-		}
-
 		Summary += FString::Printf(
 			TEXT("\nEnergy Total: %.2f  Limit: %d"),
 			ResourceInstance->EnergyValue,
@@ -457,12 +415,30 @@ namespace
 	FString BuildResourceTagCardLabel(const FSRResourceInstance& ResourceInstance)
 	{
 		int32 VisibleTagCount = 0;
+		int32 ChargeStackCount = 0;
+		int32 HalfLifeRemainingProcessCount = MAX_int32;
+		bool bHasChargeTag = false;
+		bool bHasHalfLifeTag = false;
 		FString Label;
 		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
 		{
 			if (TagStack.StackCount <= 0)
 			{
 				continue;
+			}
+
+			if (TagStack.Tag == ESRResourceProcessTag::Charge)
+			{
+				bHasChargeTag = true;
+				ChargeStackCount += FMath::Max(0, TagStack.RemainingCycles);
+			}
+			else if (TagStack.Tag == ESRResourceProcessTag::HalfLife)
+			{
+				bHasHalfLifeTag = true;
+				const int32 RemainingProcessCount = TagStack.RemainingCycles > 0
+					? TagStack.RemainingCycles
+					: StarRovers::FacilityResources::HalfLifeDefaultCycles;
+				HalfLifeRemainingProcessCount = FMath::Min(HalfLifeRemainingProcessCount, RemainingProcessCount);
 			}
 
 			if (VisibleTagCount == 0)
@@ -475,6 +451,19 @@ namespace
 		if (VisibleTagCount <= 0)
 		{
 			return TEXT("No Tag");
+		}
+		if (bHasChargeTag)
+		{
+			Label = FString::Printf(
+				TEXT("Charge %d"),
+				ChargeStackCount);
+		}
+		else if (bHasHalfLifeTag)
+		{
+			Label = FString::Printf(
+				TEXT("HalfLife %d/%d"),
+				HalfLifeRemainingProcessCount,
+				StarRovers::FacilityResources::HalfLifeDefaultCycles);
 		}
 		if (VisibleTagCount > 1)
 		{
@@ -500,11 +489,9 @@ namespace
 		for (const FSRResourceInstance& ResourceInstance : PortInventory.Inventory)
 		{
 			Signature += FString::Printf(
-				TEXT("|%s:%d:%.3f:%d:%d:%d:%d"),
+				TEXT("|%s:%.3f:%d:%d:%d"),
 				*ResourceInstance.ResourceId.ToString(),
-				static_cast<int32>(ResourceInstance.ResourceKind),
 				ResourceInstance.EnergyValue,
-				static_cast<int32>(ResourceInstance.CatalystOperator),
 				ResourceInstance.RemainingProcessLimit,
 				ResourceInstance.ProcessCount,
 				ResourceInstance.StackCount);
@@ -563,14 +550,7 @@ namespace
 	FString BuildInlineResourceSummary(const FSRResourceInstance& ResourceInstance)
 	{
 		FString Summary = BuildResourceDisplayName(ResourceInstance);
-		if (ResourceInstance.ResourceKind == ESRResourceKind::Energy)
-		{
-			Summary += FString::Printf(TEXT("  Energy Total: %.2f"), ResourceInstance.EnergyValue);
-		}
-		else if (ResourceInstance.ResourceKind == ESRResourceKind::Catalyst)
-		{
-			Summary += FString::Printf(TEXT("  Op: %s"), GetCatalystOperatorLabel(ResourceInstance.CatalystOperator));
-		}
+		Summary += FString::Printf(TEXT("  Energy Total: %.2f"), ResourceInstance.EnergyValue);
 		return Summary;
 	}
 
@@ -869,27 +849,15 @@ namespace
 		if (ResourceInstance && !ResourceInstance->ResourceId.IsNone())
 		{
 			Center = BuildResourceDisplayName(*ResourceInstance);
-			CardColor = ResourceInstance->ResourceKind == ESRResourceKind::Catalyst
-				? FLinearColor(0.165f, 0.155f, 0.120f, 0.98f)
-				: FLinearColor(0.125f, 0.175f, 0.160f, 0.98f);
-
-			if (ResourceInstance->ResourceKind == ESRResourceKind::Catalyst)
-			{
-				TopLeft = GetCatalystOperatorLabel(ResourceInstance->CatalystOperator);
-				BottomLeft = BuildInventoryCardPortLabel(PortInventory, SlotIndex, FallbackLabel);
-				BottomRight = FString::Printf(TEXT("x%d"), SlotStackCount);
-			}
-			else
-			{
-				TopLeft = BuildResourceTagCardLabel(*ResourceInstance);
-				TopRight = FString::Printf(TEXT("E:%.0f"), ResourceInstance->EnergyValue);
-				BottomLeft = FString::Printf(TEXT("L:%d"), ResourceInstance->RemainingProcessLimit);
-				BottomRight = FString::Printf(TEXT("%d/%d"), SlotStackCount, Capacity);
-			}
+			CardColor = FLinearColor(0.125f, 0.175f, 0.160f, 0.98f);
+			TopLeft = BuildResourceTagCardLabel(*ResourceInstance);
+			TopRight = FString::Printf(TEXT("E:%.0f"), ResourceInstance->EnergyValue);
+			BottomLeft = FString::Printf(TEXT("L:%d"), ResourceInstance->RemainingProcessLimit);
+			BottomRight = FString::Printf(TEXT("%d/%d"), SlotStackCount, Capacity);
 		}
 
 		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
-		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(7.0f, 5.0f), FVector2D(60.0f, 18.0f), 9, AccentColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(7.0f, 5.0f), FVector2D(60.0f, 18.0f), TopLeft.Len() > 9 ? 8 : 9, AccentColor);
 		AddInventoryCardText(WidgetTree, CardCanvas, TopRight, FVector2D(58.0f, 5.0f), FVector2D(46.0f, 18.0f), 9, AccentColor, ETextJustify::Right);
 		AddInventoryCardText(WidgetTree, CardCanvas, Center, FVector2D(8.0f, 34.0f), FVector2D(96.0f, 24.0f), 12, MainTextColor, ETextJustify::Center);
 		AddInventoryCardText(WidgetTree, CardCanvas, BottomLeft, FVector2D(7.0f, 68.0f), FVector2D(54.0f, 18.0f), 9, MainTextColor);
@@ -921,7 +889,6 @@ namespace
 		}
 
 		const bool bHasResource = !ResourceInstance.ResourceId.IsNone();
-		const bool bIsCatalyst = bHasResource && ResourceInstance.ResourceKind == ESRResourceKind::Catalyst;
 		const FString TopLeft = bHasResource ? BuildResourceTagCardLabel(ResourceInstance) : TEXT("-");
 		const FString TopRight = bHasResource
 			? FString::Printf(TEXT("E:%.0f"), ResourceInstance.EnergyValue)
@@ -930,16 +897,14 @@ namespace
 		const FString BottomLeft = bHasResource
 			? FString::Printf(TEXT("L:%d"), ResourceInstance.RemainingProcessLimit)
 			: FString();
-		const FString BottomRight = bHasResource ? GetResourceKindLabel(ResourceInstance.ResourceKind) : FString();
+		const FString BottomRight = bHasResource ? TEXT("Energy") : FString();
 		const FLinearColor CardColor = !bHasResource
 			? FLinearColor(0.145f, 0.170f, 0.190f, 0.98f)
-			: (bIsCatalyst
-				? FLinearColor(0.165f, 0.155f, 0.120f, 0.98f)
-				: FLinearColor(0.125f, 0.175f, 0.160f, 0.98f));
+			: FLinearColor(0.125f, 0.175f, 0.160f, 0.98f);
 		const FLinearColor MainTextColor = FLinearColor(0.90f, 0.94f, 0.96f, 1.0f);
 
 		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
-		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(7.0f, 5.0f), FVector2D(60.0f, 18.0f), 9, AccentColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(7.0f, 5.0f), FVector2D(60.0f, 18.0f), TopLeft.Len() > 9 ? 8 : 9, AccentColor);
 		AddInventoryCardText(WidgetTree, CardCanvas, TopRight, FVector2D(58.0f, 5.0f), FVector2D(46.0f, 18.0f), 9, AccentColor, ETextJustify::Right);
 		AddInventoryCardText(WidgetTree, CardCanvas, Center, FVector2D(8.0f, 34.0f), FVector2D(96.0f, 24.0f), 12, MainTextColor, ETextJustify::Center);
 		AddInventoryCardText(WidgetTree, CardCanvas, BottomLeft, FVector2D(7.0f, 68.0f), FVector2D(54.0f, 18.0f), 9, MainTextColor);
@@ -1393,24 +1358,8 @@ namespace
 		FSRResourceInstance ResourceInstance;
 		ResourceInstance.ResourceInstanceId = FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits));
 		ResourceInstance.ResourceId = ResourceId;
-		ResourceInstance.ResourceKind = ESRResourceKind::Energy;
 		ResourceInstance.EnergyValue = EnergyValue;
-		ResourceInstance.CatalystOperator = ESRResourceCatalystOperator::None;
 		ResourceInstance.RemainingProcessLimit = FMath::Max(0, RemainingProcessLimit);
-		ResourceInstance.ProcessCount = 0;
-		ResourceInstance.StackCount = 1;
-		return ResourceInstance;
-	}
-
-	FSRResourceInstance MakeDebugCatalystResource(FName ResourceId, ESRResourceCatalystOperator CatalystOperator)
-	{
-		FSRResourceInstance ResourceInstance;
-		ResourceInstance.ResourceInstanceId = FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits));
-		ResourceInstance.ResourceId = ResourceId;
-		ResourceInstance.ResourceKind = ESRResourceKind::Catalyst;
-		ResourceInstance.EnergyValue = 0.0;
-		ResourceInstance.CatalystOperator = CatalystOperator;
-		ResourceInstance.RemainingProcessLimit = 0;
 		ResourceInstance.ProcessCount = 0;
 		ResourceInstance.StackCount = 1;
 		return ResourceInstance;
@@ -1902,11 +1851,11 @@ bool USRFacilityControlWidget::AddDebugInputResourceToPort(int32 InputPortIndex,
 	}
 	else if (ResourceId == FName(TEXT("Aquid")))
 	{
-		ResourceInstance = MakeDebugCatalystResource(TEXT("Aquid"), ESRResourceCatalystOperator::Add);
+		ResourceInstance = MakeDebugEnergyResource(TEXT("Aquid"), 0.0, 5);
 	}
 	else if (ResourceId == FName(TEXT("Nitain")))
 	{
-		ResourceInstance = MakeDebugCatalystResource(TEXT("Nitain"), ESRResourceCatalystOperator::Multiply);
+		ResourceInstance = MakeDebugEnergyResource(TEXT("Nitain"), 3.0, 2);
 	}
 	else
 	{
@@ -2253,7 +2202,7 @@ void USRFacilityControlWidget::HandleDebugAddAquidClicked()
 
 	FacilityNetwork->AddInputResource(
 		FocusedOccupantId,
-		MakeDebugCatalystResource(TEXT("Aquid"), ESRResourceCatalystOperator::Add));
+		MakeDebugEnergyResource(TEXT("Aquid"), 0.0, 5));
 	RefreshControlText();
 }
 
@@ -2269,7 +2218,7 @@ void USRFacilityControlWidget::HandleDebugAddNitainClicked()
 
 	FacilityNetwork->AddInputResource(
 		FocusedOccupantId,
-		MakeDebugCatalystResource(TEXT("Nitain"), ESRResourceCatalystOperator::Multiply));
+		MakeDebugEnergyResource(TEXT("Nitain"), 3.0, 2));
 	RefreshControlText();
 }
 

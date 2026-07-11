@@ -7,7 +7,7 @@
 
 namespace
 {
-	bool HasAnyInputDirection(const FSRConveyorSegment& Segment)
+	bool HasAnyTransportInputDirection(const FSRConveyorSegment& Segment)
 	{
 		return Segment.InputDirection != ESRConveyorGridDirection::None
 			|| Segment.MergeInputDirection != ESRConveyorGridDirection::None
@@ -137,7 +137,7 @@ void StarRovers::Conveyor::FSRConveyorTransportProcessor::Process(
 				continue;
 			}
 
-			if (HasAnyInputDirection(*Segment))
+			if (HasAnyTransportInputDirection(*Segment))
 			{
 				continue;
 			}

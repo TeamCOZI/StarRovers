@@ -6,6 +6,40 @@
 #include "SRFacilityOutputResourceBuilder.h"
 #include "SRFacilityProcessingInventoryRouter.h"
 
+namespace
+{
+	bool DoesProcessingResourceRequireColdTemperature(const FSRResourceInstance& ResourceInstance)
+	{
+		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
+		{
+			if (TagStack.Tag == ESRResourceProcessTag::Supercooled && TagStack.StackCount > 0)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	bool CanProcessingInventoryAdvanceAtTemperature(const FSRFacilityInstance& FacilityInstance)
+	{
+		if (FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Cold)
+		{
+			return true;
+		}
+
+		for (const FSRResourceInstance& ResourceInstance : FacilityInstance.ProcessingInventory)
+		{
+			if (DoesProcessingResourceRequireColdTemperature(ResourceInstance))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+}
+
 bool FSRFacilityProcessingRuleEvaluator::CanAdvanceProcessing(const FSRFacilityInstance& FacilityInstance)
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
@@ -40,7 +74,7 @@ bool FSRFacilityProcessingRuleEvaluator::CanAdvanceProcessing(const FSRFacilityI
 		return false;
 	}
 
-	return true;
+	return CanProcessingInventoryAdvanceAtTemperature(FacilityInstance);
 }
 
 bool FSRFacilityProcessingRuleEvaluator::CanRun(
@@ -64,7 +98,7 @@ bool FSRFacilityProcessingRuleEvaluator::CanRun(
 		return false;
 	}
 
-	if (!FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(FacilityDataAsset, InputResources))
+	if (!FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(FacilityDataAsset, InputResources, FacilityInstance.TemperatureState))
 	{
 		return false;
 	}

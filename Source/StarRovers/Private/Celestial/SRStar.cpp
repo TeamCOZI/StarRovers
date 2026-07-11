@@ -117,7 +117,7 @@ bool ASRStar::CanAcceptStellarFuelResource(const FSRResourceInstance& ResourceIn
 
 double ASRStar::CalculateStellarFuelValueForResource(const FSRResourceInstance& ResourceInstance) const
 {
-	if (ResourceInstance.ResourceKind != ESRResourceKind::Energy || ResourceInstance.StackCount <= 0)
+	if (ResourceInstance.StackCount <= 0)
 	{
 		return 0.0;
 	}

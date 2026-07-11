@@ -8,6 +8,9 @@
 namespace StarRovers::FacilityResources
 {
 	constexpr int32 HalfLifeDefaultCycles = 3;
+	constexpr int32 ChargeStacksPerProcessingSecond = 1;
+	constexpr int32 ChargeRequiredStacks = 5;
+	constexpr double ChargeEnergyBonus = 3.0;
 
 	inline FString BuildFacilityCellDebugString(const FSRPlanetSurfaceGridCellId& CellId)
 	{
@@ -111,9 +114,7 @@ namespace StarRovers::FacilityResources
 	inline bool AreResourceInstancesStackEquivalent(const FSRResourceInstance& Left, const FSRResourceInstance& Right)
 	{
 		return Left.ResourceId == Right.ResourceId
-			&& Left.ResourceKind == Right.ResourceKind
 			&& FMath::IsNearlyEqual(Left.EnergyValue, Right.EnergyValue)
-			&& Left.CatalystOperator == Right.CatalystOperator
 			&& Left.RemainingProcessLimit == Right.RemainingProcessLimit
 			&& Left.bCountsAsStellarFuel == Right.bCountsAsStellarFuel
 			&& FMath::IsNearlyEqual(Left.StellarFuelValueMultiplier, Right.StellarFuelValueMultiplier)
