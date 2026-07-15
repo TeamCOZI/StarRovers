@@ -4,6 +4,7 @@
 #include "Misc/Crc.h"
 #include "Misc/ScopeLock.h"
 #include "Surface/SRPlanetBiomeDataAsset.h"
+#include "Utility/SRLog.h"
 
 namespace StarRovers::Terrain
 {
@@ -78,14 +79,15 @@ namespace StarRovers::Terrain
 		const uint32 LogKey = BuildNoMatchingBiomeLogKey(Settings);
 		{
 			FScopeLock Lock(&GNoMatchingBiomeLogCriticalSection);
-			if (GNoMatchingBiomeLogKeys.Contains(LogKey))
+			bool bAlreadyLogged = false;
+			GNoMatchingBiomeLogKeys.Add(LogKey, &bAlreadyLogged);
+			if (bAlreadyLogged)
 			{
 				return;
 			}
-			GNoMatchingBiomeLogKeys.Add(LogKey);
 		}
 
-		UE_LOG(
+		SR_LOG(Surface,
 			LogTemp,
 			Warning,
 			TEXT("Terrain generation could not find a Profile BiomeDataAsset whose placement filters pass for at least one sampled cell. Falling back to Plains for unmatched cells. Seed=%d Biomes=%d ExampleFace=%d ExampleCell=(%d,%d)"),

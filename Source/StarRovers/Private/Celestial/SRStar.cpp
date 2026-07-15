@@ -1,5 +1,6 @@
 #include "Celestial/SRStar.h"
 
+#include "Utility/SRLog.h"
 #include "Automation/SRFacilityNetworkComponent.h"
 #include "Celestial/SRCelestialBodyCategory.h"
 #include "Components/DynamicMeshComponent.h"
@@ -116,30 +117,12 @@ bool ASRStar::CanAcceptStellarFuelResource(const FSRResourceInstance& ResourceIn
 
 double ASRStar::CalculateStellarFuelValueForResource(const FSRResourceInstance& ResourceInstance) const
 {
-	if (ResourceInstance.ResourceKind != ESRResourceKind::Energy || ResourceInstance.StackCount <= 0)
+	if (ResourceInstance.StackCount <= 0)
 	{
 		return 0.0;
 	}
 
-	bool bCountsAsStellarFuel = ResourceInstance.bCountsAsStellarFuel;
-	double FuelMultiplier = ResourceInstance.StellarFuelValueMultiplier;
-	if (!bCountsAsStellarFuel)
-	{
-		if (const USRResourceDataAsset* ResourceDataAsset = ResourceInstance.ResourceDataAsset.Get())
-		{
-			bCountsAsStellarFuel = ResourceDataAsset->bCountsAsStellarFuel;
-			FuelMultiplier = ResourceDataAsset->StellarFuelValueMultiplier;
-		}
-	}
-
-	if (!bCountsAsStellarFuel)
-	{
-		return 0.0;
-	}
-
-	const double FuelValue = ResourceInstance.EnergyValue
-		* FMath::Max(0.0, FuelMultiplier)
-		* static_cast<double>(FMath::Max(1, ResourceInstance.StackCount));
+	const double FuelValue = ResourceInstance.EnergyValue * static_cast<double>(FMath::Max(1, ResourceInstance.StackCount));
 	return FMath::Max(0.0, FuelValue);
 }
 
@@ -380,7 +363,7 @@ void ASRStar::AdvanceStellarEvolutionStage()
 	{
 		SetStellarEvolutionStage(ESRStellarEvolutionStage::RedGiant);
 		StoredStellarFuel = InitialStageStellarFuel;
-		UE_LOG(LogTemp, Warning, TEXT("Star '%s' evolved from main sequence to red giant at stellar fuel second %d."), *GetName(), LastSettledSecondIndex);
+		SR_LOG(Celestial, LogTemp, Warning, TEXT("Star '%s' evolved from main sequence to red giant at stellar fuel second %d."), *GetName(), LastSettledSecondIndex);
 		return;
 	}
 
@@ -405,6 +388,6 @@ void ASRStar::TriggerSupernovaGameOver()
 		TimeControlSubsystem->PauseSimulation();
 	}
 
-	UE_LOG(LogTemp, Error, TEXT("Star '%s' reached supernova at stellar fuel second %d. Game over."), *GetName(), LastSettledSecondIndex);
+	SR_LOG(Celestial, LogTemp, Error, TEXT("Star '%s' reached supernova at stellar fuel second %d. Game over."), *GetName(), LastSettledSecondIndex);
 	OnStellarSupernovaGameOver.Broadcast(this);
 }

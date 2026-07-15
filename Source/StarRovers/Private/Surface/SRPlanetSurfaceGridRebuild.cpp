@@ -37,6 +37,7 @@ void USRPlanetSurfaceGrid::ResetSurfaceInteractionState()
 		InputPortPreviewCellIds,
 		OutputPortPreviewCellIds,
 		DeletionPreviewCellIds,
+		ConstructionReplacementPreviewCellIds,
 		InvalidPreviewCellIds);
 }
 

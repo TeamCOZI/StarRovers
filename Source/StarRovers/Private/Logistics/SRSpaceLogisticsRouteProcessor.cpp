@@ -4,6 +4,7 @@
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
 #include "SRSpaceLogisticsRoutePathResolver.h"
 #include "SRSpaceLogisticsRouteVisualController.h"
+#include "Utility/SRLog.h"
 
 namespace
 {
@@ -205,7 +206,7 @@ bool FSRSpaceLogisticsRouteProcessor::StartTravel(
 		HubRoute.LaunchWorldVelocity = FVector::ZeroVector;
 		HubRoute.bHasLaunchWorldVelocity = false;
 		HubRoute.Phase = ESRSpaceLogisticsHubRoutePhase::Blocked;
-		UE_LOG(
+		SR_LOG(SpaceLogistics,
 			LogTemp,
 			Warning,
 			TEXT("[SpaceLogistics] Hub route blocked because start location could not be resolved: RouteId=%s"),
@@ -222,7 +223,7 @@ bool FSRSpaceLogisticsRouteProcessor::StartTravel(
 	HubRoute.TravelDurationSeconds = FSRSpaceLogisticsRoutePathResolver::ResolveTravelDurationSeconds(
 		SpaceLogisticsSubsystem,
 		HubRoute);
-	UE_LOG(
+	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Verbose,
 		TEXT("[SpaceLogistics] Hub route travel duration resolved: RouteId=%s InitialSpeed=%.2f LaunchAcceleration=%.2f Duration=%.2f"),

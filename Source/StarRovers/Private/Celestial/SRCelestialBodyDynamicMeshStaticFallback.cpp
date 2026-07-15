@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "Utility/SRLog.h"
 #include "SRCelestialBodyLog.h"
 #include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 #include "Components/DynamicMeshComponent.h"
@@ -56,7 +57,7 @@ namespace
 		const FStaticMeshRenderData* RenderData = StaticMesh->GetRenderData();
 		if (!RenderData || RenderData->LODResources.IsEmpty())
 		{
-			UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires render data on StaticMesh."), *BodyName);
+			SR_LOG(DynamicMesh, LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires render data on StaticMesh."), *BodyName);
 			return false;
 		}
 
@@ -68,7 +69,7 @@ namespace
 		OutRenderData.IndexCount = static_cast<int32>(OutRenderData.IndexBuffer->GetNumIndices());
 		if (OutRenderData.VertexCount <= 0 || OutRenderData.IndexCount < 3)
 		{
-			UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires valid vertices and triangles on StaticMesh."), *BodyName);
+			SR_LOG(DynamicMesh, LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires valid vertices and triangles on StaticMesh."), *BodyName);
 			return false;
 		}
 

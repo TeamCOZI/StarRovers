@@ -39,4 +39,7 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Augment", meta = (DisplayName = "Augment Random Seed"))
 	int32 AugmentRandomSeed = 47219;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Debug", meta = (DisplayName = "Unlock All Facilities Without Augments", ToolTip = "Treats every buildable facility structure as unlocked without selecting augments. Intended for editor/debug playtests."))
+	bool bDebugUnlockAllFacilitiesWithoutAugments = false;
 };

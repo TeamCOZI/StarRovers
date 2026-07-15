@@ -1,5 +1,6 @@
 #include "UI/SRStructureSelectionWidget.h"
 
+#include "Utility/SRLog.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -206,7 +207,7 @@ void USRStructureSelectionEntryAction::Initialize(USRStructureSelectionWidget* I
 
 void USRStructureSelectionEntryAction::HandleClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection BuildOption OnClicked StructureId=%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection BuildOption OnClicked StructureId=%s"),
 		*StructureId.ToString());
 
 	if (IsValid(OwnerWidget))
@@ -235,6 +236,7 @@ void USRStructureSelectionWidget::NativeConstruct()
 	EnsureDefaultStructureTabIndicatorTexture();
 	ApplyCategoryButtonIconBrushes();
 	RefreshStructureTabIndicatorBrushes();
+	RebuildBuildOptionIndex();
 	RebuildCategorizedBuildOptions();
 	RefreshFacilityButtonLabels();
 	RefreshCategoryButtonStyles();
@@ -257,6 +259,7 @@ void USRStructureSelectionWidget::NativePreConstruct()
 	EnsureDefaultStructureTabIndicatorTexture();
 	ApplyCategoryButtonIconBrushes();
 	RefreshStructureTabIndicatorBrushes();
+	RebuildBuildOptionIndex();
 	RebuildCategorizedBuildOptions();
 	RefreshFacilityButtonLabels();
 	RefreshCategoryButtonStyles();
@@ -290,7 +293,7 @@ FReply USRStructureSelectionWidget::NativeOnMouseButtonDown(const FGeometry& InG
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	if (IsScreenPositionOverStructureSelectionPanel(ScreenPosition))
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f) CategoryIndex=%d FacilityButtonIndex=%d"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f) CategoryIndex=%d FacilityButtonIndex=%d"),
 			ScreenPosition.X,
 			ScreenPosition.Y,
 			FindCategoryButtonIndexAtScreenPosition(ScreenPosition),
@@ -306,7 +309,7 @@ FReply USRStructureSelectionWidget::NativeOnMouseButtonUp(const FGeometry& InGeo
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	if (IsScreenPositionOverStructureSelectionPanel(ScreenPosition))
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f) CategoryIndex=%d FacilityButtonIndex=%d"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f) CategoryIndex=%d FacilityButtonIndex=%d"),
 			ScreenPosition.X,
 			ScreenPosition.Y,
 			FindCategoryButtonIndexAtScreenPosition(ScreenPosition),
@@ -330,6 +333,7 @@ FReply USRStructureSelectionWidget::NativeOnMouseWheel(const FGeometry& InGeomet
 void USRStructureSelectionWidget::SetBuildOptions(const TArray<FSRStructureBuildOption>& NewBuildOptions)
 {
 	BuildOptions = NewBuildOptions;
+	RebuildBuildOptionIndex();
 	if (bHasSelectedStructureId && !FindBuildOption(SelectedStructureId))
 	{
 		ClearSelectedStructureId();
@@ -467,14 +471,14 @@ bool USRStructureSelectionWidget::TryHandleStructureSelectionPointerClick()
 	}
 
 	const FVector2D ScreenPosition = FSlateApplication::Get().GetCursorPos();
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection TryHandleStructureSelectionPointerClick Mouse=(%.1f, %.1f)"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection TryHandleStructureSelectionPointerClick Mouse=(%.1f, %.1f)"),
 		ScreenPosition.X,
 		ScreenPosition.Y);
 
 	const int32 FacilityButtonIndex = FindFacilityButtonIndexAtScreenPosition(ScreenPosition);
 	if (FacilityButtonIndex != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection manual click resolved FacilityButtonIndex=%d"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection manual click resolved FacilityButtonIndex=%d"),
 			FacilityButtonIndex);
 		SelectFacilityButton(FacilityButtonIndex);
 		return true;
@@ -483,7 +487,7 @@ bool USRStructureSelectionWidget::TryHandleStructureSelectionPointerClick()
 	const int32 CategoryIndex = FindCategoryButtonIndexAtScreenPosition(ScreenPosition);
 	if (CategoryIndex != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection manual click resolved CategoryIndex=%d"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection manual click resolved CategoryIndex=%d"),
 			CategoryIndex);
 		SelectStructureCategory(CategoryIndex);
 		return true;
@@ -505,13 +509,13 @@ bool USRStructureSelectionWidget::AdvanceStructureSelectionTab()
 
 void USRStructureSelectionWidget::DispatchBuildOptionSelected(FName StructureId)
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection DispatchBuildOptionSelected StructureId=%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection DispatchBuildOptionSelected StructureId=%s"),
 		*StructureId.ToString());
 
 	const FSRStructureBuildOption* RequestedBuildOption = FindBuildOption(StructureId);
 	if (!RequestedBuildOption || !RequestedBuildOption->bEnabled)
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection DispatchBuildOptionSelected ignored StructureId=%s"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection DispatchBuildOptionSelected ignored StructureId=%s"),
 			*StructureId.ToString());
 		return;
 	}
@@ -1137,6 +1141,7 @@ void USRStructureSelectionWidget::RebuildBuildOptions()
 
 	BuildOptionsScrollBox->ClearChildren();
 	EntryActions.Reset();
+	EntryActions.Reserve(BuildOptions.Num());
 
 	for (const FSRStructureBuildOption& BuildOption : BuildOptions)
 	{
@@ -1200,6 +1205,8 @@ void USRStructureSelectionWidget::RebuildCategorizedBuildOptions()
 	MinerBuildOptionId = NAME_None;
 	ProcessingBuildOptionIds.Reset();
 	SynthesisBuildOptionIds.Reset();
+	ProcessingBuildOptionIds.Reserve(BuildOptions.Num());
+	SynthesisBuildOptionIds.Reserve(BuildOptions.Num());
 
 	for (const FSRStructureBuildOption& BuildOption : BuildOptions)
 	{
@@ -1263,6 +1270,23 @@ void USRStructureSelectionWidget::RebuildCategorizedBuildOptions()
 		&& !IsBuildOptionSelectable(GetFacilityButtonStructureId(SelectedFacilityButtonIndex)))
 	{
 		SelectedFacilityButtonIndex = INDEX_NONE;
+	}
+}
+
+void USRStructureSelectionWidget::RebuildBuildOptionIndex()
+{
+	BuildOptionIndexByStructureId.Reset();
+	BuildOptionIndexByStructureId.Reserve(BuildOptions.Num());
+
+	for (int32 BuildOptionIndex = 0; BuildOptionIndex < BuildOptions.Num(); ++BuildOptionIndex)
+	{
+		const FName StructureId = BuildOptions[BuildOptionIndex].StructureId;
+		if (StructureId.IsNone() || BuildOptionIndexByStructureId.Contains(StructureId))
+		{
+			continue;
+		}
+
+		BuildOptionIndexByStructureId.Add(StructureId, BuildOptionIndex);
 	}
 }
 
@@ -1827,7 +1851,7 @@ int32 USRStructureSelectionWidget::FindFacilityButtonIndexAtScreenPosition(const
 
 void USRStructureSelectionWidget::HandleCategory1Clicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=0"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=0"));
 	SelectStructureCategory(0);
 }
 
@@ -1838,7 +1862,7 @@ void USRStructureSelectionWidget::HandleCategory1Hovered()
 
 void USRStructureSelectionWidget::HandleCategory2Clicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=1"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=1"));
 	SelectStructureCategory(1);
 }
 
@@ -1849,7 +1873,7 @@ void USRStructureSelectionWidget::HandleCategory2Hovered()
 
 void USRStructureSelectionWidget::HandleCategory3Clicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=2"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=2"));
 	SelectStructureCategory(2);
 }
 
@@ -1860,7 +1884,7 @@ void USRStructureSelectionWidget::HandleCategory3Hovered()
 
 void USRStructureSelectionWidget::HandleCategory4Clicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=3"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=3"));
 	SelectStructureCategory(3);
 }
 
@@ -1876,7 +1900,7 @@ void USRStructureSelectionWidget::HandleCategoryUnhovered()
 
 void USRStructureSelectionWidget::HandleFacilityButton1Clicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection FacilityButton OnClicked Index=0"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection FacilityButton OnClicked Index=0"));
 	SelectFacilityButton(0);
 }
 
@@ -1887,7 +1911,7 @@ void USRStructureSelectionWidget::HandleFacilityButton1Hovered()
 
 void USRStructureSelectionWidget::HandleFacilityButton2Clicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection FacilityButton OnClicked Index=1"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection FacilityButton OnClicked Index=1"));
 	SelectFacilityButton(1);
 }
 
@@ -1898,7 +1922,7 @@ void USRStructureSelectionWidget::HandleFacilityButton2Hovered()
 
 void USRStructureSelectionWidget::HandleFacilityButton3Clicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection FacilityButton OnClicked Index=2"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection FacilityButton OnClicked Index=2"));
 	SelectFacilityButton(2);
 }
 
@@ -1909,7 +1933,7 @@ void USRStructureSelectionWidget::HandleFacilityButton3Hovered()
 
 void USRStructureSelectionWidget::HandleFacilityButton4Clicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection FacilityButton OnClicked Index=3"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection FacilityButton OnClicked Index=3"));
 	SelectFacilityButton(3);
 }
 
@@ -1920,7 +1944,7 @@ void USRStructureSelectionWidget::HandleFacilityButton4Hovered()
 
 void USRStructureSelectionWidget::HandleFacilityButton5Clicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection FacilityButton OnClicked Index=4"));
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection FacilityButton OnClicked Index=4"));
 	SelectFacilityButton(4);
 }
 
@@ -1952,10 +1976,10 @@ const FSRStructureBuildOption* USRStructureSelectionWidget::FindBuildOption(FNam
 		return nullptr;
 	}
 
-	return BuildOptions.FindByPredicate([StructureId](const FSRStructureBuildOption& BuildOption)
-	{
-		return BuildOption.StructureId == StructureId;
-	});
+	const int32* BuildOptionIndex = BuildOptionIndexByStructureId.Find(StructureId);
+	return BuildOptionIndex && BuildOptions.IsValidIndex(*BuildOptionIndex)
+		? &BuildOptions[*BuildOptionIndex]
+		: nullptr;
 }
 
 bool USRStructureSelectionWidget::IsScreenPositionOverStructureSelectionPanel(const FVector2D& ScreenPosition) const

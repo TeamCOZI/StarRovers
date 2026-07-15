@@ -7,30 +7,16 @@
 class USRResourceDataAsset;
 
 UENUM(BlueprintType)
-enum class ESRResourceKind : uint8
-{
-	Energy UMETA(DisplayName = "Energy"),
-	Catalyst UMETA(DisplayName = "Catalyst"),
-};
-
-UENUM(BlueprintType)
-enum class ESRResourceCatalystOperator : uint8
-{
-	None UMETA(DisplayName = "None"),
-	Add UMETA(DisplayName = "Add"),
-	Multiply UMETA(DisplayName = "Multiply"),
-	Subtract UMETA(DisplayName = "Subtract"),
-	Divide UMETA(DisplayName = "Divide"),
-};
-
-UENUM(BlueprintType)
 enum class ESRResourceProcessTag : uint8
 {
-	Responsive UMETA(DisplayName = "HeatResponsive"),
-	Waste UMETA(DisplayName = "DeprecatedWaste"),
-	HalfLife UMETA(DisplayName = "HalfLife"),
-	Volatile UMETA(DisplayName = "Volatile"),
-	Singularity UMETA(DisplayName = "Singularity"),
+	Responsive = 0 UMETA(DisplayName = "HeatResponsive"),
+	Waste = 1 UMETA(DisplayName = "DeprecatedWaste"),
+	HalfLife = 2 UMETA(DisplayName = "HalfLife"),
+	Volatile = 3 UMETA(DisplayName = "Volatile"),
+	Singularity = 4 UMETA(DisplayName = "Singularity"),
+	Supercooled = 5 UMETA(DisplayName = "Supercooled"),
+	HighActivity = 6 UMETA(DisplayName = "HighActivity"),
+	Charge = 7 UMETA(DisplayName = "Charge"),
 };
 
 USTRUCT(BlueprintType)
@@ -62,14 +48,8 @@ struct STARROVERS_API FSRResourceInstance
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource", meta = (DisplayName = "ResourceId"))
 	FName ResourceId = NAME_None;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource", meta = (DisplayName = "ResourceKind"))
-	ESRResourceKind ResourceKind = ESRResourceKind::Energy;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource", meta = (DisplayName = "EnergyValue"))
 	double EnergyValue = 0.0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource", meta = (DisplayName = "CatalystOperator"))
-	ESRResourceCatalystOperator CatalystOperator = ESRResourceCatalystOperator::None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource", meta = (DisplayName = "RemainingProcessLimit", ClampMin = "0"))
 	int32 RemainingProcessLimit = 0;
@@ -82,12 +62,6 @@ struct STARROVERS_API FSRResourceInstance
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource", meta = (DisplayName = "StackCount", ClampMin = "1"))
 	int32 StackCount = 1;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource|Stellar Fuel", meta = (DisplayName = "bCountsAsStellarFuel"))
-	bool bCountsAsStellarFuel = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource|Stellar Fuel", meta = (DisplayName = "StellarFuelValueMultiplier", ClampMin = "0.0"))
-	double StellarFuelValueMultiplier = 1.0;
 };
 
 UCLASS(BlueprintType)
@@ -110,24 +84,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Identity", meta = (DisplayName = "Description"))
 	FText Description;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource", meta = (DisplayName = "ResourceKind"))
-	ESRResourceKind ResourceKind = ESRResourceKind::Energy;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource", meta = (DisplayName = "BaseEnergyValue"))
 	double BaseEnergyValue = 0.0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource", meta = (DisplayName = "CatalystOperator"))
-	ESRResourceCatalystOperator CatalystOperator = ESRResourceCatalystOperator::None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource", meta = (DisplayName = "BaseProcessLimit", ClampMin = "0"))
 	int32 BaseProcessLimit = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource", meta = (DisplayName = "DefaultTags"))
 	TArray<FSRResourceTagStack> DefaultTags;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource|Stellar Fuel", meta = (DisplayName = "bCountsAsStellarFuel"))
-	bool bCountsAsStellarFuel = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource|Stellar Fuel", meta = (DisplayName = "StellarFuelValueMultiplier", ClampMin = "0.0"))
-	double StellarFuelValueMultiplier = 1.0;
 };

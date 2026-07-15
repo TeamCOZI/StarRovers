@@ -46,13 +46,13 @@ void USRAssemblyComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		return;
 	}
 
-	ConveyorPreview.ClearBulkDeletionPreview();
 	if (PlacementDrag.bIsStructurePlacementDragActive)
 	{
 		ConveyorPreview.ClearPortPreview();
 		StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
 		return;
 	}
+	ConveyorPreview.ClearBulkDeletionPreview();
 	UpdateConveyorPlacementPortPreview();
 	UpdateStructureGhostPreview();
 }
@@ -202,6 +202,21 @@ bool USRAssemblyComponent::TryHandleAssemblyClick(AActor*& OutSelectedActor)
 		AActor* FocusedActor = CursorTarget.FocusedActor;
 		USRPlanetSurfaceGrid* FocusedSurfaceGrid = CursorTarget.SurfaceGrid;
 		const FSRPlanetSurfaceGridCell& HoveredCell = CursorTarget.Cell;
+		if (USRStructureDataAsset* SelectedStructureDataAsset = PlayerController->GetSelectedStructureDataAsset())
+		{
+			const FSRStructureData StructureData = SelectedStructureDataAsset->BuildData();
+			if (StructureData.BuildKind != ESRStructureBuildKind::Conveyor)
+			{
+				ClearSelectedStructureInfo();
+				ClearPendingConveyorPathStart();
+				FocusedSurfaceGrid->ClearSelectedCell();
+				if (TryPlaceSelectedStructure(FocusedSurfaceGrid, HoveredCell))
+				{
+					return true;
+				}
+			}
+		}
+
 		if (TryPublishSelectedStructureInfo(FocusedActor, FocusedSurfaceGrid, HoveredCell))
 		{
 			ClearPendingConveyorPathStart();
@@ -401,4 +416,5 @@ void USRAssemblyComponent::EndStructurePlacementDrag(bool bCommitConveyorDrag)
 	StructurePreview.DestroyPlacementDragPreviewActors(HoveredSurfaceGrid);
 	ConveyorPreview.DestroyGhostActor(HoveredSurfaceGrid);
 	ConveyorPreview.ClearInvalidPlacementPreview();
+	ConveyorPreview.ClearBulkDeletionPreview();
 }

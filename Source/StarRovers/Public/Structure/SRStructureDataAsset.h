@@ -82,8 +82,8 @@ struct STARROVERS_API FSRStructureData
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Visual", meta = (DisplayName = "CopyPlaceableMaterial"))
 	TObjectPtr<UMaterialInterface> CopyPlaceableMaterial = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Visual", meta = (DisplayName = "CopyReplaceableMaterial"))
-	TObjectPtr<UMaterialInterface> CopyReplaceableMaterial = nullptr;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Visual", meta = (DisplayName = "ReplaceableMaterial"))
+	TObjectPtr<UMaterialInterface> ReplaceableMaterial = nullptr;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Visual", meta = (DisplayName = "CopyBlockedMaterial"))
 	TObjectPtr<UMaterialInterface> CopyBlockedMaterial = nullptr;
@@ -279,8 +279,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Visual", meta = (DisplayName = "CopyPlaceableMaterial"))
 	TObjectPtr<UMaterialInterface> CopyPlaceableMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Visual", meta = (DisplayName = "CopyReplaceableMaterial"))
-	TObjectPtr<UMaterialInterface> CopyReplaceableMaterial = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Visual", meta = (DisplayName = "ReplaceableMaterial"))
+	TObjectPtr<UMaterialInterface> ReplaceableMaterial = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Visual", meta = (DisplayName = "CopyBlockedMaterial"))
 	TObjectPtr<UMaterialInterface> CopyBlockedMaterial = nullptr;

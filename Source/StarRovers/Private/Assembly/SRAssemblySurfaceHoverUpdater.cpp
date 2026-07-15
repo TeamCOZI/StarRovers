@@ -1,5 +1,6 @@
 #include "Assembly/SRAssemblySurfaceHoverUpdater.h"
 
+#include "Utility/SRLog.h"
 #include "Assembly/SRAssemblySurfaceCursorQuery.h"
 #include "Assembly/SRAssemblySurfaceState.h"
 #include "Camera/SRPlayerController.h"
@@ -59,8 +60,7 @@ StarRovers::Assembly::ESRAssemblySurfaceHoverUpdateResult StarRovers::Assembly::
 			&& SurfaceGrid->GetHoveredCell(CachedHoveredCell)
 			&& !(CachedHoveredCell.CellId == SurfaceState.LastPublishedHoveredCellId))
 		{
-			UE_LOG(
-				LogTemp,
+			SR_LOG(Assembly, LogTemp,
 				Warning,
 				TEXT("[SR SurfaceHover] Result=CacheMismatch GridHovered={%s} PublishedHovered={%s} MouseDelta=%.3f"),
 				*FormatSurfaceHoverCellId(CachedHoveredCell.CellId),
@@ -88,8 +88,7 @@ StarRovers::Assembly::ESRAssemblySurfaceHoverUpdateResult StarRovers::Assembly::
 	HoveredSurfaceGrid->SetHoveredCell(HoveredCell.CellId);
 	if (bHadPreviousHoveredCell && PreviousHoveredCell.CellId.Face != HoveredCell.CellId.Face)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(Assembly, LogTemp,
 			Warning,
 			TEXT("[SR SurfaceHover] Result=FaceTransition Previous={%s} Current={%s} Hit=%s"),
 			*FormatSurfaceHoverCellId(PreviousHoveredCell.CellId),

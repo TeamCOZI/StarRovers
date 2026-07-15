@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 
+#include "Utility/SRLog.h"
 #include "SRCelestialBodyLog.h"
 #include "Utility/SRTimingLog.h"
 
@@ -77,8 +78,7 @@ void FinalizePreparedDynamicMeshBuild(
 	double PostBuildStageStart = GetDynamicMeshTimingSeconds();
 	if (TerrainEdgeAccumulator.GetPendingEdgeCount() > 0)
 	{
-		UE_LOG(
-			LogStarRoversCelestial,
+		SR_LOG(DynamicMesh, LogStarRoversCelestial,
 			Warning,
 			TEXT("Dynamic mesh '%s' code-generated base has %d unmatched source edges."),
 			*BodyName,
@@ -90,8 +90,7 @@ void FinalizePreparedDynamicMeshBuild(
 	const FSRCelestialBodyDynamicMeshValidationStats ValidationStats = ValidatePreparedDynamicMeshBuild(FaceDynamicMeshes);
 	if (ValidationStats.WeldedBoundaryEdgeCount > 0)
 	{
-		UE_LOG(
-			LogStarRoversCelestial,
+		SR_LOG(DynamicMesh, LogStarRoversCelestial,
 			Warning,
 			TEXT("Dynamic mesh '%s' generated with %d open boundary edges after code-generated base welding."),
 			*BodyName,

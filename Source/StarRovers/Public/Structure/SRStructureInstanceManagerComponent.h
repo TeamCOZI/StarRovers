@@ -199,7 +199,7 @@ private:
 	FSRStructureVisualGroup& FindOrCreateVisualGroup(USRStructureDataAsset* StructureDataAsset, FName VisualKey, bool bUseStaticMeshMaterials, ESRStructureVisualOverride VisualOverride = ESRStructureVisualOverride::None);
 	bool IsDeletePreviewTarget(FName OccupantId) const;
 	void RemoveStructureByOccupantId(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId);
-	void RemoveStructuresByOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FName>& OccupantIds);
+	void RemoveStructuresByOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, TConstArrayView<FName> OccupantIds);
 	void RemoveVisualInstances(FName VisualKey, const TArray<FName>& RemovedOccupantIds);
 	void RebuildVisualGroup(FName VisualKey);
 	void RefreshVisualGroupsForPreviewState();
@@ -229,5 +229,6 @@ private:
 	TMap<FName, FSRStructureVisualGroup> VisualGroupsByKey;
 	TSet<FName> GhostedStructureOccupantIds;
 	TSet<FName> DeletePreviewedStructureOccupantIds;
+	TSet<FName> ConstructionReplacementPreviewedStructureOccupantIds;
 	int32 NextStructureInstanceSequence;
 };

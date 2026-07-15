@@ -1,7 +1,6 @@
 #include "Camera/SRPlayerController.h"
 
 #include "Assembly/SRAssemblyComponent.h"
-#include "SRPlayerControllerDefaultInputActions.h"
 #include "SRPlayerControllerLifecycle.h"
 
 ASRPlayerController::ASRPlayerController()
@@ -12,18 +11,6 @@ ASRPlayerController::ASRPlayerController()
 	bEnableClickEvents = true;
 	bEnableMouseOverEvents = true;
 	DefaultMouseCursor = EMouseCursor::Default;
-
-	FSRPlayerControllerDefaultInputActions::Load(
-		LeftClickAction,
-		FocusParentAction,
-		DeleteStructureAction,
-		AssemblyUndoRedoAction,
-		AssemblyAreaSelectionCopyAction,
-		AssemblyAreaCopyMirrorAction,
-		AssemblyPickStructureAction,
-		RotatePlacementCounterClockwiseAction,
-		RotatePlacementClockwiseAction,
-		RotateAssemblyPlacementAction);
 
 	WidgetLayerOrder = StarRovers::PlayerControllerUI::MakeDefaultWidgetLayerOrder();
 	MaxStructurePlacementsPerFrame = 4;

@@ -146,6 +146,7 @@ void USRStructureInstanceManagerComponent::UpdateStructureNameLabelTransforms(US
 	FVector CameraLocation = FVector::ZeroVector;
 	FVector CameraFacingNormal = FVector::ForwardVector;
 	FVector CameraUp = FVector::UpVector;
+	FRotator CameraFacingRotation = FRotator::ZeroRotator;
 	bool bHasCameraLocation = false;
 	if (UWorld* World = GetWorld())
 	{
@@ -163,40 +164,49 @@ void USRStructureInstanceManagerComponent::UpdateStructureNameLabelTransforms(US
 			{
 				CameraUp = FVector::UpVector;
 			}
+			CameraFacingRotation = FRotationMatrix::MakeFromXZ(CameraFacingNormal, CameraUp).Rotator();
 			bHasCameraLocation = true;
 		}
 	}
 
-	TArray<FName> LabelOccupantIds;
-	StructureNameLabelsByOccupantId.GetKeys(LabelOccupantIds);
-	for (const FName OccupantId : LabelOccupantIds)
+	bool bRemovedLabel = false;
+	for (auto LabelIterator = StructureNameLabelsByOccupantId.CreateIterator(); LabelIterator; ++LabelIterator)
 	{
+		const FName OccupantId = LabelIterator.Key();
 		const FSRPlacedStructureInstance* PlacedStructure = PlacedStructuresByOccupantId.Find(OccupantId);
-		TObjectPtr<UTextRenderComponent>* LabelComponentPtr = StructureNameLabelsByOccupantId.Find(OccupantId);
-		if (!PlacedStructure || !LabelComponentPtr || !IsValid(*LabelComponentPtr))
+		UTextRenderComponent* LabelComponent = LabelIterator.Value().Get();
+		if (!PlacedStructure || !IsValid(LabelComponent))
 		{
-			DestroyStructureNameLabel(OccupantId);
+			if (IsValid(LabelComponent))
+			{
+				LabelComponent->DestroyComponent();
+			}
+			LabelIterator.RemoveCurrent();
+			bRemovedLabel = true;
 			continue;
 		}
 
 		if (PlacedStructure->bNaturalStructure && !bShowNaturalStructureNameLabels)
 		{
-			DestroyStructureNameLabel(OccupantId);
+			LabelComponent->DestroyComponent();
+			LabelIterator.RemoveCurrent();
+			bRemovedLabel = true;
 			continue;
 		}
 
 		FVector LabelLocation = FVector::ZeroVector;
 		if (!ResolveStructureNameLabelLocation(SurfaceGrid, *PlacedStructure, LabelLocation))
 		{
-			DestroyStructureNameLabel(OccupantId);
+			LabelComponent->DestroyComponent();
+			LabelIterator.RemoveCurrent();
+			bRemovedLabel = true;
 			continue;
 		}
 
-		UTextRenderComponent* LabelComponent = LabelComponentPtr->Get();
 		LabelComponent->SetWorldLocation(LabelLocation);
 		if (bHasCameraLocation)
 		{
-			LabelComponent->SetWorldRotation(FRotationMatrix::MakeFromXZ(CameraFacingNormal, CameraUp).Rotator());
+			LabelComponent->SetWorldRotation(CameraFacingRotation);
 
 			if (StructureNameLabelMaxDrawDistance > KINDA_SMALL_NUMBER)
 			{
@@ -209,6 +219,11 @@ void USRStructureInstanceManagerComponent::UpdateStructureNameLabelTransforms(US
 				LabelComponent->SetVisibility(true);
 			}
 		}
+	}
+
+	if (bRemovedLabel)
+	{
+		UpdateNameLabelTickEnabled();
 	}
 }
 

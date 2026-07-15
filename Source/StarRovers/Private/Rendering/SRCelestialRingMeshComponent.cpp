@@ -4,7 +4,6 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
 #include "Materials/MaterialInterface.h"
-#include "UObject/ConstructorHelpers.h"
 #include "Rendering/SRScreenSpaceLineThickness.h"
 
 namespace
@@ -112,12 +111,6 @@ USRCelestialRingMeshComponent::USRCelestialRingMeshComponent()
 	SetUsingAbsoluteRotation(true);
 	SetUsingAbsoluteScale(true);
 
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> VertexColorMaterialFinder(
-		TEXT("/Engine/EngineDebugMaterials/VertexColorMaterial.VertexColorMaterial"));
-	if (VertexColorMaterialFinder.Succeeded())
-	{
-		SetMaterial(0, VertexColorMaterialFinder.Object);
-	}
 }
 
 void USRCelestialRingMeshComponent::UpdateRingVisual(
@@ -214,7 +207,8 @@ bool USRCelestialRingMeshComponent::ShouldRebuildMesh(
 	}
 
 	FSRScreenSpaceLineViewInfo CameraInfo;
-	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(GetWorld(), CameraInfo);
+	const UWorld* World = GetWorld();
+	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(World, CameraInfo);
 	if (!CameraInfo.bIsValid)
 	{
 		return false;
@@ -222,7 +216,7 @@ bool USRCelestialRingMeshComponent::ShouldRebuildMesh(
 
 	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
 	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
-	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(World, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
 
 	const bool bCenterMovedEnough = FVector::DistSquared(WorldCenter, LastWorldCenter) >= FMath::Square(CenterMoveRebuildDistance);
 	const bool bCameraMovedEnough = FVector::DistSquared(CameraInfo.ViewLocation, LastCameraLocation) >= FMath::Square(CameraMoveRebuildDistance);
@@ -247,12 +241,14 @@ void USRCelestialRingMeshComponent::RebuildRingMesh(
 	int32 SegmentCount,
 	double CurrentTime)
 {
+	const UWorld* World = GetWorld();
 	FSRScreenSpaceLineViewInfo CameraInfo;
-	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(GetWorld(), CameraInfo);
+	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(World, CameraInfo);
 
 	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
 	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
-	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(World, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	const float ReferenceTanHalfFieldOfView = FSRScreenSpaceLineThickness::ComputeReferenceTanHalfFieldOfView(ReferenceFieldOfViewDegrees);
 
 	UE::Geometry::FDynamicMesh3 RingMesh;
 	RingMesh.EnableAttributes();
@@ -266,15 +262,21 @@ void USRCelestialRingMeshComponent::RebuildRingMesh(
 		const float AlphaB = static_cast<float>(SegmentIndex + 1) / static_cast<float>(SafeSegmentCount);
 		const float AngleA = AlphaA * UE_TWO_PI;
 		const float AngleB = AlphaB * UE_TWO_PI;
-		const FVector DirectionA(0.0f, FMath::Cos(AngleA), FMath::Sin(AngleA));
-		const FVector DirectionB(0.0f, FMath::Cos(AngleB), FMath::Sin(AngleB));
+		float SinA = 0.0f;
+		float CosA = 1.0f;
+		float SinB = 0.0f;
+		float CosB = 1.0f;
+		FMath::SinCos(&SinA, &CosA, AngleA);
+		FMath::SinCos(&SinB, &CosB, AngleB);
+		const FVector DirectionA(0.0f, CosA, SinA);
+		const FVector DirectionB(0.0f, CosB, SinB);
 		const FVector WorldMidpoint = WorldCenter + ((DirectionA + DirectionB).GetSafeNormal() * SafeRadius);
-		const float SegmentWorldThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
+		const float SegmentWorldThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
 			CameraInfo,
 			WorldMidpoint,
 			ReferenceWorldThickness,
 			ReferenceViewDepth,
-			ReferenceFieldOfViewDegrees);
+			ReferenceTanHalfFieldOfView);
 		const float HalfThickness = FMath::Max(0.01f, SegmentWorldThickness) * 0.5f;
 		AppendRingSegmentQuad(RingMesh, DirectionA, DirectionB, SafeRadius, HalfThickness, Color);
 	}

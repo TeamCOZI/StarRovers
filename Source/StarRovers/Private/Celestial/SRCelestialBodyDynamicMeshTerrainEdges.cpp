@@ -88,6 +88,7 @@ FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::FSRCelestialBodyDynamicMeshTe
 	, CachedCellIndexByFlatId(InCachedCellIndexByFlatId)
 	, PreparedColorDataByFlatId(InPreparedColorDataByFlatId)
 	, ToonOutlineSettings(InToonOutlineSettings)
+	, bFeatureToonOutlineEnabled(IsFeatureToonOutlineEnabled(InToonOutlineSettings))
 	, FaceResolution(InFaceResolution)
 	, BodyScale(InBodyScale)
 	, TerrainHeightStep(InTerrainHeightStep)
@@ -106,7 +107,7 @@ bool FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::ApplyFeatureEdgeMask(
 	const FSRCelestialBodyDynamicMeshQuadFeatureMaskRef& FeatureMaskRef,
 	int32 EdgeIndex)
 {
-	if (!IsFeatureToonOutlineEnabled(ToonOutlineSettings)
+	if (!bFeatureToonOutlineEnabled
 		|| EdgeIndex < 0
 		|| EdgeIndex >= 4
 		|| !FaceDynamicMeshes.IsValidIndex(FeatureMaskRef.MeshComponentIndex))
@@ -160,7 +161,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::AppendSideWallFeatureMas
 	const FSRCelestialBodyDynamicMeshQuadFeatureMaskRef& FeatureMaskRef,
 	int32 EdgeIndex)
 {
-	if (!IsFeatureToonOutlineEnabled(ToonOutlineSettings))
+	if (!bFeatureToonOutlineEnabled)
 	{
 		return;
 	}
@@ -176,7 +177,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterSideWallFeatureM
 	int32 EdgeIndex,
 	const FVector& WallNormal)
 {
-	if (!IsFeatureToonOutlineEnabled(ToonOutlineSettings) || EdgeIndex == INDEX_NONE)
+	if (!bFeatureToonOutlineEnabled || EdgeIndex == INDEX_NONE)
 	{
 		return;
 	}
@@ -286,7 +287,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 				WallVertexKeys,
 				&WallNormalReferenceDirection,
 				true);
-			if (IsFeatureToonOutlineEnabled(ToonOutlineSettings))
+			if (bFeatureToonOutlineEnabled)
 			{
 				ApplyFeatureEdgeMask(ExistingEdge->SurfaceFeatureMaskRef, ExistingEdge->SurfaceFeatureMaskEdgeIndex);
 				ApplyFeatureEdgeMask(SurfaceRenderData.FeatureMaskRef, SurfaceFeatureMaskEdgeIndex);
@@ -476,7 +477,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 
 void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::FlushPendingSideWallFeatureMaskEdges()
 {
-	if (!IsFeatureToonOutlineEnabled(ToonOutlineSettings))
+	if (!bFeatureToonOutlineEnabled)
 	{
 		PendingSideWallFeatureMaskEdges.Reset();
 		return;

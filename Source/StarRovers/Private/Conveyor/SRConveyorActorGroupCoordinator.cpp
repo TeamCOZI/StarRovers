@@ -1,5 +1,6 @@
 #include "Conveyor/SRConveyorActorGroupCoordinator.h"
 
+#include "Utility/SRLog.h"
 #include "SRConveyorDeletionDiagnostics.h"
 #include "Conveyor/SRConveyorBeltActor.h"
 #include "Engine/World.h"
@@ -65,6 +66,8 @@ void StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::MarkGroupsDirtyForB
 	FSRConveyorActorGroupRuntimeState& ActorGroupState,
 	const TArray<FSRConveyorBeltPath>& BeltPaths)
 {
+	TSet<FName> SeenActorGroupKeys;
+	SeenActorGroupKeys.Reserve(BeltPaths.Num());
 	for (const FSRConveyorBeltPath& BeltPath : BeltPaths)
 	{
 		if (!IsValid(BeltPath.StructureDataAsset) || BeltPath.CellIds.IsEmpty())
@@ -72,7 +75,21 @@ void StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::MarkGroupsDirtyForB
 			continue;
 		}
 
-		MarkGroupDirty(ActorGroupState, BeltPath.StructureDataAsset.Get(), BeltPath.Layer);
+		const FName ActorGroupKey = MakeGroupKey(BeltPath.StructureDataAsset.Get(), BeltPath.Layer);
+		if (ActorGroupKey.IsNone())
+		{
+			continue;
+		}
+
+		bool bAlreadySeen = false;
+		SeenActorGroupKeys.Add(ActorGroupKey, &bAlreadySeen);
+		if (bAlreadySeen)
+		{
+			continue;
+		}
+
+		FSRConveyorActorGroupState& ActorGroup = ActorGroupState.GroupsByKey.FindOrAdd(ActorGroupKey);
+		ActorGroup.bDirty = true;
 	}
 }
 
@@ -105,6 +122,7 @@ bool StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::RefreshDirtyGroups(
 	const int32 GroupBudget = MaxGroupCount == INDEX_NONE
 		? TNumericLimits<int32>::Max()
 		: FMath::Max(1, MaxGroupCount);
+	DirtyActorGroupKeys.Reserve(FMath::Min(ActorGroupState.GroupsByKey.Num(), GroupBudget));
 	for (const TPair<FName, FSRConveyorActorGroupState>& ActorGroupPair : ActorGroupState.GroupsByKey)
 	{
 		if (ActorGroupPair.Value.bDirty)
@@ -151,7 +169,7 @@ ASRConveyorBeltActor* StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::Sp
 	UClass* ConveyorActorClass = StructureData.StructureActorClass.Get();
 	if (!IsValid(SurfaceOwner) || !World || !IsValid(ConveyorActorClass) || !ConveyorActorClass->IsChildOf(ASRConveyorBeltActor::StaticClass()))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Cannot place conveyor from '%s': StructureActorClass must be set to a subclass of ASRConveyorBeltActor."), *GetNameSafe(FirstBeltPath.StructureDataAsset));
+		SR_LOG(Conveyor, LogTemp, Error, TEXT("Cannot place conveyor from '%s': StructureActorClass must be set to a subclass of ASRConveyorBeltActor."), *GetNameSafe(FirstBeltPath.StructureDataAsset));
 		return nullptr;
 	}
 
@@ -208,6 +226,7 @@ bool StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::RefreshGroup(
 	const bool bLogPlacementDiagnostics = ActorGroupState.PendingPlacementDiagnosticKeys.Remove(ActorGroupKey) > 0;
 	const bool bLogDeletionDiagnostics = ActorGroupState.PendingDeletionDiagnosticKeys.Remove(ActorGroupKey) > 0;
 	ActorGroup.BeltPaths.Reset();
+	ActorGroup.BeltPaths.Reserve(BeltPaths.Num());
 	for (const FSRConveyorBeltPath& BeltPath : BeltPaths)
 	{
 		if (MakeGroupKey(BeltPath.StructureDataAsset.Get(), BeltPath.Layer) == ActorGroupKey)
@@ -240,7 +259,7 @@ bool StarRovers::Conveyor::FSRConveyorActorGroupCoordinator::RefreshGroup(
 		ActorGroup.Actor = SpawnActorForBeltPaths(SurfaceGrid, ActorGroup.BeltPaths, Settings);
 		if (IsValid(ActorGroup.Actor))
 		{
-			PlacedConveyorActors.AddUnique(ActorGroup.Actor);
+			PlacedConveyorActors.Add(ActorGroup.Actor);
 		}
 	}
 	else if (!ActorGroup.Actor->InitializeConveyorPaths(

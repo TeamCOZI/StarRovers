@@ -82,6 +82,7 @@ bool FSRFacilityProcessingInventoryRouter::TryMoveInputsToProcessingInventory(FS
 	}
 
 	FacilityInstance.ProcessingInventory.Reset();
+	FacilityInstance.ProcessingInventory.Reserve(InputCount);
 	for (int32 InputIndex = 0; InputIndex < InputCount; ++InputIndex)
 	{
 		if (!FacilityInstance.InputPortInventories.IsValidIndex(InputIndex)

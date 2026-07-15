@@ -26,6 +26,7 @@ void USRPlanetSurfaceGrid::AssignGeneratedGridBuildCells(TArray<FSRPlanetSurface
 		InputPortPreviewCellIds,
 		OutputPortPreviewCellIds,
 		DeletionPreviewCellIds,
+		ConstructionReplacementPreviewCellIds,
 		InvalidPreviewCellIds);
 	SetInteractionOverlayVisible(false);
 }

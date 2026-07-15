@@ -1,8 +1,10 @@
 #include "Utility/SRMemoryDiagnostics.h"
 
+#include "Utility/SRLog.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMemory.h"
 #include "Misc/ScopeLock.h"
 #include "TimerManager.h"
@@ -10,8 +12,18 @@
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarSRMemoryDiagnosticsLogSnapshots(
+		TEXT("sr.MemoryDiagnostics.LogSnapshots"),
+		0,
+		TEXT("Logs Star Rovers memory diagnostic snapshots. 0=disabled, 1=enabled."));
+
 	FCriticalSection GSRMemoryDiagnosticsCriticalSection;
 	TMap<FName, FSRMemoryDiagnosticsTrackedClass> GSRMemoryDiagnosticsTrackedClasses;
+
+	bool ShouldLogSRMemoryDiagnosticSnapshots()
+	{
+		return SR_LOG_ENABLED(Memory) || CVarSRMemoryDiagnosticsLogSnapshots.GetValueOnAnyThread() != 0;
+	}
 
 	FString FormatBytes(uint64 Bytes)
 	{
@@ -74,12 +86,17 @@ void FSRMemoryDiagnostics::ResetTrackedClasses()
 
 void FSRMemoryDiagnostics::LogSnapshot(const UWorld* World, const FString& Label, const TArray<FString>& ExtraLines)
 {
-	UE_LOG(LogTemp, Log, TEXT("[SR Memory]%s%s"), LINE_TERMINATOR, *BuildSnapshot(World, Label, ExtraLines));
+	if (!ShouldLogSRMemoryDiagnosticSnapshots())
+	{
+		return;
+	}
+
+	SR_LOG(Memory, LogTemp, Log, TEXT("[SR Memory]%s%s"), LINE_TERMINATOR, *BuildSnapshot(World, Label, ExtraLines));
 }
 
 void FSRMemoryDiagnostics::LogSnapshotNextTick(UWorld* World, const FString& Label, const TArray<FString>& ExtraLines)
 {
-	if (!IsValid(World))
+	if (!ShouldLogSRMemoryDiagnosticSnapshots() || !IsValid(World))
 	{
 		return;
 	}
@@ -96,7 +113,7 @@ void FSRMemoryDiagnostics::LogSnapshotNextTick(UWorld* World, const FString& Lab
 
 void FSRMemoryDiagnostics::RequestGarbageCollectionAndLogNextTick(UWorld* World, const FString& LabelPrefix, const TArray<FString>& ExtraLines)
 {
-	if (!IsValid(World) || !World->IsGameWorld() || !GEngine)
+	if (!ShouldLogSRMemoryDiagnosticSnapshots() || !IsValid(World) || !World->IsGameWorld() || !GEngine)
 	{
 		return;
 	}

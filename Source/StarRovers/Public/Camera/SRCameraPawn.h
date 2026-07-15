@@ -91,6 +91,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "ResetFocusAction"))
     TObjectPtr<UInputAction> ResetFocusAction;
 
+    UPROPERTY(Transient)
+    TObjectPtr<UInputMappingContext> RuntimeCameraInputMappingContext;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Camera", meta = (DisplayName = "ZoomSpeed", ClampMin = "0.0"))
     float ZoomSpeed;
 
@@ -205,7 +208,7 @@ protected:
 private:
     void InitializeCameraComponents();
     void InitializeCameraDefaults();
-    void LoadDefaultInputAssets();
+    void EnsureRuntimeCameraInputActions();
     void ApplyMappingContext();
     void ConfigureSpringArmCollision();
     void BroadcastFocusedActorChangedIfNeeded(AActor* PreviousFocusedActor);

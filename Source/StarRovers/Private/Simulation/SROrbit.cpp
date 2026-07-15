@@ -1,14 +1,19 @@
 #include "Simulation/SROrbit.h"
 
+#include "Utility/SRLog.h"
 #include "Celestial/SRCelestialBody.h"
+#include "Components/LineBatchComponent.h"
 #include "Components/SceneComponent.h"
+#include "Rendering/SRScreenSpaceLineThickness.h"
 #include "Simulation/SRTimeControlSubsystem.h"
 #include "Rendering/SRCelestialRingMeshComponent.h"
+#include "SceneManagement.h"
 
 namespace
 {
 	const FName SROrbitLineTag(TEXT("StarRovers.OrbitLine"));
 	const FName SROrbitLineRootTag(TEXT("StarRovers.OrbitLineRoot"));
+	constexpr uint8 SROrbitLineDepthPriority = SDPG_Foreground;
 }
 
 USROrbit::USROrbit()
@@ -153,35 +158,48 @@ float USROrbit::GetOrbitLineThickness() const
 void USROrbit::RefreshOrbitLineVisual()
 {
 	EnsureOrbitRingVisual();
-	if (!IsValid(OrbitRingVisual))
-	{
-		const AActor* Owner = GetOwner();
-		if (IsValid(Owner) && Owner->HasActorBegunPlay() && ShouldShowOrbitLine())
-		{
-			UE_LOG(
-				LogTemp,
-				Error,
-				TEXT("USROrbit cannot draw orbit line for owner '%s': OrbitRingVisual is null after lookup, ShowOrbitLine=true, OrbitRadius=%.2f, OrbitPeriodSeconds=%.2f, and no registered USRCelestialRingMeshComponent named 'OrbitRingVisual' was available."),
-				*Owner->GetName(),
-				OrbitRadius,
-				OrbitPeriodSeconds);
-		}
-		return;
-	}
+	EnsureOrbitLineBatchVisual();
 
 	if (!ShouldShowOrbitLine())
 	{
-		OrbitRingVisual->ClearRingVisual();
+		if (IsValid(OrbitRingVisual))
+		{
+			OrbitRingVisual->ClearRingVisual();
+		}
+		ClearOrbitLineBatchVisual();
 		return;
 	}
 
 	const FLinearColor LineColor(OrbitLineColor.R, OrbitLineColor.G, OrbitLineColor.B, GetOrbitLineOpacity());
-	OrbitRingVisual->UpdateRingVisual(
-		ComputeOrbitCenterLocation(),
-		OrbitRadius,
-		LineColor,
-		GetOrbitLineThickness(),
-		GetOrbitLineSegments());
+	const FVector OrbitCenter = ComputeOrbitCenterLocation();
+	if (DrawOrbitLineBatchVisual(OrbitCenter, OrbitRadius, LineColor, GetOrbitLineThickness(), GetOrbitLineSegments()))
+	{
+		if (IsValid(OrbitRingVisual))
+		{
+			OrbitRingVisual->ClearRingVisual();
+		}
+		return;
+	}
+
+	if (IsValid(OrbitRingVisual))
+	{
+		OrbitRingVisual->UpdateRingVisual(
+			OrbitCenter,
+			OrbitRadius,
+			LineColor,
+			GetOrbitLineThickness(),
+			GetOrbitLineSegments());
+		return;
+	}
+
+	const AActor* Owner = GetOwner();
+	if (IsValid(Owner) && Owner->HasActorBegunPlay())
+	{
+		SR_LOG(Gravity, LogTemp,
+			Error,
+			TEXT("USROrbit cannot draw orbit line for owner '%s': no OrbitLineBatch or OrbitRingVisual was available."),
+			*Owner->GetName());
+	}
 }
 
 AActor* USROrbit::GetParentBody() const
@@ -328,7 +346,7 @@ void USROrbit::EnsureOrbitRingVisual()
 		return;
 	}
 
-	TInlineComponentArray<USRCelestialRingMeshComponent*> RingComponents(Owner);
+	TInlineComponentArray<USRCelestialRingMeshComponent*> RingComponents;
 	Owner->GetComponents(RingComponents);
 	for (USRCelestialRingMeshComponent* RingComponent : RingComponents)
 	{
@@ -353,8 +371,125 @@ void USROrbit::EnsureOrbitRingVisual()
 	return;
 }
 
+void USROrbit::EnsureOrbitLineBatchVisual()
+{
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || IsValid(OrbitLineBatch))
+	{
+		return;
+	}
+
+	TInlineComponentArray<ULineBatchComponent*> LineBatchComponents;
+	Owner->GetComponents(LineBatchComponents);
+	for (ULineBatchComponent* LineBatchComponent : LineBatchComponents)
+	{
+		if (IsValid(LineBatchComponent) && LineBatchComponent->GetFName() == TEXT("OrbitLineBatch"))
+		{
+			OrbitLineBatch = LineBatchComponent;
+			break;
+		}
+	}
+
+	if (!IsValid(OrbitLineBatch))
+	{
+		return;
+	}
+
+	OrbitLineBatch->SetMobility(EComponentMobility::Movable);
+	OrbitLineBatch->SetUsingAbsoluteLocation(true);
+	OrbitLineBatch->SetUsingAbsoluteRotation(true);
+	OrbitLineBatch->SetUsingAbsoluteScale(true);
+	OrbitLineBatch->ComponentTags.AddUnique(SROrbitLineTag);
+	OrbitLineBatch->ComponentTags.AddUnique(SROrbitLineRootTag);
+}
+
+void USROrbit::ClearOrbitLineBatchVisual() const
+{
+	if (!IsValid(OrbitLineBatch))
+	{
+		return;
+	}
+
+	OrbitLineBatch->Flush();
+	OrbitLineBatch->SetVisibility(false);
+	OrbitLineBatch->SetHiddenInGame(true);
+}
+
+bool USROrbit::DrawOrbitLineBatchVisual(
+	const FVector& WorldCenter,
+	float Radius,
+	const FLinearColor& Color,
+	float LineThickness,
+	int32 SegmentCount) const
+{
+	if (!IsValid(OrbitLineBatch))
+	{
+		return false;
+	}
+
+	const float SafeRadius = FMath::Max(0.0f, Radius);
+	const float SafeThickness = FMath::Max(0.0f, LineThickness);
+	const int32 SafeSegmentCount = FMath::Max(3, SegmentCount);
+	if (SafeRadius <= KINDA_SMALL_NUMBER || SafeThickness <= KINDA_SMALL_NUMBER || Color.A <= KINDA_SMALL_NUMBER)
+	{
+		ClearOrbitLineBatchVisual();
+		return true;
+	}
+
+	OrbitLineBatch->Flush();
+	OrbitLineBatch->SetWorldLocation(FVector::ZeroVector);
+	OrbitLineBatch->SetWorldRotation(FRotator::ZeroRotator);
+	OrbitLineBatch->SetWorldScale3D(FVector::OneVector);
+	OrbitLineBatch->SetVisibility(true);
+	OrbitLineBatch->SetHiddenInGame(false);
+
+	UWorld* World = GetWorld();
+	FSRScreenSpaceLineViewInfo CameraInfo;
+	FSRScreenSpaceLineThickness::TryBuildPrimaryCameraViewInfo(World, CameraInfo);
+
+	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
+	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
+	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(World, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	const float ReferenceTanHalfFieldOfView = FSRScreenSpaceLineThickness::ComputeReferenceTanHalfFieldOfView(ReferenceFieldOfViewDegrees);
+
+	for (int32 SegmentIndex = 0; SegmentIndex < SafeSegmentCount; ++SegmentIndex)
+	{
+		const float AlphaA = static_cast<float>(SegmentIndex) / static_cast<float>(SafeSegmentCount);
+		const float AlphaB = static_cast<float>(SegmentIndex + 1) / static_cast<float>(SafeSegmentCount);
+		const float AngleA = AlphaA * UE_TWO_PI;
+		const float AngleB = AlphaB * UE_TWO_PI;
+		float SinA = 0.0f;
+		float CosA = 1.0f;
+		float SinB = 0.0f;
+		float CosB = 1.0f;
+		FMath::SinCos(&SinA, &CosA, AngleA);
+		FMath::SinCos(&SinB, &CosB, AngleB);
+		const FVector StartPoint(
+			WorldCenter.X,
+			WorldCenter.Y + CosA * SafeRadius,
+			WorldCenter.Z + SinA * SafeRadius);
+		const FVector EndPoint(
+			WorldCenter.X,
+			WorldCenter.Y + CosB * SafeRadius,
+			WorldCenter.Z + SinB * SafeRadius);
+		const FVector SegmentMidpoint = (StartPoint + EndPoint) * 0.5f;
+		const float SegmentThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
+			CameraInfo,
+			SegmentMidpoint,
+			SafeThickness,
+			ReferenceViewDepth,
+			ReferenceTanHalfFieldOfView);
+		OrbitLineBatch->DrawLine(StartPoint, EndPoint, Color, SROrbitLineDepthPriority, SegmentThickness, 0.0f);
+	}
+
+	return true;
+}
+
 void USROrbit::ReleaseOrbitRingVisual()
 {
+	ClearOrbitLineBatchVisual();
+	OrbitLineBatch = nullptr;
+
 	if (!IsValid(OrbitRingVisual))
 	{
 		return;

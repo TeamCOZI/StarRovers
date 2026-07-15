@@ -17,6 +17,7 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 		CurrentSurfaceGrid->ClearOccupiedPreviewCells();
 		CurrentSurfaceGrid->ClearFacilityPortPreviewCells();
 		CurrentSurfaceGrid->ClearDeletionPreviewCells();
+		CurrentSurfaceGrid->ClearConstructionReplacementPreviewCells();
 		CurrentSurfaceGrid->ClearInvalidPreviewCells();
 		CurrentSurfaceGrid->SetGridVisible(false);
 	}
@@ -53,6 +54,7 @@ void USRAssemblyComponent::ClearSurfaceHover()
 		HoveredSurfaceGrid->ClearOccupiedPreviewCells();
 		HoveredSurfaceGrid->ClearFacilityPortPreviewCells();
 		HoveredSurfaceGrid->ClearDeletionPreviewCells();
+		HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
 		HoveredSurfaceGrid->ClearInvalidPreviewCells();
 	}
 
@@ -77,6 +79,7 @@ void USRAssemblyComponent::ClearSurfaceHoverPreview()
 	if (IsValid(HoveredSurfaceGrid))
 	{
 		HoveredSurfaceGrid->ClearHoveredCell();
+		HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
 	}
 
 	ConveyorPreview.ClearPortPreview();
@@ -137,6 +140,7 @@ void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
 		SurfaceState.ActiveAssemblySurfaceGrid->ClearOccupiedPreviewCells();
 		SurfaceState.ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
 		SurfaceState.ActiveAssemblySurfaceGrid->ClearDeletionPreviewCells();
+		SurfaceState.ActiveAssemblySurfaceGrid->ClearConstructionReplacementPreviewCells();
 		SurfaceState.ActiveAssemblySurfaceGrid->ClearInvalidPreviewCells();
 		ConveyorPreview.ClearPortPreview();
 		ConveyorPreview.ClearBulkDeletionPreview();
@@ -161,6 +165,7 @@ void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
 			SurfaceState.ActiveAssemblySurfaceGrid->ClearOccupiedPreviewCells();
 			SurfaceState.ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
 			SurfaceState.ActiveAssemblySurfaceGrid->ClearDeletionPreviewCells();
+			SurfaceState.ActiveAssemblySurfaceGrid->ClearConstructionReplacementPreviewCells();
 			SurfaceState.ActiveAssemblySurfaceGrid->ClearInvalidPreviewCells();
 		}
 	}

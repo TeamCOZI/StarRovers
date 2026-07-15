@@ -58,6 +58,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
 	bool TryTakeHubOutboundCargoByResource(FName OccupantId, FName ResourceId, int32 MaxStackCount, FSRResourceInstance& OutCargo);
 
+	bool TryTakeHubOutboundCargoMatching(
+		FName OccupantId,
+		int32 MaxStackCount,
+		TFunctionRef<bool(const FSRResourceInstance&)> CargoPredicate,
+		FSRResourceInstance& OutCargo);
+
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Hub")
 	void GetHubOutboundCargoResourceIds(FName OccupantId, TArray<FName>& OutResourceIds) const;
 

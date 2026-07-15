@@ -1,5 +1,6 @@
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 
+#include "Utility/SRLog.h"
 #include "Surface/SRPlanetSurfaceGridLibrary.h"
 
 namespace
@@ -148,7 +149,7 @@ void USRDynamicMeshBaseDataAsset::BakePrecomputedBaseData()
 {
 	if (BaseShape != ESRDynamicMeshBaseShape::CubeSphere)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("DynamicMeshBase '%s' cannot bake unsupported shape."), *GetName());
+		SR_LOG(DynamicMesh, LogTemp, Warning, TEXT("DynamicMeshBase '%s' cannot bake unsupported shape."), *GetName());
 		return;
 	}
 
@@ -175,8 +176,7 @@ void USRDynamicMeshBaseDataAsset::BakePrecomputedBaseData()
 
 	MarkPackageDirty();
 
-	UE_LOG(
-		LogTemp,
+	SR_LOG(DynamicMesh, LogTemp,
 		Display,
 		TEXT("DynamicMeshBase '%s' baked precomputed base data. Resolution=%d Cells=%d SourceMetadata=%d"),
 		*GetName(),
@@ -196,5 +196,5 @@ void USRDynamicMeshBaseDataAsset::ClearPrecomputedBaseData()
 
 	MarkPackageDirty();
 
-	UE_LOG(LogTemp, Display, TEXT("DynamicMeshBase '%s' cleared precomputed base data."), *GetName());
+	SR_LOG(DynamicMesh, LogTemp, Display, TEXT("DynamicMeshBase '%s' cleared precomputed base data."), *GetName());
 }

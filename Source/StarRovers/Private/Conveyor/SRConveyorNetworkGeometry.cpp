@@ -2,6 +2,47 @@
 
 #include "Surface/SRPlanetSurfaceGrid.h"
 
+namespace
+{
+	bool HasNetworkGeometryDirection(
+		ESRConveyorGridDirection Direction,
+		ESRConveyorGridDirection FirstDirection,
+		ESRConveyorGridDirection SecondDirection,
+		ESRConveyorGridDirection ThirdDirection)
+	{
+		return Direction != ESRConveyorGridDirection::None
+			&& (Direction == FirstDirection
+				|| Direction == SecondDirection
+				|| Direction == ThirdDirection);
+	}
+
+	void CollectDirectionsClockwise(
+		ESRConveyorGridDirection FirstDirection,
+		ESRConveyorGridDirection SecondDirection,
+		ESRConveyorGridDirection ThirdDirection,
+		TArray<ESRConveyorGridDirection>& OutDirections)
+	{
+		OutDirections.Reset();
+		OutDirections.Reserve(3);
+		if (HasNetworkGeometryDirection(ESRConveyorGridDirection::NegativeV, FirstDirection, SecondDirection, ThirdDirection))
+		{
+			OutDirections.Add(ESRConveyorGridDirection::NegativeV);
+		}
+		if (HasNetworkGeometryDirection(ESRConveyorGridDirection::PositiveU, FirstDirection, SecondDirection, ThirdDirection))
+		{
+			OutDirections.Add(ESRConveyorGridDirection::PositiveU);
+		}
+		if (HasNetworkGeometryDirection(ESRConveyorGridDirection::PositiveV, FirstDirection, SecondDirection, ThirdDirection))
+		{
+			OutDirections.Add(ESRConveyorGridDirection::PositiveV);
+		}
+		if (HasNetworkGeometryDirection(ESRConveyorGridDirection::NegativeU, FirstDirection, SecondDirection, ThirdDirection))
+		{
+			OutDirections.Add(ESRConveyorGridDirection::NegativeU);
+		}
+	}
+}
+
 FSRConveyorLaneKey StarRovers::Conveyor::FSRConveyorNetworkGeometry::MakeLaneKey(
 	const FSRPlanetSurfaceGridCellId& CellId,
 	int32 Layer)
@@ -109,21 +150,25 @@ bool StarRovers::Conveyor::FSRConveyorNetworkGeometry::FindDirectionBetweenCells
 		return false;
 	}
 
-	const ESRConveyorGridDirection Directions[] =
+	if (Neighbors.NegativeU == ToCellId)
 	{
-		ESRConveyorGridDirection::NegativeU,
-		ESRConveyorGridDirection::PositiveU,
-		ESRConveyorGridDirection::NegativeV,
-		ESRConveyorGridDirection::PositiveV,
-	};
-	for (const ESRConveyorGridDirection Direction : Directions)
+		OutDirection = ESRConveyorGridDirection::NegativeU;
+		return true;
+	}
+	if (Neighbors.PositiveU == ToCellId)
 	{
-		FSRPlanetSurfaceGridCellId NeighborCellId;
-		if (GetNeighborCellIdByDirection(Neighbors, Direction, NeighborCellId) && NeighborCellId == ToCellId)
-		{
-			OutDirection = Direction;
-			return true;
-		}
+		OutDirection = ESRConveyorGridDirection::PositiveU;
+		return true;
+	}
+	if (Neighbors.NegativeV == ToCellId)
+	{
+		OutDirection = ESRConveyorGridDirection::NegativeV;
+		return true;
+	}
+	if (Neighbors.PositiveV == ToCellId)
+	{
+		OutDirection = ESRConveyorGridDirection::PositiveV;
+		return true;
 	}
 
 	return false;
@@ -161,36 +206,20 @@ void StarRovers::Conveyor::FSRConveyorNetworkGeometry::CollectInputDirections(
 	const FSRConveyorSegment& Segment,
 	TArray<ESRConveyorGridDirection>& OutDirections)
 {
-	OutDirections.Reset();
-	auto AddDirection = [&OutDirections](ESRConveyorGridDirection Direction)
-	{
-		if (Direction != ESRConveyorGridDirection::None && !OutDirections.Contains(Direction))
-		{
-			OutDirections.Add(Direction);
-		}
-	};
-
-	AddDirection(Segment.InputDirection);
-	AddDirection(Segment.MergeInputDirection);
-	AddDirection(Segment.SecondMergeInputDirection);
-	SortDirectionsClockwise(OutDirections);
+	CollectDirectionsClockwise(
+		Segment.InputDirection,
+		Segment.MergeInputDirection,
+		Segment.SecondMergeInputDirection,
+		OutDirections);
 }
 
 void StarRovers::Conveyor::FSRConveyorNetworkGeometry::CollectOutputDirections(
 	const FSRConveyorSegment& Segment,
 	TArray<ESRConveyorGridDirection>& OutDirections)
 {
-	OutDirections.Reset();
-	auto AddDirection = [&OutDirections](ESRConveyorGridDirection Direction)
-	{
-		if (Direction != ESRConveyorGridDirection::None && !OutDirections.Contains(Direction))
-		{
-			OutDirections.Add(Direction);
-		}
-	};
-
-	AddDirection(Segment.OutputDirection);
-	AddDirection(Segment.BranchOutputDirection);
-	AddDirection(Segment.SecondBranchOutputDirection);
-	SortDirectionsClockwise(OutDirections);
+	CollectDirectionsClockwise(
+		Segment.OutputDirection,
+		Segment.BranchOutputDirection,
+		Segment.SecondBranchOutputDirection,
+		OutDirections);
 }

@@ -10,6 +10,7 @@ class FSRSpaceLogisticsRoutePathResolver;
 class FSRSpaceLogisticsRouteProcessor;
 class FSRSpaceLogisticsRouteRegistry;
 class FSRSpaceLogisticsSaveAdapter;
+class FSRSpaceLogisticsStarFuelMissileProcessor;
 
 struct FSRSpaceLogisticsHubEndpointMotionSample
 {
@@ -70,6 +71,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Route")
 	bool SetHubRouteCargoResourceId(FName RouteId, FName CargoResourceId);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Missile")
+	bool LaunchStarFuelMissileFromHub(
+		const FSRSpaceLogisticsHubEndpoint& SourceHub,
+		FName& OutMissileId,
+		float InitialSpeedUnitsPerSecond = -1.0f,
+		float LaunchAccelerationUnitsPerSecondSquared = -1.0f);
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Route")
 	void ClearHubRoutes();
 
@@ -78,6 +86,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Route")
 	bool GetHubRoute(FName RouteId, FSRSpaceLogisticsHubRoute& OutRoute) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Missile")
+	void GetStarFuelMissiles(TArray<FSRSpaceLogisticsStarFuelMissile>& OutMissiles) const;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Save")
 	void ExportSaveData(FSRSpaceLogisticsSaveData& OutSaveData) const;
@@ -90,6 +101,7 @@ private:
 	friend class FSRSpaceLogisticsRouteProcessor;
 	friend class FSRSpaceLogisticsRouteRegistry;
 	friend class FSRSpaceLogisticsSaveAdapter;
+	friend class FSRSpaceLogisticsStarFuelMissileProcessor;
 
 	void RebuildHubEndpoints() const;
 	bool BuildHubEndpoint(AActor* BodyActor, FName HubOccupantId, FSRSpaceLogisticsHubEndpoint& OutHubEndpoint) const;
@@ -108,10 +120,19 @@ private:
 	TArray<FSRSpaceLogisticsHubRoute> HubRoutes;
 
 	UPROPERTY(Transient)
+	TArray<FSRSpaceLogisticsStarFuelMissile> StarFuelMissiles;
+
+	UPROPERTY(Transient)
 	int32 NextHubRouteSequence = 1;
 
 	UPROPERTY(Transient)
+	int32 NextStarFuelMissileSequence = 1;
+
+	UPROPERTY(Transient)
 	TMap<FName, TObjectPtr<ASRSpaceshipActor>> SpaceshipActorsByRouteId;
+
+	UPROPERTY(Transient)
+	TMap<FName, TObjectPtr<ASRSpaceshipActor>> StarFuelMissileActorsByMissileId;
 
 	TMap<FString, FSRSpaceLogisticsHubEndpointMotionSample> HubEndpointMotionSamples;
 };

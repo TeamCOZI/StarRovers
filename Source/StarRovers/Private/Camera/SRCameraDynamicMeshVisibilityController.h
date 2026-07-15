@@ -23,8 +23,14 @@ public:
 private:
 	static bool ShouldUseDynamicMesh(
 		const AActor* BodyActor,
-		const UCameraComponent* Camera,
-		const APlayerController* PlayerController,
+		bool bHasCamera,
+		const FVector& CameraLocation,
+		const FVector& CameraForward,
+		const FVector& CameraRight,
+		const FVector& CameraUp,
+		float CameraFieldOfViewDegrees,
+		float TanHalfFieldOfView,
+		float AspectRatio,
 		const AActor* FocusedActor,
 		float& OutScreenSizeRatio);
 

@@ -1,5 +1,6 @@
 #include "SRCelestialBodyRuntimeLibraryReflection.h"
 
+#include "Utility/SRLog.h"
 #include "GameFramework/Actor.h"
 #include "UObject/UnrealType.h"
 
@@ -14,6 +15,7 @@ namespace StarRovers::CelestialBodyRuntime
 		const FName InitialAngle(TEXT("InitialAngle"));
 		const FName FocusZoomMultiplier(TEXT("FocusZoomMultiplier"));
 		const FName CanConstruct(TEXT("CanConstruct"));
+		const FName BodyCategory(TEXT("BodyCategory"));
 	}
 
 	namespace
@@ -50,24 +52,16 @@ namespace StarRovers::CelestialBodyRuntime
 
 	bool IsLikelyCelestialClass(const AActor* Actor)
 	{
-		if (!IsValid(Actor))
-		{
-			return false;
-		}
-
-		const FString ClassPath = Actor->GetClass()->GetPathName();
-		return ClassPath.Contains(TEXT("/Game/StarRovers/Celestial/Blueprints/"));
+		FText BodyCategoryText;
+		return TryGetTextLikePropertyValue(Actor, PropertyNames::BodyCategory, BodyCategoryText)
+			&& !BodyCategoryText.IsEmpty();
 	}
 
 	bool IsLikelyStarClass(const AActor* Actor)
 	{
-		if (!IsValid(Actor))
-		{
-			return false;
-		}
-
-		const FString ClassPath = Actor->GetClass()->GetPathName();
-		return ClassPath.Contains(TEXT("/Game/StarRovers/Celestial/Blueprints/BP_Star."));
+		FText BodyCategoryText;
+		return TryGetTextLikePropertyValue(Actor, PropertyNames::BodyCategory, BodyCategoryText)
+			&& BodyCategoryText.ToString().Equals(TEXT("Star"), ESearchCase::IgnoreCase);
 	}
 
 	bool TryGetFloatPropertyValue(const AActor* Actor, const FName PropertyName, float& OutValue)
@@ -229,8 +223,7 @@ namespace StarRovers::CelestialBodyRuntime
 
 	void LogMissingCelestialData(const AActor* Actor, const TCHAR* FieldName)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(Celestial, LogTemp,
 			Error,
 			TEXT("Celestial body actor '%s' is missing required %s data."),
 			IsValid(Actor) ? *Actor->GetName() : TEXT("<InvalidActor>"),

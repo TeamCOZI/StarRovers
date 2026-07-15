@@ -6,6 +6,7 @@
 
 class AActor;
 class ASRConveyorBeltActor;
+class UMaterialInterface;
 class USRPlanetSurfaceGrid;
 class USRStructureDataAsset;
 class UWorld;
@@ -38,7 +39,7 @@ struct STARROVERS_API FSRAssemblyStructurePreviewState
 
 	void ClearGhostPortPreview();
 	void UpdateGhostPortPreview(USRPlanetSurfaceGrid* SurfaceGrid, const FSRStructureData& StructureData, const TArray<FSRPlanetSurfaceGridCellId>& FootprintCellIds, int32 PlacementRotationSteps);
-	bool UpdateGhostActor(UWorld* World, AActor* Owner, USRPlanetSurfaceGrid* HoveredSurfaceGrid, USRStructureDataAsset* StructureDataAsset, const FSRStructureData& StructureData, const FTransform& GhostTransform, const FSRPlanetSurfaceGridCellInfo& PreviewCellInfo);
+	bool UpdateGhostActor(UWorld* World, AActor* Owner, USRPlanetSurfaceGrid* HoveredSurfaceGrid, USRStructureDataAsset* StructureDataAsset, const FSRStructureData& StructureData, const FTransform& GhostTransform, const FSRPlanetSurfaceGridCellInfo& PreviewCellInfo, UMaterialInterface* PreviewMaterial);
 	void DestroyGhostActor(USRPlanetSurfaceGrid* HoveredSurfaceGrid);
 	void DestroyPlacementDragPreviewActors(USRPlanetSurfaceGrid* HoveredSurfaceGrid);
 	AActor* SpawnPlacementDragPreviewActor(UWorld* World, AActor* FallbackOwner, USRPlanetSurfaceGrid* SurfaceGrid, USRStructureDataAsset* StructureDataAsset) const;
@@ -88,7 +89,8 @@ struct STARROVERS_API FSRAssemblyConveyorPreviewState
 		const TArray<FSRConveyorBeltPath>& BeltPaths,
 		FName ConveyorActorSplineComponentTag,
 		float ConveyorActorSurfaceOffset,
-		const FSRPlanetSurfaceGridCellId& TargetCellId);
+		const FSRPlanetSurfaceGridCellId& TargetCellId,
+		UMaterialInterface* PreviewMaterial);
 	void DestroyGhostActor(USRPlanetSurfaceGrid* HoveredSurfaceGrid);
 	bool IsDeletionGhostActorCurrent(USRPlanetSurfaceGrid* SurfaceGrid, USRStructureDataAsset* ConveyorDataAsset, const FSRPlanetSurfaceGridCellId& TargetCellId, int32 Layer) const;
 	bool UpdateDeletionGhostActor(

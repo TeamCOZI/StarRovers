@@ -36,6 +36,16 @@ void StarRovers::Conveyor::FSRConveyorPCGSplineMeshRebaser::Rebase(
 	}
 
 	TArray<FSRConveyorPCGSplineMeshRebaseSegment> ExpectedSegments;
+	int32 ExpectedSegmentCapacity = 0;
+	for (const FSRConveyorBeltPath& BeltPath : BeltPaths)
+	{
+		if (!BeltPath.CellIds.IsEmpty())
+		{
+			ExpectedSegmentCapacity += FMath::Max(1, BeltPath.CellIds.Num() - 1);
+		}
+	}
+	ExpectedSegments.Reserve(ExpectedSegmentCapacity);
+
 	TArray<FVector> WorldPoints;
 	TArray<FVector> WorldNormals;
 	FSRConveyorRibbonBuildSettings RibbonSettings;
@@ -85,10 +95,11 @@ void StarRovers::Conveyor::FSRConveyorPCGSplineMeshRebaser::Rebase(
 
 	TArray<USplineMeshComponent*> GeneratedSplineMeshes;
 	OwnerActor->GetComponents<USplineMeshComponent>(GeneratedSplineMeshes);
-	GeneratedSplineMeshes.RemoveAll([PCGComponent](const USplineMeshComponent* SplineMeshComponent)
+	const FName PCGComponentName = PCGComponent->GetFName();
+	GeneratedSplineMeshes.RemoveAll([PCGComponentName](const USplineMeshComponent* SplineMeshComponent)
 	{
 		return !IsValid(SplineMeshComponent)
-			|| !SplineMeshComponent->ComponentTags.Contains(PCGComponent->GetFName());
+			|| !SplineMeshComponent->ComponentTags.Contains(PCGComponentName);
 	});
 	GeneratedSplineMeshes.Sort([](const USplineMeshComponent& Left, const USplineMeshComponent& Right)
 	{

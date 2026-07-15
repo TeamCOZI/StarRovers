@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "Utility/SRLog.h"
 #include "SRCelestialBodyLog.h"
 #include "Components/DynamicMeshComponent.h"
 #include "Components/MeshComponent.h"
@@ -150,7 +151,7 @@ bool ASRCelestialBody::ApplyCelestialBodyMeshMaterials()
 		CelestialBodyDynamicMesh->GetMaterial(0));
 	if (!IsValid(DesiredBaseMaterial))
 	{
-		UE_LOG(LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires Material."), *GetName());
+		SR_LOG(Celestial, LogStarRoversCelestial, Error, TEXT("Celestial body '%s' requires Material."), *GetName());
 		return false;
 	}
 

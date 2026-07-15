@@ -9,6 +9,7 @@
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "UI/SRStructureSelectionWidget.h"
+#include "Utility/SRLog.h"
 
 bool ASRPlayerController::IsAssemblyModeActive() const
 {
@@ -227,7 +228,7 @@ void ASRPlayerController::HandleStructureBuildOptionSelected(FName StructureId, 
 	{
 		if (!StructureId.IsNone())
 		{
-			UE_LOG(LogTemp, Error, TEXT("ASRPlayerController received structure build option '%s' without a valid StructureDataAsset."), *StructureId.ToString());
+			SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController received structure build option '%s' without a valid StructureDataAsset."), *StructureId.ToString());
 		}
 		FSRPlayerControllerStructureBuildSelectionState::ResetSelection(
 			SelectedStructureBuildId,

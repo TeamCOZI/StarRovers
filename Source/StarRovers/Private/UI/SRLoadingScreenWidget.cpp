@@ -1,5 +1,6 @@
 #include "UI/SRLoadingScreenWidget.h"
 
+#include "Utility/SRLog.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
@@ -43,7 +44,7 @@ FReply USRLoadingScreenWidget::NativeOnMouseButtonDown(const FGeometry& InGeomet
 	if (IsVisible())
 	{
 		const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: LoadingScreen NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: LoadingScreen NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
 			ScreenPosition.Y);
 		return FReply::Handled();
@@ -57,7 +58,7 @@ FReply USRLoadingScreenWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry
 	if (IsVisible())
 	{
 		const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: LoadingScreen NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: LoadingScreen NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
 			ScreenPosition.Y);
 		return FReply::Handled();

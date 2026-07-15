@@ -5,6 +5,37 @@
 #include "Conveyor/SRConveyorBeltPathSplitter.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
+namespace
+{
+	void AddUniqueCellId(
+		TSet<FSRPlanetSurfaceGridCellId>& InOutSeenCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds,
+		const FSRPlanetSurfaceGridCellId& CellId)
+	{
+		if (InOutSeenCellIds.Contains(CellId))
+		{
+			return;
+		}
+
+		InOutSeenCellIds.Add(CellId);
+		OutCellIds.Add(CellId);
+	}
+
+	void AddUniqueStructureDataAsset(
+		TSet<USRStructureDataAsset*>& InOutSeenStructureDataAssets,
+		TArray<USRStructureDataAsset*>& OutStructureDataAssets,
+		USRStructureDataAsset* StructureDataAsset)
+	{
+		if (InOutSeenStructureDataAssets.Contains(StructureDataAsset))
+		{
+			return;
+		}
+
+		InOutSeenStructureDataAssets.Add(StructureDataAsset);
+		OutStructureDataAssets.Add(StructureDataAsset);
+	}
+}
+
 bool StarRovers::Conveyor::FSRConveyorRemovalPlanner::RemoveConveyorAtCell(
 	USRPlanetSurfaceGrid* SurfaceGrid,
 	const FSRPlanetSurfaceGridCellId& CellId,
@@ -29,7 +60,7 @@ bool StarRovers::Conveyor::FSRConveyorRemovalPlanner::RemoveConveyorAtCell(
 
 	OutResult.Layer = SafeLayer;
 	OutResult.RemovedLaneKeys.Add(TargetLaneKey);
-	OutResult.AffectedStructureDataAssets.AddUnique(RemovedSegment->StructureDataAsset.Get());
+	OutResult.AffectedStructureDataAssets.Add(RemovedSegment->StructureDataAsset.Get());
 
 	TSet<FSRPlanetSurfaceGridCellId> OldAffectedCellIds;
 	TSet<FSRPlanetSurfaceGridCellId> RetainedAffectedCellIds;
@@ -49,9 +80,14 @@ bool StarRovers::Conveyor::FSRConveyorRemovalPlanner::RemoveConveyorAtCell(
 		for (const FSRPlanetSurfaceGridCellId& PathCellId : BeltPath.CellIds)
 		{
 			OldAffectedCellIds.Add(PathCellId);
+			if (PathCellId == CellId)
+			{
+				continue;
+			}
+
+			RetainedAffectedCellIds.Add(PathCellId);
 		}
 
-		const int32 FirstRetainedBeltPathIndex = NewBeltPaths.Num();
 		FSRConveyorBeltPathSplitter::AppendMatchingSubPaths(
 			BeltPath,
 			[&CellId](const FSRPlanetSurfaceGridCellId& PathCellId)
@@ -59,13 +95,6 @@ bool StarRovers::Conveyor::FSRConveyorRemovalPlanner::RemoveConveyorAtCell(
 			return PathCellId != CellId;
 		},
 			NewBeltPaths);
-		for (int32 RetainedBeltPathIndex = FirstRetainedBeltPathIndex; RetainedBeltPathIndex < NewBeltPaths.Num(); ++RetainedBeltPathIndex)
-		{
-			for (const FSRPlanetSurfaceGridCellId& RetainedCellId : NewBeltPaths[RetainedBeltPathIndex].CellIds)
-			{
-				RetainedAffectedCellIds.Add(RetainedCellId);
-			}
-		}
 	}
 
 	if (!bRemovedFromBeltPath)
@@ -79,6 +108,7 @@ bool StarRovers::Conveyor::FSRConveyorRemovalPlanner::RemoveConveyorAtCell(
 
 	if (SafeLayer == 0)
 	{
+		OutResult.ClearedCellIds.Reserve(OldAffectedCellIds.Num());
 		for (const FSRPlanetSurfaceGridCellId& OldCellId : OldAffectedCellIds)
 		{
 			if (!RetainedAffectedCellIds.Contains(OldCellId))
@@ -130,17 +160,20 @@ bool StarRovers::Conveyor::FSRConveyorRemovalPlanner::RemoveBeltPath(
 	}
 
 	OutResult.Layer = SafeLayer;
-	OutResult.AffectedStructureDataAssets.AddUnique(BeltPaths[RemovedBeltPathIndex].StructureDataAsset.Get());
+	OutResult.AffectedStructureDataAssets.Add(BeltPaths[RemovedBeltPathIndex].StructureDataAsset.Get());
 	BeltPaths.RemoveAt(RemovedBeltPathIndex, 1, EAllowShrinking::No);
 	FSRConveyorSegmentBuilder::RebuildFromBeltPaths(SurfaceGrid, BeltPaths, Segments);
 
 	if (SafeLayer == 0)
 	{
+		TSet<FSRPlanetSurfaceGridCellId> ClearedCellIdSet;
+		ClearedCellIdSet.Reserve(PlacedCellIds.Num());
+		OutResult.ClearedCellIds.Reserve(PlacedCellIds.Num());
 		for (const FSRPlanetSurfaceGridCellId& PlacedCellId : PlacedCellIds)
 		{
 			if (!Segments.Contains(FSRConveyorNetworkGeometry::MakeLaneKey(PlacedCellId, SafeLayer)))
 			{
-				OutResult.ClearedCellIds.AddUnique(PlacedCellId);
+				AddUniqueCellId(ClearedCellIdSet, OutResult.ClearedCellIds, PlacedCellId);
 			}
 		}
 	}
@@ -167,16 +200,26 @@ bool StarRovers::Conveyor::FSRConveyorRemovalPlanner::RemoveLaneKeys(
 
 	TSet<FSRConveyorLaneKey> DeleteLaneKeySet;
 	DeleteLaneKeySet.Reserve(LaneKeys.Num());
+	TSet<FSRPlanetSurfaceGridCellId> DeletedCellIdSet;
+	DeletedCellIdSet.Reserve(LaneKeys.Num());
 	TArray<FSRPlanetSurfaceGridCellId> DeletedCellIds;
+	DeletedCellIds.Reserve(LaneKeys.Num());
+	TSet<USRStructureDataAsset*> AffectedStructureDataAssetSet;
+	AffectedStructureDataAssetSet.Reserve(LaneKeys.Num());
+	OutResult.RemovedLaneKeys.Reserve(LaneKeys.Num());
+	OutResult.AffectedStructureDataAssets.Reserve(LaneKeys.Num());
 	for (const FSRConveyorLaneKey& LaneKey : LaneKeys)
 	{
 		DeleteLaneKeySet.Add(LaneKey);
 		OutResult.RemovedLaneKeys.Add(LaneKey);
-		DeletedCellIds.AddUnique(LaneKey.CellId);
+		AddUniqueCellId(DeletedCellIdSet, DeletedCellIds, LaneKey.CellId);
 
 		if (const FSRConveyorSegment* Segment = Segments.Find(LaneKey))
 		{
-			OutResult.AffectedStructureDataAssets.AddUnique(Segment->StructureDataAsset.Get());
+			AddUniqueStructureDataAsset(
+				AffectedStructureDataAssetSet,
+				OutResult.AffectedStructureDataAssets,
+				Segment->StructureDataAsset.Get());
 		}
 	}
 
@@ -207,7 +250,10 @@ bool StarRovers::Conveyor::FSRConveyorRemovalPlanner::RemoveLaneKeys(
 
 		if (bRemovedFromBeltPath)
 		{
-			OutResult.AffectedStructureDataAssets.AddUnique(ExistingBeltPath.StructureDataAsset.Get());
+			AddUniqueStructureDataAsset(
+				AffectedStructureDataAssetSet,
+				OutResult.AffectedStructureDataAssets,
+				ExistingBeltPath.StructureDataAsset.Get());
 		}
 	}
 
@@ -216,11 +262,14 @@ bool StarRovers::Conveyor::FSRConveyorRemovalPlanner::RemoveLaneKeys(
 
 	if (SafeLayer == 0)
 	{
+		TSet<FSRPlanetSurfaceGridCellId> ClearedCellIdSet;
+		ClearedCellIdSet.Reserve(DeletedCellIds.Num());
+		OutResult.ClearedCellIds.Reserve(DeletedCellIds.Num());
 		for (const FSRPlanetSurfaceGridCellId& DeletedCellId : DeletedCellIds)
 		{
 			if (!Segments.Contains(FSRConveyorNetworkGeometry::MakeLaneKey(DeletedCellId, SafeLayer)))
 			{
-				OutResult.ClearedCellIds.AddUnique(DeletedCellId);
+				AddUniqueCellId(ClearedCellIdSet, OutResult.ClearedCellIds, DeletedCellId);
 			}
 		}
 	}

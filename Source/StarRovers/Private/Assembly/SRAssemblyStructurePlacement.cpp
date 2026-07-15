@@ -1,6 +1,8 @@
 #include "Assembly/SRAssemblyStructurePlacement.h"
 
+#include "Assembly/SRAssemblyConstructionReplacement.h"
 #include "Assembly/SRAssemblyPlacementRestoration.h"
+#include "Conveyor/SRConveyorNetworkComponent.h"
 #include "GameFramework/Actor.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Structure/SRStructureInstanceManagerComponent.h"
@@ -38,21 +40,26 @@ namespace StarRovers::Assembly
 		{
 			if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
 			{
-				TSet<FName> DestructibleOccupantIds;
-				if (!StructureInstanceManager->CanBuildOverCellsForConstruction(
+				USRConveyorNetworkComponent* ConveyorNetwork = SurfaceOwner->FindComponentByClass<USRConveyorNetworkComponent>();
+				ConstructionReplacement::FSRConstructionReplacementTargets ReplacementTargets;
+				if (!ConstructionReplacement::CanBuildOverCellsForStructureConstruction(
 					SurfaceGrid,
+					StructureInstanceManager,
+					ConveyorNetwork,
 					FootprintCellIds,
-					DestructibleOccupantIds))
+					ReplacementTargets))
 				{
 					OutResult.bShouldDestroyPreviewOnFailure = true;
 					return false;
 				}
 
 				TArray<FSRPlacedStructureInstance> RemovedStructures;
-				if (!DestructibleOccupantIds.IsEmpty()
-					&& !StructureInstanceManager->RemoveConstructionDestructibleStructuresByOccupantIds(
+				if (ReplacementTargets.HasAny()
+					&& !ConstructionReplacement::RemoveReplacementTargets(
 						SurfaceGrid,
-						DestructibleOccupantIds,
+						StructureInstanceManager,
+						ConveyorNetwork,
+						ReplacementTargets,
 						&RemovedStructures))
 				{
 					OutResult.bShouldDestroyPreviewOnFailure = true;
@@ -70,13 +77,16 @@ namespace StarRovers::Assembly
 					PlacementRotationSteps))
 				{
 					OutResult.StructureInstanceManager = StructureInstanceManager;
+					OutResult.ConveyorNetwork = ConveyorNetwork;
 					OutResult.OccupantId = OccupantId;
 					OutResult.bPlacedWithStructureInstanceManager = true;
 					AppendRestorableStructures(RemovedStructures, OutResult.RemovedNaturalStructures);
+					OutResult.RemovedConveyorBeltPaths = ReplacementTargets.ConveyorBeltPaths;
 					return true;
 				}
 
 				RestoreRemovedStructures(SurfaceGrid, StructureInstanceManager, RemovedStructures);
+				ConstructionReplacement::RestoreConveyorBeltPaths(SurfaceGrid, ConveyorNetwork, ReplacementTargets.ConveyorBeltPaths);
 			}
 		}
 
@@ -107,11 +117,13 @@ namespace StarRovers::Assembly
 		HistoryEntry.Kind = ESRAssemblyPlacementHistoryKind::Structure;
 		HistoryEntry.SurfaceGrid = SurfaceGrid;
 		HistoryEntry.StructureInstanceManager = StructureInstanceManager;
+		HistoryEntry.ConveyorNetwork = PlacementResult.ConveyorNetwork;
 		HistoryEntry.StructureDataAsset = StructureDataAsset;
 		HistoryEntry.OriginCellId = OriginCellId;
 		HistoryEntry.PlacementRotationSteps = PlacementRotationSteps;
 		HistoryEntry.OccupantId = PlacementResult.OccupantId;
 		HistoryEntry.RemovedNaturalStructures = PlacementResult.RemovedNaturalStructures;
+		HistoryEntry.RemovedConveyorBeltPaths = PlacementResult.RemovedConveyorBeltPaths;
 		return HistoryEntry;
 	}
 }

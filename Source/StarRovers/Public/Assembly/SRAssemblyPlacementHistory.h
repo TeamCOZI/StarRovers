@@ -41,6 +41,7 @@ namespace StarRovers::Assembly
 		FSRConveyorBeltPath ConveyorBeltPath;
 		TArray<FSRPlanetSurfaceGridCellId> ConveyorPlacedCellIds;
 		TArray<FSRRestorableNaturalStructure> RemovedNaturalStructures;
+		TArray<FSRConveyorBeltPath> RemovedConveyorBeltPaths;
 		TArray<FSRAssemblyPlacementHistoryEntry> ChildEntries;
 	};
 
@@ -64,7 +65,8 @@ namespace StarRovers::Assembly
 			const FSRPlanetSurfaceGridCellId& OriginCellId,
 			int32 PlacementRotationSteps,
 			FName OccupantId,
-			const TArray<FSRRestorableNaturalStructure>& RemovedNaturalStructures = TArray<FSRRestorableNaturalStructure>());
+			const TArray<FSRRestorableNaturalStructure>& RemovedNaturalStructures = TArray<FSRRestorableNaturalStructure>(),
+			const TArray<FSRConveyorBeltPath>& RemovedConveyorBeltPaths = TArray<FSRConveyorBeltPath>());
 		void RecordConveyor(
 			USRAssemblyComponent& Owner,
 			USRPlanetSurfaceGrid* SurfaceGrid,

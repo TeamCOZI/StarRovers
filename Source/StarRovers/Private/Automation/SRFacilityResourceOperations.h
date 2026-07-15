@@ -8,6 +8,9 @@
 namespace StarRovers::FacilityResources
 {
 	constexpr int32 HalfLifeDefaultCycles = 3;
+	constexpr int32 ChargeStacksPerProcessingSecond = 1;
+	constexpr int32 ChargeRequiredStacks = 5;
+	constexpr double ChargeEnergyBonus = 3.0;
 
 	inline FString BuildFacilityCellDebugString(const FSRPlanetSurfaceGridCellId& CellId)
 	{
@@ -21,15 +24,13 @@ namespace StarRovers::FacilityResources
 	inline FString BuildResourceDebugString(const FSRResourceInstance& ResourceInstance)
 	{
 		return FString::Printf(
-			TEXT("ResourceId=%s Energy=%.3f RemainingProcessLimit=%d ProcessCount=%d StackCount=%d Tags=%d StellarFuel=%s FuelMultiplier=%.3f"),
+			TEXT("ResourceId=%s Energy=%.3f RemainingProcessLimit=%d ProcessCount=%d StackCount=%d Tags=%d"),
 			*ResourceInstance.ResourceId.ToString(),
 			ResourceInstance.EnergyValue,
 			ResourceInstance.RemainingProcessLimit,
 			ResourceInstance.ProcessCount,
 			ResourceInstance.StackCount,
-			ResourceInstance.Tags.Num(),
-			ResourceInstance.bCountsAsStellarFuel ? TEXT("true") : TEXT("false"),
-			ResourceInstance.StellarFuelValueMultiplier);
+			ResourceInstance.Tags.Num());
 	}
 
 	inline int32 GetResourceStackCount(const FSRResourceInstance& ResourceInstance)
@@ -111,12 +112,8 @@ namespace StarRovers::FacilityResources
 	inline bool AreResourceInstancesStackEquivalent(const FSRResourceInstance& Left, const FSRResourceInstance& Right)
 	{
 		return Left.ResourceId == Right.ResourceId
-			&& Left.ResourceKind == Right.ResourceKind
 			&& FMath::IsNearlyEqual(Left.EnergyValue, Right.EnergyValue)
-			&& Left.CatalystOperator == Right.CatalystOperator
 			&& Left.RemainingProcessLimit == Right.RemainingProcessLimit
-			&& Left.bCountsAsStellarFuel == Right.bCountsAsStellarFuel
-			&& FMath::IsNearlyEqual(Left.StellarFuelValueMultiplier, Right.StellarFuelValueMultiplier)
 			&& AreResourceTagStacksEquivalent(Left.Tags, Right.Tags);
 	}
 

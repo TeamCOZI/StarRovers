@@ -1,6 +1,7 @@
 #include "Celestial/SRCelestialBody.h"
 
 #include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
+#include "Utility/SRLog.h"
 
 using namespace StarRovers::Celestial::DynamicMesh;
 
@@ -62,7 +63,7 @@ void ASRCelestialBody::ClearDynamicMeshRuntimeCaches(const TCHAR* Reason)
 	}
 
 	ClearCelestialBodyDynamicMeshRuntimeCache();
-	UE_LOG(
+	SR_LOG(DynamicMesh,
 		LogTemp,
 		Display,
 		TEXT("Celestial body runtime caches cleared. Reason=%s DynamicMeshEntries=%d"),

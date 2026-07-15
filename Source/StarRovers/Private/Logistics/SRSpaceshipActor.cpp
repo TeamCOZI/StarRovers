@@ -7,7 +7,7 @@
 #include "Materials/MaterialInterface.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
-#include "UObject/ConstructorHelpers.h"
+#include "NiagaraTypes.h"
 
 namespace
 {
@@ -21,6 +21,17 @@ namespace
 	const FName TrailParamSourceVelocity(TEXT("User.SourceVelocity"));
 	const FName TrailParamSourceSpeed(TEXT("User.SourceSpeed"));
 	const FName TrailParamRouteProgress(TEXT("User.RouteProgress"));
+
+	bool HasTrailUserParameter(const UNiagaraSystem* TrailNiagaraSystem, FName ParameterName, const FNiagaraTypeDefinition& ParameterType)
+	{
+		if (!IsValid(TrailNiagaraSystem))
+		{
+			return false;
+		}
+
+		const FNiagaraVariable Parameter(ParameterType, ParameterName);
+		return TrailNiagaraSystem->GetExposedParameters().FindParameterOffset(Parameter) != nullptr;
+	}
 }
 
 ASRSpaceshipActor::ASRSpaceshipActor()
@@ -55,24 +66,6 @@ ASRSpaceshipActor::ASRSpaceshipActor()
 	TrailNiagaraComponent->SetHiddenInGame(true);
 	TrailNiagaraComponent->SetVisibility(false, true);
 	TrailNiagaraComponent->ComponentTags.Add(TEXT("StarRovers.SpaceshipTrail"));
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> DefaultMeshFinder(TEXT("/Engine/BasicShapes/Cone.Cone"));
-	if (DefaultMeshFinder.Succeeded())
-	{
-		SpaceshipMesh->SetStaticMesh(DefaultMeshFinder.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> DefaultTrailFinder(TEXT("/Game/StarRovers/Logistics/VFX/NS_SpaceshipTrail.NS_SpaceshipTrail"));
-	if (DefaultTrailFinder.Succeeded())
-	{
-		TrailNiagaraSystem = DefaultTrailFinder.Object;
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> DefaultTrailMaterialFinder(TEXT("/Game/Materials/M_SpaceshipTrail.M_SpaceshipTrail"));
-	if (DefaultTrailMaterialFinder.Succeeded())
-	{
-		TrailMaterial = DefaultTrailMaterialFinder.Object;
-	}
 
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
@@ -148,12 +141,17 @@ void ASRSpaceshipActor::ConfigureTrail()
 		return;
 	}
 
-	TrailNiagaraComponent->SetAsset(TrailNiagaraSystem);
+	UNiagaraSystem* EffectiveTrailNiagaraSystem = ResolveTrailNiagaraSystem();
+	if (IsValid(TrailNiagaraSystem) && TrailNiagaraComponent->GetAsset() != TrailNiagaraSystem)
+	{
+		TrailNiagaraComponent->SetAsset(TrailNiagaraSystem);
+		EffectiveTrailNiagaraSystem = TrailNiagaraSystem;
+	}
 	TrailNiagaraComponent->SetRelativeLocation(FVector::ZeroVector);
 	TrailNiagaraComponent->SetRelativeRotation(FRotator::ZeroRotator);
 	TrailNiagaraComponent->SetRelativeScale3D(FVector::OneVector);
 
-	const bool bShouldShowTrail = bTrailEnabled && IsValid(TrailNiagaraSystem);
+	const bool bShouldShowTrail = bTrailEnabled && IsValid(EffectiveTrailNiagaraSystem);
 	TrailNiagaraComponent->SetVisibility(bShouldShowTrail, true);
 	TrailNiagaraComponent->SetHiddenInGame(!bShouldShowTrail);
 	ApplyTrailUserParameters();
@@ -164,6 +162,16 @@ void ASRSpaceshipActor::ConfigureTrail()
 	}
 }
 
+UNiagaraSystem* ASRSpaceshipActor::ResolveTrailNiagaraSystem() const
+{
+	if (IsValid(TrailNiagaraSystem))
+	{
+		return TrailNiagaraSystem;
+	}
+
+	return TrailNiagaraComponent ? TrailNiagaraComponent->GetAsset() : nullptr;
+}
+
 void ASRSpaceshipActor::ApplyTrailUserParameters()
 {
 	if (!TrailNiagaraComponent)
@@ -171,13 +179,42 @@ void ASRSpaceshipActor::ApplyTrailUserParameters()
 		return;
 	}
 
-	const bool bShouldShowTrail = bTrailEnabled && IsValid(TrailNiagaraSystem);
-	TrailNiagaraComponent->SetVariableBool(TrailParamEnabled, bShouldShowTrail);
-	TrailNiagaraComponent->SetVariableMaterial(TrailParamMaterial, TrailMaterial);
-	TrailNiagaraComponent->SetVariableLinearColor(TrailParamColor, TrailColor);
-	TrailNiagaraComponent->SetVariableFloat(TrailParamWidth, FMath::Max(0.0f, TrailWidth));
-	TrailNiagaraComponent->SetVariableFloat(TrailParamLifetime, FMath::Max(0.01f, TrailLifetime));
-	TrailNiagaraComponent->SetVariableFloat(TrailParamSpawnRate, FMath::Max(0.0f, TrailSpawnRate));
+	UNiagaraSystem* EffectiveTrailNiagaraSystem = ResolveTrailNiagaraSystem();
+	const bool bShouldShowTrail = bTrailEnabled && IsValid(EffectiveTrailNiagaraSystem);
+	if (HasTrailUserParameter(EffectiveTrailNiagaraSystem, TrailParamEnabled, FNiagaraTypeDefinition::GetBoolDef()))
+	{
+		TrailNiagaraComponent->SetVariableBool(TrailParamEnabled, bShouldShowTrail);
+	}
+
+	if (HasTrailUserParameter(EffectiveTrailNiagaraSystem, TrailParamMaterial, FNiagaraTypeDefinition::GetUMaterialDef()))
+	{
+		if (IsValid(TrailMaterial))
+		{
+			TrailNiagaraComponent->SetVariableMaterial(TrailParamMaterial, TrailMaterial);
+		}
+		else
+		{
+			const FNiagaraVariable TrailMaterialVariable(FNiagaraTypeDefinition::GetUMaterialDef(), TrailParamMaterial);
+			TrailNiagaraComponent->GetOverrideParameters().RemoveParameter(TrailMaterialVariable);
+		}
+	}
+
+	if (HasTrailUserParameter(EffectiveTrailNiagaraSystem, TrailParamColor, FNiagaraTypeDefinition::GetColorDef()))
+	{
+		TrailNiagaraComponent->SetVariableLinearColor(TrailParamColor, TrailColor);
+	}
+	if (HasTrailUserParameter(EffectiveTrailNiagaraSystem, TrailParamWidth, FNiagaraTypeDefinition::GetFloatDef()))
+	{
+		TrailNiagaraComponent->SetVariableFloat(TrailParamWidth, FMath::Max(0.0f, TrailWidth));
+	}
+	if (HasTrailUserParameter(EffectiveTrailNiagaraSystem, TrailParamLifetime, FNiagaraTypeDefinition::GetFloatDef()))
+	{
+		TrailNiagaraComponent->SetVariableFloat(TrailParamLifetime, FMath::Max(0.01f, TrailLifetime));
+	}
+	if (HasTrailUserParameter(EffectiveTrailNiagaraSystem, TrailParamSpawnRate, FNiagaraTypeDefinition::GetFloatDef()))
+	{
+		TrailNiagaraComponent->SetVariableFloat(TrailParamSpawnRate, FMath::Max(0.0f, TrailSpawnRate));
+	}
 }
 
 void ASRSpaceshipActor::ResetTrailState()
@@ -269,7 +306,7 @@ FVector ASRSpaceshipActor::ResolveTrailSourceWorldLocation(const FVector& Fallba
 
 void ASRSpaceshipActor::UpdateTrailParameters(const FVector& WorldLocation, float TravelProgressRatio)
 {
-	if (!TrailNiagaraComponent || !bTrailEnabled || !IsValid(TrailNiagaraSystem))
+	if (!TrailNiagaraComponent || !bTrailEnabled || !IsValid(ResolveTrailNiagaraSystem()))
 	{
 		ResetTrailState();
 		return;
@@ -302,8 +339,21 @@ void ASRSpaceshipActor::UpdateTrailParameters(const FVector& WorldLocation, floa
 		bHasLastTrailWorldLocation = true;
 	}
 
-	TrailNiagaraComponent->SetVariablePosition(TrailParamSourcePosition, TrailSourceWorldLocation);
-	TrailNiagaraComponent->SetVariableVec3(TrailParamSourceVelocity, VisualVelocity);
-	TrailNiagaraComponent->SetVariableFloat(TrailParamSourceSpeed, VisualVelocity.Size());
-	TrailNiagaraComponent->SetVariableFloat(TrailParamRouteProgress, FMath::Clamp(TravelProgressRatio, 0.0f, 1.0f));
+	UNiagaraSystem* EffectiveTrailNiagaraSystem = ResolveTrailNiagaraSystem();
+	if (HasTrailUserParameter(EffectiveTrailNiagaraSystem, TrailParamSourcePosition, FNiagaraTypeDefinition::GetPositionDef()))
+	{
+		TrailNiagaraComponent->SetVariablePosition(TrailParamSourcePosition, TrailSourceWorldLocation);
+	}
+	if (HasTrailUserParameter(EffectiveTrailNiagaraSystem, TrailParamSourceVelocity, FNiagaraTypeDefinition::GetVec3Def()))
+	{
+		TrailNiagaraComponent->SetVariableVec3(TrailParamSourceVelocity, VisualVelocity);
+	}
+	if (HasTrailUserParameter(EffectiveTrailNiagaraSystem, TrailParamSourceSpeed, FNiagaraTypeDefinition::GetFloatDef()))
+	{
+		TrailNiagaraComponent->SetVariableFloat(TrailParamSourceSpeed, VisualVelocity.Size());
+	}
+	if (HasTrailUserParameter(EffectiveTrailNiagaraSystem, TrailParamRouteProgress, FNiagaraTypeDefinition::GetFloatDef()))
+	{
+		TrailNiagaraComponent->SetVariableFloat(TrailParamRouteProgress, FMath::Clamp(TravelProgressRatio, 0.0f, 1.0f));
+	}
 }

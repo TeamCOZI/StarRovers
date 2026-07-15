@@ -1,6 +1,6 @@
 #include "Conveyor/SRConveyorPathfinder.h"
 
-#include "Conveyor/SRConveyorNetworkGeometry.h"
+#include "Algo/Reverse.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 namespace
@@ -117,9 +117,9 @@ namespace
 		const TMap<FSRPlanetSurfaceGridCellId, FSRPlanetSurfaceGridCellId>& CameFrom,
 		TArray<FSRPlanetSurfaceGridCellId>& OutPath)
 	{
-		TArray<FSRPlanetSurfaceGridCellId> ReversedPath;
+		OutPath.Reset();
 		FSRPlanetSurfaceGridCellId TraceCellId = EndCellId;
-		ReversedPath.Add(TraceCellId);
+		OutPath.Add(TraceCellId);
 		while (!(TraceCellId == StartCellId))
 		{
 			const FSRPlanetSurfaceGridCellId* PreviousCellId = CameFrom.Find(TraceCellId);
@@ -129,16 +129,10 @@ namespace
 				return false;
 			}
 			TraceCellId = *PreviousCellId;
-			ReversedPath.Add(TraceCellId);
+			OutPath.Add(TraceCellId);
 		}
 
-		OutPath.Reset();
-		OutPath.Reserve(ReversedPath.Num());
-		for (int32 PathIndex = ReversedPath.Num() - 1; PathIndex >= 0; --PathIndex)
-		{
-			OutPath.Add(ReversedPath[PathIndex]);
-		}
-
+		Algo::Reverse(OutPath);
 		return !OutPath.IsEmpty();
 	}
 
@@ -283,9 +277,9 @@ namespace
 		const TArray<int32>& CameFrom,
 		TArray<FSRPlanetSurfaceGridCellId>& OutPath)
 	{
-		TArray<int32> ReversedPath;
+		OutPath.Reset();
 		int32 TraceCellIndex = EndCellIndex;
-		ReversedPath.Add(TraceCellIndex);
+		OutPath.Add(MakeFaceLocalCellId(Face, Resolution, TraceCellIndex));
 		while (TraceCellIndex != StartCellIndex)
 		{
 			if (!CameFrom.IsValidIndex(TraceCellIndex))
@@ -302,16 +296,10 @@ namespace
 			}
 
 			TraceCellIndex = PreviousCellIndex;
-			ReversedPath.Add(TraceCellIndex);
+			OutPath.Add(MakeFaceLocalCellId(Face, Resolution, TraceCellIndex));
 		}
 
-		OutPath.Reset();
-		OutPath.Reserve(ReversedPath.Num());
-		for (int32 PathIndex = ReversedPath.Num() - 1; PathIndex >= 0; --PathIndex)
-		{
-			OutPath.Add(MakeFaceLocalCellId(Face, Resolution, ReversedPath[PathIndex]));
-		}
-
+		Algo::Reverse(OutPath);
 		return !OutPath.IsEmpty();
 	}
 
@@ -644,32 +632,19 @@ bool StarRovers::Conveyor::FSRConveyorPathfinder::FindPath(
 			continue;
 		}
 
-		const ESRConveyorGridDirection Directions[] =
+		auto TryQueueNeighbor = [&](
+			const FSRPlanetSurfaceGridCellId& NeighborCellId)
 		{
-			ESRConveyorGridDirection::NegativeU,
-			ESRConveyorGridDirection::PositiveU,
-			ESRConveyorGridDirection::NegativeV,
-			ESRConveyorGridDirection::PositiveV,
-		};
-
-		for (const ESRConveyorGridDirection Direction : Directions)
-		{
-			FSRPlanetSurfaceGridCellId NeighborCellId;
-			if (!FSRConveyorNetworkGeometry::GetNeighborCellIdByDirection(Neighbors, Direction, NeighborCellId))
-			{
-				continue;
-			}
-
 			if (!CanUseCell(NeighborCellId))
 			{
-				continue;
+				return;
 			}
 
 			const int32 NeighborCostFromStart = CurrentNode.CostFromStart + 1;
 			const int32* ExistingNeighborCost = BestCostFromStart.Find(NeighborCellId);
 			if (ExistingNeighborCost && *ExistingNeighborCost <= NeighborCostFromStart)
 			{
-				continue;
+				return;
 			}
 
 			BestCostFromStart.Add(NeighborCellId, NeighborCostFromStart);
@@ -681,7 +656,12 @@ bool StarRovers::Conveyor::FSRConveyorPathfinder::FindPath(
 			NeighborNode.EstimatedCostToEnd = GetConveyorPathHeuristicCost(NeighborCellId, EndCellId);
 			NeighborNode.Sequence = NextSequence++;
 			PushConveyorPathSearchNode(OpenHeap, NeighborNode);
-		}
+		};
+
+		TryQueueNeighbor(Neighbors.NegativeU);
+		TryQueueNeighbor(Neighbors.PositiveU);
+		TryQueueNeighbor(Neighbors.NegativeV);
+		TryQueueNeighbor(Neighbors.PositiveV);
 	}
 
 	return false;

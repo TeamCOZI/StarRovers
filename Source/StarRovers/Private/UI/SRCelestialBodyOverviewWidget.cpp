@@ -1,5 +1,6 @@
 #include "UI/SRCelestialBodyOverviewWidget.h"
 
+#include "Utility/SRLog.h"
 #include "Blueprint/WidgetTree.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
@@ -26,7 +27,7 @@ void USRCelestialBodyOverviewEntryAction::Initialize(
 
 void USRCelestialBodyOverviewEntryAction::HandleClicked()
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: Overview Entry OnClicked Actor=%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: Overview Entry OnClicked Actor=%s"),
 		*GetNameSafe(CelestialBodyActor.Get()));
 
 	if (IsValid(OwnerWidget))
@@ -113,7 +114,7 @@ FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonDown(const FGeometry& 
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	if (IsScreenPositionOverOverviewUI(ScreenPosition))
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: Overview NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: Overview NativeOnMouseButtonDown handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
 			ScreenPosition.Y);
 		return FReply::Handled();
@@ -127,7 +128,7 @@ FReply USRCelestialBodyOverviewWidget::NativeOnMouseButtonUp(const FGeometry& In
 	const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	if (IsScreenPositionOverOverviewUI(ScreenPosition))
 	{
-		UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: Overview NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: Overview NativeOnMouseButtonUp handled Mouse=(%.1f, %.1f)"),
 			ScreenPosition.X,
 			ScreenPosition.Y);
 		return FReply::Handled();
@@ -150,13 +151,21 @@ void USRCelestialBodyOverviewWidget::SetCelestialBodies(
 	const TArray<AActor*>& NewCelestialBodies)
 {
 	CelestialBodies.Reset();
+	CelestialBodies.Reserve(NewCelestialBodies.Num());
+	TSet<AActor*> UniqueCelestialBodies;
+	UniqueCelestialBodies.Reserve(NewCelestialBodies.Num());
 	for (AActor* CelestialBodyActor : NewCelestialBodies)
 	{
 		if (IsValid(CelestialBodyActor) &&
 			USRCelestialBodyRuntimeLibrary::IsCelestialBodyActor(
 				CelestialBodyActor))
 		{
-			CelestialBodies.AddUnique(CelestialBodyActor);
+			const int32 PreviousBodyCount = UniqueCelestialBodies.Num();
+			UniqueCelestialBodies.Add(CelestialBodyActor);
+			if (UniqueCelestialBodies.Num() != PreviousBodyCount)
+			{
+				CelestialBodies.Add(CelestialBodyActor);
+			}
 		}
 	}
 
@@ -191,7 +200,7 @@ bool USRCelestialBodyOverviewWidget::IsPointerOverOverviewUI() const
 void USRCelestialBodyOverviewWidget::DispatchEntryClicked(
 	AActor* CelestialBodyActor)
 {
-	UE_LOG(LogTemp, Log, TEXT("SR UI Click Trace: Overview DispatchEntryClicked Actor=%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: Overview DispatchEntryClicked Actor=%s"),
 		*GetNameSafe(CelestialBodyActor));
 
 	if (IsValid(CelestialBodyActor))

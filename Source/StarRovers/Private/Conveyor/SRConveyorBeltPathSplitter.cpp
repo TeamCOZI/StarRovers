@@ -7,6 +7,7 @@ bool StarRovers::Conveyor::FSRConveyorBeltPathSplitter::AppendMatchingSubPaths(
 {
 	bool bAddedSubPath = false;
 	TArray<FSRPlanetSurfaceGridCellId> CurrentSubPath;
+	CurrentSubPath.Reserve(BeltPath.CellIds.Num());
 	auto FlushCurrentSubPath = [&]()
 	{
 		if (CurrentSubPath.IsEmpty())
@@ -14,10 +15,14 @@ bool StarRovers::Conveyor::FSRConveyorBeltPathSplitter::AppendMatchingSubPaths(
 			return;
 		}
 
-		FSRConveyorBeltPath SplitBeltPath = BeltPath;
-		SplitBeltPath.CellIds = CurrentSubPath;
-		OutBeltPaths.Add(SplitBeltPath);
-		CurrentSubPath.Reset();
+		FSRConveyorBeltPath SplitBeltPath;
+		SplitBeltPath.CellIds = MoveTemp(CurrentSubPath);
+		SplitBeltPath.Layer = BeltPath.Layer;
+		SplitBeltPath.LayerHeight = BeltPath.LayerHeight;
+		SplitBeltPath.NetworkId = BeltPath.NetworkId;
+		SplitBeltPath.StructureDataAsset = BeltPath.StructureDataAsset;
+		OutBeltPaths.Add(MoveTemp(SplitBeltPath));
+		CurrentSubPath.Reset(BeltPath.CellIds.Num());
 		bAddedSubPath = true;
 	};
 

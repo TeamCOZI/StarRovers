@@ -32,6 +32,8 @@ namespace StarRovers::Assembly
 			const int32 MinY = FMath::Min(CornerA.CellY, CornerB.CellY);
 			const int32 MaxY = FMath::Max(CornerA.CellY, CornerB.CellY);
 
+			const int32 RectCellCount = ((MaxX - MinX) + 1) * ((MaxY - MinY) + 1);
+			OutCellIds.Reserve(OutCellIds.Num() + RectCellCount);
 			for (int32 CellY = MinY; CellY <= MaxY; ++CellY)
 			{
 				for (int32 CellX = MinX; CellX <= MaxX; ++CellX)
@@ -44,7 +46,7 @@ namespace StarRovers::Assembly
 					FSRPlanetSurfaceGridCell Cell;
 					if (SurfaceGrid->GetCellById(CellId, Cell))
 					{
-						OutCellIds.AddUnique(CellId);
+						OutCellIds.Add(CellId);
 					}
 				}
 			}
@@ -169,6 +171,7 @@ namespace StarRovers::Assembly
 			}
 
 			TSet<FName> StructureOccupantIds;
+			StructureOccupantIds.Reserve(CellIds.Num());
 			for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
 			{
 				FSRPlanetSurfaceGridCellInfo CellInfo;
@@ -207,6 +210,7 @@ namespace StarRovers::Assembly
 				return;
 			}
 
+			OutOccupantIds.Reserve(CellIds.Num());
 			for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
 			{
 				FSRPlanetSurfaceGridCellInfo CellInfo;

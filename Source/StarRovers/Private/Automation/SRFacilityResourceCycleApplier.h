@@ -7,8 +7,4 @@ class FSRFacilityResourceCycleApplier
 {
 public:
 	static int32 ApplyGameCycleToFacilities(FSRFacilityNetworkRuntimeState& RuntimeState);
-
-private:
-	static int32 ApplyGameCycleToInventory(TArray<FSRResourceInstance>& Inventory);
-	static bool ApplyHalfLifeCycleToResource(FSRResourceInstance& ResourceInstance);
 };

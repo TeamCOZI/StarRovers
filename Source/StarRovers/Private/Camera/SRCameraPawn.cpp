@@ -7,7 +7,6 @@ ASRCameraPawn::ASRCameraPawn()
 	PrimaryActorTick.bCanEverTick = true;
 	InitializeCameraComponents();
 	InitializeCameraDefaults();
-	LoadDefaultInputAssets();
 	ApplyZoomDrivenViewRotation(SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
 	RefreshScreenSpaceThicknessReferenceView();
 }

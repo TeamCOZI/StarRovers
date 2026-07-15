@@ -33,10 +33,27 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 			return false;
 		}
 
-		OutPrimaryOutput = ResourceDeposit.ResourceDataAsset->BuildDefaultInstance();
-		OutAdditionalOutputs.Reset();
-		OutOutputCount = FSRFacilityOutputResourceBuilder::ResolvePrimaryOutputCount(*FacilityInstance);
-		return OutOutputCount > 0 && !OutPrimaryOutput.ResourceId.IsNone();
+		TArray<FSRResourceInstance> PreviewOutputs;
+		int32 PrimaryOutputCount = 0;
+		FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
+			*FacilityInstance,
+			TArray<FSRResourceInstance>(),
+			ResourceDeposit.ResourceDataAsset->BuildDefaultInstance(),
+			PreviewOutputs,
+			&PrimaryOutputCount);
+		if (PreviewOutputs.IsEmpty())
+		{
+			OutOutputCount = 0;
+			return FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(*FacilityInstance);
+		}
+
+		OutPrimaryOutput = PreviewOutputs[0];
+		for (int32 OutputIndex = PrimaryOutputCount; OutputIndex < PreviewOutputs.Num(); ++OutputIndex)
+		{
+			OutAdditionalOutputs.Add(PreviewOutputs[OutputIndex]);
+		}
+		OutOutputCount = PrimaryOutputCount;
+		return !OutPrimaryOutput.ResourceId.IsNone();
 	}
 
 	TArray<FSRResourceInstance> PreviewInputs;
@@ -52,24 +69,36 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 		}
 	}
 
-	if (!FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(FacilityInstance->FacilityDataAsset.Get(), PreviewInputs))
+	if (!FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(
+		FacilityInstance->FacilityDataAsset.Get(),
+		PreviewInputs,
+		FacilityInstance->TemperatureState))
 	{
 		return false;
 	}
 
 	TArray<FSRResourceInstance> PreviewOutputs;
-	FSRFacilityOutputResourceBuilder::BuildOutputResources(*FacilityInstance, PreviewInputs, PreviewOutputs);
+	int32 PrimaryOutputCount = 0;
+	FSRFacilityOutputResourceBuilder::BuildOutputResources(
+		*FacilityInstance,
+		PreviewInputs,
+		PreviewOutputs,
+		&PrimaryOutputCount);
 	if (PreviewOutputs.IsEmpty())
 	{
+		if (FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(*FacilityInstance))
+		{
+			OutOutputCount = 0;
+			return true;
+		}
 		return false;
 	}
 
 	OutPrimaryOutput = PreviewOutputs[0];
-	const int32 PrimaryOutputCount = FMath::Max(0, FSRFacilityOutputResourceBuilder::ResolvePrimaryOutputCount(*FacilityInstance));
 	for (int32 OutputIndex = PrimaryOutputCount; OutputIndex < PreviewOutputs.Num(); ++OutputIndex)
 	{
 		OutAdditionalOutputs.Add(PreviewOutputs[OutputIndex]);
 	}
-	OutOutputCount = FSRFacilityOutputResourceBuilder::ResolvePrimaryOutputCount(*FacilityInstance);
+	OutOutputCount = PrimaryOutputCount;
 	return true;
 }

@@ -16,6 +16,7 @@ class UTextBlock;
 class UVerticalBox;
 class USRFacilityNetworkComponent;
 class USRFacilityControlWidget;
+class USRSpaceLogisticsSubsystem;
 struct FSRFacilityInstance;
 
 UCLASS()
@@ -130,6 +131,27 @@ private:
 };
 
 UCLASS()
+class STARROVERS_API USRHubStarFuelMissileLaunchAction : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	void Initialize(USRFacilityControlWidget* InOwnerWidget, UButton* InButton);
+
+	UFUNCTION()
+	void HandleClicked();
+
+	bool TryHandleManualClick(const FVector2D& ScreenPosition);
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<USRFacilityControlWidget> OwnerWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> Button;
+};
+
+UCLASS()
 class STARROVERS_API USRHubRouteSettingAction : public UObject
 {
 	GENERATED_BODY()
@@ -198,6 +220,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
 	bool LaunchDebugLocalOrbitRoute();
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool LaunchStarFuelMissileFromFocusedHub();
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
 	bool RemoveHubRoute(FName RouteId);
@@ -309,6 +334,9 @@ protected:
 	TArray<TObjectPtr<USRHubRouteDebugOrbitAction>> HubRouteDebugOrbitActions;
 
 	UPROPERTY(Transient)
+	TArray<TObjectPtr<USRHubStarFuelMissileLaunchAction>> HubStarFuelMissileLaunchActions;
+
+	UPROPERTY(Transient)
 	TArray<TObjectPtr<USRHubRouteSettingAction>> HubRouteSettingActions;
 
 private:
@@ -339,6 +367,7 @@ private:
 	void RefreshOutputInventorySlots(const FSRFacilityInstance& FacilityInstance);
 	void RefreshHubRouteSection(USRFacilityNetworkComponent* FacilityNetwork, const FSRFacilityInstance& FacilityInstance);
 	USRFacilityNetworkComponent* GetFocusedFacilityNetwork() const;
+	USRSpaceLogisticsSubsystem* GetSpaceLogisticsSubsystem() const;
 	bool IsScreenPositionOverControlPanel(const FVector2D& ScreenPosition) const;
 
 	bool bUpdatingControls = false;

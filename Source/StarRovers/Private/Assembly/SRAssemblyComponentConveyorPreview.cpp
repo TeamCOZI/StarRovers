@@ -1,7 +1,9 @@
 #include "Assembly/SRAssemblyComponent.h"
 
 #include "Assembly/SRAssemblyConveyorDragPathBuilder.h"
+#include "Assembly/SRAssemblyConstructionReplacement.h"
 #include "Assembly/SRAssemblyConveyorPlacement.h"
+#include "Assembly/SRAssemblyPreviewMaterial.h"
 #include "Camera/SRPlayerController.h"
 #include "Conveyor/SRConveyorNetworkComponent.h"
 #include "Engine/World.h"
@@ -97,11 +99,13 @@ bool USRAssemblyComponent::UpdateConveyorGhostPreview(
 	}
 
 	ConveyorPreview.ClearInvalidPlacementPreview();
+	TSet<FName> ReplacementPreviewOccupantIds;
+	USRStructureInstanceManagerComponent* ReplacementPreviewStructureInstanceManager = nullptr;
 	if (AActor* SurfaceOwner = SurfaceGrid->GetOwner())
 	{
 		if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
 		{
-			TSet<FName> ReplacementPreviewOccupantIds;
+			ReplacementPreviewStructureInstanceManager = StructureInstanceManager;
 			if (FMath::Max(0, ConveyorData.ConveyorLayer) == 0)
 			{
 				for (const FSRPlanetSurfaceGridCellId& PathCellId : PathCellIds)
@@ -119,6 +123,12 @@ bool USRAssemblyComponent::UpdateConveyorGhostPreview(
 			StructureInstanceManager->SetConstructionReplacementPreviewedStructures(ReplacementPreviewOccupantIds);
 		}
 	}
+	StarRovers::Assembly::ConstructionReplacement::FSRConstructionReplacementTargets ReplacementPreviewTargets;
+	ReplacementPreviewTargets.StructureOccupantIds = ReplacementPreviewOccupantIds;
+	StarRovers::Assembly::ConstructionReplacement::ApplyConstructionReplacementPreview(
+		SurfaceGrid,
+		ReplacementPreviewStructureInstanceManager,
+		ReplacementPreviewTargets);
 
 	FSRConveyorBeltPath BeltPath;
 	BeltPath.CellIds = MoveTemp(PathCellIds);
@@ -129,6 +139,9 @@ bool USRAssemblyComponent::UpdateConveyorGhostPreview(
 
 	TArray<FSRConveyorBeltPath> BeltPaths;
 	BeltPaths.Add(BeltPath);
+	UMaterialInterface* PreviewMaterial = ReplacementPreviewOccupantIds.IsEmpty()
+		? StarRovers::Assembly::PreviewMaterials::ResolveGhostMaterial(ConveyorData)
+		: StarRovers::Assembly::PreviewMaterials::ResolveReplaceableMaterial(ConveyorData);
 	const ESRAssemblyConveyorGhostUpdateResult GhostUpdateResult = ConveyorPreview.UpdateGhostActor(
 		SurfaceGrid,
 		HoveredSurfaceGrid,
@@ -137,7 +150,8 @@ bool USRAssemblyComponent::UpdateConveyorGhostPreview(
 		BeltPaths,
 		ConveyorNetwork->GetConveyorActorSplineComponentTag(),
 		ConveyorNetwork->GetConveyorActorSurfaceOffset(),
-		TargetCell.CellId);
+		TargetCell.CellId,
+		PreviewMaterial);
 	return GhostUpdateResult != ESRAssemblyConveyorGhostUpdateResult::Failed;
 }
 

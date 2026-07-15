@@ -14,6 +14,25 @@ namespace
 	const FName ConveyorBeltSplineNameBase(TEXT("ConveyorVisualSpline"));
 	constexpr float ConveyorPCGBoundsDefaultExtent = 100.0f;
 	constexpr float ConveyorPCGBoundsPadding = 500.0f;
+
+	bool IsGeneratedSplineMeshForPCG(
+		const USplineMeshComponent* SplineMeshComponent,
+		FName PCGComponentName,
+		bool bAllowMarkedForCleanup)
+	{
+		if (!IsValid(SplineMeshComponent))
+		{
+			return false;
+		}
+
+		if (!bAllowMarkedForCleanup && SplineMeshComponent->ComponentTags.Contains(PCGHelpers::MarkedForCleanupPCGTag))
+		{
+			return false;
+		}
+
+		return SplineMeshComponent->ComponentTags.Contains(PCGComponentName)
+			|| SplineMeshComponent->ComponentTags.Contains(PCGHelpers::DefaultPCGTag);
+	}
 }
 
 ASRConveyorBeltActor::ASRConveyorBeltActor()
@@ -75,6 +94,7 @@ bool ASRConveyorBeltActor::InitializeConveyorPaths(
 
 	ConveyorBeltPath = FSRConveyorBeltPath();
 	ConveyorBeltPaths.Reset();
+	ConveyorBeltPaths.Reserve(BeltPaths.Num());
 	for (const FSRConveyorBeltPath& BeltPath : BeltPaths)
 	{
 		if (!BeltPath.CellIds.IsEmpty())
@@ -413,28 +433,6 @@ void ASRConveyorBeltActor::HandlePCGGraphGenerated(UPCGComponent* InPCGComponent
 	}
 }
 
-void ASRConveyorBeltActor::CollectGeneratedSplineMeshes(TArray<USplineMeshComponent*>& OutGeneratedSplineMeshes) const
-{
-	OutGeneratedSplineMeshes.Reset();
-	if (!IsValid(PCGComponent))
-	{
-		return;
-	}
-
-	GetComponents<USplineMeshComponent>(OutGeneratedSplineMeshes);
-	OutGeneratedSplineMeshes.RemoveAll([this](const USplineMeshComponent* SplineMeshComponent)
-	{
-		return !IsValid(SplineMeshComponent)
-			|| SplineMeshComponent->ComponentTags.Contains(PCGHelpers::MarkedForCleanupPCGTag)
-			|| (!SplineMeshComponent->ComponentTags.Contains(PCGComponent->GetFName())
-				&& !SplineMeshComponent->ComponentTags.Contains(PCGHelpers::DefaultPCGTag));
-	});
-	OutGeneratedSplineMeshes.Sort([](const USplineMeshComponent& Left, const USplineMeshComponent& Right)
-	{
-		return Left.GetFName().LexicalLess(Right.GetFName());
-	});
-}
-
 void ASRConveyorBeltActor::CollectAllGeneratedSplineMeshes(TArray<USplineMeshComponent*>& OutGeneratedSplineMeshes) const
 {
 	OutGeneratedSplineMeshes.Reset();
@@ -444,15 +442,10 @@ void ASRConveyorBeltActor::CollectAllGeneratedSplineMeshes(TArray<USplineMeshCom
 	}
 
 	GetComponents<USplineMeshComponent>(OutGeneratedSplineMeshes);
-	OutGeneratedSplineMeshes.RemoveAll([this](const USplineMeshComponent* SplineMeshComponent)
+	const FName PCGComponentName = PCGComponent->GetFName();
+	OutGeneratedSplineMeshes.RemoveAll([PCGComponentName](const USplineMeshComponent* SplineMeshComponent)
 	{
-		return !IsValid(SplineMeshComponent)
-			|| (!SplineMeshComponent->ComponentTags.Contains(PCGComponent->GetFName())
-				&& !SplineMeshComponent->ComponentTags.Contains(PCGHelpers::DefaultPCGTag));
-	});
-	OutGeneratedSplineMeshes.Sort([](const USplineMeshComponent& Left, const USplineMeshComponent& Right)
-	{
-		return Left.GetFName().LexicalLess(Right.GetFName());
+		return !IsGeneratedSplineMeshForPCG(SplineMeshComponent, PCGComponentName, true);
 	});
 }
 
@@ -464,8 +457,25 @@ bool ASRConveyorBeltActor::HasReusableGeneratedSplineMeshes(int32 RequiredSpline
 	}
 
 	TArray<USplineMeshComponent*> GeneratedSplineMeshes;
-	CollectGeneratedSplineMeshes(GeneratedSplineMeshes);
-	return GeneratedSplineMeshes.Num() >= RequiredSplineMeshCount;
+	GetComponents<USplineMeshComponent>(GeneratedSplineMeshes);
+
+	const FName PCGComponentName = PCGComponent->GetFName();
+	int32 ReusableSplineMeshCount = 0;
+	for (const USplineMeshComponent* SplineMeshComponent : GeneratedSplineMeshes)
+	{
+		if (!IsGeneratedSplineMeshForPCG(SplineMeshComponent, PCGComponentName, false))
+		{
+			continue;
+		}
+
+		++ReusableSplineMeshCount;
+		if (ReusableSplineMeshCount >= RequiredSplineMeshCount)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void ASRConveyorBeltActor::HideGeneratedSplineMeshes() const
@@ -492,10 +502,24 @@ void ASRConveyorBeltActor::RebaseGeneratedSplineMeshes()
 		return;
 	}
 
-	HideGeneratedSplineMeshes();
-
 	TArray<USplineMeshComponent*> GeneratedSplineMeshes;
-	CollectGeneratedSplineMeshes(GeneratedSplineMeshes);
+	CollectAllGeneratedSplineMeshes(GeneratedSplineMeshes);
+	for (USplineMeshComponent* SplineMeshComponent : GeneratedSplineMeshes)
+	{
+		SplineMeshComponent->SetVisibility(false);
+		SplineMeshComponent->SetHiddenInGame(true);
+		SplineMeshComponent->UpdateMesh();
+	}
+
+	const FName PCGComponentName = PCGComponent->GetFName();
+	GeneratedSplineMeshes.RemoveAll([PCGComponentName](const USplineMeshComponent* SplineMeshComponent)
+	{
+		return !IsGeneratedSplineMeshForPCG(SplineMeshComponent, PCGComponentName, false);
+	});
+	GeneratedSplineMeshes.Sort([](const USplineMeshComponent& Left, const USplineMeshComponent& Right)
+	{
+		return Left.GetFName().LexicalLess(Right.GetFName());
+	});
 
 	const int32 SegmentCount = FMath::Min(GeneratedSplineMeshes.Num(), ConveyorSplineComponents.Num());
 	for (int32 SegmentIndex = 0; SegmentIndex < SegmentCount; ++SegmentIndex)

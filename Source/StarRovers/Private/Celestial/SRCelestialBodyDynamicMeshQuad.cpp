@@ -74,6 +74,9 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		QuadNormal = OutwardDirection.IsNearlyZero() ? FVector::UpVector : OutwardDirection;
 	}
 
+	const FVector4f SurfaceColorValue(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A);
+	const FVector2f FeatureMaskDefaultUV(0.0f, 0.0f);
+
 	auto FindOrAppendVertex = [&TargetDynamicMesh, &WeldedVertexIds](const FVector& Position, const FSRCelestialBodyDynamicMeshTerrainVertexKey* VertexKey)
 	{
 		const FSRCelestialBodyDynamicMeshTerrainVertexKey ResolvedVertexKey = VertexKey ? *VertexKey : MakeCelestialBodyDynamicMeshTerrainVertexKey(Position);
@@ -96,18 +99,18 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	const int32 Normal1 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
 	const int32 Normal2 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
 	const int32 Normal3 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
-	const int32 Color0 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
-	const int32 Color1 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
-	const int32 Color2 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
-	const int32 Color3 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
+	const int32 Color0 = ColorOverlay->AppendElement(SurfaceColorValue);
+	const int32 Color1 = ColorOverlay->AppendElement(SurfaceColorValue);
+	const int32 Color2 = ColorOverlay->AppendElement(SurfaceColorValue);
+	const int32 Color3 = ColorOverlay->AppendElement(SurfaceColorValue);
 	const int32 UV0 = UVOverlay ? UVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
 	const int32 UV1 = UVOverlay ? UVOverlay->AppendElement(FVector2f(1.0f, 0.0f)) : INDEX_NONE;
 	const int32 UV2 = UVOverlay ? UVOverlay->AppendElement(FVector2f(1.0f, 1.0f)) : INDEX_NONE;
 	const int32 UV3 = UVOverlay ? UVOverlay->AppendElement(FVector2f(0.0f, 1.0f)) : INDEX_NONE;
-	const int32 FeatureMaskUV0 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
-	const int32 FeatureMaskUV1 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
-	const int32 FeatureMaskUV2 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
-	const int32 FeatureMaskUV3 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
+	const int32 FeatureMaskUV0 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FeatureMaskDefaultUV) : INDEX_NONE;
+	const int32 FeatureMaskUV1 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FeatureMaskDefaultUV) : INDEX_NONE;
+	const int32 FeatureMaskUV2 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FeatureMaskDefaultUV) : INDEX_NONE;
+	const int32 FeatureMaskUV3 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FeatureMaskDefaultUV) : INDEX_NONE;
 	RenderData.FeatureMaskRef.MeshComponentIndex = MeshComponentIndex;
 	RenderData.FeatureMaskRef.FeatureMaskUVElementIds[0] = FeatureMaskUV0;
 	RenderData.FeatureMaskRef.FeatureMaskUVElementIds[1] = FeatureMaskUV1;
@@ -145,7 +148,8 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		MaterialIdAttribute,
 		&RenderData,
 		&TrackColorElement,
-		&SurfaceColor,
+		&SurfaceColorValue,
+		FeatureMaskDefaultUV,
 		MaterialId,
 		&QuadNormal](
 			const FVector& Position0,
@@ -167,15 +171,15 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		const int32 FallbackNormal0 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
 		const int32 FallbackNormal1 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
 		const int32 FallbackNormal2 = NormalOverlay->AppendElement(FVector3f(QuadNormal));
-		const int32 FallbackColor0 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
-		const int32 FallbackColor1 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
-		const int32 FallbackColor2 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
+		const int32 FallbackColor0 = ColorOverlay->AppendElement(SurfaceColorValue);
+		const int32 FallbackColor1 = ColorOverlay->AppendElement(SurfaceColorValue);
+		const int32 FallbackColor2 = ColorOverlay->AppendElement(SurfaceColorValue);
 		const int32 FallbackUV0 = UVOverlay ? UVOverlay->AppendElement(UVPosition0) : INDEX_NONE;
 		const int32 FallbackUV1 = UVOverlay ? UVOverlay->AppendElement(UVPosition1) : INDEX_NONE;
 		const int32 FallbackUV2 = UVOverlay ? UVOverlay->AppendElement(UVPosition2) : INDEX_NONE;
-		const int32 FallbackFeatureMaskUV0 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
-		const int32 FallbackFeatureMaskUV1 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
-		const int32 FallbackFeatureMaskUV2 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FVector2f(0.0f, 0.0f)) : INDEX_NONE;
+		const int32 FallbackFeatureMaskUV0 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FeatureMaskDefaultUV) : INDEX_NONE;
+		const int32 FallbackFeatureMaskUV1 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FeatureMaskDefaultUV) : INDEX_NONE;
+		const int32 FallbackFeatureMaskUV2 = FeatureMaskUVOverlay ? FeatureMaskUVOverlay->AppendElement(FeatureMaskDefaultUV) : INDEX_NONE;
 		TrackColorElement(FallbackColor0);
 		TrackColorElement(FallbackColor1);
 		TrackColorElement(FallbackColor2);
@@ -272,10 +276,10 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		const int32 BackNormal1 = NormalOverlay->AppendElement(FVector3f(BackNormal));
 		const int32 BackNormal2 = NormalOverlay->AppendElement(FVector3f(BackNormal));
 		const int32 BackNormal3 = NormalOverlay->AppendElement(FVector3f(BackNormal));
-		const int32 BackColor0 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
-		const int32 BackColor1 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
-		const int32 BackColor2 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
-		const int32 BackColor3 = ColorOverlay->AppendElement(FVector4f(SurfaceColor.R, SurfaceColor.G, SurfaceColor.B, SurfaceColor.A));
+		const int32 BackColor0 = ColorOverlay->AppendElement(SurfaceColorValue);
+		const int32 BackColor1 = ColorOverlay->AppendElement(SurfaceColorValue);
+		const int32 BackColor2 = ColorOverlay->AppendElement(SurfaceColorValue);
+		const int32 BackColor3 = ColorOverlay->AppendElement(SurfaceColorValue);
 		TrackColorElement(BackColor0);
 		TrackColorElement(BackColor1);
 		TrackColorElement(BackColor2);

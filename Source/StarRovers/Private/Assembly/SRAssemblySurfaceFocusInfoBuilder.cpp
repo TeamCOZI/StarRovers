@@ -275,6 +275,22 @@ void StarRovers::Assembly::FSRAssemblySurfaceFocusInfoBuilder::BuildFocusedFacil
 	}
 }
 
+namespace
+{
+	void AppendUniqueFacilityPortPreviewCell(
+		const FSRPlanetSurfaceGridCellId& CellId,
+		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds,
+		TSet<FSRPlanetSurfaceGridCellId>& CellIdSet)
+	{
+		const int32 PreviousCellCount = CellIdSet.Num();
+		CellIdSet.Add(CellId);
+		if (CellIdSet.Num() != PreviousCellCount)
+		{
+			OutCellIds.Add(CellId);
+		}
+	}
+}
+
 void StarRovers::Assembly::FSRAssemblySurfaceFocusInfoBuilder::GatherFacilityPortPreviewCells(
 	const TArray<FSRFocusedFacilityPortInfo>& FacilityPorts,
 	TArray<FSRPlanetSurfaceGridCellId>& OutInputConnectionCellIds,
@@ -282,15 +298,25 @@ void StarRovers::Assembly::FSRAssemblySurfaceFocusInfoBuilder::GatherFacilityPor
 {
 	OutInputConnectionCellIds.Reset();
 	OutOutputConnectionCellIds.Reset();
+	OutInputConnectionCellIds.Reserve(FacilityPorts.Num());
+	OutOutputConnectionCellIds.Reserve(FacilityPorts.Num());
+
+	TSet<FSRPlanetSurfaceGridCellId> InputConnectionCellIdSet;
+	TSet<FSRPlanetSurfaceGridCellId> OutputConnectionCellIdSet;
+	InputConnectionCellIdSet.Reserve(FacilityPorts.Num());
+	OutputConnectionCellIdSet.Reserve(FacilityPorts.Num());
 
 	for (const FSRFocusedFacilityPortInfo& PortInfo : FacilityPorts)
 	{
 		TArray<FSRPlanetSurfaceGridCellId>& TargetCellIds = PortInfo.PortKind == ESRStructurePortKind::Output
 			? OutOutputConnectionCellIds
 			: OutInputConnectionCellIds;
+		TSet<FSRPlanetSurfaceGridCellId>& TargetCellIdSet = PortInfo.PortKind == ESRStructurePortKind::Output
+			? OutputConnectionCellIdSet
+			: InputConnectionCellIdSet;
 		for (const FSRPlanetSurfaceGridCellId& ConnectionCellId : PortInfo.ConnectionCellIds)
 		{
-			TargetCellIds.AddUnique(ConnectionCellId);
+			AppendUniqueFacilityPortPreviewCell(ConnectionCellId, TargetCellIds, TargetCellIdSet);
 		}
 	}
 }

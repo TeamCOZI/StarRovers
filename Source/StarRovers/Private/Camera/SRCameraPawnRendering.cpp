@@ -1,5 +1,6 @@
 #include "Camera/SRCameraPawn.h"
 
+#include "Utility/SRLog.h"
 #include "SRCameraDynamicMeshVisibilityController.h"
 #include "Camera/CameraComponent.h"
 #include "Components/DirectionalLightComponent.h"
@@ -28,7 +29,7 @@ float ASRCameraPawn::GetScreenSpaceThicknessReferenceFieldOfView() const
 
 	if (!Camera)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires Camera to resolve screen-space thickness FOV."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRCameraPawn requires Camera to resolve screen-space thickness FOV."));
 		return 0.0f;
 	}
 
@@ -40,7 +41,7 @@ void ASRCameraPawn::RefreshScreenSpaceThicknessReferenceView()
 	ScreenSpaceThicknessReferenceZoomDistance = FMath::Max(1.0f, SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
 	if (!Camera)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRCameraPawn requires Camera to refresh screen-space thickness reference FOV."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRCameraPawn requires Camera to refresh screen-space thickness reference FOV."));
 		ScreenSpaceThicknessReferenceFieldOfView = 0.0f;
 		return;
 	}

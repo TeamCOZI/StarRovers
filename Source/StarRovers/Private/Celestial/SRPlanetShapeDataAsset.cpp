@@ -1,5 +1,7 @@
 #include "Celestial/SRPlanetShapeDataAsset.h"
 
+#include "Utility/SRLog.h"
+
 USRDynamicMeshBaseDataAsset* USRPlanetShapeDataAsset::GetDynamicMeshBaseDataAsset() const
 {
 	return DynamicMeshBaseDataAsset.Get();
@@ -36,7 +38,7 @@ void USRPlanetShapeDataAsset::PostEditChangeProperty(FPropertyChangedEvent& Prop
 
 	if (!IsDynamicMeshBaseShapeCompatible())
 	{
-		UE_LOG(
+		SR_LOG(DynamicMesh,
 			LogTemp,
 			Warning,
 			TEXT("PlanetShape '%s' has DynamicMeshBaseDataAsset '%s' with a different base shape."),

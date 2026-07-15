@@ -22,6 +22,7 @@ void USRAssemblyComponent::UpdateStructureGhostPreview()
 			SelectedStructureDataAsset,
 			RotationSteps,
 			GetStructurePlacementAdditionalYawDegrees(),
+			ConveyorPreview,
 			StructurePreview);
 	if (UpdateResult == StarRovers::Assembly::ESRAssemblyStructureGhostPreviewUpdateResult::DestroyPreview)
 	{
@@ -73,6 +74,7 @@ bool USRAssemblyComponent::UpdateStructurePlacementDragPreview(
 		PlacementRotationSteps,
 		GetStructurePlacementAdditionalYawDegrees(),
 		PlacementDrag,
+		ConveyorPreview,
 		StructurePreview))
 	{
 		return false;

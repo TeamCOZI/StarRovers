@@ -1,5 +1,6 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
+#include "Utility/SRLog.h"
 #include "SRFacilityResourceCycleApplier.h"
 
 void USRFacilityNetworkComponent::HandleGameCycleAdvanced(int32 CurrentCycleIndex)
@@ -7,8 +8,7 @@ void USRFacilityNetworkComponent::HandleGameCycleAdvanced(int32 CurrentCycleInde
 	const int32 ChangedResourceCount = FSRFacilityResourceCycleApplier::ApplyGameCycleToFacilities(RuntimeState);
 	if (ChangedResourceCount > 0 && bLogFacilityNetworkEvents)
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Game cycle applied: Cycle=%d ChangedResources=%d Owner=%s"),
 			CurrentCycleIndex,

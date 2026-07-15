@@ -1,5 +1,6 @@
 #include "SRPlayerControllerInputBinder.h"
 
+#include "Utility/SRLog.h"
 #include "Camera/SRPlayerController.h"
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
@@ -20,7 +21,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires LeftClickAction before input binding."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController requires LeftClickAction before input binding."));
 	}
 
 	if (PlayerController.FocusParentAction)
@@ -29,7 +30,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("ASRPlayerController requires FocusParentAction before input binding."));
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController requires FocusParentAction before input binding."));
 	}
 
 	if (PlayerController.AssemblyAreaDeletionDragHoldAction)
@@ -40,7 +41,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyAreaDeletionDragHoldAction before assembly area deletion drag binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyAreaDeletionDragHoldAction before assembly area deletion drag binding."));
 	}
 
 	if (PlayerController.AssemblyAreaSelectionDeleteAction)
@@ -49,7 +50,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyAreaSelectionDeleteAction before assembly area selection delete binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyAreaSelectionDeleteAction before assembly area selection delete binding."));
 	}
 
 	if (PlayerController.AssemblyAreaSelectionCopyAction)
@@ -58,7 +59,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyAreaSelectionCopyAction before assembly area selection copy binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyAreaSelectionCopyAction before assembly area selection copy binding."));
 	}
 
 	if (PlayerController.AssemblyAreaCopyMirrorAction)
@@ -67,7 +68,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyAreaCopyMirrorAction before assembly area copy mirror binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyAreaCopyMirrorAction before assembly area copy mirror binding."));
 	}
 
 	if (PlayerController.AssemblyPickStructureAction)
@@ -76,7 +77,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyPickStructureAction before assembly pick structure binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyPickStructureAction before assembly pick structure binding."));
 	}
 
 	if (PlayerController.DeleteStructureAction)
@@ -85,7 +86,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires DeleteStructureAction before right-click structure deletion binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires DeleteStructureAction before right-click structure deletion binding."));
 	}
 
 	if (PlayerController.RotatePlacementCounterClockwiseAction)
@@ -94,7 +95,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires RotatePlacementCounterClockwiseAction before surface view rotation binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires RotatePlacementCounterClockwiseAction before surface view rotation binding."));
 	}
 
 	if (PlayerController.RotatePlacementClockwiseAction)
@@ -103,7 +104,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires RotatePlacementClockwiseAction before surface view rotation binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires RotatePlacementClockwiseAction before surface view rotation binding."));
 	}
 
 	if (PlayerController.RotateAssemblyPlacementAction)
@@ -112,7 +113,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires RotateAssemblyPlacementAction before assembly placement rotation binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires RotateAssemblyPlacementAction before assembly placement rotation binding."));
 	}
 
 	if (PlayerController.ConveyorWaypointAction)
@@ -121,7 +122,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires ConveyorWaypointAction before conveyor waypoint binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires ConveyorWaypointAction before conveyor waypoint binding."));
 	}
 
 	if (PlayerController.BulkDeleteConveyorModifierAction)
@@ -132,7 +133,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires BulkDeleteConveyorModifierAction before conveyor bulk deletion modifier binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires BulkDeleteConveyorModifierAction before conveyor bulk deletion modifier binding."));
 	}
 
 	if (PlayerController.AssemblyShiftModifierAction)
@@ -143,7 +144,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyShiftModifierAction before assembly shift modifier binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyShiftModifierAction before assembly shift modifier binding."));
 	}
 
 	if (PlayerController.AssemblyUndoRedoAction)
@@ -152,7 +153,7 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyUndoRedoAction before assembly undo/redo binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires AssemblyUndoRedoAction before assembly undo/redo binding."));
 	}
 
 	if (PlayerController.StructureSelectionTabAction)
@@ -161,6 +162,6 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ASRPlayerController requires StructureSelectionTabAction before structure selection tab binding."));
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires StructureSelectionTabAction before structure selection tab binding."));
 	}
 }

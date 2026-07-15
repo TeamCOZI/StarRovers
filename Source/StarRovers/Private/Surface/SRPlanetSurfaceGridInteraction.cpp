@@ -123,6 +123,16 @@ void USRPlanetSurfaceGrid::ClearDeletionPreviewCells()
 	ClearInteractionPreviewCellIds(DeletionPreviewCellIds);
 }
 
+void USRPlanetSurfaceGrid::SetConstructionReplacementPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+{
+	SetInteractionPreviewCellIds(CellIds, ConstructionReplacementPreviewCellIds);
+}
+
+void USRPlanetSurfaceGrid::ClearConstructionReplacementPreviewCells()
+{
+	ClearInteractionPreviewCellIds(ConstructionReplacementPreviewCellIds);
+}
+
 void USRPlanetSurfaceGrid::SetInvalidPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
 {
 	SetInteractionPreviewCellIds(CellIds, InvalidPreviewCellIds);

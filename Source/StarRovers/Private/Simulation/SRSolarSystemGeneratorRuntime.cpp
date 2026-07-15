@@ -6,6 +6,7 @@
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "TimerManager.h"
 #include "Utility/SRMemoryDiagnostics.h"
+#include "Utility/SRLog.h"
 #include "Utility/SRTimingLog.h"
 
 using namespace StarRovers::Simulation::SolarSystemGeneration;
@@ -113,7 +114,7 @@ void ASRSolarSystemGenerator::ClearRuntimeGeneratedBodies()
 			if (GEngine)
 			{
 				GEngine->ForceGarbageCollection(true);
-				UE_LOG(LogTemp, Display, TEXT("Requested garbage collection after clearing runtime generated celestial bodies."));
+				SR_LOG(SolarSystem, LogTemp, Display, TEXT("Requested garbage collection after clearing runtime generated celestial bodies."));
 				LogMemoryDiagnosticsSnapshot(TEXT("ClearRuntimeGeneratedBodies.AfterGCRequest"));
 				TArray<FString> ExtraLines;
 				ASRCelestialBody::AppendRuntimeMemoryDiagnostics(ExtraLines);

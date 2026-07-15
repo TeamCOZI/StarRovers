@@ -6,6 +6,7 @@
 class USRPlanetSurfaceGrid;
 class USRStructureDataAsset;
 class USRStructureInstanceManagerComponent;
+class USRConveyorNetworkComponent;
 struct FSRStructureData;
 
 namespace StarRovers::Assembly
@@ -13,8 +14,10 @@ namespace StarRovers::Assembly
 	struct FSRAssemblyStructurePlacementResult
 	{
 		TWeakObjectPtr<USRStructureInstanceManagerComponent> StructureInstanceManager;
+		TWeakObjectPtr<USRConveyorNetworkComponent> ConveyorNetwork;
 		FName OccupantId = NAME_None;
 		TArray<FSRRestorableNaturalStructure> RemovedNaturalStructures;
+		TArray<FSRConveyorBeltPath> RemovedConveyorBeltPaths;
 		bool bPlacedWithStructureInstanceManager = false;
 		bool bShouldDestroyPreviewOnFailure = false;
 	};

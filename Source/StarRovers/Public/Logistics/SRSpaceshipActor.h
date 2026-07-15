@@ -103,6 +103,7 @@ private:
 	void ApplyTrailUserParameters();
 	void ResetTrailState();
 	void ResetVisualMotionState();
+	UNiagaraSystem* ResolveTrailNiagaraSystem() const;
 	FVector ResolveEffectiveTravelDirection(
 		const FVector& WorldLocation,
 		const FVector& TargetWorldLocation,

@@ -1,7 +1,6 @@
 #include "Conveyor/SRConveyorBeltPathQuery.h"
 
 #include "Conveyor/SRConveyorConnectionQuery.h"
-#include "Conveyor/SRConveyorNetworkGeometry.h"
 #include "Conveyor/SRConveyorBeltPathSplitter.h"
 
 bool StarRovers::Conveyor::FSRConveyorBeltPathQuery::GatherConnectedCellIds(
@@ -20,9 +19,15 @@ bool StarRovers::Conveyor::FSRConveyorBeltPathQuery::GatherConnectedCellIds(
 	}
 
 	OutCellIds.Reserve(ConnectedLaneKeys.Num());
+	TSet<FSRPlanetSurfaceGridCellId> ConnectedCellIdSet;
+	ConnectedCellIdSet.Reserve(ConnectedLaneKeys.Num());
 	for (const FSRConveyorLaneKey& LaneKey : ConnectedLaneKeys)
 	{
-		OutCellIds.AddUnique(LaneKey.CellId);
+		if (!ConnectedCellIdSet.Contains(LaneKey.CellId))
+		{
+			ConnectedCellIdSet.Add(LaneKey.CellId);
+			OutCellIds.Add(LaneKey.CellId);
+		}
 	}
 	return !OutCellIds.IsEmpty();
 }
@@ -43,11 +48,11 @@ bool StarRovers::Conveyor::FSRConveyorBeltPathQuery::GatherConnectedBeltPaths(
 		return false;
 	}
 
-	TSet<FSRConveyorLaneKey> ConnectedLaneKeySet;
-	ConnectedLaneKeySet.Reserve(ConnectedLaneKeys.Num());
+	TSet<FSRPlanetSurfaceGridCellId> ConnectedCellIdSet;
+	ConnectedCellIdSet.Reserve(ConnectedLaneKeys.Num());
 	for (const FSRConveyorLaneKey& LaneKey : ConnectedLaneKeys)
 	{
-		ConnectedLaneKeySet.Add(LaneKey);
+		ConnectedCellIdSet.Add(LaneKey.CellId);
 	}
 
 	const int32 SafeLayer = FMath::Max(0, Layer);
@@ -60,9 +65,9 @@ bool StarRovers::Conveyor::FSRConveyorBeltPathQuery::GatherConnectedBeltPaths(
 
 		FSRConveyorBeltPathSplitter::AppendMatchingSubPaths(
 			BeltPath,
-			[&ConnectedLaneKeySet, SafeLayer](const FSRPlanetSurfaceGridCellId& PathCellId)
+			[&ConnectedCellIdSet](const FSRPlanetSurfaceGridCellId& PathCellId)
 		{
-			return ConnectedLaneKeySet.Contains(FSRConveyorNetworkGeometry::MakeLaneKey(PathCellId, SafeLayer));
+			return ConnectedCellIdSet.Contains(PathCellId);
 		},
 			OutBeltPaths);
 	}

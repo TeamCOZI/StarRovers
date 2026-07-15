@@ -27,9 +27,20 @@ void USRPlanetTerrainProfileDataAsset::ApplyToDynamicMeshGeneration(FSRDynamicMe
 TArray<TObjectPtr<USRPlanetBiomeDataAsset>> USRPlanetTerrainProfileDataAsset::GetAllowedBiomeDataAssets() const
 {
 	TArray<TObjectPtr<USRPlanetBiomeDataAsset>> AllowedBiomeDataAssets;
+	AllowedBiomeDataAssets.Reserve(Biomes.Num());
+	TSet<USRPlanetBiomeDataAsset*> SeenBiomeDataAssets;
+	SeenBiomeDataAssets.Reserve(Biomes.Num());
 	for (const FSRPlanetProfileBiomeEntry& BiomeEntry : Biomes)
 	{
-		if (IsValid(BiomeEntry.BiomeDataAsset.Get()) && !AllowedBiomeDataAssets.Contains(BiomeEntry.BiomeDataAsset))
+		USRPlanetBiomeDataAsset* BiomeDataAsset = BiomeEntry.BiomeDataAsset.Get();
+		if (!IsValid(BiomeDataAsset))
+		{
+			continue;
+		}
+
+		bool bAlreadySeen = false;
+		SeenBiomeDataAssets.Add(BiomeDataAsset, &bAlreadySeen);
+		if (!bAlreadySeen)
 		{
 			AllowedBiomeDataAssets.Add(BiomeEntry.BiomeDataAsset);
 		}

@@ -1,5 +1,6 @@
 #include "Celestial/SRPlanetDataAsset.h"
 
+#include "Utility/SRLog.h"
 #include "Celestial/SRCelestialBodyCategory.h"
 #include "Celestial/SRPlanetShapeDataAsset.h"
 #include "Surface/SRPlanetTerrainProfileDataAsset.h"
@@ -41,8 +42,7 @@ void USRPlanetDataAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
 	}
 	if (IsValid(ShapeDataAsset.Get()) && !ShapeDataAsset->IsDynamicMeshBaseShapeCompatible())
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(Celestial, LogTemp,
 			Warning,
 			TEXT("PlanetDataAsset '%s' uses ShapeDataAsset '%s' with an incompatible DynamicMeshBaseDataAsset shape."),
 			*GetName(),

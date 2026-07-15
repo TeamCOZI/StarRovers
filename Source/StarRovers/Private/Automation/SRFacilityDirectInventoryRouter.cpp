@@ -10,6 +10,11 @@ namespace
 		const FSRResourceInstance& ResourceInstance,
 		int32 PreferredPortIndex = INDEX_NONE)
 	{
+		if (ResourceInstance.ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
+		{
+			return nullptr;
+		}
+
 		if (FacilityInstance.InputPortInventories.IsValidIndex(PreferredPortIndex))
 		{
 			FSRFacilityPortInventory& PreferredPortInventory = FacilityInstance.InputPortInventories[PreferredPortIndex];
@@ -19,21 +24,35 @@ namespace
 			}
 		}
 
+		FSRFacilityPortInventory* FirstEmptyAcceptingPortInventory = nullptr;
 		for (FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
 		{
-			if (StarRovers::FacilityResources::GetInventorySlotStackCount(InputPortInventory) > 0
-				&& StarRovers::FacilityResources::CanInventorySlotAcceptResource(InputPortInventory, ResourceInstance))
+			if (!StarRovers::FacilityResources::CanInventorySlotAcceptResource(InputPortInventory, ResourceInstance))
+			{
+				continue;
+			}
+
+			if (StarRovers::FacilityResources::GetInventorySlotStackCount(InputPortInventory) > 0)
 			{
 				return &InputPortInventory;
 			}
+
+			if (!FirstEmptyAcceptingPortInventory)
+			{
+				FirstEmptyAcceptingPortInventory = &InputPortInventory;
+			}
 		}
 
-		for (FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
+		return FirstEmptyAcceptingPortInventory;
+	}
+
+	FSRFacilityPortInventory* FindFirstOutputPortInventoryWithResources(FSRFacilityInstance& FacilityInstance)
+	{
+		for (FSRFacilityPortInventory& OutputPortInventory : FacilityInstance.OutputPortInventories)
 		{
-			if (StarRovers::FacilityResources::GetInventorySlotStackCount(InputPortInventory) <= 0
-				&& StarRovers::FacilityResources::CanInventorySlotAcceptResource(InputPortInventory, ResourceInstance))
+			if (StarRovers::FacilityResources::GetInventorySlotStackCount(OutputPortInventory) > 0)
 			{
-				return &InputPortInventory;
+				return &OutputPortInventory;
 			}
 		}
 
@@ -57,7 +76,7 @@ bool FSRFacilityDirectInventoryRouter::TryAddInputResource(
 	ResetTransferResult(OutTransferResult);
 
 	FSRFacilityPortInventory* InputPortInventory = FindInputPortInventoryForDirectAdd(FacilityInstance, ResourceInstance);
-	if (!InputPortInventory || ResourceInstance.ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
+	if (!InputPortInventory)
 	{
 		return false;
 	}
@@ -122,10 +141,7 @@ bool FSRFacilityDirectInventoryRouter::TryExtractOutputResource(
 	OutResourceInstance = FSRResourceInstance();
 	ResetTransferResult(OutTransferResult);
 
-	FSRFacilityPortInventory* OutputPortInventory = FacilityInstance.OutputPortInventories.FindByPredicate([](const FSRFacilityPortInventory& CandidatePortInventory)
-	{
-		return StarRovers::FacilityResources::GetInventorySlotStackCount(CandidatePortInventory) > 0;
-	});
+	FSRFacilityPortInventory* OutputPortInventory = FindFirstOutputPortInventoryWithResources(FacilityInstance);
 	if (!OutputPortInventory)
 	{
 		return false;

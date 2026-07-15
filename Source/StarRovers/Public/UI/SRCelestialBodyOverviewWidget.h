@@ -192,6 +192,7 @@ private:
 	FText GetStarSystemTreePrefixText(AActor* CelestialBodyActor) const;
 	int32 GetStarSystemSiblingSortIndex(AActor* CelestialBodyActor) const;
 	void SortStarSystemBodies(TArray<TObjectPtr<AActor>>& StarSystemBodiesToSort) const;
+	bool CompareStarSystemBodies(const AActor& Left, const AActor& Right) const;
 	bool IsScreenPositionOverOverviewUI(const FVector2D& ScreenPosition) const;
 
 	FSRStarRoversCelestialBodyRequestedSignature CelestialBodyRequestedEvent;

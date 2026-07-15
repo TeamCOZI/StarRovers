@@ -8,11 +8,20 @@ namespace
 	{
 		TArray<FSRPlanetSurfaceGridCellId> ValidCellIds;
 		ValidCellIds.Reserve(CellIds.Num());
+		TSet<FSRPlanetSurfaceGridCellId> SeenCellIds;
+		SeenCellIds.Reserve(CellIds.Num());
 		for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
 		{
-			if (IsValidCell(CellId))
+			if (!IsValidCell(CellId))
 			{
-				ValidCellIds.AddUnique(CellId);
+				continue;
+			}
+
+			bool bAlreadySeen = false;
+			SeenCellIds.Add(CellId, &bAlreadySeen);
+			if (!bAlreadySeen)
+			{
+				ValidCellIds.Add(CellId);
 			}
 		}
 
@@ -125,6 +134,7 @@ bool StarRovers::SurfaceGridInteractionState::HasInteractionOverlayContent(
 	const TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& OutputPortPreviewCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& DeletionPreviewCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& ConstructionReplacementPreviewCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& InvalidPreviewCellIds)
 {
 	return bHasHoveredCell
@@ -134,6 +144,7 @@ bool StarRovers::SurfaceGridInteractionState::HasInteractionOverlayContent(
 		|| !InputPortPreviewCellIds.IsEmpty()
 		|| !OutputPortPreviewCellIds.IsEmpty()
 		|| !DeletionPreviewCellIds.IsEmpty()
+		|| !ConstructionReplacementPreviewCellIds.IsEmpty()
 		|| !InvalidPreviewCellIds.IsEmpty();
 }
 
@@ -148,6 +159,7 @@ void StarRovers::SurfaceGridInteractionState::ResetInteractionState(
 	TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& OutputPortPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& DeletionPreviewCellIds,
+	TArray<FSRPlanetSurfaceGridCellId>& ConstructionReplacementPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& InvalidPreviewCellIds)
 {
 	bHasHoveredCell = false;
@@ -160,5 +172,6 @@ void StarRovers::SurfaceGridInteractionState::ResetInteractionState(
 	InputPortPreviewCellIds.Reset();
 	OutputPortPreviewCellIds.Reset();
 	DeletionPreviewCellIds.Reset();
+	ConstructionReplacementPreviewCellIds.Reset();
 	InvalidPreviewCellIds.Reset();
 }

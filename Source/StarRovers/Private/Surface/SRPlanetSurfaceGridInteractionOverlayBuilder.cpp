@@ -9,6 +9,11 @@ namespace
 		return CellIds && !CellIds->IsEmpty();
 	}
 
+	bool ContainsCell(const TArray<FSRPlanetSurfaceGridCellId>* CellIds, const FSRPlanetSurfaceGridCellId& CellId)
+	{
+		return CellIds && CellIds->Contains(CellId);
+	}
+
 	void AppendPreviewCells(
 		UE::Geometry::FDynamicMesh3& OverlayMesh,
 		const TArray<FSRPlanetSurfaceGridCellId>* CellIds,
@@ -17,7 +22,7 @@ namespace
 		StarRovers::SurfaceGridInteractionOverlayBuilder::FCellLookup GetCellById,
 		StarRovers::SurfaceGridInteractionOverlayBuilder::FAppendInteractionCell AppendInteractionCell)
 	{
-		if (!CellIds)
+		if (!HasAnyCells(CellIds))
 		{
 			return;
 		}
@@ -41,6 +46,11 @@ bool StarRovers::SurfaceGridInteractionOverlayBuilder::BuildInteractionOverlayMe
 	FAppendInteractionRegion AppendInteractionRegion,
 	FAppendInteractionPatch AppendInteractionPatch)
 {
+	if (!Input.bGridVisible)
+	{
+		return false;
+	}
+
 	AppendPreviewCells(
 		OverlayMesh,
 		Input.OccupiedPreviewCellIds,
@@ -74,12 +84,12 @@ bool StarRovers::SurfaceGridInteractionOverlayBuilder::BuildInteractionOverlayMe
 			{
 				AppendInteractionCell(OverlayMesh, HoveredCell, Input.HoveredCellColor, Input.DebugLineThickness * 2.0f);
 			}
-		}
 
-		FSRPlanetSurfaceGridCell HoveredCellInfo;
-		if (GetCellById(Input.HoveredCellId, HoveredCellInfo) && HoveredCellInfo.bOccupied)
-		{
-			AppendInteractionCell(OverlayMesh, HoveredCellInfo, Input.OccupiedCellColor, Input.DebugLineThickness * 2.5f);
+			if (HoveredCell.bOccupied
+				&& !ContainsCell(Input.ConstructionReplacementPreviewCellIds, Input.HoveredCellId))
+			{
+				AppendInteractionCell(OverlayMesh, HoveredCell, Input.OccupiedCellColor, Input.DebugLineThickness * 2.5f);
+			}
 		}
 	}
 
@@ -129,13 +139,13 @@ bool StarRovers::SurfaceGridInteractionOverlayBuilder::BuildInteractionOverlayMe
 			PatchDrawnEdges);
 	}
 
-	return Input.bGridVisible
-		&& (Input.bHasHoveredCell
+	return Input.bHasHoveredCell
 			|| Input.bHasSelectedCell
 			|| HasAnyCells(Input.AreaSelectionCellIds)
 			|| HasAnyCells(Input.OccupiedPreviewCellIds)
 			|| HasAnyCells(Input.InputPortPreviewCellIds)
 			|| HasAnyCells(Input.OutputPortPreviewCellIds)
 			|| HasAnyCells(Input.DeletionPreviewCellIds)
-			|| HasAnyCells(Input.InvalidPreviewCellIds));
+			|| HasAnyCells(Input.ConstructionReplacementPreviewCellIds)
+			|| HasAnyCells(Input.InvalidPreviewCellIds);
 }

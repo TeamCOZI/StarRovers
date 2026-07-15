@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "Utility/SRLog.h"
 #include "SRCelestialBodyLog.h"
 #include "Components/DynamicMeshComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -46,8 +47,7 @@ void ASRCelestialBody::ApplyToonOutlineSettings()
 	const int32 BodyMeshComponentCount = ApplyToonOutlineToBodyMeshComponents();
 	if (UWorld* World = GetWorld(); World && World->IsGameWorld())
 	{
-		UE_LOG(
-			LogStarRoversCelestial,
+		SR_LOG(Celestial, LogStarRoversCelestial,
 			Log,
 			TEXT("ToonOutline Body='%s' Enabled=%s Stencil=%d BodyComponents=%d Ocean=false Atmosphere=false"),
 			*GetName(),

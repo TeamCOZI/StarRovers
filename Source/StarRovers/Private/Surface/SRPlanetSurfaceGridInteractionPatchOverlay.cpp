@@ -1,5 +1,6 @@
 #include "SRPlanetSurfaceGridInteractionPatchOverlay.h"
 
+#include "Utility/SRLog.h"
 #include "SRPlanetSurfaceGridInteractionOverlayGeometry.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
@@ -19,8 +20,7 @@ void StarRovers::SurfaceGridInteractionPatchOverlay::AppendInteractionGridPatch(
 	TArray<FSRPlanetSurfaceGridCellId> PatchCellIds;
 	if (!GetPatchCellIds(CenterCellId, PatchCellIds))
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(Surface, LogTemp,
 			Warning,
 			TEXT("[SR SurfacePatch] Result=PatchBuildFailed Center={%s}"),
 			*FormatSurfacePatchCellId(CenterCellId));
@@ -36,8 +36,7 @@ void StarRovers::SurfaceGridInteractionPatchOverlay::AppendInteractionGridPatch(
 
 	if (!PatchCellIds.Contains(CenterCellId))
 	{
-		UE_LOG(
-			LogTemp,
+		SR_LOG(Surface, LogTemp,
 			Warning,
 			TEXT("[SR SurfacePatch] Result=CenterMissing Center={%s} PatchIds=%d"),
 			*FormatSurfacePatchCellId(CenterCellId),

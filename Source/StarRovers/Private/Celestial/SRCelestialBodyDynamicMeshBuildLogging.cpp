@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 
+#include "Utility/SRLog.h"
 #include "SRCelestialBodyLog.h"
 #include "Utility/SRTimingLog.h"
 
@@ -96,8 +97,7 @@ void LogPreparedDynamicMeshBuildSummary(
 		SideWallPatchStatus));
 	if (SideWallUnpatchedTriangleCount > 0)
 	{
-		UE_LOG(
-			LogStarRoversCelestial,
+		SR_LOG(DynamicMesh, LogStarRoversCelestial,
 			Warning,
 			TEXT("Dynamic mesh '%s' left %d side-wall triangles unpatched after fallback."),
 			*BodyName,

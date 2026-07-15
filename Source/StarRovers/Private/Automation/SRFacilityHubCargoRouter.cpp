@@ -57,6 +57,70 @@ bool FSRFacilityHubCargoRouter::TryTakeOutboundCargo(
 	return false;
 }
 
+bool FSRFacilityHubCargoRouter::TryTakeOutboundCargoMatching(
+	FSRFacilityInstance& FacilityInstance,
+	int32 MaxStackCount,
+	TFunctionRef<bool(const FSRResourceInstance&)> CargoPredicate,
+	FSRResourceInstance& OutCargo,
+	FSRFacilityHubCargoTransferResult* OutTransferResult)
+{
+	OutCargo = FSRResourceInstance();
+	if (OutTransferResult)
+	{
+		*OutTransferResult = FSRFacilityHubCargoTransferResult();
+	}
+
+	const int32 SafeMaxStackCount = FMath::Max(0, MaxStackCount);
+	if (!IsHubFacility(FacilityInstance) || SafeMaxStackCount <= 0)
+	{
+		return false;
+	}
+
+	for (FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
+	{
+		for (int32 ResourceIndex = 0; ResourceIndex < InputPortInventory.Inventory.Num(); ++ResourceIndex)
+		{
+			FSRResourceInstance& StoredResource = InputPortInventory.Inventory[ResourceIndex];
+			const int32 StoredStackCount = StarRovers::FacilityResources::GetResourceStackCount(StoredResource);
+			if (StoredResource.ResourceId.IsNone() || StoredStackCount <= 0)
+			{
+				continue;
+			}
+
+			FSRResourceInstance CandidateCargo = StoredResource;
+			CandidateCargo.StackCount = FMath::Min(StoredStackCount, SafeMaxStackCount);
+			if (!CargoPredicate(CandidateCargo))
+			{
+				continue;
+			}
+
+			const int32 TakenStackCount = CandidateCargo.StackCount;
+			OutCargo = CandidateCargo;
+			StoredResource.StackCount = StoredStackCount - TakenStackCount;
+			if (StoredResource.StackCount <= 0)
+			{
+				InputPortInventory.Inventory.RemoveAt(ResourceIndex);
+			}
+
+			if (OutTransferResult)
+			{
+				OutTransferResult->PortId = InputPortInventory.PortId;
+				OutTransferResult->RemainingPortStackCount =
+					StarRovers::FacilityResources::GetInventorySlotStackCount(InputPortInventory);
+			}
+			FSRFacilityPortInventoryBuilder::RefreshAggregateInventories(FacilityInstance);
+			return true;
+		}
+
+		InputPortInventory.Inventory.RemoveAll([](const FSRResourceInstance& ResourceInstance)
+		{
+			return ResourceInstance.StackCount <= 0 || ResourceInstance.ResourceId.IsNone();
+		});
+	}
+
+	return false;
+}
+
 void FSRFacilityHubCargoRouter::GetOutboundCargoResourceIds(
 	const FSRFacilityInstance& FacilityInstance,
 	TArray<FName>& OutResourceIds)
@@ -67,16 +131,24 @@ void FSRFacilityHubCargoRouter::GetOutboundCargoResourceIds(
 		return;
 	}
 
+	TSet<FName> ResourceIdSet;
+	ResourceIdSet.Reserve(FacilityInstance.InputPortInventories.Num());
 	for (const FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
 	{
 		for (const FSRResourceInstance& ResourceInstance : InputPortInventory.Inventory)
 		{
-			if (ResourceInstance.ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
+			const FName ResourceId = ResourceInstance.ResourceId;
+			if (ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
 			{
 				continue;
 			}
 
-			OutResourceIds.AddUnique(ResourceInstance.ResourceId);
+			bool bAlreadyAdded = false;
+			ResourceIdSet.Add(ResourceId, &bAlreadyAdded);
+			if (!bAlreadyAdded)
+			{
+				OutResourceIds.Add(ResourceId);
+			}
 		}
 	}
 }

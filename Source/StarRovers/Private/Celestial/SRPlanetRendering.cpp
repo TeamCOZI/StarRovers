@@ -1,5 +1,6 @@
 #include "Celestial/SRPlanet.h"
 
+#include "Utility/SRLog.h"
 #include "SRCelestialBodyLog.h"
 #include "Celestial/SRCelestialBodyDynamicMeshPipeline.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
@@ -42,6 +43,48 @@ namespace
 		MaterialInstance->SetVectorParameterValue(TEXT("TintColor"), Color);
 		MaterialInstance->SetScalarParameterValue(TEXT("Opacity"), Color.A);
 		MaterialInstance->SetScalarParameterValue(TEXT("Alpha"), Color.A);
+	}
+
+	UStaticMesh* ResolveRotationAxisSplineMesh(
+		UStaticMesh* ConfiguredMesh,
+		const USplineMeshComponent* NorthSpline,
+		const USplineMeshComponent* SouthSpline)
+	{
+		if (IsValid(ConfiguredMesh))
+		{
+			return ConfiguredMesh;
+		}
+
+		if (IsValid(NorthSpline) && IsValid(NorthSpline->GetStaticMesh()))
+		{
+			return NorthSpline->GetStaticMesh();
+		}
+
+		return IsValid(SouthSpline) ? SouthSpline->GetStaticMesh() : nullptr;
+	}
+
+	UMaterialInterface* ResolveRotationAxisMaterial(
+		UMaterialInterface* ConfiguredMaterial,
+		const USplineMeshComponent* NorthSpline,
+		const USplineMeshComponent* SouthSpline,
+		const UStaticMesh* AxisMesh)
+	{
+		if (IsValid(ConfiguredMaterial))
+		{
+			return ConfiguredMaterial;
+		}
+
+		if (IsValid(NorthSpline) && IsValid(NorthSpline->GetMaterial(0)))
+		{
+			return NorthSpline->GetMaterial(0);
+		}
+
+		if (IsValid(SouthSpline) && IsValid(SouthSpline->GetMaterial(0)))
+		{
+			return SouthSpline->GetMaterial(0);
+		}
+
+		return IsValid(AxisMesh) ? AxisMesh->GetMaterial(0) : nullptr;
 	}
 
 	float ComputeSplineMeshCrossScale(const UStaticMesh* Mesh, const float WorldThickness)
@@ -115,7 +158,10 @@ void ASRPlanet::RefreshRotationAxisLineVisual()
 		return;
 	}
 
-	UStaticMesh* AxisMesh = RotationAxisSplineMesh.Get();
+	UStaticMesh* AxisMesh = ResolveRotationAxisSplineMesh(
+		RotationAxisSplineMesh.Get(),
+		RotationAxisNorthSpline.Get(),
+		RotationAxisSouthSpline.Get());
 	if (!IsValid(AxisMesh))
 	{
 		SetRotationAxisSplineVisible(RotationAxisNorthSpline, false);
@@ -129,13 +175,14 @@ void ASRPlanet::RefreshRotationAxisLineVisual()
 	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
 	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
 	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	const float ReferenceTanHalfFieldOfView = FSRScreenSpaceLineThickness::ComputeReferenceTanHalfFieldOfView(ReferenceFieldOfViewDegrees);
 
-	const float CenterThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
+	const float CenterThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
 		CameraInfo,
 		GetActorLocation(),
 		RotationAxisLineThickness,
 		ReferenceViewDepth,
-		ReferenceFieldOfViewDegrees);
+		ReferenceTanHalfFieldOfView);
 	const float SurfaceClearance = FMath::Max(
 		SurfaceRadius * RotationAxisSurfaceClearanceRatio,
 		FMath::Max(0.0f, CenterThickness) * 4.0f);
@@ -153,11 +200,11 @@ void ASRPlanet::RefreshRotationAxisLineVisual()
 		RotationAxisLineColor.B,
 		FMath::Clamp(RotationAxisLineOpacity, 0.0f, 1.0f));
 
-	UMaterialInterface* AxisBaseMaterial = RotationAxisMaterial.Get();
-	if (!IsValid(AxisBaseMaterial))
-	{
-		AxisBaseMaterial = AxisMesh->GetMaterial(0);
-	}
+	UMaterialInterface* AxisBaseMaterial = ResolveRotationAxisMaterial(
+		RotationAxisMaterial.Get(),
+		RotationAxisNorthSpline.Get(),
+		RotationAxisSouthSpline.Get(),
+		AxisMesh);
 
 	if (IsValid(AxisBaseMaterial) && !IsValid(RotationAxisNorthMaterialInstance))
 	{
@@ -173,12 +220,12 @@ void ASRPlanet::RefreshRotationAxisLineVisual()
 	auto ComputeAdaptiveThickness = [&](const FVector& LocalStart, const FVector& LocalEnd)
 	{
 		const FVector WorldMidpoint = GetActorTransform().TransformPosition((LocalStart + LocalEnd) * 0.5f);
-		return FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
+		return FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
 			CameraInfo,
 			WorldMidpoint,
 			RotationAxisLineThickness,
 			ReferenceViewDepth,
-			ReferenceFieldOfViewDegrees);
+			ReferenceTanHalfFieldOfView);
 	};
 
 	const FVector NorthStart = FVector::UpVector * SegmentStartRadius;
@@ -231,7 +278,7 @@ bool ASRPlanet::BuildShellDynamicMesh(
 	}
 	if (ShellBaseDataAsset->BaseShape != ESRDynamicMeshBaseShape::CubeSphere)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Planet '%s' cannot build %s shell from unsupported shape."), *GetName(), ShellName ? ShellName : TEXT("dynamic"));
+		SR_LOG(Celestial, LogTemp, Warning, TEXT("Planet '%s' cannot build %s shell from unsupported shape."), *GetName(), ShellName ? ShellName : TEXT("dynamic"));
 		return false;
 	}
 
@@ -323,7 +370,7 @@ void ASRPlanet::ApplyOceanDynamicMeshSettings()
 
 	if (!IsValid(OceanDynamicMeshBaseDataAsset.Get()))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires OceanDynamicMeshBaseDataAsset while ocean is enabled."), *GetName());
+		SR_LOG(Celestial, LogTemp, Error, TEXT("Planet '%s' requires OceanDynamicMeshBaseDataAsset while ocean is enabled."), *GetName());
 		OceanDynamicMesh->SetVisibility(false);
 		OceanDynamicMesh->SetHiddenInGame(true);
 		return;
@@ -332,7 +379,7 @@ void ASRPlanet::ApplyOceanDynamicMeshSettings()
 	UMaterialInterface* DesiredOceanMaterial = OceanMaterial.Get();
 	if (!IsValid(DesiredOceanMaterial))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires OceanMaterial while ocean is enabled."), *GetName());
+		SR_LOG(Celestial, LogTemp, Error, TEXT("Planet '%s' requires OceanMaterial while ocean is enabled."), *GetName());
 		OceanDynamicMesh->SetVisibility(false);
 		OceanDynamicMesh->SetHiddenInGame(true);
 		return;
@@ -468,8 +515,7 @@ void ASRPlanet::ApplyToonOutlineSettings()
 	const bool bAppliedAtmosphereComponent = ApplyToonOutlineToPrimitive(AtmosphereDynamicMesh.Get(), bEnableAtmosphereToonOutline);
 	if (UWorld* World = GetWorld(); World && World->IsGameWorld())
 	{
-		UE_LOG(
-			LogStarRoversCelestial,
+		SR_LOG(Celestial, LogStarRoversCelestial,
 			Log,
 			TEXT("ToonOutline Body='%s' Enabled=%s Stencil=%d BodyComponents=%d Ocean=%s OceanComponent=%s Atmosphere=%s AtmosphereComponent=%s"),
 			*GetName(),
@@ -501,7 +547,7 @@ void ASRPlanet::ApplyAtmosphereDynamicMeshSettings()
 
 	if (!IsValid(AtmosphereDynamicMeshBaseDataAsset.Get()))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires AtmosphereDynamicMeshBaseDataAsset while atmosphere is enabled."), *GetName());
+		SR_LOG(Celestial, LogTemp, Error, TEXT("Planet '%s' requires AtmosphereDynamicMeshBaseDataAsset while atmosphere is enabled."), *GetName());
 		AtmosphereDynamicMesh->SetVisibility(false);
 		AtmosphereDynamicMesh->SetHiddenInGame(true);
 		return;
@@ -510,7 +556,7 @@ void ASRPlanet::ApplyAtmosphereDynamicMeshSettings()
 	UMaterialInterface* DesiredAtmosphereMaterial = AtmosphereMaterial.Get();
 	if (!IsValid(DesiredAtmosphereMaterial))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Planet '%s' requires AtmosphereMaterial while atmosphere is enabled."), *GetName());
+		SR_LOG(Celestial, LogTemp, Error, TEXT("Planet '%s' requires AtmosphereMaterial while atmosphere is enabled."), *GetName());
 		AtmosphereDynamicMesh->SetVisibility(false);
 		AtmosphereDynamicMesh->SetHiddenInGame(true);
 		return;

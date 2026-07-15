@@ -153,6 +153,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Deletion")
     void ClearDeletionPreviewCells();
 
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Replacement")
+    void SetConstructionReplacementPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Replacement")
+    void ClearConstructionReplacementPreviewCells();
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Invalid")
     void SetInvalidPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
 
@@ -299,6 +305,9 @@ protected:
     FLinearColor DeletionPreviewCellColor;
 
     UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> ConstructionReplacementPreviewCellIds;
+
+    UPROPERTY()
     TArray<FSRPlanetSurfaceGridCellId> InvalidPreviewCellIds;
 
     UPROPERTY()
@@ -376,7 +385,7 @@ private:
     void AppendGridWireEdge(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FLinearColor& LineColor, float LineThickness) const;
     void AppendGridWireSegment(UE::Geometry::FDynamicMesh3& GridMesh, const FVector& LocalPointA, const FVector& LocalPointB, const FLinearColor& LineColor, float LineThickness) const;
     float GetEffectiveWorldRadius() const;
-    void DrawDebugSurfaceLine(const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FColor& LineColor, float Duration, float LineThickness, const FSRScreenSpaceLineViewInfo& CameraInfo, float ReferenceViewDepth, float ReferenceFieldOfViewDegrees) const;
+    void DrawDebugSurfaceLine(const FVector& LocalDirectionA, const FVector& LocalDirectionB, const FColor& LineColor, float Duration, float LineThickness, const FSRScreenSpaceLineViewInfo& CameraInfo, float ReferenceViewDepth, float ReferenceTanHalfFieldOfView) const;
     FVector ResolveLocalSurfacePoint(const FVector& LocalUnitDirection, float HeightOffset = 0.0f) const;
     FVector ResolveWorldSurfacePoint(const FVector& LocalUnitDirection, float HeightOffset = 0.0f) const;
     float ComputeProceduralDynamicMeshHeight(FVector LocalUnitDirection) const;

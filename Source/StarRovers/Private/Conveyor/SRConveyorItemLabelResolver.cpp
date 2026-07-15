@@ -20,23 +20,6 @@ namespace
 		return FString::Printf(TEXT("%.2f"), Value);
 	}
 
-	FString GetCatalystOperatorText(ESRResourceCatalystOperator CatalystOperator)
-	{
-		switch (CatalystOperator)
-		{
-		case ESRResourceCatalystOperator::Add:
-			return TEXT("+");
-		case ESRResourceCatalystOperator::Multiply:
-			return TEXT("*");
-		case ESRResourceCatalystOperator::Subtract:
-			return TEXT("-");
-		case ESRResourceCatalystOperator::Divide:
-			return TEXT("/");
-		default:
-			return TEXT("?");
-		}
-	}
-
 	bool ResolveOutwardNormal(
 		const USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlanetSurfaceGridCellInfo& CellInfo,
@@ -81,6 +64,76 @@ namespace
 
 		return DefaultLayerHeight;
 	}
+
+	bool HasDirection(
+		ESRConveyorGridDirection Direction,
+		ESRConveyorGridDirection FirstDirection,
+		ESRConveyorGridDirection SecondDirection,
+		ESRConveyorGridDirection ThirdDirection)
+	{
+		return Direction != ESRConveyorGridDirection::None
+			&& (Direction == FirstDirection
+				|| Direction == SecondDirection
+				|| Direction == ThirdDirection);
+	}
+
+	int32 BuildSortedDirections(
+		ESRConveyorGridDirection FirstDirection,
+		ESRConveyorGridDirection SecondDirection,
+		ESRConveyorGridDirection ThirdDirection,
+		ESRConveyorGridDirection* OutDirections)
+	{
+		int32 DirectionCount = 0;
+		if (HasDirection(ESRConveyorGridDirection::NegativeV, FirstDirection, SecondDirection, ThirdDirection))
+		{
+			OutDirections[DirectionCount++] = ESRConveyorGridDirection::NegativeV;
+		}
+		if (HasDirection(ESRConveyorGridDirection::PositiveU, FirstDirection, SecondDirection, ThirdDirection))
+		{
+			OutDirections[DirectionCount++] = ESRConveyorGridDirection::PositiveU;
+		}
+		if (HasDirection(ESRConveyorGridDirection::PositiveV, FirstDirection, SecondDirection, ThirdDirection))
+		{
+			OutDirections[DirectionCount++] = ESRConveyorGridDirection::PositiveV;
+		}
+		if (HasDirection(ESRConveyorGridDirection::NegativeU, FirstDirection, SecondDirection, ThirdDirection))
+		{
+			OutDirections[DirectionCount++] = ESRConveyorGridDirection::NegativeU;
+		}
+
+		return DirectionCount;
+	}
+
+	ESRConveyorGridDirection ResolveVisualOutputDirection(const FSRConveyorSegment& Segment)
+	{
+		ESRConveyorGridDirection OutputDirections[3];
+		const int32 OutputDirectionCount = BuildSortedDirections(
+			Segment.OutputDirection,
+			Segment.BranchOutputDirection,
+			Segment.SecondBranchOutputDirection,
+			OutputDirections);
+		if (OutputDirectionCount <= 0)
+		{
+			return ESRConveyorGridDirection::None;
+		}
+
+		const int32 OutputDirectionIndex = Segment.NextOutputDirectionIndex >= 0 && Segment.NextOutputDirectionIndex < OutputDirectionCount
+			? Segment.NextOutputDirectionIndex
+			: 0;
+		return OutputDirections[OutputDirectionIndex];
+	}
+
+	ESRConveyorGridDirection ResolveFirstInputDirection(const FSRConveyorSegment& Segment)
+	{
+		ESRConveyorGridDirection InputDirections[3];
+		return BuildSortedDirections(
+			Segment.InputDirection,
+			Segment.MergeInputDirection,
+			Segment.SecondMergeInputDirection,
+			InputDirections) > 0
+			? InputDirections[0]
+			: ESRConveyorGridDirection::None;
+	}
 }
 
 bool StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveWorldLocation(
@@ -120,14 +173,7 @@ bool StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveWorldLocation(
 	if (const FSRConveyorSegment* Segment = Segments.Find(LaneKey))
 	{
 		FSRConveyorLaneKey NextLaneKey;
-		TArray<ESRConveyorGridDirection> OutputDirections;
-		FSRConveyorNetworkGeometry::CollectOutputDirections(*Segment, OutputDirections);
-		const int32 OutputDirectionIndex = OutputDirections.IsValidIndex(Segment->NextOutputDirectionIndex)
-			? Segment->NextOutputDirectionIndex
-			: 0;
-		const ESRConveyorGridDirection VisualOutputDirection = OutputDirections.IsValidIndex(OutputDirectionIndex)
-			? OutputDirections[OutputDirectionIndex]
-			: ESRConveyorGridDirection::None;
+		const ESRConveyorGridDirection VisualOutputDirection = ResolveVisualOutputDirection(*Segment);
 		bool bHasVisualOutput = false;
 		if (FSRConveyorConnectionQuery::TryResolveLaneByDirection(SurfaceGrid, *Segment, VisualOutputDirection, NextLaneKey) && Segments.Contains(NextLaneKey))
 		{
@@ -144,11 +190,7 @@ bool StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveWorldLocation(
 		}
 		if (!bHasVisualOutput)
 		{
-			TArray<ESRConveyorGridDirection> InputDirections;
-			FSRConveyorNetworkGeometry::CollectInputDirections(*Segment, InputDirections);
-			const ESRConveyorGridDirection VisualInputDirection = InputDirections.IsValidIndex(0)
-				? InputDirections[0]
-				: ESRConveyorGridDirection::None;
+			const ESRConveyorGridDirection VisualInputDirection = ResolveFirstInputDirection(*Segment);
 			if (VisualInputDirection != ESRConveyorGridDirection::None)
 			{
 				FSRPlanetSurfaceGridCellNeighbors Neighbors;
@@ -188,23 +230,13 @@ bool StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveWorldLocation(
 FText StarRovers::Conveyor::FSRConveyorItemLabelResolver::BuildLabelText(
 	const FSRResourceInstance& ResourceInstance)
 {
-	if (ResourceInstance.ResourceKind == ESRResourceKind::Energy)
-	{
-		return FText::FromString(FString::Printf(TEXT("E %s"), *FormatEnergyValue(ResourceInstance.EnergyValue)));
-	}
-
-	return FText::FromString(FString::Printf(TEXT("CAT %s"), *GetCatalystOperatorText(ResourceInstance.CatalystOperator)));
+	return FText::FromString(FString::Printf(TEXT("E %s"), *FormatEnergyValue(ResourceInstance.EnergyValue)));
 }
 
 FColor StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveLabelColor(
 	const FSRResourceInstance& ResourceInstance,
 	const FSRConveyorItemLabelSettings& Settings)
 {
-	if (ResourceInstance.ResourceKind != ESRResourceKind::Energy)
-	{
-		return FLinearColor(0.25f, 1.0f, 0.8f, 1.0f).ToFColor(true);
-	}
-
 	if (ResourceInstance.EnergyValue < 0.0)
 	{
 		return Settings.ItemEnergyNegativeColor.ToFColor(true);
@@ -221,9 +253,7 @@ float StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveLabelWorldSize(
 	float TimeSeconds,
 	const FSRConveyorItemLabelSettings& Settings)
 {
-	const double EnergyMagnitude = ResourceInstance.ResourceKind == ESRResourceKind::Energy
-		? FMath::Abs(ResourceInstance.EnergyValue)
-		: 0.0;
+	const double EnergyMagnitude = FMath::Abs(ResourceInstance.EnergyValue);
 	const float EnergyScale = FMath::Clamp(
 		1.0f + static_cast<float>(FMath::Loge(1.0 + EnergyMagnitude)) * 0.18f,
 		1.0f,

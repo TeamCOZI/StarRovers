@@ -44,7 +44,7 @@ float FSRCameraFocusZoomResolver::ComputeActorVisiblePrimitiveRadius(const AActo
 	}
 
 	float LargestRadius = 0.0f;
-	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(Actor);
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents;
 	Actor->GetComponents(PrimitiveComponents);
 	for (const UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
 	{

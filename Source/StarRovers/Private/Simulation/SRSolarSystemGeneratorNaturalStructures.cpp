@@ -1,5 +1,6 @@
 #include "Simulation/SRSolarSystemGenerator.h"
 
+#include "Utility/SRLog.h"
 #include "Simulation/SRSolarSystemGeneratorPipeline.h"
 
 #include "Structure/SRStructureDataAsset.h"
@@ -150,7 +151,8 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 	};
 
 	bool bLoggedMissingStructureDataAsset = false;
-	auto GenerateRuleForCandidateCells = [this, Body, SurfaceGrid, &Cells, &RandomStream, &bLoggedMissingStructureDataAsset](
+	USRStructureInstanceManagerComponent* StructureInstanceManager = Body->FindComponentByClass<USRStructureInstanceManagerComponent>();
+	auto GenerateRuleForCandidateCells = [this, Body, SurfaceGrid, StructureInstanceManager, &Cells, &RandomStream, &bLoggedMissingStructureDataAsset](
 		const TArray<int32>& CandidateCellIndices,
 		USRStructureDataAsset* StructureDataAsset,
 		float SpawnChancePerCell,
@@ -164,7 +166,7 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 			if (!bLoggedMissingStructureDataAsset)
 			{
 				bLoggedMissingStructureDataAsset = true;
-				UE_LOG(LogTemp, Error, TEXT("Natural structure generation for '%s' has one or more rules without StructureDataAsset."), *GetNameSafe(Body));
+				SR_LOG(SolarSystem, LogTemp, Error, TEXT("Natural structure generation for '%s' has one or more rules without StructureDataAsset."), *GetNameSafe(Body));
 			}
 			return;
 		}
@@ -199,6 +201,11 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 
 		TArray<FSRPlanetSurfaceGridCellId> PlacedOriginCellIds;
 		const int32 SafeMinCellSpacing = FMath::Max(0, MinCellSpacing);
+		if (SafeMinCellSpacing > 0)
+		{
+			const int32 ExpectedPlacedCount = SafeMaxCount > 0 ? FMath::Min(SafeMaxCount, CandidateIterationIndices.Num()) : CandidateIterationIndices.Num();
+			PlacedOriginCellIds.Reserve(ExpectedPlacedCount);
+		}
 		int32 PlacedCount = 0;
 		for (const int32 CandidateCellIndex : CandidateIterationIndices)
 		{
@@ -218,24 +225,27 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 				continue;
 			}
 
-			bool bTooCloseToPlacedStructure = false;
-			for (const FSRPlanetSurfaceGridCellId& PlacedOriginCellId : PlacedOriginCellIds)
+			if (SafeMinCellSpacing > 0)
 			{
-				if (PlacedOriginCellId.Face == CandidateCell.CellId.Face
-					&& FMath::Abs(PlacedOriginCellId.CellX - CandidateCell.CellId.CellX) <= SafeMinCellSpacing
-					&& FMath::Abs(PlacedOriginCellId.CellY - CandidateCell.CellId.CellY) <= SafeMinCellSpacing)
+				bool bTooCloseToPlacedStructure = false;
+				for (const FSRPlanetSurfaceGridCellId& PlacedOriginCellId : PlacedOriginCellIds)
 				{
-					bTooCloseToPlacedStructure = true;
-					break;
+					if (PlacedOriginCellId.Face == CandidateCell.CellId.Face
+						&& FMath::Abs(PlacedOriginCellId.CellX - CandidateCell.CellId.CellX) <= SafeMinCellSpacing
+						&& FMath::Abs(PlacedOriginCellId.CellY - CandidateCell.CellId.CellY) <= SafeMinCellSpacing)
+					{
+						bTooCloseToPlacedStructure = true;
+						break;
+					}
 				}
-			}
-			if (bTooCloseToPlacedStructure)
-			{
-				continue;
+				if (bTooCloseToPlacedStructure)
+				{
+					continue;
+				}
 			}
 
 			bool bPlacedStructure = false;
-			if (USRStructureInstanceManagerComponent* StructureInstanceManager = Body->FindComponentByClass<USRStructureInstanceManagerComponent>())
+			if (StructureInstanceManager)
 			{
 				FName OccupantId = NAME_None;
 				bPlacedStructure = StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(SurfaceGrid, CandidateCell.CellId, StructureDataAsset, OccupantId, true, true);
@@ -253,7 +263,10 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 
 			if (bPlacedStructure)
 			{
-				PlacedOriginCellIds.Add(CandidateCell.CellId);
+				if (SafeMinCellSpacing > 0)
+				{
+					PlacedOriginCellIds.Add(CandidateCell.CellId);
+				}
 				++PlacedCount;
 			}
 		}

@@ -1,11 +1,36 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
+#include "Utility/SRLog.h"
 #include "Conveyor/SRConveyorNetworkComponent.h"
 #include "GameFramework/Actor.h"
 #include "SRFacilityConveyorPortConnector.h"
 #include "SRFacilityPortInventoryBuilder.h"
 #include "SRFacilityResourceOperations.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
+
+namespace
+{
+	bool HasActiveResourceTag(const FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag)
+	{
+		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
+		{
+			if (TagStack.Tag == Tag && TagStack.StackCount > 0)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	bool CanFacilityAcceptConveyorInputResource(
+		const FSRFacilityInstance& FacilityInstance,
+		const FSRResourceInstance& ResourceInstance)
+	{
+		return !HasActiveResourceTag(ResourceInstance, ESRResourceProcessTag::Supercooled)
+			|| FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Cold;
+	}
+}
 
 bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 	USRPlanetSurfaceGrid* SurfaceGrid,
@@ -29,6 +54,7 @@ bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 			ResourceInstance);
 		if (!IsValid(FacilityDataAsset)
 			|| !InputPortInventory
+			|| !CanFacilityAcceptConveyorInputResource(FacilityInstance, ResourceInstance)
 			|| (!SourceFacilityOccupantId.IsNone() && FacilityInstance.OccupantId == SourceFacilityOccupantId))
 		{
 			continue;
@@ -45,8 +71,7 @@ bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 		SetComponentTickEnabled(bAutoProcessFacilities);
 		if (bLogFacilityNetworkEvents)
 		{
-			UE_LOG(
-				LogTemp,
+			SR_LOG(FacilityNetwork, LogTemp,
 				Display,
 				TEXT("[FacilityNetwork] Transfer accepted input: OccupantId=%s Port=%s ResourceId=%s PortInputCount=%d InputCount=%d Owner=%s"),
 				*FacilityInstance.OccupantId.ToString(),
@@ -98,8 +123,7 @@ bool USRFacilityNetworkComponent::TryPullOutputResourceToConveyorCell(
 		FSRFacilityPortInventoryBuilder::RefreshAggregateInventories(FacilityInstance);
 		if (bLogFacilityNetworkEvents)
 		{
-			UE_LOG(
-				LogTemp,
+			SR_LOG(FacilityNetwork, LogTemp,
 				Display,
 				TEXT("[FacilityNetwork] Transfer provided output: OccupantId=%s Port=%s ResourceId=%s RemainingPortOutput=%d RemainingOutput=%d Owner=%s"),
 				*FacilityInstance.OccupantId.ToString(),

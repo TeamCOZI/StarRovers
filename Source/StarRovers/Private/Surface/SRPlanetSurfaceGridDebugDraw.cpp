@@ -26,21 +26,23 @@ void USRPlanetSurfaceGrid::DrawDebugGrid(float Duration) const
 	float ReferenceViewDepth = FSRScreenSpaceLineThickness::DefaultReferenceViewDepth;
 	float ReferenceFieldOfViewDegrees = FSRScreenSpaceLineThickness::DefaultReferenceFieldOfViewDegrees;
 	FSRScreenSpaceLineThickness::ResolveReferenceViewParameters(GetWorld(), ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+	const float ReferenceTanHalfFieldOfView = FSRScreenSpaceLineThickness::ComputeReferenceTanHalfFieldOfView(ReferenceFieldOfViewDegrees);
 
 	TSet<uint64> DrawnEdges;
 	DrawnEdges.Reserve(Cells.Num() * 2);
-	auto DrawUniqueDefaultEdge = [this, &DrawnEdges, &DefaultLineColor, Duration, &CameraInfo, ReferenceViewDepth, ReferenceFieldOfViewDegrees](
+	auto DrawUniqueDefaultEdge = [this, &DrawnEdges, &DefaultLineColor, Duration, &CameraInfo, ReferenceViewDepth, ReferenceTanHalfFieldOfView](
 		const FVector& CornerA,
 		const FVector& CornerB)
 	{
 		const uint64 EdgeKey = BuildGridEdgeKey(CornerA, CornerB);
-		if (DrawnEdges.Contains(EdgeKey))
+		bool bAlreadyDrawn = false;
+		DrawnEdges.Add(EdgeKey, &bAlreadyDrawn);
+		if (bAlreadyDrawn)
 		{
 			return;
 		}
 
-		DrawnEdges.Add(EdgeKey);
-		DrawDebugSurfaceLine(CornerA, CornerB, DefaultLineColor, Duration, DebugLineThickness, CameraInfo, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+		DrawDebugSurfaceLine(CornerA, CornerB, DefaultLineColor, Duration, DebugLineThickness, CameraInfo, ReferenceViewDepth, ReferenceTanHalfFieldOfView);
 	};
 
 	for (const FSRPlanetSurfaceGridCell& Cell : Cells)
@@ -74,7 +76,7 @@ void USRPlanetSurfaceGrid::DrawDebugGrid(float Duration) const
 			FVector EdgePointB;
 			if (GetGridCellEdgePoints(Cell, EdgeIndex, EdgePointA, EdgePointB))
 			{
-				DrawDebugSurfaceLine(EdgePointA, EdgePointB, LineColor, Duration, LineThickness, CameraInfo, ReferenceViewDepth, ReferenceFieldOfViewDegrees);
+				DrawDebugSurfaceLine(EdgePointA, EdgePointB, LineColor, Duration, LineThickness, CameraInfo, ReferenceViewDepth, ReferenceTanHalfFieldOfView);
 			}
 		}
 	}
@@ -88,7 +90,7 @@ void USRPlanetSurfaceGrid::DrawDebugSurfaceLine(
 	float LineThickness,
 	const FSRScreenSpaceLineViewInfo& CameraInfo,
 	float ReferenceViewDepth,
-	float ReferenceFieldOfViewDegrees) const
+	float ReferenceTanHalfFieldOfView) const
 {
 	UWorld* World = GetWorld();
 	if (!World)
@@ -118,12 +120,12 @@ void USRPlanetSurfaceGrid::DrawDebugSurfaceLine(
 
 		const FVector CurrentPoint = ResolveWorldSurfacePoint(SampleDirection, EffectiveSurfaceOffset);
 		const FVector SegmentMidpoint = (PreviousPoint + CurrentPoint) * 0.5f;
-		const float ScreenSpaceThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLine(
+		const float ScreenSpaceThickness = FSRScreenSpaceLineThickness::ComputeWorldThicknessForScreenSpaceLineWithReferenceTan(
 			CameraInfo,
 			SegmentMidpoint,
 			LineThickness,
 			ReferenceViewDepth,
-			ReferenceFieldOfViewDegrees);
+			ReferenceTanHalfFieldOfView);
 		DrawDebugLine(World, PreviousPoint, CurrentPoint, LineColor, false, Duration, SDPG_Foreground, FMath::Max(0.0f, ScreenSpaceThickness));
 		PreviousPoint = CurrentPoint;
 	}

@@ -1,5 +1,6 @@
 #include "Assembly/SRAssemblyPreviewState.h"
 
+#include "Assembly/SRAssemblyPreviewMaterial.h"
 #include "Conveyor/SRConveyorBeltActor.h"
 #include "Conveyor/SRConveyorTypes.h"
 #include "Engine/World.h"
@@ -58,9 +59,11 @@ namespace
 	void AppendGhostPortPreviewCell(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const TArray<FSRPlanetSurfaceGridCellId>& FootprintCellIds,
+		const TSet<FSRPlanetSurfaceGridCellId>& FootprintCellIdSet,
 		int32 FootprintCellsX,
 		int32 FootprintCellsY,
 		const FSRStructurePortSpec& PortSpec,
+		TSet<FSRPlanetSurfaceGridCellId>& OutConnectionCellIdSet,
 		TArray<FSRPlanetSurfaceGridCellId>& OutConnectionCellIds)
 	{
 		FSRPlanetSurfaceGridCellId PortFootprintCellId;
@@ -71,12 +74,14 @@ namespace
 
 		FSRPlanetSurfaceGridCellId ConnectionCellId;
 		if (!GetGhostPortNeighborCellId(SurfaceGrid, PortFootprintCellId, PortSpec.Direction, ConnectionCellId)
-			|| FootprintCellIds.Contains(ConnectionCellId))
+			|| FootprintCellIdSet.Contains(ConnectionCellId)
+			|| OutConnectionCellIdSet.Contains(ConnectionCellId))
 		{
 			return;
 		}
 
-		OutConnectionCellIds.AddUnique(ConnectionCellId);
+		OutConnectionCellIdSet.Add(ConnectionCellId);
+		OutConnectionCellIds.Add(ConnectionCellId);
 	}
 }
 
@@ -107,6 +112,19 @@ void FSRAssemblyStructurePreviewState::UpdateGhostPortPreview(
 
 	TArray<FSRPlanetSurfaceGridCellId> InputConnectionCellIds;
 	TArray<FSRPlanetSurfaceGridCellId> OutputConnectionCellIds;
+	TSet<FSRPlanetSurfaceGridCellId> FootprintCellIdSet;
+	TSet<FSRPlanetSurfaceGridCellId> InputConnectionCellIdSet;
+	TSet<FSRPlanetSurfaceGridCellId> OutputConnectionCellIdSet;
+	FootprintCellIdSet.Reserve(FootprintCellIds.Num());
+	InputConnectionCellIds.Reserve(StructureData.InputPorts.Num());
+	OutputConnectionCellIds.Reserve(StructureData.OutputPorts.Num());
+	InputConnectionCellIdSet.Reserve(StructureData.InputPorts.Num());
+	OutputConnectionCellIdSet.Reserve(StructureData.OutputPorts.Num());
+	for (const FSRPlanetSurfaceGridCellId& FootprintCellId : FootprintCellIds)
+	{
+		FootprintCellIdSet.Add(FootprintCellId);
+	}
+
 	const int32 SafeFootprintCellsX = StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacementRotationSteps);
 	const int32 SafeFootprintCellsY = StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, PlacementRotationSteps);
 
@@ -116,9 +134,11 @@ void FSRAssemblyStructurePreviewState::UpdateGhostPortPreview(
 		AppendGhostPortPreviewCell(
 			SurfaceGrid,
 			FootprintCellIds,
+			FootprintCellIdSet,
 			SafeFootprintCellsX,
 			SafeFootprintCellsY,
 			RotatedInputPort,
+			InputConnectionCellIdSet,
 			InputConnectionCellIds);
 	}
 
@@ -128,9 +148,11 @@ void FSRAssemblyStructurePreviewState::UpdateGhostPortPreview(
 		AppendGhostPortPreviewCell(
 			SurfaceGrid,
 			FootprintCellIds,
+			FootprintCellIdSet,
 			SafeFootprintCellsX,
 			SafeFootprintCellsY,
 			RotatedOutputPort,
+			OutputConnectionCellIdSet,
 			OutputConnectionCellIds);
 	}
 
@@ -157,7 +179,8 @@ bool FSRAssemblyStructurePreviewState::UpdateGhostActor(
 	USRStructureDataAsset* StructureDataAsset,
 	const FSRStructureData& StructureData,
 	const FTransform& GhostTransform,
-	const FSRPlanetSurfaceGridCellInfo& PreviewCellInfo)
+	const FSRPlanetSurfaceGridCellInfo& PreviewCellInfo,
+	UMaterialInterface* PreviewMaterial)
 {
 	UClass* StructureActorClass = StructureData.StructureActorClass.Get();
 	if (!IsValid(StructureActorClass))
@@ -201,6 +224,7 @@ bool FSRAssemblyStructurePreviewState::UpdateGhostActor(
 		StructureGhostDataAsset = StructureDataAsset;
 		ISRBuildableStructureInterface::Execute_ApplyStructureDataAsset(StructureGhostActor, StructureDataAsset);
 		ISRBuildableStructureInterface::Execute_SetStructureGhostMode(StructureGhostActor, true);
+		StarRovers::Assembly::PreviewMaterials::ApplyToActor(StructureGhostActor, PreviewMaterial);
 		if (!ISRBuildableStructureInterface::Execute_CanPlaceOnSurfaceCell(StructureGhostActor, PreviewCellInfo))
 		{
 			DestroyGhostActor(HoveredSurfaceGrid);
@@ -215,6 +239,8 @@ bool FSRAssemblyStructurePreviewState::UpdateGhostActor(
 		return false;
 	}
 
+	ISRBuildableStructureInterface::Execute_SetStructureGhostMode(StructureGhostActor, true);
+	StarRovers::Assembly::PreviewMaterials::ApplyToActor(StructureGhostActor, PreviewMaterial);
 	StructureGhostActor->SetActorTransform(GhostTransform);
 	StructureGhostActor->SetActorHiddenInGame(false);
 	return true;
@@ -226,6 +252,7 @@ void FSRAssemblyStructurePreviewState::DestroyGhostActor(USRPlanetSurfaceGrid* H
 
 	if (IsValid(HoveredSurfaceGrid))
 	{
+		HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
 		if (AActor* SurfaceOwner = HoveredSurfaceGrid->GetOwner())
 		{
 			if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
@@ -250,6 +277,7 @@ void FSRAssemblyStructurePreviewState::DestroyPlacementDragPreviewActors(USRPlan
 {
 	if (IsValid(HoveredSurfaceGrid))
 	{
+		HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
 		if (AActor* SurfaceOwner = HoveredSurfaceGrid->GetOwner())
 		{
 			if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())
@@ -424,7 +452,8 @@ ESRAssemblyConveyorGhostUpdateResult FSRAssemblyConveyorPreviewState::UpdateGhos
 	const TArray<FSRConveyorBeltPath>& BeltPaths,
 	FName ConveyorActorSplineComponentTag,
 	float ConveyorActorSurfaceOffset,
-	const FSRPlanetSurfaceGridCellId& TargetCellId)
+	const FSRPlanetSurfaceGridCellId& TargetCellId,
+	UMaterialInterface* PreviewMaterial)
 {
 	UClass* ConveyorActorClass = ConveyorData.StructureActorClass.Get();
 	if (!IsValid(ConveyorActorClass) || !ConveyorActorClass->IsChildOf(ASRConveyorBeltActor::StaticClass()))
@@ -464,7 +493,7 @@ ESRAssemblyConveyorGhostUpdateResult FSRAssemblyConveyorPreviewState::UpdateGhos
 		ConveyorGhostActor->SetOwner(SurfaceOwner);
 		ConveyorGhostActor->AttachToActor(SurfaceOwner, FAttachmentTransformRules::KeepWorldTransform);
 		ConveyorGhostActor->SetActorHiddenInGame(false);
-		ConveyorGhostActor->SetConveyorGhostMode(true, ConveyorData.GhostMaterial);
+		ConveyorGhostActor->SetConveyorGhostMode(true, IsValid(PreviewMaterial) ? PreviewMaterial : ConveyorData.GhostMaterial.Get());
 		ConveyorGhostDataAsset = ConveyorDataAsset;
 		ConveyorGhostSurfaceGrid = SurfaceGrid;
 	}
@@ -479,7 +508,7 @@ ESRAssemblyConveyorGhostUpdateResult FSRAssemblyConveyorPreviewState::UpdateGhos
 		return ESRAssemblyConveyorGhostUpdateResult::PreviewFailed;
 	}
 
-	ConveyorGhostActor->SetConveyorGhostMode(true, ConveyorData.GhostMaterial);
+	ConveyorGhostActor->SetConveyorGhostMode(true, IsValid(PreviewMaterial) ? PreviewMaterial : ConveyorData.GhostMaterial.Get());
 	ConveyorGhostActor->SetActorHiddenInGame(ConveyorGhostActor->IsConveyorGhostGenerationPending());
 	ConveyorGhostTargetCellId = TargetCellId;
 	bHasConveyorGhostTargetCell = true;
@@ -490,6 +519,7 @@ void FSRAssemblyConveyorPreviewState::DestroyGhostActor(USRPlanetSurfaceGrid* Ho
 {
 	if (IsValid(HoveredSurfaceGrid))
 	{
+		HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
 		if (AActor* SurfaceOwner = HoveredSurfaceGrid->GetOwner())
 		{
 			if (USRStructureInstanceManagerComponent* StructureInstanceManager = SurfaceOwner->FindComponentByClass<USRStructureInstanceManagerComponent>())

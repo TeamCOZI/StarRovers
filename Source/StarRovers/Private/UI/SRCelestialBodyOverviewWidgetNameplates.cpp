@@ -229,6 +229,7 @@ void USRCelestialBodyOverviewWidget::RebuildNameplateButtons()
 void USRCelestialBodyOverviewWidget::RefreshNameplateButtonLayout()
 {
 	NameplateButtonLayouts.Reset();
+	NameplateButtonLayouts.Reserve(NameplateActors.Num());
 
 	if (!bShowNameplateButtons ||
 		NameplateActors.Num() != NameplateButtons.Num())

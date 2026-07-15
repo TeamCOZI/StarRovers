@@ -128,7 +128,7 @@ void USRAssemblyComponent::UpdateAreaCopyPlacementPreview()
 		return;
 	}
 
-	AreaCopy.UpdatePlacementPreview(SurfaceGrid, HoveredCell.CellId);
+	AreaCopy.UpdatePlacementPreview(SurfaceGrid, HoveredCell.CellId, ConveyorPreview);
 }
 
 bool USRAssemblyComponent::TryCommitAreaCopyPlacement(AActor*& OutSelectedActor)

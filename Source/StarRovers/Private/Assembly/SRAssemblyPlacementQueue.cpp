@@ -63,11 +63,11 @@ namespace StarRovers::Assembly
 
 		const int32 PlacementBudget = FMath::Max(1, MaxStructurePlacementsPerFrame);
 		const int32 PlacementCount = FMath::Min(PlacementBudget, Queue.Num());
-		OutPlacements.Reserve(PlacementCount);
+		OutPlacements.Reset(PlacementCount);
 		for (int32 PlacementIndex = 0; PlacementIndex < PlacementCount; ++PlacementIndex)
 		{
-			OutPlacements.Add(Queue[0]);
-			Queue.RemoveAt(0, 1, EAllowShrinking::No);
+			OutPlacements.Add(Queue[PlacementIndex]);
 		}
+		Queue.RemoveAt(0, PlacementCount, EAllowShrinking::No);
 	}
 }

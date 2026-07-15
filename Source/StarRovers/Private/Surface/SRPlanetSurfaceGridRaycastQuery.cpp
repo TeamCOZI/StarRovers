@@ -88,18 +88,6 @@ namespace
 		return true;
 	}
 
-	struct FSRPlanetSurfaceGridRaycastStats
-	{
-		int32 BucketTests = 0;
-		int32 BucketHits = 0;
-		int32 BucketSkippedByBestHit = 0;
-		int32 CellTests = 0;
-		int32 TopTriangleTests = 0;
-		int32 SideTriangleTests = 0;
-		int32 TriangleHits = 0;
-		int32 BestHitUpdates = 0;
-	};
-
 	constexpr int32 SurfaceGridRaycastBucketResolution = 16;
 }
 
@@ -129,71 +117,59 @@ bool StarRovers::SurfaceGridRaycast::RaycastGeneratedGrid(
 	}
 
 	bOutAttempted = true;
-	FSRPlanetSurfaceGridRaycastStats RaycastStats;
 	float BestHitDistance = BIG_NUMBER;
 	int32 BestCellIndex = INDEX_NONE;
 
-	auto ConsiderCell = [&Cells, &LocalRayOrigin, &LocalRayDirection, &BestHitDistance, &BestCellIndex, &RaycastStats](int32 CellIndex)
+	auto ConsiderCell = [&Cells, &LocalRayOrigin, &LocalRayDirection, &BestHitDistance, &BestCellIndex](int32 CellIndex)
 	{
 		if (!Cells.IsValidIndex(CellIndex))
 		{
 			return;
 		}
 
-		++RaycastStats.CellTests;
-
-		auto ConsiderTriangleHit = [&LocalRayOrigin, &LocalRayDirection, &BestHitDistance, &BestCellIndex, &RaycastStats, CellIndex](
+		auto ConsiderTriangleHit = [&LocalRayOrigin, &LocalRayDirection, &BestHitDistance, &BestCellIndex, CellIndex](
 			const FVector& Point0,
 			const FVector& Point1,
-			const FVector& Point2,
-			bool bSideTriangle)
+			const FVector& Point2)
 		{
-			if (bSideTriangle)
-			{
-				++RaycastStats.SideTriangleTests;
-			}
-			else
-			{
-				++RaycastStats.TopTriangleTests;
-			}
-
 			float HitDistance = 0.0f;
 			if (!IntersectRayTriangle(LocalRayOrigin, LocalRayDirection, Point0, Point1, Point2, HitDistance))
 			{
 				return;
 			}
 
-			++RaycastStats.TriangleHits;
 			if (HitDistance < BestHitDistance)
 			{
 				BestHitDistance = HitDistance;
 				BestCellIndex = CellIndex;
-				++RaycastStats.BestHitUpdates;
 			}
 		};
 
 		const FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
-		ConsiderTriangleHit(Cell.Corner00, Cell.Corner10, Cell.Corner11, false);
-		ConsiderTriangleHit(Cell.Corner00, Cell.Corner11, Cell.Corner01, false);
+		ConsiderTriangleHit(Cell.Corner00, Cell.Corner10, Cell.Corner11);
+		ConsiderTriangleHit(Cell.Corner00, Cell.Corner11, Cell.Corner01);
 		for (const FSRPlanetSurfaceGridSideFace& SideFace : Cell.SideFaces)
 		{
-			ConsiderTriangleHit(SideFace.LocalPoint0, SideFace.LocalPoint1, SideFace.LocalPoint2, true);
-			ConsiderTriangleHit(SideFace.LocalPoint0, SideFace.LocalPoint2, SideFace.LocalPoint3, true);
+			ConsiderTriangleHit(SideFace.LocalPoint0, SideFace.LocalPoint1, SideFace.LocalPoint2);
+			ConsiderTriangleHit(SideFace.LocalPoint0, SideFace.LocalPoint2, SideFace.LocalPoint3);
 		}
 	};
 
 	for (const FSRPlanetSurfaceGridRaycastBucket& Bucket : RaycastState.Buckets)
 	{
-		++RaycastStats.BucketTests;
+		if (Bucket.CellIndices.IsEmpty())
+		{
+			continue;
+		}
+
 		float BucketHitDistance = 0.0f;
 		if (!IntersectRayBox(LocalRayOrigin, LocalRayDirection, Bucket.LocalBounds, BucketHitDistance))
 		{
 			continue;
 		}
-		++RaycastStats.BucketHits;
+
 		if (BucketHitDistance > BestHitDistance)
 		{
-			++RaycastStats.BucketSkippedByBestHit;
 			continue;
 		}
 
@@ -238,18 +214,6 @@ void StarRovers::SurfaceGridRaycast::RebuildRaycastIndex(
 		ESRCubeSphereFace::NegativeZ,
 	};
 
-	auto GetFaceBucketOffset = [&Faces](ESRCubeSphereFace Face) -> int32
-	{
-		for (int32 FaceIndex = 0; FaceIndex < 6; ++FaceIndex)
-		{
-			if (Faces[FaceIndex] == Face)
-			{
-				return FaceIndex * BucketResolution * BucketResolution;
-			}
-		}
-		return INDEX_NONE;
-	};
-
 	RaycastState.Buckets.SetNum(FaceCount * BucketResolution * BucketResolution);
 	for (int32 FaceIndex = 0; FaceIndex < FaceCount; ++FaceIndex)
 	{
@@ -272,12 +236,13 @@ void StarRovers::SurfaceGridRaycast::RebuildRaycastIndex(
 	for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
 	{
 		const FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
-		const int32 FaceBucketOffset = GetFaceBucketOffset(Cell.CellId.Face);
-		if (FaceBucketOffset == INDEX_NONE)
+		const int32 FaceIndex = static_cast<int32>(Cell.CellId.Face);
+		if (FaceIndex < 0 || FaceIndex >= FaceCount)
 		{
 			continue;
 		}
 
+		const int32 FaceBucketOffset = FaceIndex * BucketResolution * BucketResolution;
 		const int32 BucketX = FMath::Clamp(Cell.CellId.CellX / BucketCellSize, 0, BucketResolution - 1);
 		const int32 BucketY = FMath::Clamp(Cell.CellId.CellY / BucketCellSize, 0, BucketResolution - 1);
 		const int32 BucketIndex = FaceBucketOffset + BucketY * BucketResolution + BucketX;

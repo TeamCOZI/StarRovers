@@ -1,5 +1,6 @@
 #include "SRCameraFocusSurfaceGridAlignmentResolver.h"
 
+#include "Utility/SRLog.h"
 #include "Camera/CameraComponent.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "GameFramework/Actor.h"
@@ -198,8 +199,7 @@ bool FSRCameraFocusSurfaceGridAlignmentResolver::Resolve(
 		return false;
 	}
 
-	UE_LOG(
-		LogTemp,
+	SR_LOG(Camera, LogTemp,
 		Display,
 		TEXT("[Camera] Focus surface grid alignment center cell: Face=%d X=%d Y=%d Ray=%s Hit=%s Axis=%s AngleDegrees=%.3f FocusedActor=%s"),
 		HitCell.CellId.Face,

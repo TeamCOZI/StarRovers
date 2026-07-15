@@ -392,13 +392,17 @@ namespace StarRovers::Surface::Interaction
 
 		auto AddPatchCellId = [&IsValidCell, &PatchCellIds, &OutCellIds](const FSRPlanetSurfaceGridCellId& PatchCellId)
 		{
-			if (!IsValidCell(PatchCellId) || PatchCellIds.Contains(PatchCellId))
+			if (!IsValidCell(PatchCellId))
 			{
 				return;
 			}
 
-			PatchCellIds.Add(PatchCellId);
-			OutCellIds.Add(PatchCellId);
+			bool bAlreadyAdded = false;
+			PatchCellIds.Add(PatchCellId, &bAlreadyAdded);
+			if (!bAlreadyAdded)
+			{
+				OutCellIds.Add(PatchCellId);
+			}
 		};
 		auto AddWalkedPatchCellId = [&TryWalkPatchCellId, &AddPatchCellId](int32 OffsetX, int32 OffsetY, bool bWalkXFirst)
 		{

@@ -93,7 +93,6 @@ private:
 	void BindPCGGenerationDelegate();
 	void RequestPCGGeneration();
 	void HandlePCGGraphGenerated(UPCGComponent* InPCGComponent);
-	void CollectGeneratedSplineMeshes(TArray<USplineMeshComponent*>& OutGeneratedSplineMeshes) const;
 	void CollectAllGeneratedSplineMeshes(TArray<USplineMeshComponent*>& OutGeneratedSplineMeshes) const;
 	bool HasReusableGeneratedSplineMeshes(int32 RequiredSplineMeshCount) const;
 	void HideGeneratedSplineMeshes() const;
