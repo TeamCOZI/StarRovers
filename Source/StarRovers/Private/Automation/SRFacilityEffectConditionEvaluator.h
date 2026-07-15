@@ -108,6 +108,10 @@ namespace StarRovers::FacilityEffects
 			return CurrentResource && CurrentResource->EnergyValue >= ConditionSpec.EnergyValue;
 		case ESRFacilityEffectConditionKind::EnergyAtMost:
 			return CurrentResource && CurrentResource->EnergyValue <= ConditionSpec.EnergyValue;
+		case ESRFacilityEffectConditionKind::EnergyGreaterThan:
+			return CurrentResource && CurrentResource->EnergyValue > ConditionSpec.EnergyValue;
+		case ESRFacilityEffectConditionKind::EnergyLessThan:
+			return CurrentResource && CurrentResource->EnergyValue < ConditionSpec.EnergyValue;
 		case ESRFacilityEffectConditionKind::EnergyIncreased:
 			return CurrentResource && BaselineResource && CurrentResource->EnergyValue > BaselineResource->EnergyValue;
 		case ESRFacilityEffectConditionKind::EnergyDecreased:

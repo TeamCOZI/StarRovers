@@ -282,9 +282,11 @@ bool ASRPlayerController::TrySelectBuildOptionFromHoveredCell()
 	FName PickedStructureId = NAME_None;
 	USRStructureDataAsset* PickedStructureDataAsset = nullptr;
 	const USRAugmentSubsystem* AugmentSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRAugmentSubsystem>() : nullptr;
+	TArray<USRStructureDataAsset*> StructureDataAssets;
+	GetAvailableStructureDataAssets(StructureDataAssets);
 	if (!FSRPlayerControllerHoveredBuildOptionPicker::TryPickBuildOptionFromFocusedActor(
 		CameraPawn->GetFocusedActor(),
-		AvailableStructureDataAssets,
+		StructureDataAssets,
 		AugmentSubsystem,
 		StructureSelectionWidget,
 		PickedStructureId,

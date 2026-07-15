@@ -38,6 +38,8 @@ namespace StarRovers::SurfaceGridInteractionState
 	bool HasInteractionOverlayContent(
 		bool bHasHoveredCell,
 		bool bHasSelectedCell,
+		const TArray<FSRPlanetSurfaceGridCellId>& SelectedFootprintCellIds,
+		const TArray<FSRPlanetSurfaceGridCellId>& PlacementPreviewCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& AreaSelectionCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
@@ -52,6 +54,8 @@ namespace StarRovers::SurfaceGridInteractionState
 		bool& bHoveredInteractionGridPatchVisible,
 		bool& bHasSelectedCell,
 		FSRPlanetSurfaceGridCellId& SelectedCellId,
+		TArray<FSRPlanetSurfaceGridCellId>& SelectedFootprintCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& PlacementPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& AreaSelectionCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,

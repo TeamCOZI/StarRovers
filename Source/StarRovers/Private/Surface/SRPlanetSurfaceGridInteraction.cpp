@@ -59,6 +59,14 @@ bool USRPlanetSurfaceGrid::GetInteractionGridPatchCellIds(
 	const FSRPlanetSurfaceGridCellId& CenterCellId,
 	TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const
 {
+	return GetInteractionGridPatchCellIdsWithSize(CenterCellId, 5, OutCellIds);
+}
+
+bool USRPlanetSurfaceGrid::GetInteractionGridPatchCellIdsWithSize(
+	const FSRPlanetSurfaceGridCellId& CenterCellId,
+	int32 PatchSize,
+	TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const
+{
 	auto IsValidCell = [this](const FSRPlanetSurfaceGridCellId& CellId)
 	{
 		return IsInteractionCellIdValid(CellId);
@@ -68,7 +76,8 @@ bool USRPlanetSurfaceGrid::GetInteractionGridPatchCellIds(
 		CenterCellId,
 		FaceResolution,
 		IsValidCell,
-		OutCellIds);
+		OutCellIds,
+		PatchSize);
 }
 
 bool USRPlanetSurfaceGrid::SetSelectedCell(const FSRPlanetSurfaceGridCellId& CellId)
@@ -79,6 +88,27 @@ bool USRPlanetSurfaceGrid::SetSelectedCell(const FSRPlanetSurfaceGridCellId& Cel
 void USRPlanetSurfaceGrid::ClearSelectedCell()
 {
 	ClearFocusedInteractionCell(bHasSelectedCell, SelectedCellId);
+	ClearSelectedFootprintCells();
+}
+
+void USRPlanetSurfaceGrid::SetSelectedFootprintCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+{
+	SetInteractionPreviewCellIds(CellIds, SelectedFootprintCellIds);
+}
+
+void USRPlanetSurfaceGrid::ClearSelectedFootprintCells()
+{
+	ClearInteractionPreviewCellIds(SelectedFootprintCellIds);
+}
+
+void USRPlanetSurfaceGrid::SetPlacementPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+{
+	SetInteractionPreviewCellIds(CellIds, PlacementPreviewCellIds);
+}
+
+void USRPlanetSurfaceGrid::ClearPlacementPreviewCells()
+{
+	ClearInteractionPreviewCellIds(PlacementPreviewCellIds);
 }
 
 void USRPlanetSurfaceGrid::SetAreaSelectionCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)

@@ -9,9 +9,11 @@ struct FSRResourceInstance;
 class FSRFacilityCellTemperatureEffectApplier
 {
 public:
-	static int32 ApplyEffects(
+	static int32 ApplyInstallationEffects(
 		const UActorComponent* OwnerComponent,
-		const FSRFacilityInstance& FacilityInstance,
-		const FSRResourceInstance* ConditionResource,
-		const FSRResourceInstance* BaselineResource);
+		FSRFacilityInstance& FacilityInstance);
+
+	static int32 RemoveInstallationEffects(
+		const UActorComponent* OwnerComponent,
+		FSRFacilityInstance& FacilityInstance);
 };

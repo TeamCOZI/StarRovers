@@ -90,6 +90,7 @@ bool USRAssemblyComponent::TryPublishSelectedStructureInfo(AActor* FocusedActor,
 		StructureInfo.FacilityPorts,
 		InputConnectionCellIds,
 		OutputConnectionCellIds);
+	SurfaceGrid->SetSelectedFootprintCells(StructureInfo.FootprintCellIds);
 	SurfaceGrid->SetOccupiedPreviewCells(StructureInfo.FootprintCellIds);
 	SurfaceGrid->SetFacilityPortPreviewCells(InputConnectionCellIds, OutputConnectionCellIds);
 
@@ -103,11 +104,13 @@ void USRAssemblyComponent::ClearSelectedStructureInfo()
 	USRPlanetSurfaceGrid* FocusedSurfaceGrid = nullptr;
 	if (StarRovers::Assembly::FSRAssemblySurfaceCursorQuery::TryGetFocusedSurfaceGrid(GetOwnerController(), FocusedActor, FocusedSurfaceGrid))
 	{
+		FocusedSurfaceGrid->ClearSelectedFootprintCells();
 		FocusedSurfaceGrid->ClearOccupiedPreviewCells();
 		FocusedSurfaceGrid->ClearFacilityPortPreviewCells();
 	}
 	else if (IsValid(SurfaceState.ActiveAssemblySurfaceGrid))
 	{
+		SurfaceState.ActiveAssemblySurfaceGrid->ClearSelectedFootprintCells();
 		SurfaceState.ActiveAssemblySurfaceGrid->ClearOccupiedPreviewCells();
 		SurfaceState.ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
 	}

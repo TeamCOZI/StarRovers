@@ -8,26 +8,27 @@
 UENUM(BlueprintType)
 enum class ESRFacilityKind : uint8
 {
-	Standard UMETA(DisplayName = "Standard"),
-	Hub UMETA(DisplayName = "Hub"),
+	Standard = 0 UMETA(DisplayName = "Standard"),
+	Hub = 1 UMETA(DisplayName = "Hub"),
 };
 
 UENUM(BlueprintType)
 enum class ESRFacilityRarity : uint8
 {
-	Basic UMETA(DisplayName = "Basic"),
-	Advanced UMETA(DisplayName = "Advanced"),
-	HighTech UMETA(DisplayName = "HighTech"),
-	Innovation UMETA(DisplayName = "Innovation"),
+	Basic = 0 UMETA(DisplayName = "Basic"),
+	Advanced = 1 UMETA(DisplayName = "Advanced"),
+	HighTech = 2 UMETA(DisplayName = "HighTech"),
+	Innovation = 3 UMETA(DisplayName = "Innovation"),
+	Starting = 4 UMETA(DisplayName = "Starting"),
 };
 
 UENUM(BlueprintType)
 enum class ESRFacilityOperationKind : uint8
 {
-	Process UMETA(DisplayName = "Process"),
-	Synthesize UMETA(DisplayName = "Synthesize"),
-	Split UMETA(DisplayName = "Split"),
-	Mine UMETA(DisplayName = "Mine"),
+	Process = 0 UMETA(DisplayName = "Process"),
+	Synthesize = 1 UMETA(DisplayName = "Synthesize"),
+	Split = 2 UMETA(Hidden, DisplayName = "Split"),
+	Mine = 3 UMETA(DisplayName = "Mine"),
 };
 
 UENUM(BlueprintType)
@@ -92,6 +93,13 @@ enum class ESRFacilityEnergyAdjustmentValueSource : uint8
 };
 
 UENUM(BlueprintType)
+enum class ESRFacilityEnergyAdjustmentMode : uint8
+{
+	Add = 0 UMETA(DisplayName = "Add"),
+	Multiply = 1 UMETA(DisplayName = "Multiply"),
+};
+
+UENUM(BlueprintType)
 enum class ESRFacilityProcessLimitAdjustmentMode : uint8
 {
 	AddValue UMETA(DisplayName = "AddValue"),
@@ -108,14 +116,16 @@ enum class ESRFacilityProcessTimeAdjustmentMode : uint8
 UENUM(BlueprintType)
 enum class ESRFacilityEffectConditionKind : uint8
 {
-	EnergyAtLeast UMETA(DisplayName = "EnergyAtLeast"),
-	EnergyAtMost UMETA(DisplayName = "EnergyAtMost"),
-	EnergyIncreased UMETA(DisplayName = "EnergyIncreased"),
-	EnergyDecreased UMETA(DisplayName = "EnergyDecreased"),
-	Tag UMETA(DisplayName = "Tag"),
-	TemperatureState UMETA(DisplayName = "TemperatureState"),
-	ProcessCountEquals UMETA(DisplayName = "ProcessCountEquals"),
-	PrimeEnergy UMETA(DisplayName = "PrimeEnergy"),
+	EnergyAtLeast = 0 UMETA(DisplayName = "EnergyAtLeast"),
+	EnergyAtMost = 1 UMETA(DisplayName = "EnergyAtMost"),
+	EnergyIncreased = 2 UMETA(DisplayName = "EnergyIncreased"),
+	EnergyDecreased = 3 UMETA(DisplayName = "EnergyDecreased"),
+	Tag = 4 UMETA(DisplayName = "Tag"),
+	TemperatureState = 5 UMETA(DisplayName = "TemperatureState"),
+	ProcessCountEquals = 6 UMETA(DisplayName = "ProcessCountEquals"),
+	PrimeEnergy = 7 UMETA(DisplayName = "PrimeEnergy"),
+	EnergyGreaterThan = 8 UMETA(DisplayName = "EnergyGreaterThan"),
+	EnergyLessThan = 9 UMETA(DisplayName = "EnergyLessThan"),
 };
 
 UENUM(BlueprintType)
@@ -143,7 +153,7 @@ struct STARROVERS_API FSRFacilityEffectConditionSpec
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility|Condition", meta = (
 		DisplayName = "EnergyValue",
-		EditCondition = "ConditionKind == ESRFacilityEffectConditionKind::EnergyAtLeast || ConditionKind == ESRFacilityEffectConditionKind::EnergyAtMost",
+		EditCondition = "ConditionKind == ESRFacilityEffectConditionKind::EnergyAtLeast || ConditionKind == ESRFacilityEffectConditionKind::EnergyAtMost || ConditionKind == ESRFacilityEffectConditionKind::EnergyGreaterThan || ConditionKind == ESRFacilityEffectConditionKind::EnergyLessThan",
 		EditConditionHides))
 	double EnergyValue = 0.0;
 
@@ -196,7 +206,7 @@ struct STARROVERS_API FSRFacilityEffectSpec
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
 		DisplayName = "Value",
-		EditCondition = "(EffectKind == ESRFacilityEffectKind::AdjustEnergy && EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue) || EffectKind == ESRFacilityEffectKind::AdjustProcessLimit || EffectKind == ESRFacilityEffectKind::AdjustCellTemperature || EffectKind == ESRFacilityEffectKind::AdjustProcessTime",
+		EditCondition = "(EffectKind == ESRFacilityEffectKind::AdjustEnergy && EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue) || EffectKind == ESRFacilityEffectKind::AdjustProcessLimit || EffectKind == ESRFacilityEffectKind::AdjustProcessTime",
 		EditConditionHides))
 	double Value = 0.0;
 
@@ -209,10 +219,16 @@ struct STARROVERS_API FSRFacilityEffectSpec
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
 		DisplayName = "TileRange",
-		ClampMin = "0",
+		ClampMin = "1",
 		EditCondition = "EffectKind == ESRFacilityEffectKind::AdjustCellTemperature",
 		EditConditionHides))
-	int32 TileRange = 0;
+	int32 TileRange = 5;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
+		DisplayName = "TemperatureStepDelta",
+		EditCondition = "EffectKind == ESRFacilityEffectKind::AdjustCellTemperature",
+		EditConditionHides))
+	int32 TemperatureStepDelta = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
 		DisplayName = "ResourceTag",
@@ -249,6 +265,12 @@ struct STARROVERS_API FSRFacilityEffectSpec
 		EditCondition = "EffectKind == ESRFacilityEffectKind::AdjustEnergy",
 		EditConditionHides))
 	ESRFacilityEnergyAdjustmentValueSource EnergyValueSource = ESRFacilityEnergyAdjustmentValueSource::FixedValue;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
+		DisplayName = "EnergyAdjustmentMode",
+		EditCondition = "EffectKind == ESRFacilityEffectKind::AdjustEnergy",
+		EditConditionHides))
+	ESRFacilityEnergyAdjustmentMode EnergyAdjustmentMode = ESRFacilityEnergyAdjustmentMode::Add;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
 		DisplayName = "ProcessLimitMode",
@@ -294,15 +316,6 @@ public:
 
 	virtual void PostLoad() override;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Identity", meta = (DisplayName = "FacilityId"))
-	FName FacilityId;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Identity", meta = (DisplayName = "DisplayName"))
-	FText DisplayName;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Identity", meta = (DisplayName = "Description"))
-	FText Description;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "FacilityKind"))
 	ESRFacilityKind FacilityKind = ESRFacilityKind::Standard;
 
@@ -327,15 +340,6 @@ public:
 	UPROPERTY()
 	int32 OutputCapacity = 8;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "bRequiresColdTemperature"))
-	bool bRequiresColdTemperature = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "bRequiresHotTemperature"))
-	bool bRequiresHotTemperature = false;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "Effects"))
 	TArray<FSRFacilityEffectSpec> Effects;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "DefaultOutputResource"))
-	TObjectPtr<USRResourceDataAsset> DefaultOutputResource = nullptr;
 };

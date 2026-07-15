@@ -121,11 +121,25 @@ public:
     UFUNCTION(BlueprintPure, Category = "StarRovers|Surface|Debug")
     bool GetInteractionGridPatchCellIds(const FSRPlanetSurfaceGridCellId& CenterCellId, TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const;
 
+    bool GetInteractionGridPatchCellIdsWithSize(const FSRPlanetSurfaceGridCellId& CenterCellId, int32 PatchSize, TArray<FSRPlanetSurfaceGridCellId>& OutCellIds) const;
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     bool SetSelectedCell(const FSRPlanetSurfaceGridCellId& CellId);
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     void ClearSelectedCell();
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Selection")
+    void SetSelectedFootprintCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Selection")
+    void ClearSelectedFootprintCells();
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Placement")
+    void SetPlacementPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Placement")
+    void ClearPlacementPreviewCells();
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Selection")
     void SetAreaSelectionCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
@@ -276,6 +290,12 @@ protected:
 
     UPROPERTY()
     FSRPlanetSurfaceGridCellId SelectedCellId;
+
+    UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> SelectedFootprintCellIds;
+
+    UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> PlacementPreviewCellIds;
 
     UPROPERTY()
     TArray<FSRPlanetSurfaceGridCellId> AreaSelectionCellIds;

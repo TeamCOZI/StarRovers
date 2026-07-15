@@ -363,7 +363,26 @@ namespace
 			break;
 		}
 
-		const uint8 TemperatureTint = static_cast<uint8>(FMath::Clamp(Cell.SurfaceTemperature * 40.0f, 0.0f, 40.0f));
+		uint8 TemperatureTint = 20;
+		switch (Cell.TemperatureState)
+		{
+		case ESRFacilityTemperatureState::Frozen:
+			TemperatureTint = 0;
+			break;
+		case ESRFacilityTemperatureState::Cold:
+			TemperatureTint = 10;
+			break;
+		case ESRFacilityTemperatureState::Hot:
+			TemperatureTint = 30;
+			break;
+		case ESRFacilityTemperatureState::Overheated:
+			TemperatureTint = 40;
+			break;
+		case ESRFacilityTemperatureState::Normal:
+		default:
+			TemperatureTint = 20;
+			break;
+		}
 		return FColor(
 			FMath::Clamp(82 + TemperatureTint, 0, 255),
 			FMath::Clamp(150 - (TemperatureTint / 3), 0, 255),

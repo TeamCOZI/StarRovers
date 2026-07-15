@@ -77,9 +77,7 @@ namespace StarRovers::Surface::Interaction
 			const FSRPlanetSurfaceGridCellId& CenterCellId,
 			int32 FaceResolution,
 			TFunctionRef<bool(const FSRPlanetSurfaceGridCellId&)> IsValidCell,
-			TArray<FSRPlanetSurfaceGridCellId>& OutCellIds);
-
-	private:
-		static constexpr int32 PatchRadius = 2;
+			TArray<FSRPlanetSurfaceGridCellId>& OutCellIds,
+			int32 PatchSize = 5);
 	};
 }

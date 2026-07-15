@@ -287,7 +287,9 @@ bool USRAugmentSubsystem::IsStructureUnlocked(const USRStructureDataAsset* Struc
 		return true;
 	}
 
-	if (!bAvailableFacility || FacilityDataAsset->FacilityKind != ESRFacilityKind::Standard)
+	if (!bAvailableFacility
+		|| FacilityDataAsset->FacilityKind != ESRFacilityKind::Standard
+		|| FacilityDataAsset->Rarity == ESRFacilityRarity::Starting)
 	{
 		return true;
 	}
@@ -410,7 +412,8 @@ bool USRAugmentSubsystem::IsStructureUnlockControlled(const USRStructureDataAsse
 	return StructureData.bAvailableForConstruction
 		&& !StructureData.bIsResourceDeposit
 		&& IsValid(FacilityDataAsset)
-		&& FacilityDataAsset->FacilityKind == ESRFacilityKind::Standard;
+		&& FacilityDataAsset->FacilityKind == ESRFacilityKind::Standard
+		&& FacilityDataAsset->Rarity != ESRFacilityRarity::Starting;
 }
 
 bool USRAugmentSubsystem::IsDebugUnlockableFacility(const USRStructureDataAsset* StructureDataAsset) const
@@ -438,7 +441,8 @@ bool USRAugmentSubsystem::IsAugmentCandidate(const USRStructureDataAsset* Struct
 	if (!StructureData.bAvailableForConstruction
 		|| StructureData.bIsResourceDeposit
 		|| !IsValid(FacilityDataAsset)
-		|| FacilityDataAsset->FacilityKind != ESRFacilityKind::Standard)
+		|| FacilityDataAsset->FacilityKind != ESRFacilityKind::Standard
+		|| FacilityDataAsset->Rarity == ESRFacilityRarity::Starting)
 	{
 		return false;
 	}
@@ -576,12 +580,8 @@ FSRAugmentChoice USRAugmentSubsystem::BuildAugmentChoice(USRStructureDataAsset* 
 	const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
 
 	Choice.StructureId = StructureData.StructureId;
-	Choice.DisplayName = StructureData.DisplayName.IsEmpty() && IsValid(FacilityDataAsset)
-		? FacilityDataAsset->DisplayName
-		: StructureData.DisplayName;
-	Choice.Description = StructureData.Description.IsEmpty() && IsValid(FacilityDataAsset)
-		? FacilityDataAsset->Description
-		: StructureData.Description;
+	Choice.DisplayName = StructureData.DisplayName;
+	Choice.Description = StructureData.Description;
 	Choice.StructureDataAsset = StructureDataAsset;
 	Choice.Rarity = IsValid(FacilityDataAsset) ? FacilityDataAsset->Rarity : ESRFacilityRarity::Basic;
 	return Choice;

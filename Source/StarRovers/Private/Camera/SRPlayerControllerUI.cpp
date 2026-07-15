@@ -13,6 +13,44 @@
 #include "UI/SRStructureSelectionWidget.h"
 #include "UI/SRTimeControlWidget.h"
 
+namespace
+{
+	void AppendStructureDataAssets(
+		const TArray<TObjectPtr<USRStructureDataAsset>>& SourceAssets,
+		TArray<USRStructureDataAsset*>& OutStructureDataAssets)
+	{
+		for (USRStructureDataAsset* StructureDataAsset : SourceAssets)
+		{
+			if (IsValid(StructureDataAsset))
+			{
+				OutStructureDataAssets.Add(StructureDataAsset);
+			}
+		}
+	}
+
+	void AppendStructureDataAssets(
+		const FSRAvailableStructureDataAssetOperationCategory& SourceCategory,
+		TArray<USRStructureDataAsset*>& OutStructureDataAssets)
+	{
+		AppendStructureDataAssets(SourceCategory.Processor, OutStructureDataAssets);
+		AppendStructureDataAssets(SourceCategory.Synthesizer, OutStructureDataAssets);
+		AppendStructureDataAssets(SourceCategory.Miner, OutStructureDataAssets);
+		AppendStructureDataAssets(SourceCategory.Conveyor, OutStructureDataAssets);
+		AppendStructureDataAssets(SourceCategory.Hub, OutStructureDataAssets);
+	}
+
+	void AppendStructureDataAssets(
+		const FSRAvailableStructureDataAssetCategories& SourceCategories,
+		TArray<USRStructureDataAsset*>& OutStructureDataAssets)
+	{
+		AppendStructureDataAssets(SourceCategories.Starting, OutStructureDataAssets);
+		AppendStructureDataAssets(SourceCategories.Basic, OutStructureDataAssets);
+		AppendStructureDataAssets(SourceCategories.Advance, OutStructureDataAssets);
+		AppendStructureDataAssets(SourceCategories.Expert, OutStructureDataAssets);
+		AppendStructureDataAssets(SourceCategories.Innovation, OutStructureDataAssets);
+	}
+}
+
 USRCelestialBodyFocusInfoWidget* ASRPlayerController::GetFocusInfoWidget() const
 {
 	return FocusInfoWidget;
@@ -244,14 +282,7 @@ void ASRPlayerController::RegisterAvailableStructuresForAugments()
 	}
 
 	TArray<USRStructureDataAsset*> StructureDataAssets;
-	StructureDataAssets.Reserve(AvailableStructureDataAssets.Num());
-	for (USRStructureDataAsset* StructureDataAsset : AvailableStructureDataAssets)
-	{
-		if (IsValid(StructureDataAsset))
-		{
-			StructureDataAssets.Add(StructureDataAsset);
-		}
-	}
+	AppendStructureDataAssets(AvailableStructureDataAssets, StructureDataAssets);
 
 	AugmentSubsystem->RegisterStructureDataAssets(StructureDataAssets);
 }
@@ -421,9 +452,12 @@ void ASRPlayerController::RefreshFacilityControlWidget()
 void ASRPlayerController::GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const
 {
 	OutStructureDataAssets.Reset();
-	OutStructureDataAssets.Reserve(AvailableStructureDataAssets.Num());
+	TArray<USRStructureDataAsset*> ConfiguredStructureDataAssets;
+	AppendStructureDataAssets(AvailableStructureDataAssets, ConfiguredStructureDataAssets);
+
+	OutStructureDataAssets.Reserve(ConfiguredStructureDataAssets.Num());
 	const USRAugmentSubsystem* AugmentSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRAugmentSubsystem>() : nullptr;
-	for (USRStructureDataAsset* StructureDataAsset : AvailableStructureDataAssets)
+	for (USRStructureDataAsset* StructureDataAsset : ConfiguredStructureDataAssets)
 	{
 		if (IsValid(StructureDataAsset)
 			&& (!AugmentSubsystem || AugmentSubsystem->IsStructureUnlocked(StructureDataAsset)))

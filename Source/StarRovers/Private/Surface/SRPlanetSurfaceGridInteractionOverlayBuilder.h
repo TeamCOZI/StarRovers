@@ -20,6 +20,10 @@ namespace StarRovers::SurfaceGridInteractionOverlayBuilder
 		bool bHoveredInteractionGridPatchVisible = false;
 		FSRPlanetSurfaceGridCellId HoveredCellId;
 		FSRPlanetSurfaceGridCellId SelectedCellId;
+		const TArray<FSRPlanetSurfaceGridCellId>* HoveredHighlightCellIds = nullptr;
+		const TArray<FSRPlanetSurfaceGridCellId>* SelectedHighlightCellIds = nullptr;
+		const TArray<FSRPlanetSurfaceGridCellId>* SelectedFootprintCellIds = nullptr;
+		const TArray<FSRPlanetSurfaceGridCellId>* PlacementPreviewCellIds = nullptr;
 		FLinearColor HoveredCellColor;
 		FLinearColor SelectedCellColor;
 		FLinearColor OccupiedCellColor;

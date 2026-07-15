@@ -1,7 +1,6 @@
 #include "SRFacilityProcessingStepExecutor.h"
 
 #include "Automation/SRFacilityDataAsset.h"
-#include "SRFacilityCellTemperatureEffectApplier.h"
 #include "SRFacilityOutputResourceBuilder.h"
 #include "SRFacilityProcessingInventoryRouter.h"
 #include "SRFacilityProcessingRuleEvaluator.h"
@@ -125,17 +124,6 @@ bool FSRFacilityProcessingStepExecutor::TryCompleteProcessing(
 	{
 		FSRFacilityProcessingInventoryRouter::StoreOutputResources(FacilityInstance, OutputResources);
 	}
-	const FSRResourceInstance* TemperatureConditionResource = OutputResources.IsEmpty()
-		? (BaselineOutputResource.ResourceId.IsNone() ? nullptr : &BaselineOutputResource)
-		: &OutputResources[0];
-	const FSRResourceInstance* TemperatureBaselineResource = BaselineOutputResource.ResourceId.IsNone()
-		? TemperatureConditionResource
-		: &BaselineOutputResource;
-	const int32 CellTemperatureEffects = FSRFacilityCellTemperatureEffectApplier::ApplyEffects(
-		OwnerComponent,
-		FacilityInstance,
-		TemperatureConditionResource,
-		TemperatureBaselineResource);
 	ResetStandardProcessingState(FacilityInstance);
 
 	if (OutCompletionResult)
@@ -146,8 +134,6 @@ bool FSRFacilityProcessingStepExecutor::TryCompleteProcessing(
 		OutCompletionResult->AdditionalOutputCount = FMath::Max(
 			0,
 			OutputResources.Num() - PrimaryOutputCount);
-		OutCompletionResult->CellTemperatureEffects = CellTemperatureEffects;
-		OutCompletionResult->bShouldRefreshTemperatureFromSurface = CellTemperatureEffects > 0;
 	}
 	return true;
 }

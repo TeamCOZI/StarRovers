@@ -307,7 +307,8 @@ namespace StarRovers::Surface::Interaction
 		const FSRPlanetSurfaceGridCellId& CenterCellId,
 		int32 FaceResolution,
 		TFunctionRef<bool(const FSRPlanetSurfaceGridCellId&)> IsValidCell,
-		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds)
+		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds,
+		int32 PatchSize)
 	{
 		OutCellIds.Reset();
 
@@ -317,6 +318,9 @@ namespace StarRovers::Surface::Interaction
 		}
 
 		const int32 SafeFaceResolution = FMath::Max(1, FaceResolution);
+		const int32 SafePatchSize = FMath::Max(1, PatchSize);
+		const int32 NegativePatchRadius = (SafePatchSize - 1) / 2;
+		const int32 PositivePatchRadius = SafePatchSize / 2;
 		const FSRPlanetSurfaceGridDisplayMapper DisplayMapper(SafeFaceResolution);
 
 		auto TryStepWalker = [&DisplayMapper, &IsValidCell](
@@ -387,8 +391,8 @@ namespace StarRovers::Surface::Interaction
 		};
 
 		TSet<FSRPlanetSurfaceGridCellId> PatchCellIds;
-		PatchCellIds.Reserve((PatchRadius * 2 + 1) * (PatchRadius * 2 + 1));
-		OutCellIds.Reserve((PatchRadius * 2 + 1) * (PatchRadius * 2 + 1));
+		PatchCellIds.Reserve(SafePatchSize * SafePatchSize);
+		OutCellIds.Reserve(SafePatchSize * SafePatchSize);
 
 		auto AddPatchCellId = [&IsValidCell, &PatchCellIds, &OutCellIds](const FSRPlanetSurfaceGridCellId& PatchCellId)
 		{
@@ -412,8 +416,14 @@ namespace StarRovers::Surface::Interaction
 				AddPatchCellId(PatchCellId);
 			}
 		};
-		auto GetOverflowOffset = [](int32 DirectionSign, int32 OverflowIndex, int32 OverflowCount)
+		auto GetOverflowOffset = [
+			NegativePatchRadius,
+			PositivePatchRadius](
+			int32 DirectionSign,
+			int32 OverflowIndex,
+			int32 OverflowCount)
 		{
+			const int32 PatchRadius = DirectionSign > 0 ? PositivePatchRadius : NegativePatchRadius;
 			const int32 DistanceFromCenter = PatchRadius - OverflowCount + 1 + OverflowIndex;
 			return DirectionSign > 0 ? DistanceFromCenter : -DistanceFromCenter;
 		};
@@ -441,10 +451,10 @@ namespace StarRovers::Surface::Interaction
 		};
 
 		const FSRPlanetSurfaceGridDisplayCoord CenterDisplayCoord = DisplayMapper.CanonicalToDisplay(CenterCellId);
-		const int32 DesiredMinX = CenterDisplayCoord.X - PatchRadius;
-		const int32 DesiredMaxX = CenterDisplayCoord.X + PatchRadius;
-		const int32 DesiredMinY = CenterDisplayCoord.Y - PatchRadius;
-		const int32 DesiredMaxY = CenterDisplayCoord.Y + PatchRadius;
+		const int32 DesiredMinX = CenterDisplayCoord.X - NegativePatchRadius;
+		const int32 DesiredMaxX = CenterDisplayCoord.X + PositivePatchRadius;
+		const int32 DesiredMinY = CenterDisplayCoord.Y - NegativePatchRadius;
+		const int32 DesiredMaxY = CenterDisplayCoord.Y + PositivePatchRadius;
 
 		const int32 ClippedMinX = FMath::Clamp(DesiredMinX, 0, SafeFaceResolution - 1);
 		const int32 ClippedMaxX = FMath::Clamp(DesiredMaxX, 0, SafeFaceResolution - 1);

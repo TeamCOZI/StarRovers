@@ -88,6 +88,38 @@ void ASRPlayerController::HandleStructureSelectionTab()
 	StructureSelectionWidget->AdvanceStructureSelectionTab();
 }
 
+void ASRPlayerController::HandleStructureSelectionCategory1()
+{
+	HandleStructureSelectionCategoryShortcut(0);
+}
+
+void ASRPlayerController::HandleStructureSelectionCategory2()
+{
+	HandleStructureSelectionCategoryShortcut(1);
+}
+
+void ASRPlayerController::HandleStructureSelectionCategory3()
+{
+	HandleStructureSelectionCategoryShortcut(2);
+}
+
+void ASRPlayerController::HandleStructureSelectionCategory4()
+{
+	HandleStructureSelectionCategoryShortcut(3);
+}
+
+void ASRPlayerController::HandleStructureSelectionCategoryShortcut(int32 CategoryIndex)
+{
+	if ((IsValid(AugmentChoiceWidget) && AugmentChoiceWidget->IsVisible())
+		|| !IsAssemblyModeActive()
+		|| !StructureSelectionWidget)
+	{
+		return;
+	}
+
+	StructureSelectionWidget->SelectStructureCategoryByShortcut(CategoryIndex);
+}
+
 void ASRPlayerController::HandleLeftClick()
 {
 	float MouseX = 0.0f;

@@ -63,22 +63,22 @@ namespace StarRovers::SurfaceGridOwnerBody
 
 	bool ApplySurfaceCellHighlights(
 		AActor* Owner,
-		const FSRPlanetSurfaceGridCellId& HoveredCellId,
-		bool bHasHoveredCell,
-		const FSRPlanetSurfaceGridCellId& SelectedCellId,
-		bool bHasSelectedCell,
+		const TArray<FSRPlanetSurfaceGridCellId>& HoveredCellIds,
+		const TArray<FSRPlanetSurfaceGridCellId>& SelectedCellIds,
+		const TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 		const FLinearColor& HoveredCellColor,
-		const FLinearColor& SelectedCellColor)
+		const FLinearColor& SelectedCellColor,
+		const FLinearColor& OccupiedCellColor)
 	{
 		ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(Owner);
 		return IsValid(OwnerBody)
 			&& OwnerBody->ApplySurfaceCellHighlights(
-				HoveredCellId,
-				bHasHoveredCell,
-				SelectedCellId,
-				bHasSelectedCell,
+				HoveredCellIds,
+				SelectedCellIds,
+				OccupiedPreviewCellIds,
 				HoveredCellColor,
-				SelectedCellColor);
+				SelectedCellColor,
+				OccupiedCellColor);
 	}
 
 	void ClearSurfaceCellHighlights(AActor* Owner)

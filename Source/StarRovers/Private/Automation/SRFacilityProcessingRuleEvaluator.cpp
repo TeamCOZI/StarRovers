@@ -5,77 +5,11 @@
 #include "SRFacilityMiningTargetResolver.h"
 #include "SRFacilityEffectConditionEvaluator.h"
 #include "SRFacilityOutputResourceBuilder.h"
+#include "SRFacilityProcessContextResolver.h"
 #include "SRFacilityProcessingInventoryRouter.h"
 
 namespace
 {
-	const FSRResourceInstance* FindFirstProcessingRuleResource(const TArray<FSRResourceInstance>& ResourceInstances)
-	{
-		for (const FSRResourceInstance& ResourceInstance : ResourceInstances)
-		{
-			if (!ResourceInstance.ResourceId.IsNone())
-			{
-				return &ResourceInstance;
-			}
-		}
-		return nullptr;
-	}
-
-	ESRFacilityTemperatureState InvertProcessingRuleTemperatureState(ESRFacilityTemperatureState TemperatureState)
-	{
-		switch (TemperatureState)
-		{
-		case ESRFacilityTemperatureState::Frozen:
-			return ESRFacilityTemperatureState::Overheated;
-		case ESRFacilityTemperatureState::Cold:
-			return ESRFacilityTemperatureState::Hot;
-		case ESRFacilityTemperatureState::Hot:
-			return ESRFacilityTemperatureState::Cold;
-		case ESRFacilityTemperatureState::Overheated:
-			return ESRFacilityTemperatureState::Frozen;
-		case ESRFacilityTemperatureState::Normal:
-		default:
-			return ESRFacilityTemperatureState::Normal;
-		}
-	}
-
-	ESRFacilityTemperatureState ResolveEffectiveProcessingTemperature(
-		const FSRFacilityInstance& FacilityInstance,
-		const TArray<FSRResourceInstance>& ResourceInstances)
-	{
-		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-		if (!IsValid(FacilityDataAsset))
-		{
-			return FacilityInstance.TemperatureState;
-		}
-
-		const FSRResourceInstance* ConditionResource = FindFirstProcessingRuleResource(ResourceInstances);
-		ESRFacilityTemperatureState EffectiveTemperatureState = FacilityInstance.TemperatureState;
-		for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
-		{
-			const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
-			{
-				ConditionResource,
-				ConditionResource,
-				EffectiveTemperatureState
-			};
-			if (!StarRovers::FacilityEffects::DoEffectConditionsPass(EffectSpec, ConditionContext))
-			{
-				continue;
-			}
-
-			if (EffectSpec.EffectKind == ESRFacilityEffectKind::InvertHeat)
-			{
-				EffectiveTemperatureState = InvertProcessingRuleTemperatureState(EffectiveTemperatureState);
-			}
-			else if (EffectSpec.EffectKind == ESRFacilityEffectKind::OverrideProcessTemperature)
-			{
-				EffectiveTemperatureState = EffectSpec.ProcessTemperatureState;
-			}
-		}
-		return EffectiveTemperatureState;
-	}
-
 	bool DoesProcessingResourceRequireColdTemperature(const FSRResourceInstance& ResourceInstance)
 	{
 		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
@@ -129,21 +63,11 @@ namespace
 			return false;
 		}
 
-		const ESRFacilityTemperatureState EffectiveTemperatureState = ResolveEffectiveProcessingTemperature(
-			FacilityInstance,
-			ResourceInstances);
+		const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
+			StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, ResourceInstances);
+		const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
 		if (EffectiveTemperatureState == ESRFacilityTemperatureState::Frozen
 			|| EffectiveTemperatureState == ESRFacilityTemperatureState::Overheated)
-		{
-			return false;
-		}
-
-		if (FacilityDataAsset->bRequiresColdTemperature && EffectiveTemperatureState != ESRFacilityTemperatureState::Cold)
-		{
-			return false;
-		}
-
-		if (FacilityDataAsset->bRequiresHotTemperature && EffectiveTemperatureState != ESRFacilityTemperatureState::Hot)
 		{
 			return false;
 		}
@@ -244,9 +168,9 @@ float FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(const FSRFacilit
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	float ProcessSeconds = IsValid(FacilityDataAsset) ? FMath::Max(0.01f, FacilityDataAsset->BaseProcessSeconds) : 1.0f;
-	const ESRFacilityTemperatureState EffectiveTemperatureState = ResolveEffectiveProcessingTemperature(
-		FacilityInstance,
-		FacilityInstance.ProcessingInventory);
+	const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
+		StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, FacilityInstance.ProcessingInventory);
+	const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
 	if (EffectiveTemperatureState == ESRFacilityTemperatureState::Cold)
 	{
 		ProcessSeconds *= 2.0f;
@@ -256,7 +180,8 @@ float FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(const FSRFacilit
 		return ProcessSeconds;
 	}
 
-	const FSRResourceInstance* ConditionResource = FindFirstProcessingRuleResource(FacilityInstance.ProcessingInventory);
+	const FSRResourceInstance* ConditionResource =
+		StarRovers::FacilityProcessing::FindFirstProcessResource(FacilityInstance.ProcessingInventory);
 	for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
 	{
 		const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =

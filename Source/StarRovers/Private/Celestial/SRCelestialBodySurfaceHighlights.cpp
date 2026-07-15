@@ -73,6 +73,20 @@ namespace
 		AddSurfaceHighlightColorElements(CellColorData->SideColorElements, HighlightColor, Targets);
 	}
 
+	using FSurfaceHighlightCellColorDataQuery = TFunctionRef<const FSRCelestialBodyDynamicMeshCellColorData*(const FSRPlanetSurfaceGridCellId& CellId)>;
+
+	void AddSurfaceHighlightCells(
+		FSurfaceHighlightCellColorDataQuery FindCellColorData,
+		const TArray<FSRPlanetSurfaceGridCellId>& CellIds,
+		const FLinearColor& HighlightColor,
+		FSRCelestialBodySurfaceHighlightTargets& Targets)
+	{
+		for (const FSRPlanetSurfaceGridCellId& CellId : CellIds)
+		{
+			AddSurfaceHighlightCell(FindCellColorData(CellId), HighlightColor, Targets);
+		}
+	}
+
 	bool HasSurfaceHighlightElementChange(
 		const TSet<uint64>& PreviousHighlightedElements,
 		const TSet<uint64>& NextHighlightedElements)
@@ -230,12 +244,12 @@ bool ASRCelestialBody::GetCachedSurfaceGridCells(TArray<FSRPlanetSurfaceGridCell
 }
 
 bool ASRCelestialBody::ApplySurfaceCellHighlights(
-	const FSRPlanetSurfaceGridCellId& HoveredCellId,
-	bool bHasHoveredCell,
-	const FSRPlanetSurfaceGridCellId& SelectedCellId,
-	bool bHasSelectedCell,
+	const TArray<FSRPlanetSurfaceGridCellId>& HoveredCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& SelectedCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 	const FLinearColor& HoveredCellColor,
-	const FLinearColor& SelectedCellColor)
+	const FLinearColor& SelectedCellColor,
+	const FLinearColor& OccupiedCellColor)
 {
 	if (!IsValid(CelestialBodyDynamicMesh.Get()) || DynamicMeshState.ColorDataByFlatId.IsEmpty())
 	{
@@ -243,15 +257,13 @@ bool ASRCelestialBody::ApplySurfaceCellHighlights(
 	}
 
 	FSRCelestialBodySurfaceHighlightTargets HighlightTargets;
-
-	if (bHasHoveredCell)
+	const auto FindCellColorData = [this](const FSRPlanetSurfaceGridCellId& CellId)
 	{
-		AddSurfaceHighlightCell(FindDynamicMeshCellColorData(HoveredCellId), HoveredCellColor, HighlightTargets);
-	}
-	if (bHasSelectedCell)
-	{
-		AddSurfaceHighlightCell(FindDynamicMeshCellColorData(SelectedCellId), SelectedCellColor, HighlightTargets);
-	}
+		return FindDynamicMeshCellColorData(CellId);
+	};
+	AddSurfaceHighlightCells(FindCellColorData, OccupiedPreviewCellIds, OccupiedCellColor, HighlightTargets);
+	AddSurfaceHighlightCells(FindCellColorData, HoveredCellIds, HoveredCellColor, HighlightTargets);
+	AddSurfaceHighlightCells(FindCellColorData, SelectedCellIds, SelectedCellColor, HighlightTargets);
 
 	FinalizeSurfaceHighlightTargets(DynamicMeshState.HighlightedColorElements, HighlightTargets);
 	const bool bHasAnyColorChange = HasSurfaceHighlightElementChange(

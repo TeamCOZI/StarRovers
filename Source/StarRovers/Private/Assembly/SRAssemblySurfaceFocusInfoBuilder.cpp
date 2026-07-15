@@ -131,12 +131,13 @@ namespace
 		RuntimeInfo.ProcessingInventory = FacilityInstance.ProcessingInventory;
 		RuntimeInfo.OutputInventory = FacilityInstance.OutputInventory;
 
+		RuntimeInfo.FacilityId = StructureInfo.StructureId;
+		RuntimeInfo.DisplayName = StructureInfo.DisplayName.IsEmpty()
+			? FText::FromName(StructureInfo.StructureId)
+			: StructureInfo.DisplayName;
+
 		if (const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get())
 		{
-			RuntimeInfo.FacilityId = FacilityDataAsset->FacilityId;
-			RuntimeInfo.DisplayName = FacilityDataAsset->DisplayName.IsEmpty()
-				? FText::FromName(FacilityDataAsset->FacilityId)
-				: FacilityDataAsset->DisplayName;
 			RuntimeInfo.OperationKind = FacilityDataAsset->OperationKind;
 		}
 

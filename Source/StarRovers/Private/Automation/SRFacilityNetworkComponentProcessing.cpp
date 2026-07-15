@@ -6,6 +6,28 @@
 #include "SRFacilityOutputPreviewQuery.h"
 #include "SRFacilityProcessingStepExecutor.h"
 #include "SRFacilityProcessingTickRunner.h"
+#include "Structure/SRStructureDataAsset.h"
+
+namespace
+{
+	FString BuildFacilityLogName(const FSRFacilityInstance& FacilityInstance)
+	{
+		if (IsValid(FacilityInstance.StructureDataAsset.Get()))
+		{
+			const FSRStructureData StructureData = FacilityInstance.StructureDataAsset->BuildData();
+			if (!StructureData.DisplayName.IsEmpty())
+			{
+				return StructureData.DisplayName.ToString();
+			}
+			if (!StructureData.StructureId.IsNone())
+			{
+				return StructureData.StructureId.ToString();
+			}
+		}
+
+		return GetNameSafe(FacilityInstance.StructureDataAsset.Get());
+	}
+}
 
 bool USRFacilityNetworkComponent::SetFacilityTemperatureState(FName OccupantId, ESRFacilityTemperatureState TemperatureState)
 {
@@ -84,11 +106,12 @@ bool USRFacilityNetworkComponent::TryStartProcessing(FSRFacilityInstance& Facili
 
 	if (StartResult.StepKind == ESRFacilityProcessingStepKind::Mining)
 	{
+		const FString FacilityLogName = BuildFacilityLogName(FacilityInstance);
 		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Mining started: OccupantId=%s Facility=%s Deposit=%s ResourceId=%s Remaining=%d/%d Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
-			*GetNameSafe(FacilityInstance.FacilityDataAsset.Get()),
+			*FacilityLogName,
 			*StartResult.MiningResult.ResourceDeposit.OccupantId.ToString(),
 			*StartResult.MiningResult.ResourceDeposit.ResourceId.ToString(),
 			StartResult.MiningResult.ResourceDeposit.RemainingAmount,
@@ -99,11 +122,12 @@ bool USRFacilityNetworkComponent::TryStartProcessing(FSRFacilityInstance& Facili
 
 	if (StartResult.StepKind == ESRFacilityProcessingStepKind::Standard)
 	{
+		const FString FacilityLogName = BuildFacilityLogName(FacilityInstance);
 		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Processing started: OccupantId=%s Facility=%s ProcessingInputs=%d RemainingInputs=%d Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
-			*GetNameSafe(FacilityInstance.FacilityDataAsset.Get()),
+			*FacilityLogName,
 			StartResult.ProcessingInputCount,
 			StartResult.RemainingInputCount,
 			*GetNameSafe(GetOwner()));
@@ -119,11 +143,6 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 		return false;
 	}
 
-	if (CompletionResult.bShouldRefreshTemperatureFromSurface)
-	{
-		RefreshFacilityTemperatureFromSurface(FacilityInstance.OccupantId);
-	}
-
 	if (!bLogFacilityNetworkEvents)
 	{
 		return true;
@@ -131,11 +150,12 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 
 	if (CompletionResult.StepKind == ESRFacilityProcessingStepKind::Mining)
 	{
+		const FString FacilityLogName = BuildFacilityLogName(FacilityInstance);
 		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
 			TEXT("[FacilityNetwork] Mining completed: OccupantId=%s Facility=%s Deposit=%s ResourceId=%s Remaining=%d/%d Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
-			*GetNameSafe(FacilityInstance.FacilityDataAsset.Get()),
+			*FacilityLogName,
 			*CompletionResult.MiningResult.DepositOccupantId.ToString(),
 			*CompletionResult.MiningResult.MinedResource.ResourceId.ToString(),
 			CompletionResult.MiningResult.RemainingAmount,
@@ -146,15 +166,15 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 
 	if (CompletionResult.StepKind == ESRFacilityProcessingStepKind::Standard)
 	{
+		const FString FacilityLogName = BuildFacilityLogName(FacilityInstance);
 		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
-			TEXT("[FacilityNetwork] Processing completed: OccupantId=%s Facility=%s OutputResourceId=%s OutputCount=%d AdditionalOutputs=%d CellTemperatureEffects=%d Owner=%s"),
+			TEXT("[FacilityNetwork] Processing completed: OccupantId=%s Facility=%s OutputResourceId=%s OutputCount=%d AdditionalOutputs=%d Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
-			*GetNameSafe(FacilityInstance.FacilityDataAsset.Get()),
+			*FacilityLogName,
 			CompletionResult.PrimaryOutputResource.ResourceId.IsNone() ? TEXT("None") : *CompletionResult.PrimaryOutputResource.ResourceId.ToString(),
 			CompletionResult.OutputCount,
 			CompletionResult.AdditionalOutputCount,
-			CompletionResult.CellTemperatureEffects,
 			*GetNameSafe(GetOwner()));
 	}
 	return true;

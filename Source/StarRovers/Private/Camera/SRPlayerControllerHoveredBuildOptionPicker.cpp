@@ -10,7 +10,7 @@
 
 bool FSRPlayerControllerHoveredBuildOptionPicker::TryPickBuildOptionFromFocusedActor(
 	AActor* FocusedActor,
-	const TArray<TObjectPtr<USRStructureDataAsset>>& AvailableStructureDataAssets,
+	const TArray<USRStructureDataAsset*>& AvailableStructureDataAssets,
 	const USRAugmentSubsystem* AugmentSubsystem,
 	USRStructureSelectionWidget* StructureSelectionWidget,
 	FName& OutStructureId,
@@ -113,7 +113,7 @@ bool FSRPlayerControllerHoveredBuildOptionPicker::TryPickBuildOptionFromFocusedA
 
 USRStructureDataAsset* FSRPlayerControllerHoveredBuildOptionPicker::ResolveSelectableStructureDataAsset(
 	USRStructureDataAsset* CandidateStructureDataAsset,
-	const TArray<TObjectPtr<USRStructureDataAsset>>& AvailableStructureDataAssets,
+	const TArray<USRStructureDataAsset*>& AvailableStructureDataAssets,
 	const USRAugmentSubsystem* AugmentSubsystem)
 {
 	if (!IsValid(CandidateStructureDataAsset))

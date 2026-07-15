@@ -14,6 +14,8 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 	{
 		CurrentSurfaceGrid->ClearHoveredCell();
 		CurrentSurfaceGrid->ClearSelectedCell();
+		CurrentSurfaceGrid->ClearSelectedFootprintCells();
+		CurrentSurfaceGrid->ClearPlacementPreviewCells();
 		CurrentSurfaceGrid->ClearOccupiedPreviewCells();
 		CurrentSurfaceGrid->ClearFacilityPortPreviewCells();
 		CurrentSurfaceGrid->ClearDeletionPreviewCells();
@@ -51,6 +53,8 @@ void USRAssemblyComponent::ClearSurfaceHover()
 	if (IsValid(HoveredSurfaceGrid))
 	{
 		HoveredSurfaceGrid->ClearHoveredCell();
+		HoveredSurfaceGrid->ClearSelectedFootprintCells();
+		HoveredSurfaceGrid->ClearPlacementPreviewCells();
 		HoveredSurfaceGrid->ClearOccupiedPreviewCells();
 		HoveredSurfaceGrid->ClearFacilityPortPreviewCells();
 		HoveredSurfaceGrid->ClearDeletionPreviewCells();
@@ -137,6 +141,8 @@ void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
 		ClearAreaDeletion();
 		CancelAreaCopyPlacement();
 		SurfaceState.ActiveAssemblySurfaceGrid->SetGridVisible(false);
+		SurfaceState.ActiveAssemblySurfaceGrid->ClearSelectedFootprintCells();
+		SurfaceState.ActiveAssemblySurfaceGrid->ClearPlacementPreviewCells();
 		SurfaceState.ActiveAssemblySurfaceGrid->ClearOccupiedPreviewCells();
 		SurfaceState.ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
 		SurfaceState.ActiveAssemblySurfaceGrid->ClearDeletionPreviewCells();
@@ -162,6 +168,8 @@ void USRAssemblyComponent::ApplyAssemblyModeToFocusedSurfaceGrid()
 		ConveyorPreview.ClearBulkDeletionPreview();
 		if (SurfaceState.ActiveAssemblySurfaceGrid)
 		{
+			SurfaceState.ActiveAssemblySurfaceGrid->ClearSelectedFootprintCells();
+			SurfaceState.ActiveAssemblySurfaceGrid->ClearPlacementPreviewCells();
 			SurfaceState.ActiveAssemblySurfaceGrid->ClearOccupiedPreviewCells();
 			SurfaceState.ActiveAssemblySurfaceGrid->ClearFacilityPortPreviewCells();
 			SurfaceState.ActiveAssemblySurfaceGrid->ClearDeletionPreviewCells();

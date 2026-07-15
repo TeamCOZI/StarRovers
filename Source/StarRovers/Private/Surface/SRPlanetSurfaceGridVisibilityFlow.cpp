@@ -30,6 +30,8 @@ bool USRPlanetSurfaceGrid::ShouldShowInteractionOverlayForCurrentState() const
 	return bGridVisible && SurfaceGridInteractionState::HasInteractionOverlayContent(
 		bHasHoveredCell,
 		bHasSelectedCell,
+		SelectedFootprintCellIds,
+		PlacementPreviewCellIds,
 		AreaSelectionCellIds,
 		OccupiedPreviewCellIds,
 		InputPortPreviewCellIds,
@@ -43,6 +45,8 @@ void USRPlanetSurfaceGrid::ClearInteractionStateForHiddenGrid()
 {
 	ClearHoveredCell();
 	ClearSelectedCell();
+	ClearSelectedFootprintCells();
+	ClearPlacementPreviewCells();
 	ClearAreaSelectionCells();
 	ClearOccupiedPreviewCells();
 	ClearFacilityPortPreviewCells();

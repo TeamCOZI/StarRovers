@@ -126,6 +126,7 @@ namespace StarRovers::Assembly
 		UMaterialInterface* PreviewMaterial = ReplacementTargets.HasAny()
 			? PreviewMaterials::ResolveReplaceableMaterial(StructureData)
 			: PreviewMaterials::ResolveGhostMaterial(StructureData);
+		HoveredSurfaceGrid->SetPlacementPreviewCells(FootprintCellIds);
 		if (!StructurePreview.UpdateGhostActor(
 			World,
 			PreviewOwner,

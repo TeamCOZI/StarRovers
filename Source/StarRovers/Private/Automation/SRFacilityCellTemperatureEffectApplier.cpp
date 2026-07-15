@@ -9,67 +9,28 @@
 
 namespace
 {
-	void AddTemperatureTargetIfValid(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRPlanetSurfaceGridCellId& CellId,
-		int32 Distance,
-		TArray<FSRPlanetSurfaceGridCellId>& InOutQueue,
-		TMap<FSRPlanetSurfaceGridCellId, int32>& InOutDistances)
+	USRPlanetSurfaceGrid* ResolveSurfaceGrid(const UActorComponent* OwnerComponent)
 	{
-		if (!IsValid(SurfaceGrid) || InOutDistances.Contains(CellId))
-		{
-			return;
-		}
-
-		FSRPlanetSurfaceGridCellInfo CellInfo;
-		if (!SurfaceGrid->GetCellInfoById(CellId, CellInfo))
-		{
-			return;
-		}
-
-		InOutDistances.Add(CellId, Distance);
-		InOutQueue.Add(CellId);
+		const AActor* Owner = IsValid(OwnerComponent) ? OwnerComponent->GetOwner() : nullptr;
+		return IsValid(Owner) ? Owner->FindComponentByClass<USRPlanetSurfaceGrid>() : nullptr;
 	}
 
-	void GatherCellsInRange(
-		USRPlanetSurfaceGrid* SurfaceGrid,
-		const FSRPlanetSurfaceGridCellId& OriginCellId,
+	bool GatherCellsInTileRange(
+		const USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& CenterCellId,
 		int32 TileRange,
 		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds)
 	{
 		OutCellIds.Reset();
 		if (!IsValid(SurfaceGrid))
 		{
-			return;
+			return false;
 		}
 
-		TArray<FSRPlanetSurfaceGridCellId> Queue;
-		TMap<FSRPlanetSurfaceGridCellId, int32> Distances;
-		AddTemperatureTargetIfValid(SurfaceGrid, OriginCellId, 0, Queue, Distances);
-
-		const int32 SafeTileRange = FMath::Max(0, TileRange);
-		for (int32 QueueIndex = 0; QueueIndex < Queue.Num(); ++QueueIndex)
-		{
-			const FSRPlanetSurfaceGridCellId CurrentCellId = Queue[QueueIndex];
-			const int32 CurrentDistance = Distances.FindRef(CurrentCellId);
-			OutCellIds.Add(CurrentCellId);
-			if (CurrentDistance >= SafeTileRange)
-			{
-				continue;
-			}
-
-			FSRPlanetSurfaceGridCellNeighbors Neighbors;
-			if (!SurfaceGrid->GetCellNeighbors(CurrentCellId, Neighbors))
-			{
-				continue;
-			}
-
-			const int32 NextDistance = CurrentDistance + 1;
-			AddTemperatureTargetIfValid(SurfaceGrid, Neighbors.NegativeU, NextDistance, Queue, Distances);
-			AddTemperatureTargetIfValid(SurfaceGrid, Neighbors.PositiveU, NextDistance, Queue, Distances);
-			AddTemperatureTargetIfValid(SurfaceGrid, Neighbors.NegativeV, NextDistance, Queue, Distances);
-			AddTemperatureTargetIfValid(SurfaceGrid, Neighbors.PositiveV, NextDistance, Queue, Distances);
-		}
+		return SurfaceGrid->GetInteractionGridPatchCellIdsWithSize(
+			CenterCellId,
+			FMath::Max(1, TileRange),
+			OutCellIds);
 	}
 
 	ESRFacilityTemperatureState ResolveEffectiveTemperatureState(
@@ -96,22 +57,68 @@ namespace
 			return ESRFacilityTemperatureState::Normal;
 		}
 	}
+
+	int32 TemperatureStateToStep(ESRFacilityTemperatureState TemperatureState)
+	{
+		switch (TemperatureState)
+		{
+		case ESRFacilityTemperatureState::Frozen:
+			return 0;
+		case ESRFacilityTemperatureState::Cold:
+			return 1;
+		case ESRFacilityTemperatureState::Hot:
+			return 3;
+		case ESRFacilityTemperatureState::Overheated:
+			return 4;
+		case ESRFacilityTemperatureState::Normal:
+		default:
+			return 2;
+		}
+	}
+
+	ESRFacilityTemperatureState StepToTemperatureState(int32 TemperatureStep)
+	{
+		switch (FMath::Clamp(TemperatureStep, 0, 4))
+		{
+		case 0:
+			return ESRFacilityTemperatureState::Frozen;
+		case 1:
+			return ESRFacilityTemperatureState::Cold;
+		case 3:
+			return ESRFacilityTemperatureState::Hot;
+		case 4:
+			return ESRFacilityTemperatureState::Overheated;
+		case 2:
+		default:
+			return ESRFacilityTemperatureState::Normal;
+		}
+	}
+
+	ESRFacilityTemperatureState AdjustTemperatureStateByStep(
+		ESRFacilityTemperatureState TemperatureState,
+		int32 StepDelta,
+		int32& OutAppliedStepDelta)
+	{
+		const int32 OldStep = TemperatureStateToStep(TemperatureState);
+		const int32 NewStep = FMath::Clamp(OldStep + StepDelta, 0, 4);
+		OutAppliedStepDelta = NewStep - OldStep;
+		return StepToTemperatureState(NewStep);
+	}
 }
 
-int32 FSRFacilityCellTemperatureEffectApplier::ApplyEffects(
+int32 FSRFacilityCellTemperatureEffectApplier::ApplyInstallationEffects(
 	const UActorComponent* OwnerComponent,
-	const FSRFacilityInstance& FacilityInstance,
-	const FSRResourceInstance* ConditionResource,
-	const FSRResourceInstance* BaselineResource)
+	FSRFacilityInstance& FacilityInstance)
 {
+	FacilityInstance.CellTemperatureAdjustments.Reset();
+
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	if (!IsValid(FacilityDataAsset))
 	{
 		return 0;
 	}
 
-	const AActor* Owner = IsValid(OwnerComponent) ? OwnerComponent->GetOwner() : nullptr;
-	USRPlanetSurfaceGrid* SurfaceGrid = IsValid(Owner) ? Owner->FindComponentByClass<USRPlanetSurfaceGrid>() : nullptr;
+	USRPlanetSurfaceGrid* SurfaceGrid = ResolveSurfaceGrid(OwnerComponent);
 	if (!IsValid(SurfaceGrid))
 	{
 		return 0;
@@ -127,8 +134,8 @@ int32 FSRFacilityCellTemperatureEffectApplier::ApplyEffects(
 			bInvertHeat);
 		const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
 		{
-			ConditionResource,
-			BaselineResource,
+			nullptr,
+			nullptr,
 			EffectiveTemperatureState
 		};
 		if (!StarRovers::FacilityEffects::DoEffectConditionsPass(EffectSpec, ConditionContext))
@@ -154,7 +161,11 @@ int32 FSRFacilityCellTemperatureEffectApplier::ApplyEffects(
 		}
 
 		TArray<FSRPlanetSurfaceGridCellId> TargetCellIds;
-		GatherCellsInRange(SurfaceGrid, FacilityInstance.OriginCellId, EffectSpec.TileRange, TargetCellIds);
+		if (!GatherCellsInTileRange(SurfaceGrid, FacilityInstance.OriginCellId, EffectSpec.TileRange, TargetCellIds))
+		{
+			continue;
+		}
+
 		for (const FSRPlanetSurfaceGridCellId& TargetCellId : TargetCellIds)
 		{
 			FSRPlanetSurfaceGridCellInfo CellInfo;
@@ -163,17 +174,66 @@ int32 FSRFacilityCellTemperatureEffectApplier::ApplyEffects(
 				continue;
 			}
 
-			const double TemperatureDelta = bInvertHeat ? -EffectSpec.Value : EffectSpec.Value;
-			const float NewSurfaceTemperature = FMath::Clamp(
-				CellInfo.SurfaceTemperature + static_cast<float>(TemperatureDelta),
-				0.0f,
-				1.0f);
-			if (SurfaceGrid->SetCellSurfaceTemperature(TargetCellId, NewSurfaceTemperature))
+			const int32 RequestedStepDelta = bInvertHeat
+				? -EffectSpec.TemperatureStepDelta
+				: EffectSpec.TemperatureStepDelta;
+			int32 AppliedStepDelta = 0;
+			const ESRFacilityTemperatureState NewTemperatureState = AdjustTemperatureStateByStep(
+				CellInfo.TemperatureState,
+				RequestedStepDelta,
+				AppliedStepDelta);
+			if (AppliedStepDelta != 0
+				&& SurfaceGrid->SetCellTemperatureState(TargetCellId, NewTemperatureState))
 			{
+				FSRFacilityCellTemperatureAdjustment& Adjustment = FacilityInstance.CellTemperatureAdjustments.AddDefaulted_GetRef();
+				Adjustment.CellId = TargetCellId;
+				Adjustment.TemperatureStepDelta = AppliedStepDelta;
 				++AppliedEffectCount;
 			}
 		}
 	}
 
 	return AppliedEffectCount;
+}
+
+int32 FSRFacilityCellTemperatureEffectApplier::RemoveInstallationEffects(
+	const UActorComponent* OwnerComponent,
+	FSRFacilityInstance& FacilityInstance)
+{
+	if (FacilityInstance.CellTemperatureAdjustments.IsEmpty())
+	{
+		return 0;
+	}
+
+	USRPlanetSurfaceGrid* SurfaceGrid = ResolveSurfaceGrid(OwnerComponent);
+	if (!IsValid(SurfaceGrid))
+	{
+		FacilityInstance.CellTemperatureAdjustments.Reset();
+		return 0;
+	}
+
+	int32 RemovedEffectCount = 0;
+	for (int32 AdjustmentIndex = FacilityInstance.CellTemperatureAdjustments.Num() - 1; AdjustmentIndex >= 0; --AdjustmentIndex)
+	{
+		const FSRFacilityCellTemperatureAdjustment& Adjustment = FacilityInstance.CellTemperatureAdjustments[AdjustmentIndex];
+		FSRPlanetSurfaceGridCellInfo CellInfo;
+		if (!SurfaceGrid->GetCellInfoById(Adjustment.CellId, CellInfo))
+		{
+			continue;
+		}
+
+		int32 RestoredStepDelta = 0;
+		const ESRFacilityTemperatureState RestoredTemperatureState = AdjustTemperatureStateByStep(
+			CellInfo.TemperatureState,
+			-Adjustment.TemperatureStepDelta,
+			RestoredStepDelta);
+		if (RestoredStepDelta != 0
+			&& SurfaceGrid->SetCellTemperatureState(Adjustment.CellId, RestoredTemperatureState))
+		{
+			++RemovedEffectCount;
+		}
+	}
+
+	FacilityInstance.CellTemperatureAdjustments.Reset();
+	return RemovedEffectCount;
 }

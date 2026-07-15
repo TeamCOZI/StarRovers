@@ -656,15 +656,14 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 					CellText += TEXT("\n\n");
 				}
 				CellText += FString::Printf(
-					TEXT("Face: %d\nCell: %d,%d\nDisplay: %d,%d\nLatitude: %.1f deg\nTemperature: %s (%.2f)"),
+					TEXT("Face: %d\nCell: %d,%d\nDisplay: %d,%d\nLatitude: %.1f deg\nTemperature: %s"),
 					GetCubeSphereFaceNumber(CellInfo.CellId.Face),
 					CellInfo.CellId.CellX,
 					CellInfo.CellId.CellY,
 					CellInfo.DisplayCellX,
 					CellInfo.DisplayCellY,
 					CellInfo.LatitudeDegrees,
-					GetFocusedFacilityTemperatureLabel(CellInfo.TemperatureState),
-					CellInfo.SurfaceTemperature);
+					GetFocusedFacilityTemperatureLabel(CellInfo.TemperatureState));
 				CellText += FString::Printf(TEXT("\nHoverGridCells: %d"), FocusInfo.HoveredSurfaceGridPatchCellIds.Num());
 				for (int32 CellIndex = 0; CellIndex < FocusInfo.HoveredSurfaceGridPatchCellIds.Num(); ++CellIndex)
 				{
@@ -690,7 +689,7 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 					CellText += TEXT("\n\n");
 				}
 				CellText += FString::Printf(
-					TEXT("Selected Structure\nName: %s\nStructureId: %s\nOccupantId: %s\nKind: %s\nOrigin: F%d(%d,%d)\nClicked: F%d(%d,%d)\nClickedTemperature: %s (%.2f)\nFootprintCells: %d\nFacility: %s\nNatural: %s"),
+					TEXT("Selected Structure\nName: %s\nStructureId: %s\nOccupantId: %s\nKind: %s\nOrigin: F%d(%d,%d)\nClicked: F%d(%d,%d)\nClickedTemperature: %s\nFootprintCells: %d\nFacility: %s\nNatural: %s"),
 					*StructureInfo.DisplayName.ToString(),
 					*StructureInfo.StructureId.ToString(),
 					*StructureInfo.OccupantId.ToString(),
@@ -702,7 +701,6 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 					ClickedCellInfo.CellId.CellX,
 					ClickedCellInfo.CellId.CellY,
 					GetFocusedFacilityTemperatureLabel(ClickedCellInfo.TemperatureState),
-					ClickedCellInfo.SurfaceTemperature,
 					StructureInfo.FootprintCellIds.Num(),
 					StructureInfo.bHasFacilityDataAsset ? TEXT("Yes") : TEXT("No"),
 					StructureInfo.bNaturalStructure ? TEXT("Yes") : TEXT("No"));

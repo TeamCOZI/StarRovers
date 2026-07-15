@@ -9,6 +9,7 @@ void FSRPlayerControllerSurfaceSelectionState::ClearSelectedActorSurfacePreview(
 	if (USRPlanetSurfaceGrid* PreviousSurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SelectedActor))
 	{
 		PreviousSurfaceGrid->ClearSelectedCell();
+		PreviousSurfaceGrid->ClearSelectedFootprintCells();
 		PreviousSurfaceGrid->ClearOccupiedPreviewCells();
 		PreviousSurfaceGrid->ClearFacilityPortPreviewCells();
 	}

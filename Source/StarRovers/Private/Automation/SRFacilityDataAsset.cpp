@@ -2,9 +2,6 @@
 
 USRFacilityDataAsset::USRFacilityDataAsset()
 {
-	FacilityId = FName(TEXT("Facility"));
-	DisplayName = NSLOCTEXT("StarRoversFacility", "DefaultFacilityDisplayName", "Facility");
-	Description = NSLOCTEXT("StarRoversFacility", "DefaultFacilityDescription", "Automation facility.");
 	FacilityKind = ESRFacilityKind::Standard;
 	Rarity = ESRFacilityRarity::Basic;
 	OperationKind = ESRFacilityOperationKind::Process;
@@ -13,8 +10,6 @@ USRFacilityDataAsset::USRFacilityDataAsset()
 	InputInventory.SlotCapacity = 8;
 	OutputInventory.SlotCount = 0;
 	OutputInventory.SlotCapacity = 8;
-	bRequiresColdTemperature = false;
-	bRequiresHotTemperature = false;
 }
 
 void USRFacilityDataAsset::PostLoad()

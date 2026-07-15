@@ -2,6 +2,8 @@
 
 #include "Utility/SRLog.h"
 #include "Automation/SRFacilityNetworkComponent.h"
+#include "Automation/SRFacilityProcessContextResolver.h"
+#include "Automation/SRFacilityProcessingRuleEvaluator.h"
 #include "Automation/SRFacilityResourceOperations.h"
 #include "Blueprint/WidgetTree.h"
 #include "Camera/SRPlayerController.h"
@@ -26,6 +28,7 @@
 #include "GameFramework/Actor.h"
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
+#include "Structure/SRStructureDataAsset.h"
 
 namespace
 {
@@ -62,14 +65,35 @@ namespace
 			return TEXT("Singularity");
 		case ESRResourceProcessTag::Supercooled:
 			return TEXT("Supercooled");
-		case ESRResourceProcessTag::HighActivity:
-			return TEXT("HighActivity");
+		case ESRResourceProcessTag::HyperReactive:
+			return TEXT("HyperReactive");
 		case ESRResourceProcessTag::Charge:
 			return TEXT("Charge");
-		case ESRResourceProcessTag::Waste:
-			return TEXT("DeprecatedWaste");
 		default:
 			return TEXT("Tag");
+		}
+	}
+
+	const TCHAR* GetResourceProcessTagShortLabel(ESRResourceProcessTag ResourceTag)
+	{
+		switch (ResourceTag)
+		{
+		case ESRResourceProcessTag::Responsive:
+			return TEXT("He");
+		case ESRResourceProcessTag::HalfLife:
+			return TEXT("H");
+		case ESRResourceProcessTag::Volatile:
+			return TEXT("V");
+		case ESRResourceProcessTag::Singularity:
+			return TEXT("Si");
+		case ESRResourceProcessTag::Supercooled:
+			return TEXT("Su");
+		case ESRResourceProcessTag::HyperReactive:
+			return TEXT("Hy");
+		case ESRResourceProcessTag::Charge:
+			return TEXT("C");
+		default:
+			return TEXT("T");
 		}
 	}
 
@@ -149,6 +173,11 @@ namespace
 		}
 	}
 
+	const TCHAR* GetEnergyAdjustmentModeLabel(ESRFacilityEnergyAdjustmentMode AdjustmentMode)
+	{
+		return AdjustmentMode == ESRFacilityEnergyAdjustmentMode::Multiply ? TEXT("*") : TEXT("+");
+	}
+
 	const TCHAR* GetProcessTimeModeLabel(ESRFacilityProcessTimeAdjustmentMode ProcessTimeMode)
 	{
 		return ProcessTimeMode == ESRFacilityProcessTimeAdjustmentMode::Multiply ? TEXT("*") : TEXT("+");
@@ -162,6 +191,10 @@ namespace
 			return TEXT("Energy >=");
 		case ESRFacilityEffectConditionKind::EnergyAtMost:
 			return TEXT("Energy <=");
+		case ESRFacilityEffectConditionKind::EnergyGreaterThan:
+			return TEXT("Energy >");
+		case ESRFacilityEffectConditionKind::EnergyLessThan:
+			return TEXT("Energy <");
 		case ESRFacilityEffectConditionKind::EnergyIncreased:
 			return TEXT("Energy Increased");
 		case ESRFacilityEffectConditionKind::EnergyDecreased:
@@ -577,12 +610,7 @@ namespace
 
 	FString BuildResourceTagCardLabel(const FSRResourceInstance& ResourceInstance)
 	{
-		int32 VisibleTagCount = 0;
-		int32 ChargeStackCount = 0;
-		int32 HalfLifeRemainingProcessCount = MAX_int32;
-		bool bHasChargeTag = false;
-		bool bHasHalfLifeTag = false;
-		FString Label;
+		TArray<FString> TagLabels;
 		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
 		{
 			if (TagStack.StackCount <= 0)
@@ -590,49 +618,42 @@ namespace
 				continue;
 			}
 
-			if (TagStack.Tag == ESRResourceProcessTag::Charge)
+			FString TagLabel;
+			if (TagStack.Tag == ESRResourceProcessTag::HalfLife)
 			{
-				bHasChargeTag = true;
-				ChargeStackCount += FMath::Max(0, TagStack.RemainingCycles);
-			}
-			else if (TagStack.Tag == ESRResourceProcessTag::HalfLife)
-			{
-				bHasHalfLifeTag = true;
-				const int32 RemainingProcessCount = TagStack.RemainingCycles > 0
+				const int32 RemainingCycles = TagStack.RemainingCycles > 0
 					? TagStack.RemainingCycles
 					: StarRovers::FacilityResources::HalfLifeDefaultCycles;
-				HalfLifeRemainingProcessCount = FMath::Min(HalfLifeRemainingProcessCount, RemainingProcessCount);
+				TagLabel = FString::Printf(
+					TEXT("%s %d/%d"),
+					GetResourceProcessTagShortLabel(TagStack.Tag),
+					RemainingCycles,
+					StarRovers::FacilityResources::HalfLifeDefaultCycles);
+			}
+			else if (TagStack.Tag == ESRResourceProcessTag::Charge)
+			{
+				TagLabel = FString::Printf(
+					TEXT("%s %d"),
+					GetResourceProcessTagShortLabel(TagStack.Tag),
+					FMath::Max(0, TagStack.RemainingCycles));
+			}
+			else
+			{
+				TagLabel = GetResourceProcessTagShortLabel(TagStack.Tag);
 			}
 
-			if (VisibleTagCount == 0)
+			for (int32 StackIndex = 0; StackIndex < TagStack.StackCount; ++StackIndex)
 			{
-				Label = GetResourceProcessTagLabel(TagStack.Tag);
+				TagLabels.Add(TagLabel);
 			}
-			++VisibleTagCount;
 		}
 
-		if (VisibleTagCount <= 0)
+		if (TagLabels.IsEmpty())
 		{
 			return TEXT("No Tag");
 		}
-		if (bHasChargeTag)
-		{
-			Label = FString::Printf(
-				TEXT("Charge %d"),
-				ChargeStackCount);
-		}
-		else if (bHasHalfLifeTag)
-		{
-			Label = FString::Printf(
-				TEXT("HalfLife %d/%d"),
-				HalfLifeRemainingProcessCount,
-				StarRovers::FacilityResources::HalfLifeDefaultCycles);
-		}
-		if (VisibleTagCount > 1)
-		{
-			Label += FString::Printf(TEXT(" +%d"), VisibleTagCount - 1);
-		}
-		return Label;
+
+		return FString::Join(TagLabels, TEXT(" "));
 	}
 
 	FString BuildInventoryCardPortLabel(const FSRFacilityPortInventory& PortInventory, int32 SlotIndex, const TCHAR* FallbackLabel)
@@ -845,6 +866,8 @@ namespace
 				{
 				case ESRFacilityEffectConditionKind::EnergyAtLeast:
 				case ESRFacilityEffectConditionKind::EnergyAtMost:
+				case ESRFacilityEffectConditionKind::EnergyGreaterThan:
+				case ESRFacilityEffectConditionKind::EnergyLessThan:
 					BaseSummary += FString::Printf(
 						TEXT("%s %.2f"),
 						GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
@@ -921,21 +944,25 @@ namespace
 		case ESRFacilityEffectKind::AdjustEnergy:
 			if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue)
 			{
-				EffectSummary = FString::Printf(TEXT("%s %+.2f"), GetEffectKindLabel(EffectSpec.EffectKind), EffectSpec.Value);
+				EffectSummary = EffectSpec.EnergyAdjustmentMode == ESRFacilityEnergyAdjustmentMode::Multiply
+					? FString::Printf(TEXT("%s * %.2f"), GetEffectKindLabel(EffectSpec.EffectKind), EffectSpec.Value)
+					: FString::Printf(TEXT("%s %+.2f"), GetEffectKindLabel(EffectSpec.EffectKind), EffectSpec.Value);
 			}
 			else if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagStackCount)
 			{
 				EffectSummary = FString::Printf(
-					TEXT("%s %s %s"),
+					TEXT("%s %s %s %s"),
 					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetEnergyAdjustmentModeLabel(EffectSpec.EnergyAdjustmentMode),
 					GetEnergyValueSourceLabel(EffectSpec.EnergyValueSource),
 					GetResourceProcessTagLabel(EffectSpec.ResourceTag));
 			}
 			else
 			{
 				EffectSummary = FString::Printf(
-					TEXT("%s %s"),
+					TEXT("%s %s %s"),
 					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetEnergyAdjustmentModeLabel(EffectSpec.EnergyAdjustmentMode),
 					GetEnergyValueSourceLabel(EffectSpec.EnergyValueSource));
 			}
 			break;
@@ -971,10 +998,10 @@ namespace
 			break;
 		case ESRFacilityEffectKind::AdjustCellTemperature:
 			EffectSummary = FString::Printf(
-				TEXT("%s %+.2f R%d"),
+				TEXT("%s %+d R%d"),
 				GetEffectKindLabel(EffectSpec.EffectKind),
-				EffectSpec.Value,
-				FMath::Max(0, EffectSpec.TileRange));
+				EffectSpec.TemperatureStepDelta,
+				FMath::Max(1, EffectSpec.TileRange));
 			break;
 		case ESRFacilityEffectKind::InvertHeat:
 		case ESRFacilityEffectKind::InvertTagEffects:
@@ -1070,13 +1097,7 @@ namespace
 
 	float ResolveProcessSeconds(const FSRFacilityInstance& FacilityInstance)
 	{
-		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-		float ProcessSeconds = IsValid(FacilityDataAsset) ? FMath::Max(0.01f, FacilityDataAsset->BaseProcessSeconds) : 1.0f;
-		if (FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Cold)
-		{
-			ProcessSeconds *= 2.0f;
-		}
-		return ProcessSeconds;
+		return FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(FacilityInstance);
 	}
 
 	bool CanToggleProcess(const FSRFacilityInstance& FacilityInstance, FString& OutReason)
@@ -1087,21 +1108,21 @@ namespace
 			OutReason = TEXT("Invalid facility");
 			return false;
 		}
-		if (FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Frozen
-			|| FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Overheated)
+
+		const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
+			StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, FacilityInstance.ProcessingInventory);
+		const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
+		if (EffectiveTemperatureState == ESRFacilityTemperatureState::Frozen
+			|| EffectiveTemperatureState == ESRFacilityTemperatureState::Overheated)
 		{
-			OutReason = FString::Printf(TEXT("Blocked by %s"), GetFacilityTemperatureLabel(FacilityInstance.TemperatureState));
+			OutReason = FString::Printf(TEXT("Blocked by %s"), GetFacilityTemperatureLabel(EffectiveTemperatureState));
 			return false;
 		}
-		if (FacilityDataAsset->bRequiresColdTemperature && FacilityInstance.TemperatureState != ESRFacilityTemperatureState::Cold)
+
+		if (EffectiveTemperatureState != FacilityInstance.TemperatureState)
 		{
-			OutReason = TEXT("Requires Cold");
-			return false;
-		}
-		if (FacilityDataAsset->bRequiresHotTemperature && FacilityInstance.TemperatureState != ESRFacilityTemperatureState::Hot)
-		{
-			OutReason = TEXT("Requires Hot");
-			return false;
+			OutReason = FString::Printf(TEXT("Ready as %s"), GetFacilityTemperatureLabel(EffectiveTemperatureState));
+			return true;
 		}
 
 		OutReason = TEXT("Ready");
@@ -3679,9 +3700,19 @@ void USRFacilityControlWidget::RefreshControlText()
 
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-	const FString FacilityName = IsValid(FacilityDataAsset) && !FacilityDataAsset->DisplayName.IsEmpty()
-		? FacilityDataAsset->DisplayName.ToString()
-		: FocusedOccupantId.ToString();
+	FString FacilityName = FocusedOccupantId.ToString();
+	if (IsValid(FacilityInstance.StructureDataAsset.Get()))
+	{
+		const FSRStructureData StructureData = FacilityInstance.StructureDataAsset->BuildData();
+		if (!StructureData.DisplayName.IsEmpty())
+		{
+			FacilityName = StructureData.DisplayName.ToString();
+		}
+		else if (!StructureData.StructureId.IsNone())
+		{
+			FacilityName = StructureData.StructureId.ToString();
+		}
+	}
 	const float ProcessSeconds = ResolveProcessSeconds(FacilityInstance);
 	const float ProgressRatio = ProcessSeconds > 0.0f
 		? FMath::Clamp(FacilityInstance.ProcessProgressSeconds / ProcessSeconds, 0.0f, 1.0f)

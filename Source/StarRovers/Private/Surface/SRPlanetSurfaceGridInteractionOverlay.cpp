@@ -16,6 +16,63 @@ namespace SurfaceGridInteractionPatchOverlay = StarRovers::SurfaceGridInteractio
 namespace SurfaceGridInteractionRegionBuilder = StarRovers::SurfaceGridInteractionRegionBuilder;
 namespace SurfaceGridOwnerBody = StarRovers::SurfaceGridOwnerBody;
 
+namespace
+{
+	const FSRPlanetSurfaceGridCell* FindInteractionCellById(
+		const TArray<FSRPlanetSurfaceGridCell>& Cells,
+		const FSRPlanetSurfaceGridCellId& CellId)
+	{
+		for (const FSRPlanetSurfaceGridCell& Cell : Cells)
+		{
+			if (Cell.CellId == CellId)
+			{
+				return &Cell;
+			}
+		}
+
+		return nullptr;
+	}
+
+	void BuildFocusedCellHighlightIds(
+		const TArray<FSRPlanetSurfaceGridCell>& Cells,
+		const FSRPlanetSurfaceGridCellId& FocusedCellId,
+		bool bHasFocusedCell,
+		TArray<FSRPlanetSurfaceGridCellId>& OutCellIds)
+	{
+		OutCellIds.Reset();
+		if (!bHasFocusedCell)
+		{
+			return;
+		}
+
+		const FSRPlanetSurfaceGridCell* FocusedCell = FindInteractionCellById(Cells, FocusedCellId);
+		if (!FocusedCell)
+		{
+			OutCellIds.Add(FocusedCellId);
+			return;
+		}
+
+		if (!FocusedCell->bOccupied || FocusedCell->OccupantId.IsNone())
+		{
+			OutCellIds.Add(FocusedCellId);
+			return;
+		}
+
+		for (const FSRPlanetSurfaceGridCell& Cell : Cells)
+		{
+			if (Cell.bOccupied && Cell.OccupantId == FocusedCell->OccupantId)
+			{
+				OutCellIds.Add(Cell.CellId);
+			}
+		}
+
+		if (OutCellIds.IsEmpty())
+		{
+			OutCellIds.Add(FocusedCellId);
+		}
+	}
+}
+
 void USRPlanetSurfaceGrid::EnsureInteractionOverlay()
 {
 	if (IsTemplate())
@@ -45,17 +102,29 @@ void USRPlanetSurfaceGrid::RequestInteractionHighlightRefresh()
 void USRPlanetSurfaceGrid::RefreshInteractionHighlight()
 {
 	const bool bUseDynamicMeshHighlight = !bGridVisible;
+	TArray<FSRPlanetSurfaceGridCellId> HoveredHighlightCellIds;
+	TArray<FSRPlanetSurfaceGridCellId> SelectedHighlightCellIds;
+	BuildFocusedCellHighlightIds(Cells, HoveredCellId, bHasHoveredCell, HoveredHighlightCellIds);
+	BuildFocusedCellHighlightIds(Cells, SelectedCellId, bHasSelectedCell, SelectedHighlightCellIds);
+	const TArray<FSRPlanetSurfaceGridCellId>& EffectiveSelectedHighlightCellIds = SelectedFootprintCellIds.IsEmpty()
+		? SelectedHighlightCellIds
+		: SelectedFootprintCellIds;
+	TArray<FSRPlanetSurfaceGridCellId> EffectiveSelectedAndPlacementHighlightCellIds = EffectiveSelectedHighlightCellIds;
+	EffectiveSelectedAndPlacementHighlightCellIds.Append(PlacementPreviewCellIds);
+	const bool bHasDynamicMeshHighlightTargets = !HoveredHighlightCellIds.IsEmpty()
+		|| !EffectiveSelectedAndPlacementHighlightCellIds.IsEmpty()
+		|| !OccupiedPreviewCellIds.IsEmpty();
 	const bool bAppliedDynamicMeshHighlight = bUseDynamicMeshHighlight
 		&& SurfaceGridOwnerBody::ApplySurfaceCellHighlights(
 			GetOwner(),
-			HoveredCellId,
-			bHasHoveredCell,
-			SelectedCellId,
-			bHasSelectedCell,
+			HoveredHighlightCellIds,
+			EffectiveSelectedAndPlacementHighlightCellIds,
+			OccupiedPreviewCellIds,
 			HoveredCellColor,
-			SelectedCellColor);
+			SelectedCellColor,
+			OccupiedCellColor);
 
-	if (!bUseDynamicMeshHighlight || (!bHasHoveredCell && !bHasSelectedCell))
+	if (!bUseDynamicMeshHighlight || !bHasDynamicMeshHighlightTargets)
 	{
 		SurfaceGridOwnerBody::ClearSurfaceCellHighlights(GetOwner());
 	}
@@ -89,6 +158,14 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighli
 	BuildInput.bHoveredInteractionGridPatchVisible = bHoveredInteractionGridPatchVisible;
 	BuildInput.HoveredCellId = HoveredCellId;
 	BuildInput.SelectedCellId = SelectedCellId;
+	TArray<FSRPlanetSurfaceGridCellId> HoveredHighlightCellIds;
+	TArray<FSRPlanetSurfaceGridCellId> SelectedHighlightCellIds;
+	BuildFocusedCellHighlightIds(Cells, HoveredCellId, bHasHoveredCell, HoveredHighlightCellIds);
+	BuildFocusedCellHighlightIds(Cells, SelectedCellId, bHasSelectedCell, SelectedHighlightCellIds);
+	BuildInput.HoveredHighlightCellIds = &HoveredHighlightCellIds;
+	BuildInput.SelectedHighlightCellIds = &SelectedHighlightCellIds;
+	BuildInput.SelectedFootprintCellIds = &SelectedFootprintCellIds;
+	BuildInput.PlacementPreviewCellIds = &PlacementPreviewCellIds;
 	BuildInput.HoveredCellColor = HoveredCellColor;
 	BuildInput.SelectedCellColor = SelectedCellColor;
 	BuildInput.OccupiedCellColor = OccupiedCellColor;

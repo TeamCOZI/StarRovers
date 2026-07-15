@@ -2,6 +2,7 @@
 
 #include "Automation/SRFacilityDataAsset.h"
 #include "SRFacilityEffectConditionEvaluator.h"
+#include "SRFacilityProcessContextResolver.h"
 #include "SRFacilityResourceOperations.h"
 
 namespace
@@ -10,100 +11,29 @@ namespace
 	constexpr double HeatResponsiveHotEnergyBonus = 1.0;
 	constexpr double SupercooledEnergyBonus = 3.0;
 	constexpr double VolatileEnergyPenalty = 1.0;
-	constexpr double HighActivityEnergyBonusPerProcessLimitLoss = 1.0;
+	constexpr double HyperReactiveEnergyBonusPerProcessLimitLoss = 1.0;
 	const FName CompoundResourceId(TEXT("Compound"));
 
 	struct FSRFacilityEffectContext
 	{
-		bool bInvertHeat = false;
 		bool bInvertTagEffects = false;
-		bool bHasProcessTemperatureOverride = false;
-		ESRFacilityTemperatureState ProcessTemperatureOverride = ESRFacilityTemperatureState::Normal;
 		bool bHasLastAttachedTag = false;
 		ESRResourceProcessTag LastAttachedTag = ESRResourceProcessTag::Responsive;
 		int32 EnergyChangeCount = 0;
 	};
-
-	ESRFacilityTemperatureState InvertTemperatureState(ESRFacilityTemperatureState TemperatureState)
-	{
-		switch (TemperatureState)
-		{
-		case ESRFacilityTemperatureState::Frozen:
-			return ESRFacilityTemperatureState::Overheated;
-		case ESRFacilityTemperatureState::Cold:
-			return ESRFacilityTemperatureState::Hot;
-		case ESRFacilityTemperatureState::Hot:
-			return ESRFacilityTemperatureState::Cold;
-		case ESRFacilityTemperatureState::Overheated:
-			return ESRFacilityTemperatureState::Frozen;
-		case ESRFacilityTemperatureState::Normal:
-		default:
-			return ESRFacilityTemperatureState::Normal;
-		}
-	}
 
 	double ApplyTagEffectDirection(double EnergyDelta, const FSRFacilityEffectContext& EffectContext)
 	{
 		return EffectContext.bInvertTagEffects ? -EnergyDelta : EnergyDelta;
 	}
 
-	ESRFacilityTemperatureState ResolveEffectiveTemperatureState(
-		ESRFacilityTemperatureState TemperatureState,
-		const FSRFacilityEffectContext& EffectContext)
-	{
-		const ESRFacilityTemperatureState BaseTemperatureState = EffectContext.bHasProcessTemperatureOverride
-			? EffectContext.ProcessTemperatureOverride
-			: TemperatureState;
-		if (!EffectContext.bInvertHeat)
-		{
-			return BaseTemperatureState;
-		}
-
-		return InvertTemperatureState(BaseTemperatureState);
-	}
-
-	FSRFacilityEffectContext ResolvePreProcessingEffectContext(
-		const USRFacilityDataAsset* FacilityDataAsset,
-		const FSRResourceInstance* ConditionResource,
-		ESRFacilityTemperatureState TemperatureState)
+	FSRFacilityEffectContext MakeEffectContext(
+		const StarRovers::FacilityProcessing::FSRFacilityProcessContext& ProcessContext,
+		int32 InitialEnergyChangeCount = 0)
 	{
 		FSRFacilityEffectContext EffectContext;
-		if (!IsValid(FacilityDataAsset))
-		{
-			return EffectContext;
-		}
-
-		for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
-		{
-			const ESRFacilityTemperatureState EffectiveTemperatureState = ResolveEffectiveTemperatureState(
-				TemperatureState,
-				EffectContext);
-			const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
-			{
-				ConditionResource,
-				ConditionResource,
-				EffectiveTemperatureState
-			};
-			if (!StarRovers::FacilityEffects::DoEffectConditionsPass(EffectSpec, ConditionContext))
-			{
-				continue;
-			}
-
-			if (EffectSpec.EffectKind == ESRFacilityEffectKind::InvertHeat)
-			{
-				EffectContext.bInvertHeat = !EffectContext.bInvertHeat;
-			}
-			else if (EffectSpec.EffectKind == ESRFacilityEffectKind::OverrideProcessTemperature)
-			{
-				EffectContext.bInvertHeat = false;
-				EffectContext.bHasProcessTemperatureOverride = true;
-				EffectContext.ProcessTemperatureOverride = EffectSpec.ProcessTemperatureState;
-			}
-			else if (EffectSpec.EffectKind == ESRFacilityEffectKind::InvertTagEffects)
-			{
-				EffectContext.bInvertTagEffects = !EffectContext.bInvertTagEffects;
-			}
-		}
+		EffectContext.bInvertTagEffects = ProcessContext.bInvertTagEffects;
+		EffectContext.EnergyChangeCount = FMath::Max(0, InitialEnergyChangeCount);
 		return EffectContext;
 	}
 
@@ -237,7 +167,7 @@ namespace
 		return true;
 	}
 
-	void SetProcessLimitAndApplyHighActivity(
+	void SetProcessLimitAndApplyHyperReactive(
 		FSRResourceInstance& ResourceInstance,
 		int32 NewProcessLimit,
 		FSRFacilityEffectContext& EffectContext)
@@ -247,11 +177,11 @@ namespace
 		ResourceInstance.RemainingProcessLimit = ClampedProcessLimit;
 
 		const int32 LostProcessLimit = FMath::Max(0, PreviousProcessLimit - ClampedProcessLimit);
-		const int32 HighActivityStackCount = CountTagStacks(ResourceInstance, ESRResourceProcessTag::HighActivity);
-		if (LostProcessLimit > 0 && HighActivityStackCount > 0)
+		const int32 HyperReactiveStackCount = CountTagStacks(ResourceInstance, ESRResourceProcessTag::HyperReactive);
+		if (LostProcessLimit > 0 && HyperReactiveStackCount > 0)
 		{
-			const double EnergyDelta = static_cast<double>(LostProcessLimit * HighActivityStackCount)
-				* HighActivityEnergyBonusPerProcessLimitLoss;
+			const double EnergyDelta = static_cast<double>(LostProcessLimit * HyperReactiveStackCount)
+				* HyperReactiveEnergyBonusPerProcessLimitLoss;
 			AddEnergyDelta(ResourceInstance, ApplyTagEffectDirection(EnergyDelta, EffectContext), EffectContext);
 		}
 	}
@@ -261,11 +191,11 @@ namespace
 		ESRFacilityTemperatureState TemperatureState,
 		FSRFacilityEffectContext& EffectContext)
 	{
-		SetProcessLimitAndApplyHighActivity(ResourceInstance, ResourceInstance.RemainingProcessLimit - 1, EffectContext);
+		SetProcessLimitAndApplyHyperReactive(ResourceInstance, ResourceInstance.RemainingProcessLimit - 1, EffectContext);
 		++ResourceInstance.ProcessCount;
 		if (TemperatureState == ESRFacilityTemperatureState::Hot)
 		{
-			SetProcessLimitAndApplyHighActivity(ResourceInstance, ResourceInstance.RemainingProcessLimit - 1, EffectContext);
+			SetProcessLimitAndApplyHyperReactive(ResourceInstance, ResourceInstance.RemainingProcessLimit - 1, EffectContext);
 		}
 	}
 
@@ -601,12 +531,12 @@ namespace
 				ApplyTagEffectDirection(static_cast<double>(SafeStackCount) * -VolatileEnergyPenalty, EffectContext),
 				EffectContext);
 			break;
-		case ESRResourceProcessTag::HighActivity:
+		case ESRResourceProcessTag::HyperReactive:
 			AddEnergyDelta(
 				ResourceInstance,
 				ApplyTagEffectDirection(
 					static_cast<double>(ResolveConsumedProcessLimit(BaselineResource, ResourceInstance) * SafeStackCount)
-						* HighActivityEnergyBonusPerProcessLimitLoss,
+						* HyperReactiveEnergyBonusPerProcessLimitLoss,
 					EffectContext),
 				EffectContext);
 			break;
@@ -619,7 +549,6 @@ namespace
 				ApplyTagEffectDirection(StarRovers::FacilityResources::ChargeEnergyBonus, EffectContext),
 				EffectContext);
 			break;
-		case ESRResourceProcessTag::Waste:
 		case ESRResourceProcessTag::Singularity:
 		default:
 			break;
@@ -809,13 +738,12 @@ bool FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(
 	}
 
 	const FSRResourceInstance* ConditionResource = FindFirstResource(InputResources);
-	const FSRFacilityEffectContext PreProcessingEffectContext = ResolvePreProcessingEffectContext(
+	const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
+		StarRovers::FacilityProcessing::ResolveProcessContext(
 		FacilityDataAsset,
-		ConditionResource,
-		TemperatureState);
-	const ESRFacilityTemperatureState EffectiveTemperatureState = ResolveEffectiveTemperatureState(
 		TemperatureState,
-		PreProcessingEffectContext);
+		ConditionResource);
+	const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
 	int32 EnergyCount = 0;
 	if (!TryCountInputEnergyResources(InputResources, EffectiveTemperatureState, EnergyCount))
 	{
@@ -999,13 +927,13 @@ FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
 
 	TArray<FSRResourceInstance> ProcessedResources = ConsumedResources;
 	const FSRResourceInstance* ConditionResource = FindFirstResource(ConsumedResources);
-	FSRFacilityEffectContext PreProcessingEffectContext = ResolvePreProcessingEffectContext(
+	const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
+		StarRovers::FacilityProcessing::ResolveProcessContext(
 		FacilityDataAsset,
-		ConditionResource,
-		FacilityInstance.TemperatureState);
-	const ESRFacilityTemperatureState EffectiveTemperatureState = ResolveEffectiveTemperatureState(
 		FacilityInstance.TemperatureState,
-		PreProcessingEffectContext);
+		ConditionResource);
+	FSRFacilityEffectContext PreProcessingEffectContext = MakeEffectContext(ProcessContext);
+	const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
 	ConsumeEnergyInputsForFacilityPass(ProcessedResources, EffectiveTemperatureState, PreProcessingEffectContext);
 	const int32 ChargeStacksToAdd = ResolveChargeStacksToAddForProcessingPass(
 		FacilityInstance,
@@ -1055,14 +983,17 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 		return;
 	}
 
-	FSRFacilityEffectContext EffectContext;
-	EffectContext.EnergyChangeCount = FMath::Max(0, InitialEnergyChangeCount);
 	const FSRResourceInstance BaselineResource = ResourceInstance;
+	const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
+		StarRovers::FacilityProcessing::ResolveProcessContext(
+			FacilityDataAsset,
+			FacilityInstance.TemperatureState,
+			bHasPrimaryResource ? &ResourceInstance : nullptr,
+			bHasPrimaryResource ? &BaselineResource : nullptr);
+	FSRFacilityEffectContext EffectContext = MakeEffectContext(ProcessContext, InitialEnergyChangeCount);
+	const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
 	for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
 	{
-		const ESRFacilityTemperatureState EffectiveTemperatureState = ResolveEffectiveTemperatureState(
-			FacilityInstance.TemperatureState,
-			EffectContext);
 		const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
 		{
 			bHasPrimaryResource ? &ResourceInstance : nullptr,
@@ -1080,10 +1011,18 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 		case ESRFacilityEffectKind::AdjustEnergy:
 			if (bHasPrimaryResource)
 			{
-				AddEnergyDelta(
+				const double EnergyAdjustmentValue = ResolveEnergyAdjustmentValue(
+					EffectSpec,
 					ResourceInstance,
-					ResolveEnergyAdjustmentValue(EffectSpec, ResourceInstance, EffectContext),
 					EffectContext);
+				if (EffectSpec.EnergyAdjustmentMode == ESRFacilityEnergyAdjustmentMode::Multiply)
+				{
+					MultiplyEnergyValue(ResourceInstance, EnergyAdjustmentValue, EffectContext);
+				}
+				else
+				{
+					AddEnergyDelta(ResourceInstance, EnergyAdjustmentValue, EffectContext);
+				}
 			}
 			break;
 		case ESRFacilityEffectKind::AdjustProcessLimit:
@@ -1092,7 +1031,7 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 				const int32 TargetProcessLimit = EffectSpec.ProcessLimitMode == ESRFacilityProcessLimitAdjustmentMode::SetValue
 					? FMath::RoundToInt(EffectSpec.Value)
 					: ResourceInstance.RemainingProcessLimit + FMath::RoundToInt(EffectSpec.Value);
-				SetProcessLimitAndApplyHighActivity(
+				SetProcessLimitAndApplyHyperReactive(
 					ResourceInstance,
 					TargetProcessLimit,
 					EffectContext);
@@ -1125,7 +1064,6 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 				for (int32 OutputIndex = 0; OutputIndex < Count; ++OutputIndex)
 				{
 					FSRResourceInstance WasteResource = EffectSpec.ProducedResource->BuildDefaultInstance();
-					AddTagStack(WasteResource, ESRResourceProcessTag::Waste, 1);
 					OutAdditionalOutputs.Add(WasteResource);
 				}
 			}
@@ -1133,10 +1071,7 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 		case ESRFacilityEffectKind::AdjustCellTemperature:
 			break;
 		case ESRFacilityEffectKind::InvertHeat:
-			EffectContext.bInvertHeat = !EffectContext.bInvertHeat;
-			break;
 		case ESRFacilityEffectKind::InvertTagEffects:
-			EffectContext.bInvertTagEffects = !EffectContext.bInvertTagEffects;
 			break;
 		case ESRFacilityEffectKind::DuplicateInputResource:
 			for (int32 DuplicateIndex = 0; DuplicateIndex < Count; ++DuplicateIndex)
@@ -1151,9 +1086,6 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 			}
 			break;
 		case ESRFacilityEffectKind::OverrideProcessTemperature:
-			EffectContext.bInvertHeat = false;
-			EffectContext.bHasProcessTemperatureOverride = true;
-			EffectContext.ProcessTemperatureOverride = EffectSpec.ProcessTemperatureState;
 			break;
 		case ESRFacilityEffectKind::TriggerTagEffect:
 			if (bHasPrimaryResource)

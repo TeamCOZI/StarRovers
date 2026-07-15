@@ -107,6 +107,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Assembly|Tabs")
 	bool AdvanceStructureSelectionTab();
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Assembly")
+	bool SelectStructureCategoryByShortcut(int32 CategoryIndex);
+
 	bool TryHandleStructureSelectionPointerClick();
 
 	void DispatchBuildOptionSelected(FName StructureId);

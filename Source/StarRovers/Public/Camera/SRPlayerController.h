@@ -23,6 +23,48 @@ class USRCelestialBodyRegistrySubsystem;
 class FSRPlayerControllerInputBinder;
 class FSRPlayerControllerLifecycle;
 
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRAvailableStructureDataAssetOperationCategory
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "Processor"))
+    TArray<TObjectPtr<USRStructureDataAsset>> Processor;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "Synthesizer"))
+    TArray<TObjectPtr<USRStructureDataAsset>> Synthesizer;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "Miner"))
+    TArray<TObjectPtr<USRStructureDataAsset>> Miner;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "Conveyor"))
+    TArray<TObjectPtr<USRStructureDataAsset>> Conveyor;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "Hub"))
+    TArray<TObjectPtr<USRStructureDataAsset>> Hub;
+};
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRAvailableStructureDataAssetCategories
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "Starting"))
+    FSRAvailableStructureDataAssetOperationCategory Starting;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "Basic"))
+    FSRAvailableStructureDataAssetOperationCategory Basic;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "Advance"))
+    FSRAvailableStructureDataAssetOperationCategory Advance;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "Expert"))
+    FSRAvailableStructureDataAssetOperationCategory Expert;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "Innovation"))
+    FSRAvailableStructureDataAssetOperationCategory Innovation;
+};
+
 UCLASS(Blueprintable)
 class STARROVERS_API ASRPlayerController : public APlayerController
 {
@@ -170,6 +212,18 @@ protected:
     UPROPERTY(Transient)
     TObjectPtr<UInputAction> StructureSelectionTabAction;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "StructureSelectionCategory1Action"))
+    TObjectPtr<UInputAction> StructureSelectionCategory1Action;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "StructureSelectionCategory2Action"))
+    TObjectPtr<UInputAction> StructureSelectionCategory2Action;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "StructureSelectionCategory3Action"))
+    TObjectPtr<UInputAction> StructureSelectionCategory3Action;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (DisplayName = "StructureSelectionCategory4Action"))
+    TObjectPtr<UInputAction> StructureSelectionCategory4Action;
+
     UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Selection", meta = (DisplayName = "SelectedActor"))
     TObjectPtr<AActor> SelectedActor;
 
@@ -216,7 +270,7 @@ protected:
     TArray<ESRPlayerUILayer> WidgetLayerOrder;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "AvailableStructureDataAssets"))
-    TArray<TObjectPtr<USRStructureDataAsset>> AvailableStructureDataAssets;
+    FSRAvailableStructureDataAssetCategories AvailableStructureDataAssets;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly|Performance", meta = (DisplayName = "MaxStructurePlacementsPerFrame", ClampMin = "1"))
     int32 MaxStructurePlacementsPerFrame;
@@ -302,6 +356,11 @@ private:
     void EnsureStructureSelectionTabInputAction();
     void ApplyRuntimeAssemblyInputMapping();
     void HandleStructureSelectionTab();
+    void HandleStructureSelectionCategory1();
+    void HandleStructureSelectionCategory2();
+    void HandleStructureSelectionCategory3();
+    void HandleStructureSelectionCategory4();
+    void HandleStructureSelectionCategoryShortcut(int32 CategoryIndex);
     void HandleAssemblyPickStructure();
     void HandleAssemblyUndoRedoAction();
     void HandleFocusParent();

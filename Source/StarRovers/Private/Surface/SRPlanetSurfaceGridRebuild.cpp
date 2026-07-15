@@ -32,6 +32,8 @@ void USRPlanetSurfaceGrid::ResetSurfaceInteractionState()
 		bHoveredInteractionGridPatchVisible,
 		bHasSelectedCell,
 		SelectedCellId,
+		SelectedFootprintCellIds,
+		PlacementPreviewCellIds,
 		AreaSelectionCellIds,
 		OccupiedPreviewCellIds,
 		InputPortPreviewCellIds,

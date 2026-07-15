@@ -164,4 +164,40 @@ void FSRPlayerControllerInputBinder::BindInputActions(
 	{
 		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires StructureSelectionTabAction before structure selection tab binding."));
 	}
+
+	if (PlayerController.StructureSelectionCategory1Action)
+	{
+		EnhancedInputComponent->BindAction(PlayerController.StructureSelectionCategory1Action, ETriggerEvent::Started, &PlayerController, &ASRPlayerController::HandleStructureSelectionCategory1);
+	}
+	else
+	{
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires StructureSelectionCategory1Action before structure selection shortcut binding."));
+	}
+
+	if (PlayerController.StructureSelectionCategory2Action)
+	{
+		EnhancedInputComponent->BindAction(PlayerController.StructureSelectionCategory2Action, ETriggerEvent::Started, &PlayerController, &ASRPlayerController::HandleStructureSelectionCategory2);
+	}
+	else
+	{
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires StructureSelectionCategory2Action before structure selection shortcut binding."));
+	}
+
+	if (PlayerController.StructureSelectionCategory3Action)
+	{
+		EnhancedInputComponent->BindAction(PlayerController.StructureSelectionCategory3Action, ETriggerEvent::Started, &PlayerController, &ASRPlayerController::HandleStructureSelectionCategory3);
+	}
+	else
+	{
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires StructureSelectionCategory3Action before structure selection shortcut binding."));
+	}
+
+	if (PlayerController.StructureSelectionCategory4Action)
+	{
+		EnhancedInputComponent->BindAction(PlayerController.StructureSelectionCategory4Action, ETriggerEvent::Started, &PlayerController, &ASRPlayerController::HandleStructureSelectionCategory4);
+	}
+	else
+	{
+		SR_LOG(Camera, LogTemp, Warning, TEXT("ASRPlayerController requires StructureSelectionCategory4Action before structure selection shortcut binding."));
+	}
 }

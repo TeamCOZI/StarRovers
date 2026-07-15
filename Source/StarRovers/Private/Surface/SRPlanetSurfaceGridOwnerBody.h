@@ -16,11 +16,11 @@ namespace StarRovers::SurfaceGridOwnerBody
 	bool AppendDynamicMeshBoundaryWire(const AActor* Owner, FDynamicMeshBoundarySegmentAppender AppendSegment);
 	bool ApplySurfaceCellHighlights(
 		AActor* Owner,
-		const FSRPlanetSurfaceGridCellId& HoveredCellId,
-		bool bHasHoveredCell,
-		const FSRPlanetSurfaceGridCellId& SelectedCellId,
-		bool bHasSelectedCell,
+		const TArray<FSRPlanetSurfaceGridCellId>& HoveredCellIds,
+		const TArray<FSRPlanetSurfaceGridCellId>& SelectedCellIds,
+		const TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 		const FLinearColor& HoveredCellColor,
-		const FLinearColor& SelectedCellColor);
+		const FLinearColor& SelectedCellColor,
+		const FLinearColor& OccupiedCellColor);
 	void ClearSurfaceCellHighlights(AActor* Owner);
 }

@@ -32,6 +32,18 @@ struct STARROVERS_API FSRFacilityPortInventory
 };
 
 USTRUCT(BlueprintType)
+struct STARROVERS_API FSRFacilityCellTemperatureAdjustment
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "CellId"))
+	FSRPlanetSurfaceGridCellId CellId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "TemperatureStepDelta"))
+	int32 TemperatureStepDelta = 0;
+};
+
+USTRUCT(BlueprintType)
 struct STARROVERS_API FSRFacilityInstance
 {
 	GENERATED_BODY()
@@ -65,6 +77,9 @@ struct STARROVERS_API FSRFacilityInstance
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "OutputInventory"))
 	TArray<FSRResourceInstance> OutputInventory;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "CellTemperatureAdjustments"))
+	TArray<FSRFacilityCellTemperatureAdjustment> CellTemperatureAdjustments;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "ProcessingInventory"))
 	TArray<FSRResourceInstance> ProcessingInventory;

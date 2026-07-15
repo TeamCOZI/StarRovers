@@ -252,6 +252,7 @@ void FSRAssemblyStructurePreviewState::DestroyGhostActor(USRPlanetSurfaceGrid* H
 
 	if (IsValid(HoveredSurfaceGrid))
 	{
+		HoveredSurfaceGrid->ClearPlacementPreviewCells();
 		HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
 		if (AActor* SurfaceOwner = HoveredSurfaceGrid->GetOwner())
 		{
@@ -277,6 +278,7 @@ void FSRAssemblyStructurePreviewState::DestroyPlacementDragPreviewActors(USRPlan
 {
 	if (IsValid(HoveredSurfaceGrid))
 	{
+		HoveredSurfaceGrid->ClearPlacementPreviewCells();
 		HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
 		if (AActor* SurfaceOwner = HoveredSurfaceGrid->GetOwner())
 		{

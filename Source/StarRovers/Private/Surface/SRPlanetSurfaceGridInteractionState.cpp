@@ -129,6 +129,8 @@ bool StarRovers::SurfaceGridInteractionState::ClearPortPreviewCellIds(
 bool StarRovers::SurfaceGridInteractionState::HasInteractionOverlayContent(
 	bool bHasHoveredCell,
 	bool bHasSelectedCell,
+	const TArray<FSRPlanetSurfaceGridCellId>& SelectedFootprintCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& PlacementPreviewCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& AreaSelectionCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
@@ -139,6 +141,8 @@ bool StarRovers::SurfaceGridInteractionState::HasInteractionOverlayContent(
 {
 	return bHasHoveredCell
 		|| bHasSelectedCell
+		|| !SelectedFootprintCellIds.IsEmpty()
+		|| !PlacementPreviewCellIds.IsEmpty()
 		|| !AreaSelectionCellIds.IsEmpty()
 		|| !OccupiedPreviewCellIds.IsEmpty()
 		|| !InputPortPreviewCellIds.IsEmpty()
@@ -154,6 +158,8 @@ void StarRovers::SurfaceGridInteractionState::ResetInteractionState(
 	bool& bHoveredInteractionGridPatchVisible,
 	bool& bHasSelectedCell,
 	FSRPlanetSurfaceGridCellId& SelectedCellId,
+	TArray<FSRPlanetSurfaceGridCellId>& SelectedFootprintCellIds,
+	TArray<FSRPlanetSurfaceGridCellId>& PlacementPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& AreaSelectionCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
@@ -167,6 +173,8 @@ void StarRovers::SurfaceGridInteractionState::ResetInteractionState(
 	bHoveredInteractionGridPatchVisible = true;
 	bHasSelectedCell = false;
 	SelectedCellId = FSRPlanetSurfaceGridCellId();
+	SelectedFootprintCellIds.Reset();
+	PlacementPreviewCellIds.Reset();
 	AreaSelectionCellIds.Reset();
 	OccupiedPreviewCellIds.Reset();
 	InputPortPreviewCellIds.Reset();

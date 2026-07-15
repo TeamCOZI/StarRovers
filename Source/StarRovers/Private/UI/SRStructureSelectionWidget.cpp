@@ -507,6 +507,22 @@ bool USRStructureSelectionWidget::AdvanceStructureSelectionTab()
 	return true;
 }
 
+bool USRStructureSelectionWidget::SelectStructureCategoryByShortcut(int32 CategoryIndex)
+{
+	if (!IsVisible()
+		|| CategoryIndex < 0
+		|| CategoryIndex >= StructureCategoryButtonCount
+		|| !IsStructureCategoryAvailable(CategoryIndex))
+	{
+		return false;
+	}
+
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection shortcut resolved CategoryIndex=%d"),
+		CategoryIndex);
+	SelectStructureCategory(CategoryIndex);
+	return true;
+}
+
 void USRStructureSelectionWidget::DispatchBuildOptionSelected(FName StructureId)
 {
 	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection DispatchBuildOptionSelected StructureId=%s"),

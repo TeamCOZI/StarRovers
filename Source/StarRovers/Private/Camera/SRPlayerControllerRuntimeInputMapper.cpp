@@ -17,6 +17,25 @@ namespace
 	constexpr TCHAR RuntimeRotateAssemblyPlacementActionName[] = TEXT("IA_RuntimeRotateAssemblyPlacementAction");
 	constexpr TCHAR RuntimeStructureSelectionTabActionName[] = TEXT("IA_RuntimeStructureSelectionTabAction");
 	constexpr TCHAR RuntimeAssemblyInputMappingContextName[] = TEXT("IMC_RuntimeAssemblyInput");
+
+	void EnsureBooleanInputAction(
+		UObject* Owner,
+		TObjectPtr<UInputAction>& Action,
+		const TCHAR* ActionName,
+		const FText& ActionDescription)
+	{
+		if (Action)
+		{
+			return;
+		}
+
+		Action = NewObject<UInputAction>(Owner, ActionName);
+		if (Action)
+		{
+			Action->ValueType = EInputActionValueType::Boolean;
+			Action->ActionDescription = ActionDescription;
+		}
+	}
 }
 
 void FSRPlayerControllerRuntimeInputMapper::EnsureAssemblyAreaCopyMirrorInputAction(
@@ -102,17 +121,11 @@ void FSRPlayerControllerRuntimeInputMapper::EnsureStructureSelectionTabInputActi
 	UObject* Owner,
 	TObjectPtr<UInputAction>& StructureSelectionTabAction)
 {
-	if (StructureSelectionTabAction)
-	{
-		return;
-	}
-
-	StructureSelectionTabAction = NewObject<UInputAction>(Owner, RuntimeStructureSelectionTabActionName);
-	if (StructureSelectionTabAction)
-	{
-		StructureSelectionTabAction->ValueType = EInputActionValueType::Boolean;
-		StructureSelectionTabAction->ActionDescription = NSLOCTEXT("StarRovers", "StructureSelectionTabActionDescription", "Switch structure selection tab");
-	}
+	EnsureBooleanInputAction(
+		Owner,
+		StructureSelectionTabAction,
+		RuntimeStructureSelectionTabActionName,
+		NSLOCTEXT("StarRovers", "StructureSelectionTabActionDescription", "Switch structure selection tab"));
 }
 
 void FSRPlayerControllerRuntimeInputMapper::ApplyRuntimeAssemblyInputMapping(

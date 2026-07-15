@@ -323,6 +323,8 @@ FText USRAugmentChoiceWidget::FormatRarityText(ESRFacilityRarity Rarity) const
 		return NSLOCTEXT("StarRoversAugmentChoice", "HighTechRarity", "High Tech");
 	case ESRFacilityRarity::Innovation:
 		return NSLOCTEXT("StarRoversAugmentChoice", "InnovationRarity", "Innovation");
+	case ESRFacilityRarity::Starting:
+		return NSLOCTEXT("StarRoversAugmentChoice", "StartingRarity", "Starting");
 	default:
 		return FText::GetEmpty();
 	}

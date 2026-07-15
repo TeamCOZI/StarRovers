@@ -12,7 +12,7 @@ class FSRPlayerControllerHoveredBuildOptionPicker
 public:
 	static bool TryPickBuildOptionFromFocusedActor(
 		AActor* FocusedActor,
-		const TArray<TObjectPtr<USRStructureDataAsset>>& AvailableStructureDataAssets,
+		const TArray<USRStructureDataAsset*>& AvailableStructureDataAssets,
 		const USRAugmentSubsystem* AugmentSubsystem,
 		USRStructureSelectionWidget* StructureSelectionWidget,
 		FName& OutStructureId,
@@ -21,6 +21,6 @@ public:
 private:
 	static USRStructureDataAsset* ResolveSelectableStructureDataAsset(
 		USRStructureDataAsset* CandidateStructureDataAsset,
-		const TArray<TObjectPtr<USRStructureDataAsset>>& AvailableStructureDataAssets,
+		const TArray<USRStructureDataAsset*>& AvailableStructureDataAssets,
 		const USRAugmentSubsystem* AugmentSubsystem);
 };

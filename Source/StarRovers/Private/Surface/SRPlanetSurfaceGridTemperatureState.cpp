@@ -92,7 +92,6 @@ bool StarRovers::SurfaceGridTemperatureState::SetCellTemperatureState(
 
 	FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
 	Cell.TemperatureState = TemperatureState;
-	Cell.SurfaceTemperature = GetRepresentativeSurfaceTemperature(TemperatureState);
 	StoreUpdatedTemperatureCellInfo(Cell, BuildCellInfo, GetStoredCellInfoById, StoreCellInfo);
 	return true;
 }

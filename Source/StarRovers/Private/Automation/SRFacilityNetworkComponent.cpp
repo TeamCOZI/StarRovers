@@ -1,6 +1,7 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
 #include "Utility/SRLog.h"
+#include "SRFacilityCellTemperatureEffectApplier.h"
 #include "SRFacilityPortInventoryBuilder.h"
 #include "SRFacilityTemperatureSynchronizer.h"
 #include "SRFacilityResourceOperations.h"
@@ -98,6 +99,13 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 	FacilityInstance.ProcessingInventory.Reset();
 	FSRFacilityPortInventoryBuilder::Initialize(FacilityInstance);
 	RefreshFacilityTemperatureFromSurface(OccupantId);
+	const int32 AppliedCellTemperatureEffects = FSRFacilityCellTemperatureEffectApplier::ApplyInstallationEffects(
+		this,
+		FacilityInstance);
+	if (AppliedCellTemperatureEffects > 0)
+	{
+		RefreshFacilityTemperaturesFromSurface();
+	}
 
 	SetComponentTickEnabled(bAutoProcessFacilities);
 	if (bLogFacilityNetworkEvents)
@@ -117,10 +125,20 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 
 bool USRFacilityNetworkComponent::UnregisterFacility(FName OccupantId)
 {
-	const bool bRemoved = RuntimeState.FacilityInstancesByOccupantId.Remove(OccupantId) > 0;
+	FSRFacilityInstance RemovedFacilityInstance;
+	const bool bRemoved = RuntimeState.FacilityInstancesByOccupantId.RemoveAndCopyValue(
+		OccupantId,
+		RemovedFacilityInstance);
+	const int32 RemovedCellTemperatureEffects = bRemoved
+		? FSRFacilityCellTemperatureEffectApplier::RemoveInstallationEffects(this, RemovedFacilityInstance)
+		: 0;
 	if (RuntimeState.FacilityInstancesByOccupantId.IsEmpty())
 	{
 		SetComponentTickEnabled(false);
+	}
+	else if (RemovedCellTemperatureEffects > 0)
+	{
+		RefreshFacilityTemperaturesFromSurface();
 	}
 	if (bRemoved && bLogFacilityNetworkEvents)
 	{
