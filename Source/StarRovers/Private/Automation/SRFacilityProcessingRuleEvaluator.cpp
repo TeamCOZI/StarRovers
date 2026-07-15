@@ -9,7 +9,7 @@
 
 namespace
 {
-	const FSRResourceInstance* FindFirstResource(const TArray<FSRResourceInstance>& ResourceInstances)
+	const FSRResourceInstance* FindFirstProcessingRuleResource(const TArray<FSRResourceInstance>& ResourceInstances)
 	{
 		for (const FSRResourceInstance& ResourceInstance : ResourceInstances)
 		{
@@ -21,7 +21,7 @@ namespace
 		return nullptr;
 	}
 
-	ESRFacilityTemperatureState InvertTemperatureState(ESRFacilityTemperatureState TemperatureState)
+	ESRFacilityTemperatureState InvertProcessingRuleTemperatureState(ESRFacilityTemperatureState TemperatureState)
 	{
 		switch (TemperatureState)
 		{
@@ -49,7 +49,7 @@ namespace
 			return FacilityInstance.TemperatureState;
 		}
 
-		const FSRResourceInstance* ConditionResource = FindFirstResource(ResourceInstances);
+		const FSRResourceInstance* ConditionResource = FindFirstProcessingRuleResource(ResourceInstances);
 		ESRFacilityTemperatureState EffectiveTemperatureState = FacilityInstance.TemperatureState;
 		for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
 		{
@@ -66,7 +66,7 @@ namespace
 
 			if (EffectSpec.EffectKind == ESRFacilityEffectKind::InvertHeat)
 			{
-				EffectiveTemperatureState = InvertTemperatureState(EffectiveTemperatureState);
+				EffectiveTemperatureState = InvertProcessingRuleTemperatureState(EffectiveTemperatureState);
 			}
 			else if (EffectSpec.EffectKind == ESRFacilityEffectKind::OverrideProcessTemperature)
 			{
@@ -256,7 +256,7 @@ float FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(const FSRFacilit
 		return ProcessSeconds;
 	}
 
-	const FSRResourceInstance* ConditionResource = FindFirstResource(FacilityInstance.ProcessingInventory);
+	const FSRResourceInstance* ConditionResource = FindFirstProcessingRuleResource(FacilityInstance.ProcessingInventory);
 	for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
 	{
 		const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
