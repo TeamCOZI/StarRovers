@@ -66,7 +66,7 @@ bool FSRSpaceLogisticsRouteRegistry::CreateHubRoute(
 	HubRoute.CargoResourceId = NAME_None;
 	HubRoute.Phase = ESRSpaceLogisticsHubRoutePhase::WaitingForCargo;
 	HubRoute.CurrentDockSide = ESRSpaceLogisticsHubRouteDockSide::Source;
-	ApplyHubRouteFlightSettings(HubRoute, InitialSpeedUnitsPerSecond, LaunchAccelerationUnitsPerSecondSquared);
+	ApplyHubRouteFlightSettings(SpaceLogisticsSubsystem, HubRoute, InitialSpeedUnitsPerSecond, LaunchAccelerationUnitsPerSecondSquared);
 	HubRoute.TravelDurationSeconds = FSRSpaceLogisticsRoutePathResolver::GetMinimumTravelDurationSeconds();
 	HubRoute.TravelProgressSeconds = 0.0f;
 	HubRoute.TravelProgressRatio = 0.0f;
@@ -125,7 +125,7 @@ bool FSRSpaceLogisticsRouteRegistry::CreateDebugLocalOrbitRoute(
 	HubRoute.bDebugLocalOrbit = true;
 	HubRoute.Phase = ESRSpaceLogisticsHubRoutePhase::TravelingToDestination;
 	HubRoute.CurrentDockSide = ESRSpaceLogisticsHubRouteDockSide::Source;
-	ApplyHubRouteFlightSettings(HubRoute, InitialSpeedUnitsPerSecond, LaunchAccelerationUnitsPerSecondSquared);
+	ApplyHubRouteFlightSettings(SpaceLogisticsSubsystem, HubRoute, InitialSpeedUnitsPerSecond, LaunchAccelerationUnitsPerSecondSquared);
 	HubRoute.TravelProgressSeconds = 0.0f;
 	HubRoute.TravelProgressRatio = 0.0f;
 	HubRoute.Cargo = FSRResourceInstance();
@@ -339,6 +339,7 @@ FName FSRSpaceLogisticsRouteRegistry::MakeHubRouteId(
 }
 
 void FSRSpaceLogisticsRouteRegistry::ApplyHubRouteFlightSettings(
+	USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 	FSRSpaceLogisticsHubRoute& HubRoute,
 	float InitialSpeedUnitsPerSecond,
 	float LaunchAccelerationUnitsPerSecondSquared)
@@ -347,6 +348,7 @@ void FSRSpaceLogisticsRouteRegistry::ApplyHubRouteFlightSettings(
 	float DefaultLaunchAccelerationUnitsPerSecondSquared =
 		FSRSpaceLogisticsRoutePathResolver::GetDefaultLaunchAccelerationUnitsPerSecondSquared();
 	FSRSpaceLogisticsRouteVisualController::ResolveDefaultFlightSettings(
+		SpaceLogisticsSubsystem.GetWorld(),
 		DefaultInitialSpeedUnitsPerSecond,
 		DefaultLaunchAccelerationUnitsPerSecondSquared);
 

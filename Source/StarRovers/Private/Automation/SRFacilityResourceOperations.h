@@ -24,15 +24,13 @@ namespace StarRovers::FacilityResources
 	inline FString BuildResourceDebugString(const FSRResourceInstance& ResourceInstance)
 	{
 		return FString::Printf(
-			TEXT("ResourceId=%s Energy=%.3f RemainingProcessLimit=%d ProcessCount=%d StackCount=%d Tags=%d StellarFuel=%s FuelMultiplier=%.3f"),
+			TEXT("ResourceId=%s Energy=%.3f RemainingProcessLimit=%d ProcessCount=%d StackCount=%d Tags=%d"),
 			*ResourceInstance.ResourceId.ToString(),
 			ResourceInstance.EnergyValue,
 			ResourceInstance.RemainingProcessLimit,
 			ResourceInstance.ProcessCount,
 			ResourceInstance.StackCount,
-			ResourceInstance.Tags.Num(),
-			ResourceInstance.bCountsAsStellarFuel ? TEXT("true") : TEXT("false"),
-			ResourceInstance.StellarFuelValueMultiplier);
+			ResourceInstance.Tags.Num());
 	}
 
 	inline int32 GetResourceStackCount(const FSRResourceInstance& ResourceInstance)
@@ -116,8 +114,6 @@ namespace StarRovers::FacilityResources
 		return Left.ResourceId == Right.ResourceId
 			&& FMath::IsNearlyEqual(Left.EnergyValue, Right.EnergyValue)
 			&& Left.RemainingProcessLimit == Right.RemainingProcessLimit
-			&& Left.bCountsAsStellarFuel == Right.bCountsAsStellarFuel
-			&& FMath::IsNearlyEqual(Left.StellarFuelValueMultiplier, Right.StellarFuelValueMultiplier)
 			&& AreResourceTagStacksEquivalent(Left.Tags, Right.Tags);
 	}
 

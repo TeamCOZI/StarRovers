@@ -131,6 +131,27 @@ private:
 };
 
 UCLASS()
+class STARROVERS_API USRHubStarFuelMissileLaunchAction : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	void Initialize(USRFacilityControlWidget* InOwnerWidget, UButton* InButton);
+
+	UFUNCTION()
+	void HandleClicked();
+
+	bool TryHandleManualClick(const FVector2D& ScreenPosition);
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<USRFacilityControlWidget> OwnerWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> Button;
+};
+
+UCLASS()
 class STARROVERS_API USRHubRouteSettingAction : public UObject
 {
 	GENERATED_BODY()
@@ -199,6 +220,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
 	bool LaunchDebugLocalOrbitRoute();
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool LaunchStarFuelMissileFromFocusedHub();
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
 	bool RemoveHubRoute(FName RouteId);
@@ -308,6 +332,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<USRHubRouteDebugOrbitAction>> HubRouteDebugOrbitActions;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USRHubStarFuelMissileLaunchAction>> HubStarFuelMissileLaunchActions;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<USRHubRouteSettingAction>> HubRouteSettingActions;

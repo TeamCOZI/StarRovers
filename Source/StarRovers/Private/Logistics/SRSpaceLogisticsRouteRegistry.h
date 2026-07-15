@@ -81,6 +81,7 @@ private:
 		int32& NextHubRouteSequence);
 
 	static void ApplyHubRouteFlightSettings(
+		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 		FSRSpaceLogisticsHubRoute& HubRoute,
 		float InitialSpeedUnitsPerSecond,
 		float LaunchAccelerationUnitsPerSecondSquared);

@@ -3,11 +3,79 @@
 #include "Automation/SRFacilityDataAsset.h"
 #include "Automation/SRResourceDataAsset.h"
 #include "SRFacilityMiningTargetResolver.h"
+#include "SRFacilityEffectConditionEvaluator.h"
 #include "SRFacilityOutputResourceBuilder.h"
 #include "SRFacilityProcessingInventoryRouter.h"
 
 namespace
 {
+	const FSRResourceInstance* FindFirstResource(const TArray<FSRResourceInstance>& ResourceInstances)
+	{
+		for (const FSRResourceInstance& ResourceInstance : ResourceInstances)
+		{
+			if (!ResourceInstance.ResourceId.IsNone())
+			{
+				return &ResourceInstance;
+			}
+		}
+		return nullptr;
+	}
+
+	ESRFacilityTemperatureState InvertTemperatureState(ESRFacilityTemperatureState TemperatureState)
+	{
+		switch (TemperatureState)
+		{
+		case ESRFacilityTemperatureState::Frozen:
+			return ESRFacilityTemperatureState::Overheated;
+		case ESRFacilityTemperatureState::Cold:
+			return ESRFacilityTemperatureState::Hot;
+		case ESRFacilityTemperatureState::Hot:
+			return ESRFacilityTemperatureState::Cold;
+		case ESRFacilityTemperatureState::Overheated:
+			return ESRFacilityTemperatureState::Frozen;
+		case ESRFacilityTemperatureState::Normal:
+		default:
+			return ESRFacilityTemperatureState::Normal;
+		}
+	}
+
+	ESRFacilityTemperatureState ResolveEffectiveProcessingTemperature(
+		const FSRFacilityInstance& FacilityInstance,
+		const TArray<FSRResourceInstance>& ResourceInstances)
+	{
+		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		if (!IsValid(FacilityDataAsset))
+		{
+			return FacilityInstance.TemperatureState;
+		}
+
+		const FSRResourceInstance* ConditionResource = FindFirstResource(ResourceInstances);
+		ESRFacilityTemperatureState EffectiveTemperatureState = FacilityInstance.TemperatureState;
+		for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
+		{
+			const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
+			{
+				ConditionResource,
+				ConditionResource,
+				EffectiveTemperatureState
+			};
+			if (!StarRovers::FacilityEffects::DoEffectConditionsPass(EffectSpec, ConditionContext))
+			{
+				continue;
+			}
+
+			if (EffectSpec.EffectKind == ESRFacilityEffectKind::InvertHeat)
+			{
+				EffectiveTemperatureState = InvertTemperatureState(EffectiveTemperatureState);
+			}
+			else if (EffectSpec.EffectKind == ESRFacilityEffectKind::OverrideProcessTemperature)
+			{
+				EffectiveTemperatureState = EffectSpec.ProcessTemperatureState;
+			}
+		}
+		return EffectiveTemperatureState;
+	}
+
 	bool DoesProcessingResourceRequireColdTemperature(const FSRResourceInstance& ResourceInstance)
 	{
 		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
@@ -21,14 +89,16 @@ namespace
 		return false;
 	}
 
-	bool CanProcessingInventoryAdvanceAtTemperature(const FSRFacilityInstance& FacilityInstance)
+	bool CanResourcesAdvanceAtTemperature(
+		const TArray<FSRResourceInstance>& ResourceInstances,
+		ESRFacilityTemperatureState TemperatureState)
 	{
-		if (FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Cold)
+		if (TemperatureState == ESRFacilityTemperatureState::Cold)
 		{
 			return true;
 		}
 
-		for (const FSRResourceInstance& ResourceInstance : FacilityInstance.ProcessingInventory)
+		for (const FSRResourceInstance& ResourceInstance : ResourceInstances)
 		{
 			if (DoesProcessingResourceRequireColdTemperature(ResourceInstance))
 			{
@@ -38,43 +108,53 @@ namespace
 
 		return true;
 	}
+
+	bool CanAdvanceProcessingWithResources(
+		const FSRFacilityInstance& FacilityInstance,
+		const TArray<FSRResourceInstance>& ResourceInstances)
+	{
+		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		if (!IsValid(FacilityDataAsset))
+		{
+			return false;
+		}
+
+		if (FacilityDataAsset->FacilityKind == ESRFacilityKind::Hub)
+		{
+			return false;
+		}
+
+		if (!FacilityInstance.bProcessEnabled)
+		{
+			return false;
+		}
+
+		const ESRFacilityTemperatureState EffectiveTemperatureState = ResolveEffectiveProcessingTemperature(
+			FacilityInstance,
+			ResourceInstances);
+		if (EffectiveTemperatureState == ESRFacilityTemperatureState::Frozen
+			|| EffectiveTemperatureState == ESRFacilityTemperatureState::Overheated)
+		{
+			return false;
+		}
+
+		if (FacilityDataAsset->bRequiresColdTemperature && EffectiveTemperatureState != ESRFacilityTemperatureState::Cold)
+		{
+			return false;
+		}
+
+		if (FacilityDataAsset->bRequiresHotTemperature && EffectiveTemperatureState != ESRFacilityTemperatureState::Hot)
+		{
+			return false;
+		}
+
+		return CanResourcesAdvanceAtTemperature(ResourceInstances, EffectiveTemperatureState);
+	}
 }
 
 bool FSRFacilityProcessingRuleEvaluator::CanAdvanceProcessing(const FSRFacilityInstance& FacilityInstance)
 {
-	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-	if (!IsValid(FacilityDataAsset))
-	{
-		return false;
-	}
-
-	if (FacilityDataAsset->FacilityKind == ESRFacilityKind::Hub)
-	{
-		return false;
-	}
-
-	if (!FacilityInstance.bProcessEnabled)
-	{
-		return false;
-	}
-
-	if (FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Frozen
-		|| FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Overheated)
-	{
-		return false;
-	}
-
-	if (FacilityDataAsset->bRequiresColdTemperature && FacilityInstance.TemperatureState != ESRFacilityTemperatureState::Cold)
-	{
-		return false;
-	}
-
-	if (FacilityDataAsset->bRequiresHotTemperature && FacilityInstance.TemperatureState != ESRFacilityTemperatureState::Hot)
-	{
-		return false;
-	}
-
-	return CanProcessingInventoryAdvanceAtTemperature(FacilityInstance);
+	return CanAdvanceProcessingWithResources(FacilityInstance, FacilityInstance.ProcessingInventory);
 }
 
 bool FSRFacilityProcessingRuleEvaluator::CanRun(
@@ -82,7 +162,7 @@ bool FSRFacilityProcessingRuleEvaluator::CanRun(
 	const FSRFacilityInstance& FacilityInstance)
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-	if (!CanAdvanceProcessing(FacilityInstance) || !IsValid(FacilityDataAsset))
+	if (!IsValid(FacilityDataAsset))
 	{
 		return false;
 	}
@@ -98,6 +178,11 @@ bool FSRFacilityProcessingRuleEvaluator::CanRun(
 		return false;
 	}
 
+	if (!CanAdvanceProcessingWithResources(FacilityInstance, InputResources))
+	{
+		return false;
+	}
+
 	if (!FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(FacilityDataAsset, InputResources, FacilityInstance.TemperatureState))
 	{
 		return false;
@@ -105,6 +190,10 @@ bool FSRFacilityProcessingRuleEvaluator::CanRun(
 
 	TArray<FSRResourceInstance> OutputResources;
 	FSRFacilityOutputResourceBuilder::BuildOutputResources(FacilityInstance, InputResources, OutputResources);
+	if (OutputResources.IsEmpty())
+	{
+		return FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(FacilityInstance);
+	}
 	return FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(FacilityInstance, OutputResources);
 }
 
@@ -113,8 +202,7 @@ bool FSRFacilityProcessingRuleEvaluator::CanMiningRun(
 	const FSRFacilityInstance& FacilityInstance)
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-	if (!CanAdvanceProcessing(FacilityInstance)
-		|| !IsValid(FacilityDataAsset)
+	if (!IsValid(FacilityDataAsset)
 		|| FacilityDataAsset->OperationKind != ESRFacilityOperationKind::Mine)
 	{
 		return false;
@@ -131,13 +219,23 @@ bool FSRFacilityProcessingRuleEvaluator::CanMiningRun(
 		return false;
 	}
 
-	const int32 OutputCount = FSRFacilityOutputResourceBuilder::ResolvePrimaryOutputCount(FacilityInstance);
-	TArray<FSRResourceInstance> OutputResources;
-	OutputResources.Reserve(OutputCount);
-	const FSRResourceInstance MinedResource = ResourceDeposit.ResourceDataAsset->BuildDefaultInstance();
-	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
+	TArray<FSRResourceInstance> MiningConditionResources;
+	MiningConditionResources.Add(ResourceDeposit.ResourceDataAsset->BuildDefaultInstance());
+	if (!CanAdvanceProcessingWithResources(FacilityInstance, MiningConditionResources))
 	{
-		OutputResources.Add(MinedResource);
+		return false;
+	}
+
+	TArray<FSRResourceInstance> OutputResources;
+	const FSRResourceInstance MinedResource = MiningConditionResources[0];
+	FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
+		FacilityInstance,
+		TArray<FSRResourceInstance>(),
+		MinedResource,
+		OutputResources);
+	if (OutputResources.IsEmpty())
+	{
+		return FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(FacilityInstance);
 	}
 	return FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(FacilityInstance, OutputResources);
 }
@@ -146,9 +244,42 @@ float FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(const FSRFacilit
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	float ProcessSeconds = IsValid(FacilityDataAsset) ? FMath::Max(0.01f, FacilityDataAsset->BaseProcessSeconds) : 1.0f;
-	if (FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Cold)
+	const ESRFacilityTemperatureState EffectiveTemperatureState = ResolveEffectiveProcessingTemperature(
+		FacilityInstance,
+		FacilityInstance.ProcessingInventory);
+	if (EffectiveTemperatureState == ESRFacilityTemperatureState::Cold)
 	{
 		ProcessSeconds *= 2.0f;
 	}
-	return ProcessSeconds;
+	if (!IsValid(FacilityDataAsset))
+	{
+		return ProcessSeconds;
+	}
+
+	const FSRResourceInstance* ConditionResource = FindFirstResource(FacilityInstance.ProcessingInventory);
+	for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
+	{
+		const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
+		{
+			ConditionResource,
+			ConditionResource,
+			EffectiveTemperatureState
+		};
+		if (EffectSpec.EffectKind != ESRFacilityEffectKind::AdjustProcessTime
+			|| !StarRovers::FacilityEffects::DoEffectConditionsPass(EffectSpec, ConditionContext))
+		{
+			continue;
+		}
+
+		if (EffectSpec.ProcessTimeMode == ESRFacilityProcessTimeAdjustmentMode::Multiply)
+		{
+			ProcessSeconds *= static_cast<float>(EffectSpec.Value);
+		}
+		else
+		{
+			ProcessSeconds += static_cast<float>(EffectSpec.Value);
+		}
+		ProcessSeconds = FMath::Max(0.01f, ProcessSeconds);
+	}
+	return FMath::Max(0.01f, ProcessSeconds);
 }

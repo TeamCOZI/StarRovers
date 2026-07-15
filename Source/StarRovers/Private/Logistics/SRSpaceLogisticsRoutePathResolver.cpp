@@ -215,6 +215,51 @@ namespace
 	{
 		return DockSide == ESRSpaceLogisticsHubRouteDockSide::Destination ? HubRoute.DestinationHub : HubRoute.SourceHub;
 	}
+
+	float EstimateStarFuelMissilePathLengthRange(
+		const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		const FSRSpaceLogisticsStarFuelMissile& Missile,
+		float StartAlpha,
+		float EndAlpha,
+		int32 SampleCount)
+	{
+		const int32 ClampedSampleCount = FMath::Max(2, SampleCount);
+		const float ClampedStartAlpha = FMath::Clamp(StartAlpha, 0.0f, 1.0f);
+		const float ClampedEndAlpha = FMath::Clamp(EndAlpha, ClampedStartAlpha, 1.0f);
+		FSRSpaceLogisticsStarFuelMissile SampleMissile = Missile;
+		float PathLength = 0.0f;
+		FVector PreviousLocation = FVector::ZeroVector;
+		bool bHasPreviousLocation = false;
+
+		for (int32 SampleIndex = 0; SampleIndex <= ClampedSampleCount; ++SampleIndex)
+		{
+			const float SegmentAlpha = static_cast<float>(SampleIndex) / static_cast<float>(ClampedSampleCount);
+			SampleMissile.TravelProgressRatio = FMath::Lerp(ClampedStartAlpha, ClampedEndAlpha, SegmentAlpha);
+
+			FVector SampleLocation = FVector::ZeroVector;
+			FVector SampleTargetLocation = FVector::ZeroVector;
+			FVector SampleTravelDirection = FVector::ZeroVector;
+			if (!FSRSpaceLogisticsRoutePathResolver::ResolveStarFuelMissileVisualWorldLocation(
+				SpaceLogisticsSubsystem,
+				SampleMissile,
+				SampleLocation,
+				SampleTargetLocation,
+				SampleTravelDirection))
+			{
+				return 0.0f;
+			}
+
+			if (bHasPreviousLocation)
+			{
+				PathLength += FVector::Distance(PreviousLocation, SampleLocation);
+			}
+
+			PreviousLocation = SampleLocation;
+			bHasPreviousLocation = true;
+		}
+
+		return PathLength;
+	}
 }
 
 float FSRSpaceLogisticsRoutePathResolver::GetDefaultInitialSpeedUnitsPerSecond()
@@ -644,6 +689,206 @@ bool FSRSpaceLogisticsRoutePathResolver::ResolveVisualWorldLocation(
 	return true;
 }
 
+float FSRSpaceLogisticsRoutePathResolver::ResolveStarFuelMissileMotionProgressRatio(
+	const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+	const FSRSpaceLogisticsStarFuelMissile& Missile,
+	float TravelProgressSeconds)
+{
+	const float SafeTravelProgressSeconds = FMath::Max(0.0f, TravelProgressSeconds);
+	const float PathLength = EstimateStarFuelMissilePathLengthRange(
+		SpaceLogisticsSubsystem,
+		Missile,
+		0.0f,
+		1.0f,
+		48);
+	const float LaunchAscentLength = EstimateStarFuelMissilePathLengthRange(
+		SpaceLogisticsSubsystem,
+		Missile,
+		0.0f,
+		HubRouteLaunchAscentEndRatio,
+		16);
+	if (PathLength <= UE_SMALL_NUMBER || LaunchAscentLength <= UE_SMALL_NUMBER)
+	{
+		return FMath::Clamp(
+			SafeTravelProgressSeconds / FMath::Max(Missile.TravelDurationSeconds, UE_SMALL_NUMBER),
+			0.0f,
+			1.0f);
+	}
+
+	const float InitialSpeed = ClampInitialSpeed(Missile.InitialSpeedUnitsPerSecond);
+	const float LaunchAcceleration = ClampLaunchAcceleration(Missile.LaunchAccelerationUnitsPerSecondSquared);
+	const float LaunchAscentDuration = ResolveAcceleratedDuration(
+		LaunchAscentLength,
+		InitialSpeed,
+		LaunchAcceleration);
+
+	if (SafeTravelProgressSeconds <= LaunchAscentDuration)
+	{
+		const float LaunchAscentDistance = ResolveAcceleratedDistance(
+			LaunchAscentLength,
+			InitialSpeed,
+			LaunchAcceleration,
+			SafeTravelProgressSeconds);
+		const float LaunchAscentRatio = FMath::Clamp(LaunchAscentDistance / LaunchAscentLength, 0.0f, 1.0f);
+		return LaunchAscentRatio * HubRouteLaunchAscentEndRatio;
+	}
+
+	const float RestDuration = FMath::Max(
+		UE_SMALL_NUMBER,
+		Missile.TravelDurationSeconds - LaunchAscentDuration);
+	const float RestRatio = FMath::Clamp(
+		(SafeTravelProgressSeconds - LaunchAscentDuration) / RestDuration,
+		0.0f,
+		1.0f);
+	return FMath::Lerp(HubRouteLaunchAscentEndRatio, 1.0f, RestRatio);
+}
+
+bool FSRSpaceLogisticsRoutePathResolver::ResolveStarFuelMissileVisualWorldLocation(
+	const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+	const FSRSpaceLogisticsStarFuelMissile& Missile,
+	FVector& OutLocation,
+	FVector& OutTargetLocation,
+	FVector& OutTravelDirection)
+{
+	OutLocation = FVector::ZeroVector;
+	OutTargetLocation = FVector::ZeroVector;
+	OutTravelDirection = FVector::ZeroVector;
+
+	const FSRSpaceLogisticsHubEndpoint SourceHub = Missile.SourceHub;
+	AActor* SourceBodyActor = SourceHub.BodyActor.Get();
+	AActor* TargetStarActor = Missile.TargetStarActor.Get();
+	if (!IsValid(SourceBodyActor) || !IsValid(TargetStarActor))
+	{
+		return false;
+	}
+
+	FVector SourceHubWorldLocation = FVector::ZeroVector;
+	if (!SpaceLogisticsSubsystem.ResolveHubEndpointSurfaceWorldLocation(SourceHub, SourceHubWorldLocation))
+	{
+		if (Missile.bHasTravelStartWorldLocation)
+		{
+			SourceHubWorldLocation = Missile.TravelStartWorldLocation;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	const FVector TargetStarCenter = TargetStarActor->GetActorLocation();
+	OutTargetLocation = TargetStarCenter;
+
+	const float Alpha = FMath::Clamp(Missile.TravelProgressRatio, 0.0f, 1.0f);
+	const FVector SourceCenter = SourceBodyActor->GetActorLocation();
+	const float RouteDistance = FVector::Distance(SourceHubWorldLocation, TargetStarCenter);
+	const FVector RouteDirection = (TargetStarCenter - SourceHubWorldLocation).GetSafeNormal();
+	const FVector SourceSurfaceRadial = ResolveSafeRadial(SourceCenter, SourceHubWorldLocation, -RouteDirection);
+	const FVector TransferPlaneNormal = ResolveRouteOrbitPlaneNormal(
+		SourceBodyActor,
+		TargetStarActor,
+		SourceCenter,
+		TargetStarCenter,
+		RouteDirection);
+	const FVector PlaneRouteDirection = ResolveSafePlaneDirection(RouteDirection, TransferPlaneNormal, TargetStarCenter - SourceCenter);
+	const FVector SourceOrbitRadial = ResolveSafePlaneDirection(SourceSurfaceRadial, TransferPlaneNormal, -PlaneRouteDirection);
+	const float SourceOrbitRadius = ResolveLowOrbitRadius(SourceCenter, SourceHubWorldLocation, RouteDistance);
+	const FVector SourceOrbitStart = SourceCenter + (SourceOrbitRadial * SourceOrbitRadius);
+
+	FVector SourceTransferDirection = ResolveSafePlaneDirection(TargetStarCenter - SourceOrbitStart, TransferPlaneNormal, PlaneRouteDirection);
+	if (SourceTransferDirection.IsNearlyZero())
+	{
+		SourceTransferDirection = PlaneRouteDirection.IsNearlyZero() ? SourceOrbitRadial : PlaneRouteDirection;
+	}
+	const FVector SourceOrbitNormal = TransferPlaneNormal;
+	FVector SourceExitRadial = FVector::CrossProduct(SourceTransferDirection, SourceOrbitNormal).GetSafeNormal();
+	if (SourceExitRadial.IsNearlyZero())
+	{
+		SourceExitRadial = SourceOrbitRadial;
+	}
+	const FSRSpaceLogisticsHubRouteOrbitArc SourceOrbitArc = {
+		SourceCenter,
+		SourceOrbitRadial,
+		SourceOrbitNormal,
+		SourceOrbitRadius,
+		PositiveSignedAngleRadians(SourceOrbitRadial, SourceExitRadial, SourceOrbitNormal) + HubRouteSourceOrbitExtraRadians
+	};
+
+	FVector SourceOrbitExit = FVector::ZeroVector;
+	FVector SourceOrbitExitDirection = FVector::ZeroVector;
+	EvaluateOrbitArc(SourceOrbitArc, 1.0f, SourceOrbitExit, SourceOrbitExitDirection);
+
+	if (Alpha <= HubRouteLaunchAscentEndRatio)
+	{
+		const float SegmentAlpha = RemapSegmentAlpha(Alpha, 0.0f, HubRouteLaunchAscentEndRatio);
+		const float AscentDistance = FVector::Distance(SourceHubWorldLocation, SourceOrbitStart);
+		const float ControlDistance = FMath::Max(HubRouteMinimumArcHeight, AscentDistance * HubRouteAscentControlRatio);
+		const FVector SourceOrbitStartDirection = FVector::CrossProduct(SourceOrbitNormal, SourceOrbitRadial).GetSafeNormal();
+		EvaluateCubicBezier(
+			SourceHubWorldLocation,
+			SourceHubWorldLocation + (SourceSurfaceRadial * ControlDistance),
+			SourceOrbitStart - (SourceOrbitStartDirection * ControlDistance),
+			SourceOrbitStart,
+			SegmentAlpha,
+			OutLocation,
+			OutTravelDirection);
+		return true;
+	}
+
+	if (Alpha <= HubRouteSourceOrbitEndRatio)
+	{
+		EvaluateOrbitArc(
+			SourceOrbitArc,
+			RemapSegmentAlpha(Alpha, HubRouteLaunchAscentEndRatio, HubRouteSourceOrbitEndRatio),
+			OutLocation,
+			OutTravelDirection);
+		return true;
+	}
+
+	const float SegmentAlpha = RemapSegmentAlpha(Alpha, HubRouteSourceOrbitEndRatio, 1.0f);
+	const float TransferDistance = FVector::Distance(SourceOrbitExit, TargetStarCenter);
+	const float ControlDistance = FMath::Max(
+		HubRouteLaunchVelocityMinimumControlDistance,
+		TransferDistance * HubRouteLaunchVelocityMaxControlDistanceRatio);
+
+	const FVector TransferMidpoint = (SourceOrbitExit + TargetStarCenter) * 0.5f;
+	FVector TransferArcDirection = (TransferMidpoint - TargetStarCenter).GetSafeNormal();
+	if (TransferArcDirection.IsNearlyZero())
+	{
+		TransferArcDirection = TransferMidpoint.GetSafeNormal();
+	}
+	if (TransferArcDirection.IsNearlyZero())
+	{
+		TransferArcDirection = FVector::UpVector;
+	}
+
+	FVector DepartureDirection = SourceOrbitExitDirection;
+	if (Missile.bHasLaunchWorldVelocity && !Missile.LaunchWorldVelocity.IsNearlyZero())
+	{
+		const FVector LaunchVelocityDirection = Missile.LaunchWorldVelocity.GetSafeNormal();
+		DepartureDirection = (SourceOrbitExitDirection + (LaunchVelocityDirection * 0.25f)).GetSafeNormal();
+	}
+	if (DepartureDirection.IsNearlyZero())
+	{
+		DepartureDirection = (TargetStarCenter - SourceOrbitExit).GetSafeNormal();
+	}
+
+	const FVector ArrivalDirection = (TargetStarCenter - SourceOrbitExit).GetSafeNormal();
+	const FVector TransferLift = TransferArcDirection * FMath::Max(HubRouteMinimumArcHeight, TransferDistance * HubRouteArcHeightRatio);
+	EvaluateCubicBezier(
+		SourceOrbitExit,
+		SourceOrbitExit + (DepartureDirection * ControlDistance) + TransferLift,
+		TargetStarCenter - (ArrivalDirection * ControlDistance * 0.35f) + TransferLift,
+		TargetStarCenter,
+		SegmentAlpha,
+		OutLocation,
+		OutTravelDirection);
+	if (OutTravelDirection.IsNearlyZero())
+	{
+		OutTravelDirection = (TargetStarCenter - SourceOrbitExit).GetSafeNormal();
+	}
+	return true;
+}
+
 float FSRSpaceLogisticsRoutePathResolver::EstimateRoutePathLength(
 	const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 	const FSRSpaceLogisticsHubRoute& HubRoute,
@@ -713,6 +958,33 @@ float FSRSpaceLogisticsRoutePathResolver::ResolveTravelDurationSeconds(
 		HubRoute,
 		0.0f,
 		HubRouteLaunchAscentEndRatio);
+	const float RestLength = FMath::Max(0.0f, PathLength - LaunchAscentLength);
+	const float LaunchAscentDuration = ResolveAcceleratedDuration(
+		LaunchAscentLength,
+		InitialSpeed,
+		LaunchAcceleration);
+	const float RestDuration = RestLength / InitialSpeed;
+	return FMath::Max(MinimumHubRouteTravelDurationSeconds, LaunchAscentDuration + RestDuration);
+}
+
+float FSRSpaceLogisticsRoutePathResolver::ResolveStarFuelMissileTravelDurationSeconds(
+	const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+	const FSRSpaceLogisticsStarFuelMissile& Missile)
+{
+	const float PathLength = EstimateStarFuelMissilePathLengthRange(
+		SpaceLogisticsSubsystem,
+		Missile,
+		0.0f,
+		1.0f,
+		48);
+	const float InitialSpeed = ClampInitialSpeed(Missile.InitialSpeedUnitsPerSecond);
+	const float LaunchAcceleration = ClampLaunchAcceleration(Missile.LaunchAccelerationUnitsPerSecondSquared);
+	const float LaunchAscentLength = EstimateStarFuelMissilePathLengthRange(
+		SpaceLogisticsSubsystem,
+		Missile,
+		0.0f,
+		HubRouteLaunchAscentEndRatio,
+		16);
 	const float RestLength = FMath::Max(0.0f, PathLength - LaunchAscentLength);
 	const float LaunchAscentDuration = ResolveAcceleratedDuration(
 		LaunchAscentLength,

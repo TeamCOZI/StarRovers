@@ -128,6 +128,42 @@ bool USRFacilityNetworkComponent::TryTakeHubOutboundCargoByResource(FName Occupa
 	return true;
 }
 
+bool USRFacilityNetworkComponent::TryTakeHubOutboundCargoMatching(
+	FName OccupantId,
+	int32 MaxStackCount,
+	TFunctionRef<bool(const FSRResourceInstance&)> CargoPredicate,
+	FSRResourceInstance& OutCargo)
+{
+	OutCargo = FSRResourceInstance();
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	FSRFacilityHubCargoTransferResult TransferResult;
+	if (!FacilityInstance
+		|| !FSRFacilityHubCargoRouter::TryTakeOutboundCargoMatching(
+			*FacilityInstance,
+			MaxStackCount,
+			CargoPredicate,
+			OutCargo,
+			&TransferResult))
+	{
+		return false;
+	}
+
+	if (bLogFacilityNetworkEvents)
+	{
+		SR_LOG(FacilityNetwork,
+			LogTemp,
+			Display,
+			TEXT("[FacilityNetwork][Hub] Matching outbound cargo taken: OccupantId=%s Port=%s ResourceId=%s StackCount=%d RemainingPortInput=%d Owner=%s"),
+			*OccupantId.ToString(),
+			*TransferResult.PortId.ToString(),
+			*OutCargo.ResourceId.ToString(),
+			OutCargo.StackCount,
+			TransferResult.RemainingPortStackCount,
+			*GetNameSafe(GetOwner()));
+	}
+	return true;
+}
+
 void USRFacilityNetworkComponent::GetHubOutboundCargoResourceIds(FName OccupantId, TArray<FName>& OutResourceIds) const
 {
 	OutResourceIds.Reset();

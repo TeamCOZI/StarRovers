@@ -4,7 +4,7 @@
 
 namespace
 {
-	bool HasDirection(
+	bool HasNetworkGeometryDirection(
 		ESRConveyorGridDirection Direction,
 		ESRConveyorGridDirection FirstDirection,
 		ESRConveyorGridDirection SecondDirection,
@@ -24,19 +24,19 @@ namespace
 	{
 		OutDirections.Reset();
 		OutDirections.Reserve(3);
-		if (HasDirection(ESRConveyorGridDirection::NegativeV, FirstDirection, SecondDirection, ThirdDirection))
+		if (HasNetworkGeometryDirection(ESRConveyorGridDirection::NegativeV, FirstDirection, SecondDirection, ThirdDirection))
 		{
 			OutDirections.Add(ESRConveyorGridDirection::NegativeV);
 		}
-		if (HasDirection(ESRConveyorGridDirection::PositiveU, FirstDirection, SecondDirection, ThirdDirection))
+		if (HasNetworkGeometryDirection(ESRConveyorGridDirection::PositiveU, FirstDirection, SecondDirection, ThirdDirection))
 		{
 			OutDirections.Add(ESRConveyorGridDirection::PositiveU);
 		}
-		if (HasDirection(ESRConveyorGridDirection::PositiveV, FirstDirection, SecondDirection, ThirdDirection))
+		if (HasNetworkGeometryDirection(ESRConveyorGridDirection::PositiveV, FirstDirection, SecondDirection, ThirdDirection))
 		{
 			OutDirections.Add(ESRConveyorGridDirection::PositiveV);
 		}
-		if (HasDirection(ESRConveyorGridDirection::NegativeU, FirstDirection, SecondDirection, ThirdDirection))
+		if (HasNetworkGeometryDirection(ESRConveyorGridDirection::NegativeU, FirstDirection, SecondDirection, ThirdDirection))
 		{
 			OutDirections.Add(ESRConveyorGridDirection::NegativeU);
 		}

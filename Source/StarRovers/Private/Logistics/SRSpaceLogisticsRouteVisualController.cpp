@@ -1,8 +1,9 @@
 #include "SRSpaceLogisticsRouteVisualController.h"
 
+#include "Camera/SRGameMode.h"
+#include "GameFramework/WorldSettings.h"
 #include "Logistics/SRSpaceshipActor.h"
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
-#include "Simulation/SRSimulationSettings.h"
 #include "SRSpaceLogisticsRoutePathResolver.h"
 #include "Utility/SRLog.h"
 
@@ -36,7 +37,7 @@ void FSRSpaceLogisticsRouteVisualController::Refresh(
 			continue;
 		}
 
-		ASRSpaceshipActor* SpaceshipActor = FindOrSpawn(World, HubRoute, SpaceshipActorsByRouteId);
+		ASRSpaceshipActor* SpaceshipActor = FindOrSpawn(World, HubRoute.RouteId, SpaceshipActorsByRouteId);
 		if (!IsValid(SpaceshipActor))
 		{
 			continue;
@@ -63,6 +64,66 @@ void FSRSpaceLogisticsRouteVisualController::Refresh(
 	for (const FName InactiveRouteId : InactiveRouteIds)
 	{
 		DestroyRouteActor(InactiveRouteId, SpaceshipActorsByRouteId);
+	}
+}
+
+void FSRSpaceLogisticsRouteVisualController::RefreshStarFuelMissiles(
+	const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+	UWorld* World,
+	TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
+	TMap<FName, TObjectPtr<ASRSpaceshipActor>>& MissileActorsByMissileId)
+{
+	TSet<FName> ActiveMissileIds;
+	ActiveMissileIds.Reserve(StarFuelMissiles.Num());
+	for (FSRSpaceLogisticsStarFuelMissile& Missile : StarFuelMissiles)
+	{
+		if (!Missile.bEnabled || !Missile.IsValid())
+		{
+			DestroyRouteActor(Missile.MissileId, MissileActorsByMissileId);
+			continue;
+		}
+
+		FVector VisualWorldLocation = FVector::ZeroVector;
+		FVector TargetWorldLocation = FVector::ZeroVector;
+		FVector TravelDirection = FVector::ZeroVector;
+		if (!FSRSpaceLogisticsRoutePathResolver::ResolveStarFuelMissileVisualWorldLocation(
+			SpaceLogisticsSubsystem,
+			Missile,
+			VisualWorldLocation,
+			TargetWorldLocation,
+			TravelDirection))
+		{
+			DestroyRouteActor(Missile.MissileId, MissileActorsByMissileId);
+			continue;
+		}
+
+		ASRSpaceshipActor* MissileActor = FindOrSpawn(World, Missile.MissileId, MissileActorsByMissileId);
+		if (!IsValid(MissileActor))
+		{
+			continue;
+		}
+
+		MissileActor->UpdateRouteVisualWithDirection(
+			VisualWorldLocation,
+			TargetWorldLocation,
+			TravelDirection,
+			Missile.TravelProgressRatio);
+		ActiveMissileIds.Add(Missile.MissileId);
+	}
+
+	TArray<FName> InactiveMissileIds;
+	InactiveMissileIds.Reserve(MissileActorsByMissileId.Num());
+	for (const TPair<FName, TObjectPtr<ASRSpaceshipActor>>& Pair : MissileActorsByMissileId)
+	{
+		if (!ActiveMissileIds.Contains(Pair.Key))
+		{
+			InactiveMissileIds.Add(Pair.Key);
+		}
+	}
+
+	for (const FName InactiveMissileId : InactiveMissileIds)
+	{
+		DestroyRouteActor(InactiveMissileId, MissileActorsByMissileId);
 	}
 }
 
@@ -96,6 +157,7 @@ void FSRSpaceLogisticsRouteVisualController::DestroyRouteActor(
 }
 
 void FSRSpaceLogisticsRouteVisualController::ResolveDefaultFlightSettings(
+	UWorld* World,
 	float& OutInitialSpeedUnitsPerSecond,
 	float& OutLaunchAccelerationUnitsPerSecondSquared)
 {
@@ -103,7 +165,7 @@ void FSRSpaceLogisticsRouteVisualController::ResolveDefaultFlightSettings(
 	OutLaunchAccelerationUnitsPerSecondSquared =
 		FSRSpaceLogisticsRoutePathResolver::GetDefaultLaunchAccelerationUnitsPerSecondSquared();
 
-	const TSubclassOf<ASRSpaceshipActor> SpaceshipActorClass = ResolveActorClass();
+	const TSubclassOf<ASRSpaceshipActor> SpaceshipActorClass = ResolveActorClass(World);
 	const ASRSpaceshipActor* SpaceshipDefaultObject = SpaceshipActorClass
 		? Cast<ASRSpaceshipActor>(SpaceshipActorClass->GetDefaultObject())
 		: nullptr;
@@ -118,15 +180,15 @@ void FSRSpaceLogisticsRouteVisualController::ResolveDefaultFlightSettings(
 
 ASRSpaceshipActor* FSRSpaceLogisticsRouteVisualController::FindOrSpawn(
 	UWorld* World,
-	FSRSpaceLogisticsHubRoute& HubRoute,
+	FName VisualActorId,
 	TMap<FName, TObjectPtr<ASRSpaceshipActor>>& SpaceshipActorsByRouteId)
 {
-	if (HubRoute.RouteId.IsNone())
+	if (VisualActorId.IsNone())
 	{
 		return nullptr;
 	}
 
-	if (TObjectPtr<ASRSpaceshipActor>* ExistingSpaceshipActor = SpaceshipActorsByRouteId.Find(HubRoute.RouteId))
+	if (TObjectPtr<ASRSpaceshipActor>* ExistingSpaceshipActor = SpaceshipActorsByRouteId.Find(VisualActorId))
 	{
 		if (IsValid(ExistingSpaceshipActor->Get()))
 		{
@@ -143,7 +205,7 @@ ASRSpaceshipActor* FSRSpaceLogisticsRouteVisualController::FindOrSpawn(
 	SpawnParameters.ObjectFlags |= RF_Transient;
 	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	TSubclassOf<ASRSpaceshipActor> SpaceshipActorClass = ResolveActorClass();
+	TSubclassOf<ASRSpaceshipActor> SpaceshipActorClass = ResolveActorClass(World);
 	ASRSpaceshipActor* SpaceshipActor = World->SpawnActor<ASRSpaceshipActor>(
 		SpaceshipActorClass.Get(),
 		FVector::ZeroVector,
@@ -154,49 +216,41 @@ ASRSpaceshipActor* FSRSpaceLogisticsRouteVisualController::FindOrSpawn(
 		return nullptr;
 	}
 
-	SpaceshipActor->SetRouteId(HubRoute.RouteId);
-	SpaceshipActorsByRouteId.Add(HubRoute.RouteId, SpaceshipActor);
+	SpaceshipActor->SetRouteId(VisualActorId);
+	SpaceshipActorsByRouteId.Add(VisualActorId, SpaceshipActor);
 	return SpaceshipActor;
 }
 
-TSubclassOf<ASRSpaceshipActor> FSRSpaceLogisticsRouteVisualController::ResolveActorClass()
+TSubclassOf<ASRSpaceshipActor> FSRSpaceLogisticsRouteVisualController::ResolveActorClass(UWorld* World)
 {
-	static TWeakObjectPtr<UClass> CachedSpaceshipActorClass;
-	static FSoftObjectPath CachedSpaceshipActorClassPath;
-
-	const USRSimulationSettings* SimulationSettings = GetDefault<USRSimulationSettings>();
-	const FSoftObjectPath ConfiguredSpaceshipActorClassPath = SimulationSettings
-		? SimulationSettings->SpaceshipActorClass.ToSoftObjectPath()
-		: FSoftObjectPath();
-
-	if (ConfiguredSpaceshipActorClassPath.IsNull())
+	if (IsValid(World))
 	{
-		CachedSpaceshipActorClass.Reset();
-		CachedSpaceshipActorClassPath.Reset();
-		return ASRSpaceshipActor::StaticClass();
-	}
+		if (const ASRGameMode* GameMode = World->GetAuthGameMode<ASRGameMode>())
+		{
+			if (TSubclassOf<ASRSpaceshipActor> ConfiguredClass = GameMode->ResolveSpaceLogisticsSpaceshipActorClass())
+			{
+				return ConfiguredClass;
+			}
+		}
 
-	if (CachedSpaceshipActorClass.IsValid()
-		&& CachedSpaceshipActorClassPath == ConfiguredSpaceshipActorClassPath)
-	{
-		return CachedSpaceshipActorClass.Get();
-	}
-
-	UClass* LoadedClass = SimulationSettings->SpaceshipActorClass.LoadSynchronous();
-	if (IsValid(LoadedClass) && LoadedClass->IsChildOf(ASRSpaceshipActor::StaticClass()))
-	{
-		CachedSpaceshipActorClass = LoadedClass;
-		CachedSpaceshipActorClassPath = ConfiguredSpaceshipActorClassPath;
-		return LoadedClass;
+		const AWorldSettings* WorldSettings = World->GetWorldSettings();
+		const UClass* DefaultGameModeClass = WorldSettings ? WorldSettings->DefaultGameMode : nullptr;
+		const ASRGameMode* DefaultGameMode = DefaultGameModeClass
+			? Cast<ASRGameMode>(DefaultGameModeClass->GetDefaultObject())
+			: nullptr;
+		if (DefaultGameMode)
+		{
+			if (TSubclassOf<ASRSpaceshipActor> ConfiguredClass = DefaultGameMode->ResolveSpaceLogisticsSpaceshipActorClass())
+			{
+				return ConfiguredClass;
+			}
+		}
 	}
 
 	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Warning,
-		TEXT("[SpaceLogistics] Failed to load configured spaceship actor class '%s'. Falling back to ASRSpaceshipActor."),
-		*ConfiguredSpaceshipActorClassPath.ToString());
-	CachedSpaceshipActorClass.Reset();
-	CachedSpaceshipActorClassPath.Reset();
+		TEXT("[SpaceLogistics] No Spaceship Actor Class configured on ASRGameMode. Falling back to native ASRSpaceshipActor."));
 	return ASRSpaceshipActor::StaticClass();
 }
 

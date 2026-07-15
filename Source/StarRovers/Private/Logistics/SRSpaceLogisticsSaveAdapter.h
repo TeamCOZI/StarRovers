@@ -10,6 +10,8 @@ public:
 		const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 		const TArray<FSRSpaceLogisticsHubRoute>& HubRoutes,
 		int32 NextHubRouteSequence,
+		const TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
+		int32 NextStarFuelMissileSequence,
 		FSRSpaceLogisticsSaveData& OutSaveData);
 
 	static bool ImportSaveData(
@@ -18,6 +20,9 @@ public:
 		TArray<FSRSpaceLogisticsHubRoute>& HubRoutes,
 		int32& NextHubRouteSequence,
 		TMap<FName, TObjectPtr<ASRSpaceshipActor>>& SpaceshipActorsByRouteId,
+		TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
+		int32& NextStarFuelMissileSequence,
+		TMap<FName, TObjectPtr<ASRSpaceshipActor>>& StarFuelMissileActorsByMissileId,
 		TMap<FString, FSRSpaceLogisticsHubEndpointMotionSample>& HubEndpointMotionSamples);
 
 private:
@@ -30,4 +35,19 @@ private:
 		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 		const FSRSpaceLogisticsHubRouteSaveData& RouteSaveData,
 		TArray<FSRSpaceLogisticsHubRoute>& HubRoutes);
+
+	static bool BuildMissileSaveData(
+		const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		const FSRSpaceLogisticsStarFuelMissile& Missile,
+		FSRSpaceLogisticsStarFuelMissileSaveData& OutMissileSaveData);
+
+	static bool ImportMissile(
+		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		const FSRSpaceLogisticsStarFuelMissileSaveData& MissileSaveData,
+		TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles);
+
+	static AActor* ResolveSavedStarActor(
+		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		FName TargetStarActorName,
+		const FString& TargetStarVariableName);
 };

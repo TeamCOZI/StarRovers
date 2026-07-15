@@ -122,25 +122,7 @@ double ASRStar::CalculateStellarFuelValueForResource(const FSRResourceInstance& 
 		return 0.0;
 	}
 
-	bool bCountsAsStellarFuel = ResourceInstance.bCountsAsStellarFuel;
-	double FuelMultiplier = ResourceInstance.StellarFuelValueMultiplier;
-	if (!bCountsAsStellarFuel)
-	{
-		if (const USRResourceDataAsset* ResourceDataAsset = ResourceInstance.ResourceDataAsset.Get())
-		{
-			bCountsAsStellarFuel = ResourceDataAsset->bCountsAsStellarFuel;
-			FuelMultiplier = ResourceDataAsset->StellarFuelValueMultiplier;
-		}
-	}
-
-	if (!bCountsAsStellarFuel)
-	{
-		return 0.0;
-	}
-
-	const double FuelValue = ResourceInstance.EnergyValue
-		* FMath::Max(0.0, FuelMultiplier)
-		* static_cast<double>(FMath::Max(1, ResourceInstance.StackCount));
+	const double FuelValue = ResourceInstance.EnergyValue * static_cast<double>(FMath::Max(1, ResourceInstance.StackCount));
 	return FMath::Max(0.0, FuelValue);
 }
 

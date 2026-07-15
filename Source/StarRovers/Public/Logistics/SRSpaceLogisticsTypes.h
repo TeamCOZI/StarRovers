@@ -150,6 +150,63 @@ struct STARROVERS_API FSRSpaceLogisticsHubRoute
 };
 
 USTRUCT(BlueprintType)
+struct STARROVERS_API FSRSpaceLogisticsStarFuelMissile
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "MissileId"))
+	FName MissileId = NAME_None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "SourceHub"))
+	FSRSpaceLogisticsHubEndpoint SourceHub;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "TargetStarActor"))
+	TObjectPtr<AActor> TargetStarActor = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "bEnabled"))
+	bool bEnabled = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "TravelDurationSeconds"))
+	float TravelDurationSeconds = 8.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "InitialSpeedUnitsPerSecond"))
+	float InitialSpeedUnitsPerSecond = 6000.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "LaunchAccelerationUnitsPerSecondSquared"))
+	float LaunchAccelerationUnitsPerSecondSquared = 3000.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "TravelProgressSeconds"))
+	float TravelProgressSeconds = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "TravelProgressRatio"))
+	float TravelProgressRatio = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "TravelStartWorldLocation"))
+	FVector TravelStartWorldLocation = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "bHasTravelStartWorldLocation"))
+	bool bHasTravelStartWorldLocation = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "LaunchWorldVelocity"))
+	FVector LaunchWorldVelocity = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "bHasLaunchWorldVelocity"))
+	bool bHasLaunchWorldVelocity = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "Cargo"))
+	FSRResourceInstance Cargo;
+
+	bool IsValid() const
+	{
+		return !MissileId.IsNone()
+			&& SourceHub.IsValid()
+			&& ::IsValid(TargetStarActor)
+			&& !Cargo.ResourceId.IsNone()
+			&& Cargo.StackCount > 0;
+	}
+};
+
+USTRUCT(BlueprintType)
 struct STARROVERS_API FSRSpaceLogisticsHubRouteSaveData
 {
 	GENERATED_BODY()
@@ -221,6 +278,66 @@ struct STARROVERS_API FSRSpaceLogisticsHubRouteSaveData
 };
 
 USTRUCT(BlueprintType)
+struct STARROVERS_API FSRSpaceLogisticsStarFuelMissileSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "MissileId"))
+	FName MissileId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "SourceHub"))
+	FSRSpaceLogisticsHubEndpointSaveData SourceHub;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "TargetStarActorName"))
+	FName TargetStarActorName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "TargetStarVariableName"))
+	FString TargetStarVariableName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "bEnabled"))
+	bool bEnabled = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "TravelDurationSeconds"))
+	float TravelDurationSeconds = 8.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "InitialSpeedUnitsPerSecond"))
+	float InitialSpeedUnitsPerSecond = 6000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "LaunchAccelerationUnitsPerSecondSquared"))
+	float LaunchAccelerationUnitsPerSecondSquared = 3000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "TravelProgressSeconds"))
+	float TravelProgressSeconds = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "TravelProgressRatio"))
+	float TravelProgressRatio = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "TravelStartWorldLocation"))
+	FVector TravelStartWorldLocation = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "bHasTravelStartWorldLocation"))
+	bool bHasTravelStartWorldLocation = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "LaunchWorldVelocity"))
+	FVector LaunchWorldVelocity = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "bHasLaunchWorldVelocity"))
+	bool bHasLaunchWorldVelocity = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "Cargo"))
+	FSRResourceInstance Cargo;
+
+	bool IsValid() const
+	{
+		return !MissileId.IsNone()
+			&& SourceHub.IsValid()
+			&& (!TargetStarActorName.IsNone() || !TargetStarVariableName.IsEmpty())
+			&& !Cargo.ResourceId.IsNone()
+			&& Cargo.StackCount > 0;
+	}
+};
+
+USTRUCT(BlueprintType)
 struct STARROVERS_API FSRSpaceLogisticsSaveData
 {
 	GENERATED_BODY()
@@ -231,6 +348,12 @@ struct STARROVERS_API FSRSpaceLogisticsSaveData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "NextHubRouteSequence"))
 	int32 NextHubRouteSequence = 1;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "NextStarFuelMissileSequence"))
+	int32 NextStarFuelMissileSequence = 1;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "HubRoutes"))
 	TArray<FSRSpaceLogisticsHubRouteSaveData> HubRoutes;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "StarFuelMissiles"))
+	TArray<FSRSpaceLogisticsStarFuelMissileSaveData> StarFuelMissiles;
 };

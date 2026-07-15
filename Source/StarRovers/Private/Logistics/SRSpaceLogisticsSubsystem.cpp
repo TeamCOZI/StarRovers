@@ -5,6 +5,7 @@
 #include "SRSpaceLogisticsRouteProcessor.h"
 #include "SRSpaceLogisticsRouteRegistry.h"
 #include "SRSpaceLogisticsSaveAdapter.h"
+#include "SRSpaceLogisticsStarFuelMissileProcessor.h"
 #include "SRSpaceLogisticsRouteVisualController.h"
 #include "Simulation/SRTimeControlSubsystem.h"
 
@@ -23,8 +24,10 @@ void USRSpaceLogisticsSubsystem::Initialize(FSubsystemCollectionBase& Collection
 void USRSpaceLogisticsSubsystem::Deinitialize()
 {
 	FSRSpaceLogisticsRouteVisualController::Clear(SpaceshipActorsByRouteId);
+	FSRSpaceLogisticsRouteVisualController::Clear(StarFuelMissileActorsByMissileId);
 	CachedHubEndpoints.Reset();
 	HubRoutes.Reset();
+	StarFuelMissiles.Reset();
 	HubEndpointMotionSamples.Reset();
 	Super::Deinitialize();
 }
@@ -44,15 +47,35 @@ void USRSpaceLogisticsSubsystem::Tick(float DeltaTime)
 		HubEndpointMotionSamples);
 	if (HubRoutes.IsEmpty())
 	{
-		return;
+		if (StarFuelMissiles.IsEmpty())
+		{
+			return;
+		}
 	}
 
-	FSRSpaceLogisticsRouteProcessor::ProcessRoutes(
-		*this,
-		SimulationDeltaTime,
-		HubRoutes,
-		SpaceshipActorsByRouteId);
-	FSRSpaceLogisticsRouteVisualController::Refresh(*this, GetWorld(), HubRoutes, SpaceshipActorsByRouteId);
+	if (!HubRoutes.IsEmpty())
+	{
+		FSRSpaceLogisticsRouteProcessor::ProcessRoutes(
+			*this,
+			SimulationDeltaTime,
+			HubRoutes,
+			SpaceshipActorsByRouteId);
+		FSRSpaceLogisticsRouteVisualController::Refresh(*this, GetWorld(), HubRoutes, SpaceshipActorsByRouteId);
+	}
+
+	if (!StarFuelMissiles.IsEmpty())
+	{
+		FSRSpaceLogisticsStarFuelMissileProcessor::ProcessMissiles(
+			*this,
+			SimulationDeltaTime,
+			StarFuelMissiles,
+			StarFuelMissileActorsByMissileId);
+		FSRSpaceLogisticsRouteVisualController::RefreshStarFuelMissiles(
+			*this,
+			GetWorld(),
+			StarFuelMissiles,
+			StarFuelMissileActorsByMissileId);
+	}
 }
 
 TStatId USRSpaceLogisticsSubsystem::GetStatId() const
@@ -179,6 +202,22 @@ bool USRSpaceLogisticsSubsystem::SetHubRouteCargoResourceId(FName RouteId, FName
 	return FSRSpaceLogisticsRouteRegistry::SetHubRouteCargoResourceId(RouteId, CargoResourceId, HubRoutes);
 }
 
+bool USRSpaceLogisticsSubsystem::LaunchStarFuelMissileFromHub(
+	const FSRSpaceLogisticsHubEndpoint& SourceHub,
+	FName& OutMissileId,
+	float InitialSpeedUnitsPerSecond,
+	float LaunchAccelerationUnitsPerSecondSquared)
+{
+	return FSRSpaceLogisticsStarFuelMissileProcessor::LaunchFromHub(
+		*this,
+		SourceHub,
+		OutMissileId,
+		InitialSpeedUnitsPerSecond,
+		LaunchAccelerationUnitsPerSecondSquared,
+		StarFuelMissiles,
+		NextStarFuelMissileSequence);
+}
+
 void USRSpaceLogisticsSubsystem::ClearHubRoutes()
 {
 	FSRSpaceLogisticsRouteRegistry::ClearHubRoutes(HubRoutes, SpaceshipActorsByRouteId);
@@ -195,9 +234,20 @@ bool USRSpaceLogisticsSubsystem::GetHubRoute(FName RouteId, FSRSpaceLogisticsHub
 	return FSRSpaceLogisticsRouteRegistry::GetHubRoute(RouteId, HubRoutes, OutRoute);
 }
 
+void USRSpaceLogisticsSubsystem::GetStarFuelMissiles(TArray<FSRSpaceLogisticsStarFuelMissile>& OutMissiles) const
+{
+	OutMissiles = StarFuelMissiles;
+}
+
 void USRSpaceLogisticsSubsystem::ExportSaveData(FSRSpaceLogisticsSaveData& OutSaveData) const
 {
-	FSRSpaceLogisticsSaveAdapter::ExportSaveData(*this, HubRoutes, NextHubRouteSequence, OutSaveData);
+	FSRSpaceLogisticsSaveAdapter::ExportSaveData(
+		*this,
+		HubRoutes,
+		NextHubRouteSequence,
+		StarFuelMissiles,
+		NextStarFuelMissileSequence,
+		OutSaveData);
 }
 
 bool USRSpaceLogisticsSubsystem::ImportSaveData(const FSRSpaceLogisticsSaveData& SaveData)
@@ -208,6 +258,9 @@ bool USRSpaceLogisticsSubsystem::ImportSaveData(const FSRSpaceLogisticsSaveData&
 		HubRoutes,
 		NextHubRouteSequence,
 		SpaceshipActorsByRouteId,
+		StarFuelMissiles,
+		NextStarFuelMissileSequence,
+		StarFuelMissileActorsByMissileId,
 		HubEndpointMotionSamples);
 }
 

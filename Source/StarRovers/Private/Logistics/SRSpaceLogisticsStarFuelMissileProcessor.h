@@ -1,0 +1,59 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Logistics/SRSpaceLogisticsTypes.h"
+
+class ASRSpaceshipActor;
+class ASRStar;
+class USRSpaceLogisticsSubsystem;
+
+class FSRSpaceLogisticsStarFuelMissileProcessor
+{
+public:
+	static bool LaunchFromHub(
+		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		const FSRSpaceLogisticsHubEndpoint& SourceHub,
+		FName& OutMissileId,
+		float InitialSpeedUnitsPerSecond,
+		float LaunchAccelerationUnitsPerSecondSquared,
+		TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
+		int32& NextStarFuelMissileSequence);
+
+	static void ProcessMissiles(
+		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		float DeltaTime,
+		TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
+		TMap<FName, TObjectPtr<ASRSpaceshipActor>>& MissileActorsByMissileId);
+
+private:
+	static ASRStar* ResolvePrimaryStar(USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem);
+
+	static bool TryTakeFuelCargoFromHub(
+		const FSRSpaceLogisticsHubEndpoint& SourceHub,
+		FSRResourceInstance& OutCargo);
+
+	static void ApplyMissileFlightSettings(
+		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		FSRSpaceLogisticsStarFuelMissile& Missile,
+		float InitialSpeedUnitsPerSecond,
+		float LaunchAccelerationUnitsPerSecondSquared);
+
+	static bool StartMissileTravel(
+		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		FSRSpaceLogisticsStarFuelMissile& Missile);
+
+	static void AdvanceMissile(
+		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		FSRSpaceLogisticsStarFuelMissile& Missile,
+		float DeltaTime,
+		TArray<int32>& OutImpactedMissileIndices,
+		int32 MissileIndex,
+		TMap<FName, TObjectPtr<ASRSpaceshipActor>>& MissileActorsByMissileId);
+
+	static bool HasMissileImpactedTargetStar(
+		const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		const FSRSpaceLogisticsStarFuelMissile& Missile);
+
+	static float ResolveTargetStarImpactRadius(const AActor& TargetStarActor);
+	static FName MakeMissileId(const FSRSpaceLogisticsHubEndpoint& SourceHub, int32& NextStarFuelMissileSequence);
+};

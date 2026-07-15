@@ -99,15 +99,43 @@ bool FSRFacilityProcessingStepExecutor::TryCompleteProcessing(
 
 	TArray<FSRResourceInstance> ConsumedResources = FacilityInstance.ProcessingInventory;
 	TArray<FSRResourceInstance> OutputResources;
-	FSRFacilityOutputResourceBuilder::BuildOutputResources(FacilityInstance, ConsumedResources, OutputResources);
-	if (!FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(FacilityInstance, OutputResources))
+	int32 PrimaryOutputCount = 0;
+	FSRResourceInstance BaselineOutputResource;
+	FSRFacilityOutputResourceBuilder::BuildOutputResources(
+		FacilityInstance,
+		ConsumedResources,
+		OutputResources,
+		&PrimaryOutputCount,
+		&BaselineOutputResource);
+	if (OutputResources.IsEmpty())
+	{
+		if (!FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(FacilityInstance))
+		{
+			FacilityInstance.ProcessProgressSeconds = FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(FacilityInstance);
+			return false;
+		}
+	}
+	else if (!FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(FacilityInstance, OutputResources))
 	{
 		FacilityInstance.ProcessProgressSeconds = FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(FacilityInstance);
 		return false;
 	}
 
-	FSRFacilityProcessingInventoryRouter::StoreOutputResources(FacilityInstance, OutputResources);
-	const int32 CellTemperatureEffects = FSRFacilityCellTemperatureEffectApplier::ApplyEffects(OwnerComponent, FacilityInstance);
+	if (!OutputResources.IsEmpty())
+	{
+		FSRFacilityProcessingInventoryRouter::StoreOutputResources(FacilityInstance, OutputResources);
+	}
+	const FSRResourceInstance* TemperatureConditionResource = OutputResources.IsEmpty()
+		? (BaselineOutputResource.ResourceId.IsNone() ? nullptr : &BaselineOutputResource)
+		: &OutputResources[0];
+	const FSRResourceInstance* TemperatureBaselineResource = BaselineOutputResource.ResourceId.IsNone()
+		? TemperatureConditionResource
+		: &BaselineOutputResource;
+	const int32 CellTemperatureEffects = FSRFacilityCellTemperatureEffectApplier::ApplyEffects(
+		OwnerComponent,
+		FacilityInstance,
+		TemperatureConditionResource,
+		TemperatureBaselineResource);
 	ResetStandardProcessingState(FacilityInstance);
 
 	if (OutCompletionResult)
@@ -117,7 +145,7 @@ bool FSRFacilityProcessingStepExecutor::TryCompleteProcessing(
 		OutCompletionResult->OutputCount = OutputResources.Num();
 		OutCompletionResult->AdditionalOutputCount = FMath::Max(
 			0,
-			OutputResources.Num() - FSRFacilityOutputResourceBuilder::ResolvePrimaryOutputCount(FacilityInstance));
+			OutputResources.Num() - PrimaryOutputCount);
 		OutCompletionResult->CellTemperatureEffects = CellTemperatureEffects;
 		OutCompletionResult->bShouldRefreshTemperatureFromSurface = CellTemperatureEffects > 0;
 	}

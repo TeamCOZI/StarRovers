@@ -73,7 +73,6 @@ bool FSRFacilityMiningProcessor::TryCompleteMining(
 		return false;
 	}
 
-	const int32 OutputCount = FSRFacilityOutputResourceBuilder::ResolvePrimaryOutputCount(FacilityInstance);
 	if (!IsValid(ResourceDeposit.ResourceDataAsset.Get()))
 	{
 		ResetMiningState(FacilityInstance);
@@ -82,12 +81,20 @@ bool FSRFacilityMiningProcessor::TryCompleteMining(
 
 	const FSRResourceInstance PreviewMinedResource = ResourceDeposit.ResourceDataAsset->BuildDefaultInstance();
 	TArray<FSRResourceInstance> PreviewOutputResources;
-	PreviewOutputResources.Reserve(OutputCount);
-	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
+	FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
+		FacilityInstance,
+		TArray<FSRResourceInstance>(),
+		PreviewMinedResource,
+		PreviewOutputResources);
+	if (PreviewOutputResources.IsEmpty())
 	{
-		PreviewOutputResources.Add(PreviewMinedResource);
+		if (!FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(FacilityInstance))
+		{
+			FacilityInstance.ProcessProgressSeconds = FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(FacilityInstance);
+			return false;
+		}
 	}
-	if (!FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(FacilityInstance, PreviewOutputResources))
+	else if (!FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(FacilityInstance, PreviewOutputResources))
 	{
 		FacilityInstance.ProcessProgressSeconds = FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(FacilityInstance);
 		return false;
@@ -102,13 +109,16 @@ bool FSRFacilityMiningProcessor::TryCompleteMining(
 	}
 
 	TArray<FSRResourceInstance> OutputResources;
-	OutputResources.Reserve(OutputCount);
-	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
-	{
-		OutputResources.Add(MinedResource);
-	}
+	FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
+		FacilityInstance,
+		TArray<FSRResourceInstance>(),
+		MinedResource,
+		OutputResources);
 
-	FSRFacilityProcessingInventoryRouter::StoreOutputResources(FacilityInstance, OutputResources);
+	if (!OutputResources.IsEmpty())
+	{
+		FSRFacilityProcessingInventoryRouter::StoreOutputResources(FacilityInstance, OutputResources);
+	}
 	FacilityInstance.MiningTargetDepositOccupantId = UpdatedResourceDeposit.RemainingAmount > 0
 		? UpdatedResourceDeposit.OccupantId
 		: NAME_None;

@@ -21,6 +21,13 @@ public:
 		FSRResourceInstance& OutCargo,
 		FSRFacilityHubCargoTransferResult* OutTransferResult = nullptr);
 
+	static bool TryTakeOutboundCargoMatching(
+		FSRFacilityInstance& FacilityInstance,
+		int32 MaxStackCount,
+		TFunctionRef<bool(const FSRResourceInstance&)> CargoPredicate,
+		FSRResourceInstance& OutCargo,
+		FSRFacilityHubCargoTransferResult* OutTransferResult = nullptr);
+
 	static void GetOutboundCargoResourceIds(
 		const FSRFacilityInstance& FacilityInstance,
 		TArray<FName>& OutResourceIds);

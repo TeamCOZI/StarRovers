@@ -6,6 +6,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Camera/SRPlayerController.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Celestial/SRStar.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
@@ -76,34 +77,133 @@ namespace
 	{
 		switch (EffectKind)
 		{
-		case ESRFacilityEffectKind::AddEnergy:
-			return TEXT("Energy +");
-		case ESRFacilityEffectKind::MultiplyEnergy:
-			return TEXT("Energy *");
-		case ESRFacilityEffectKind::AddProcessLimit:
-			return TEXT("Limit +");
-		case ESRFacilityEffectKind::AddTag:
-			return TEXT("Add Tag");
+		case ESRFacilityEffectKind::AdjustEnergy:
+			return TEXT("Adjust Energy");
+		case ESRFacilityEffectKind::AdjustProcessLimit:
+			return TEXT("Adjust Limit");
+		case ESRFacilityEffectKind::RemoveResource:
+			return TEXT("Remove Resource");
+		case ESRFacilityEffectKind::AttachTag:
+			return TEXT("Attach Tag");
+		case ESRFacilityEffectKind::ProduceWaste:
+			return TEXT("Produce Waste");
+		case ESRFacilityEffectKind::AdjustCellTemperature:
+			return TEXT("Adjust Cell Temp");
+		case ESRFacilityEffectKind::InvertHeat:
+			return TEXT("Invert Heat");
+		case ESRFacilityEffectKind::InvertTagEffects:
+			return TEXT("Invert Tag Effects");
+		case ESRFacilityEffectKind::DuplicateInputResource:
+			return TEXT("Duplicate Input");
+		case ESRFacilityEffectKind::OverrideProcessTemperature:
+			return TEXT("Override Process Temp");
+		case ESRFacilityEffectKind::TriggerTagEffect:
+			return TEXT("Trigger Tag Effect");
+		case ESRFacilityEffectKind::AdjustProcessTime:
+			return TEXT("Adjust Process Time");
 		case ESRFacilityEffectKind::RemoveTag:
 			return TEXT("Remove Tag");
-		case ESRFacilityEffectKind::ProduceResource:
-			return TEXT("Produce");
-		case ESRFacilityEffectKind::SubtractEnergy:
-			return TEXT("Energy -");
-		case ESRFacilityEffectKind::DivideEnergy:
-			return TEXT("Energy /");
-		case ESRFacilityEffectKind::SubtractProcessLimit:
-			return TEXT("Limit -");
-		case ESRFacilityEffectKind::MultiplyProcessLimit:
-			return TEXT("Limit *");
-		case ESRFacilityEffectKind::DivideProcessLimit:
-			return TEXT("Limit /");
-		case ESRFacilityEffectKind::AddCellTemperature:
-			return TEXT("Cell Temp +");
-		case ESRFacilityEffectKind::SubtractCellTemperature:
-			return TEXT("Cell Temp -");
+		case ESRFacilityEffectKind::MultiplyEnergyByConsumedProcessLimit:
+			return TEXT("Energy * Lost Limit");
+		case ESRFacilityEffectKind::ChangeResourceType:
+			return TEXT("Change Resource Type");
 		default:
 			return TEXT("Effect");
+		}
+	}
+
+	const TCHAR* GetAttachTagSourceLabel(ESRFacilityAttachTagSource AttachTagSource)
+	{
+		return AttachTagSource == ESRFacilityAttachTagSource::LastAttachedTag ? TEXT("Last Tag") : TEXT("Specific");
+	}
+
+	const TCHAR* GetEffectTagTargetLabel(ESRFacilityEffectTagTarget TagTarget)
+	{
+		switch (TagTarget)
+		{
+		case ESRFacilityEffectTagTarget::SpecificTag:
+			return TEXT("Specific");
+		case ESRFacilityEffectTagTarget::LastAttachedTag:
+			return TEXT("Last Tag");
+		case ESRFacilityEffectTagTarget::AllTags:
+			return TEXT("All Tags");
+		default:
+			return TEXT("Tag Target");
+		}
+	}
+
+	const TCHAR* GetEnergyValueSourceLabel(ESRFacilityEnergyAdjustmentValueSource ValueSource)
+	{
+		switch (ValueSource)
+		{
+		case ESRFacilityEnergyAdjustmentValueSource::FixedValue:
+			return TEXT("Fixed");
+		case ESRFacilityEnergyAdjustmentValueSource::RemainingProcessLimit:
+			return TEXT("Limit");
+		case ESRFacilityEnergyAdjustmentValueSource::TagStackCount:
+			return TEXT("Tag Stack");
+		case ESRFacilityEnergyAdjustmentValueSource::EnergyChangeCount:
+			return TEXT("Energy Changes");
+		default:
+			return TEXT("Value");
+		}
+	}
+
+	const TCHAR* GetProcessTimeModeLabel(ESRFacilityProcessTimeAdjustmentMode ProcessTimeMode)
+	{
+		return ProcessTimeMode == ESRFacilityProcessTimeAdjustmentMode::Multiply ? TEXT("*") : TEXT("+");
+	}
+
+	const TCHAR* GetEffectConditionKindLabel(ESRFacilityEffectConditionKind ConditionKind)
+	{
+		switch (ConditionKind)
+		{
+		case ESRFacilityEffectConditionKind::EnergyAtLeast:
+			return TEXT("Energy >=");
+		case ESRFacilityEffectConditionKind::EnergyAtMost:
+			return TEXT("Energy <=");
+		case ESRFacilityEffectConditionKind::EnergyIncreased:
+			return TEXT("Energy Increased");
+		case ESRFacilityEffectConditionKind::EnergyDecreased:
+			return TEXT("Energy Decreased");
+		case ESRFacilityEffectConditionKind::Tag:
+			return TEXT("Tag");
+		case ESRFacilityEffectConditionKind::TemperatureState:
+			return TEXT("Temp");
+		case ESRFacilityEffectConditionKind::ProcessCountEquals:
+			return TEXT("Process Count");
+		case ESRFacilityEffectConditionKind::PrimeEnergy:
+			return TEXT("Prime Energy");
+		default:
+			return TEXT("Condition");
+		}
+	}
+
+	const TCHAR* GetTagConditionModeLabel(ESRFacilityTagConditionMode TagMode)
+	{
+		switch (TagMode)
+		{
+		case ESRFacilityTagConditionMode::HasTag:
+			return TEXT("Has");
+		case ESRFacilityTagConditionMode::MissingTag:
+			return TEXT("Missing");
+		case ESRFacilityTagConditionMode::StackCountAtLeast:
+			return TEXT("Stacks >=");
+		default:
+			return TEXT("Tag");
+		}
+	}
+
+	const TCHAR* GetTagConditionTargetLabel(ESRFacilityTagConditionTarget TagTarget)
+	{
+		switch (TagTarget)
+		{
+		case ESRFacilityTagConditionTarget::SpecificTag:
+			return TEXT("Specific");
+		case ESRFacilityTagConditionTarget::AllTags:
+			return TEXT("All Tags");
+		default:
+			return TEXT("Tag Target");
 		}
 	}
 
@@ -317,6 +417,69 @@ namespace
 			Label = Label.Left(9) + TEXT(".");
 		}
 		return Label;
+	}
+
+	ASRStar* ResolvePrimaryStarForHubUI(UWorld* World)
+	{
+		USRCelestialBodyRegistrySubsystem* CelestialRegistry = IsValid(World)
+			? World->GetSubsystem<USRCelestialBodyRegistrySubsystem>()
+			: nullptr;
+		if (!IsValid(CelestialRegistry))
+		{
+			return nullptr;
+		}
+
+		AActor* PrimaryStarActor = CelestialRegistry->GetPrimaryStarActor();
+		if (!IsValid(PrimaryStarActor))
+		{
+			CelestialRegistry->RefreshCelestialBodies();
+			PrimaryStarActor = CelestialRegistry->GetPrimaryStarActor();
+		}
+
+		return Cast<ASRStar>(PrimaryStarActor);
+	}
+
+	bool CanUseAsStarFuelMissileCargo(const FSRResourceInstance& ResourceInstance)
+	{
+		return !ResourceInstance.ResourceId.IsNone()
+			&& ResourceInstance.StackCount > 0
+			&& ResourceInstance.EnergyValue > UE_DOUBLE_SMALL_NUMBER;
+	}
+
+	int32 CountAvailableStarFuelMissileCargoStacks(const FSRFacilityInstance& FacilityInstance, const ASRStar* TargetStar)
+	{
+		if (!IsValid(TargetStar))
+		{
+			return 0;
+		}
+
+		int32 MissileCargoStackCount = 0;
+		for (const FSRFacilityPortInventory& InputPortInventory : FacilityInstance.InputPortInventories)
+		{
+			for (const FSRResourceInstance& ResourceInstance : InputPortInventory.Inventory)
+			{
+				if (CanUseAsStarFuelMissileCargo(ResourceInstance))
+				{
+					MissileCargoStackCount += FMath::Max(0, ResourceInstance.StackCount);
+				}
+			}
+		}
+		return MissileCargoStackCount;
+	}
+
+	int32 CountActiveStarFuelMissilesForHub(
+		const TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
+		const FSRSpaceLogisticsHubEndpoint& SourceHub)
+	{
+		int32 ActiveMissileCount = 0;
+		for (const FSRSpaceLogisticsStarFuelMissile& Missile : StarFuelMissiles)
+		{
+			if (Missile.bEnabled && AreHubEndpointKeysEqual(Missile.SourceHub, SourceHub))
+			{
+				++ActiveMissileCount;
+			}
+		}
+		return ActiveMissileCount;
 	}
 
 	FString BuildResourceDisplayName(const FSRResourceInstance& ResourceInstance)
@@ -659,6 +822,223 @@ namespace
 		return Summary;
 	}
 
+	FString BuildFacilityEffectSummary(const FSRFacilityEffectSpec& EffectSpec)
+	{
+		auto AppendConditions = [&EffectSpec](FString BaseSummary)
+		{
+			if (EffectSpec.Conditions.IsEmpty())
+			{
+				return BaseSummary;
+			}
+
+			BaseSummary += TEXT(" if ");
+			const int32 VisibleConditionCount = FMath::Min(EffectSpec.Conditions.Num(), 2);
+			for (int32 ConditionIndex = 0; ConditionIndex < VisibleConditionCount; ++ConditionIndex)
+			{
+				if (ConditionIndex > 0)
+				{
+					BaseSummary += TEXT(" && ");
+				}
+
+				const FSRFacilityEffectConditionSpec& ConditionSpec = EffectSpec.Conditions[ConditionIndex];
+				switch (ConditionSpec.ConditionKind)
+				{
+				case ESRFacilityEffectConditionKind::EnergyAtLeast:
+				case ESRFacilityEffectConditionKind::EnergyAtMost:
+					BaseSummary += FString::Printf(
+						TEXT("%s %.2f"),
+						GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
+						ConditionSpec.EnergyValue);
+					break;
+				case ESRFacilityEffectConditionKind::EnergyIncreased:
+				case ESRFacilityEffectConditionKind::EnergyDecreased:
+				case ESRFacilityEffectConditionKind::PrimeEnergy:
+					BaseSummary += GetEffectConditionKindLabel(ConditionSpec.ConditionKind);
+					break;
+				case ESRFacilityEffectConditionKind::Tag:
+					if (ConditionSpec.TagTarget == ESRFacilityTagConditionTarget::AllTags)
+					{
+						if (ConditionSpec.TagMode == ESRFacilityTagConditionMode::StackCountAtLeast)
+						{
+							BaseSummary += FString::Printf(
+								TEXT("%s %s %d"),
+								GetTagConditionTargetLabel(ConditionSpec.TagTarget),
+								GetTagConditionModeLabel(ConditionSpec.TagMode),
+								FMath::Max(1, ConditionSpec.TagStackCount));
+						}
+						else
+						{
+							BaseSummary += FString::Printf(
+								TEXT("%s %s"),
+								GetTagConditionModeLabel(ConditionSpec.TagMode),
+								GetTagConditionTargetLabel(ConditionSpec.TagTarget));
+						}
+					}
+					else if (ConditionSpec.TagMode == ESRFacilityTagConditionMode::StackCountAtLeast)
+					{
+						BaseSummary += FString::Printf(
+							TEXT("%s %s %d"),
+							GetResourceProcessTagLabel(ConditionSpec.ResourceTag),
+							GetTagConditionModeLabel(ConditionSpec.TagMode),
+							FMath::Max(1, ConditionSpec.TagStackCount));
+					}
+					else
+					{
+						BaseSummary += FString::Printf(
+							TEXT("%s %s"),
+							GetTagConditionModeLabel(ConditionSpec.TagMode),
+							GetResourceProcessTagLabel(ConditionSpec.ResourceTag));
+					}
+					break;
+				case ESRFacilityEffectConditionKind::TemperatureState:
+					BaseSummary += FString::Printf(
+						TEXT("%s %s"),
+						GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
+						GetFacilityTemperatureLabel(ConditionSpec.TemperatureState));
+					break;
+				case ESRFacilityEffectConditionKind::ProcessCountEquals:
+					BaseSummary += FString::Printf(
+						TEXT("%s = %d"),
+						GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
+						FMath::Max(0, ConditionSpec.ProcessCount));
+					break;
+				default:
+					BaseSummary += GetEffectConditionKindLabel(ConditionSpec.ConditionKind);
+					break;
+				}
+			}
+
+			if (EffectSpec.Conditions.Num() > VisibleConditionCount)
+			{
+				BaseSummary += FString::Printf(TEXT(" +%d"), EffectSpec.Conditions.Num() - VisibleConditionCount);
+			}
+			return BaseSummary;
+		};
+
+		FString EffectSummary;
+		switch (EffectSpec.EffectKind)
+		{
+		case ESRFacilityEffectKind::AdjustEnergy:
+			if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue)
+			{
+				EffectSummary = FString::Printf(TEXT("%s %+.2f"), GetEffectKindLabel(EffectSpec.EffectKind), EffectSpec.Value);
+			}
+			else if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagStackCount)
+			{
+				EffectSummary = FString::Printf(
+					TEXT("%s %s %s"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetEnergyValueSourceLabel(EffectSpec.EnergyValueSource),
+					GetResourceProcessTagLabel(EffectSpec.ResourceTag));
+			}
+			else
+			{
+				EffectSummary = FString::Printf(
+					TEXT("%s %s"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetEnergyValueSourceLabel(EffectSpec.EnergyValueSource));
+			}
+			break;
+		case ESRFacilityEffectKind::AdjustProcessLimit:
+			EffectSummary = EffectSpec.ProcessLimitMode == ESRFacilityProcessLimitAdjustmentMode::SetValue
+				? FString::Printf(TEXT("%s = %d"), GetEffectKindLabel(EffectSpec.EffectKind), FMath::RoundToInt(EffectSpec.Value))
+				: FString::Printf(TEXT("%s %+d"), GetEffectKindLabel(EffectSpec.EffectKind), FMath::RoundToInt(EffectSpec.Value));
+			break;
+		case ESRFacilityEffectKind::RemoveResource:
+			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
+			break;
+		case ESRFacilityEffectKind::AttachTag:
+			EffectSummary = EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::LastAttachedTag
+				? FString::Printf(
+					TEXT("%s %s x%d"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetAttachTagSourceLabel(EffectSpec.AttachTagSource),
+					FMath::Max(1, EffectSpec.Count))
+				: FString::Printf(
+					TEXT("%s %s x%d"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetResourceProcessTagLabel(EffectSpec.ResourceTag),
+					FMath::Max(1, EffectSpec.Count));
+			break;
+		case ESRFacilityEffectKind::ProduceWaste:
+			EffectSummary = FString::Printf(
+				TEXT("%s %s x%d"),
+				GetEffectKindLabel(EffectSpec.EffectKind),
+				IsValid(EffectSpec.ProducedResource.Get())
+					? *EffectSpec.ProducedResource->ResourceId.ToString()
+					: TEXT("None"),
+				FMath::Max(1, EffectSpec.Count));
+			break;
+		case ESRFacilityEffectKind::AdjustCellTemperature:
+			EffectSummary = FString::Printf(
+				TEXT("%s %+.2f R%d"),
+				GetEffectKindLabel(EffectSpec.EffectKind),
+				EffectSpec.Value,
+				FMath::Max(0, EffectSpec.TileRange));
+			break;
+		case ESRFacilityEffectKind::InvertHeat:
+		case ESRFacilityEffectKind::InvertTagEffects:
+			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
+			break;
+		case ESRFacilityEffectKind::DuplicateInputResource:
+			EffectSummary = FString::Printf(
+				TEXT("%s x%d"),
+				GetEffectKindLabel(EffectSpec.EffectKind),
+				FMath::Max(1, EffectSpec.Count));
+			break;
+		case ESRFacilityEffectKind::OverrideProcessTemperature:
+			EffectSummary = FString::Printf(
+				TEXT("%s %s"),
+				GetEffectKindLabel(EffectSpec.EffectKind),
+				GetFacilityTemperatureLabel(EffectSpec.ProcessTemperatureState));
+			break;
+		case ESRFacilityEffectKind::TriggerTagEffect:
+			EffectSummary = EffectSpec.TagTarget == ESRFacilityEffectTagTarget::SpecificTag
+				? FString::Printf(
+					TEXT("%s %s"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetResourceProcessTagLabel(EffectSpec.ResourceTag))
+				: FString::Printf(
+					TEXT("%s %s"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetEffectTagTargetLabel(EffectSpec.TagTarget));
+			break;
+		case ESRFacilityEffectKind::AdjustProcessTime:
+			EffectSummary = FString::Printf(
+				TEXT("%s %s %.2f"),
+				GetEffectKindLabel(EffectSpec.EffectKind),
+				GetProcessTimeModeLabel(EffectSpec.ProcessTimeMode),
+				EffectSpec.Value);
+			break;
+		case ESRFacilityEffectKind::RemoveTag:
+			EffectSummary = EffectSpec.TagTarget == ESRFacilityEffectTagTarget::SpecificTag
+				? FString::Printf(
+					TEXT("%s %s"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetResourceProcessTagLabel(EffectSpec.ResourceTag))
+				: FString::Printf(
+					TEXT("%s %s"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetEffectTagTargetLabel(EffectSpec.TagTarget));
+			break;
+		case ESRFacilityEffectKind::MultiplyEnergyByConsumedProcessLimit:
+			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
+			break;
+		case ESRFacilityEffectKind::ChangeResourceType:
+			EffectSummary = FString::Printf(
+				TEXT("%s %s"),
+				GetEffectKindLabel(EffectSpec.EffectKind),
+				IsValid(EffectSpec.TargetResource.Get())
+					? *EffectSpec.TargetResource->ResourceId.ToString()
+					: TEXT("None"));
+			break;
+		default:
+			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
+			break;
+		}
+		return AppendConditions(EffectSummary);
+	}
+
 	FString BuildEffectsSummary(const USRFacilityDataAsset* FacilityDataAsset)
 	{
 		if (!IsValid(FacilityDataAsset))
@@ -678,9 +1058,8 @@ namespace
 		{
 			const FSRFacilityEffectSpec& EffectSpec = FacilityDataAsset->Effects[EffectIndex];
 			Summary += FString::Printf(
-				TEXT("\n- %s %.2f"),
-				GetEffectKindLabel(EffectSpec.EffectKind),
-				EffectSpec.Value);
+				TEXT("\n- %s"),
+				*BuildFacilityEffectSummary(EffectSpec));
 		}
 		if (FacilityDataAsset->Effects.Num() > VisibleCount)
 		{
@@ -986,6 +1365,7 @@ namespace
 		TArray<TObjectPtr<USRHubRouteLaunchAction>>& LaunchActions,
 		TArray<TObjectPtr<USRHubRouteRemovalAction>>& RemovalActions,
 		TArray<TObjectPtr<USRHubRouteDebugOrbitAction>>& DebugOrbitActions,
+		TArray<TObjectPtr<USRHubStarFuelMissileLaunchAction>>& MissileLaunchActions,
 		TArray<TObjectPtr<USRHubRouteSettingAction>>& SettingActions)
 	{
 		if (ButtonBox)
@@ -997,6 +1377,7 @@ namespace
 		LaunchActions.Reset();
 		RemovalActions.Reset();
 		DebugOrbitActions.Reset();
+		MissileLaunchActions.Reset();
 		SettingActions.Reset();
 	}
 
@@ -1166,6 +1547,44 @@ namespace
 		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
 		{
 			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 10.0f, 0.0f));
+			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddHubStarFuelMissileLaunchButton(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ButtonBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubStarFuelMissileLaunchAction>>& OutActions,
+		bool bEnabled)
+	{
+		if (!WidgetTree || !ButtonBox || !OwnerWidget)
+		{
+			return;
+		}
+
+		UButton* Button = ConstructDebugInputButton(
+			WidgetTree,
+			NAME_None,
+			NSLOCTEXT("StarRoversFacilityControl", "HubStarFuelMissileLaunchButton", "Launch\nMissile"));
+		Button->SetBackgroundColor(bEnabled
+			? FLinearColor(0.185f, 0.095f, 0.070f, 0.95f)
+			: FLinearColor(0.060f, 0.066f, 0.072f, 0.95f));
+		Button->SetIsEnabled(bEnabled);
+
+		USRHubStarFuelMissileLaunchAction* Action = NewObject<USRHubStarFuelMissileLaunchAction>(OwnerWidget);
+		Action->Initialize(OwnerWidget, Button);
+		OutActions.Add(Action);
+		Button->OnClicked.AddDynamic(Action, &USRHubStarFuelMissileLaunchAction::HandleClicked);
+
+		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		ButtonSizeBox->SetWidthOverride(112.0f);
+		ButtonSizeBox->SetHeightOverride(54.0f);
+		ButtonSizeBox->AddChild(Button);
+
+		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
+		{
+			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 12.0f, 0.0f));
 			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 		}
 	}
@@ -1515,6 +1934,35 @@ bool USRHubRouteDebugOrbitAction::TryHandleManualClick(const FVector2D& ScreenPo
 	return true;
 }
 
+void USRHubStarFuelMissileLaunchAction::Initialize(USRFacilityControlWidget* InOwnerWidget, UButton* InButton)
+{
+	OwnerWidget = InOwnerWidget;
+	Button = InButton;
+}
+
+void USRHubStarFuelMissileLaunchAction::HandleClicked()
+{
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubStarFuelMissileLaunch OnClicked"));
+
+	if (IsValid(OwnerWidget))
+	{
+		OwnerWidget->LaunchStarFuelMissileFromFocusedHub();
+	}
+}
+
+bool USRHubStarFuelMissileLaunchAction::TryHandleManualClick(const FVector2D& ScreenPosition)
+{
+	if (!IsValid(Button.Get())
+		|| !Button->GetIsEnabled()
+		|| !IsWidgetUnderScreenPosition(Button.Get(), ScreenPosition))
+	{
+		return false;
+	}
+
+	HandleClicked();
+	return true;
+}
+
 void USRHubRouteSettingAction::InitializeMaxCargoStackCount(
 	USRFacilityControlWidget* InOwnerWidget,
 	FName InRouteId,
@@ -1823,6 +2271,15 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 		}
 	}
 
+	for (USRHubStarFuelMissileLaunchAction* HubStarFuelMissileLaunchAction : HubStarFuelMissileLaunchActions)
+	{
+		if (IsValid(HubStarFuelMissileLaunchAction) && HubStarFuelMissileLaunchAction->TryHandleManualClick(ScreenPosition))
+		{
+			SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubStarFuelMissileLaunchButton"));
+			return true;
+		}
+	}
+
 	for (USRHubRouteSettingAction* HubRouteSettingAction : HubRouteSettingActions)
 	{
 		if (IsValid(HubRouteSettingAction) && HubRouteSettingAction->TryHandleManualClick(ScreenPosition))
@@ -1999,6 +2456,42 @@ bool USRFacilityControlWidget::LaunchDebugLocalOrbitRoute()
 	HubRoutePanelSignature.Reset();
 	RefreshControlText();
 	return bCreated;
+}
+
+bool USRFacilityControlWidget::LaunchStarFuelMissileFromFocusedHub()
+{
+	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
+	if (!IsValid(FacilityNetwork) || !FacilityNetwork->IsHubFacility(FocusedOccupantId))
+	{
+		LastHubRouteStatus = TEXT("Missile failed: selected facility is not a Hub.");
+		RefreshControlText();
+		return false;
+	}
+
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = GetSpaceLogisticsSubsystem();
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		LastHubRouteStatus = TEXT("Missile failed: logistics subsystem unavailable.");
+		RefreshControlText();
+		return false;
+	}
+
+	FSRSpaceLogisticsHubEndpoint SourceHub;
+	if (!SpaceLogisticsSubsystem->GetHubEndpoint(FocusedActor.Get(), FocusedOccupantId, SourceHub))
+	{
+		LastHubRouteStatus = TEXT("Missile failed: source Hub endpoint not found.");
+		RefreshControlText();
+		return false;
+	}
+
+	FName MissileId = NAME_None;
+	const bool bLaunched = SpaceLogisticsSubsystem->LaunchStarFuelMissileFromHub(SourceHub, MissileId);
+	LastHubRouteStatus = bLaunched
+		? FString::Printf(TEXT("Missile launched: %s"), *MissileId.ToString())
+		: TEXT("Missile failed: no positive-energy cargo or target star unavailable.");
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return bLaunched;
 }
 
 bool USRFacilityControlWidget::RemoveHubRoute(FName RouteId)
@@ -2819,6 +3312,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 				HubRouteLaunchActions,
 				HubRouteRemovalActions,
 				HubRouteDebugOrbitActions,
+				HubStarFuelMissileLaunchActions,
 				HubRouteSettingActions);
 		}
 		return;
@@ -2841,6 +3335,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 				HubRouteLaunchActions,
 				HubRouteRemovalActions,
 				HubRouteDebugOrbitActions,
+				HubStarFuelMissileLaunchActions,
 				HubRouteSettingActions);
 		}
 		return;
@@ -2860,6 +3355,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 				HubRouteLaunchActions,
 				HubRouteRemovalActions,
 				HubRouteDebugOrbitActions,
+				HubStarFuelMissileLaunchActions,
 				HubRouteSettingActions);
 		}
 		return;
@@ -2870,6 +3366,14 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 
 	TArray<FSRSpaceLogisticsHubRoute> HubRoutes;
 	SpaceLogisticsSubsystem->GetHubRoutes(HubRoutes);
+
+	TArray<FSRSpaceLogisticsStarFuelMissile> StarFuelMissiles;
+	SpaceLogisticsSubsystem->GetStarFuelMissiles(StarFuelMissiles);
+
+	ASRStar* PrimaryStar = ResolvePrimaryStarForHubUI(World);
+	const int32 StarFuelMissileCargoStackCount = CountAvailableStarFuelMissileCargoStacks(FacilityInstance, PrimaryStar);
+	const bool bCanLaunchStarFuelMissile = IsValid(PrimaryStar) && StarFuelMissileCargoStackCount > 0;
+	const int32 ActiveMissileCount = CountActiveStarFuelMissilesForHub(StarFuelMissiles, SourceHub);
 
 	TArray<FName> AvailableCargoResourceIds;
 	if (IsValid(FacilityNetwork))
@@ -2927,22 +3431,29 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		}
 	}
 
-	HubRouteTextBlock->SetText(FText::FromString(FString::Printf(TEXT("Hub Routes (%d active)"), ConnectedRouteCount)));
+	HubRouteTextBlock->SetText(FText::FromString(FString::Printf(
+		TEXT("Hub Routes (%d active, %d missiles)"),
+		ConnectedRouteCount,
+		ActiveMissileCount)));
 	const FString StatusText = !LastHubRouteStatus.IsEmpty()
 		? LastHubRouteStatus
 		: (bHasSelectedHubRouteDestination
 			? FString::Printf(TEXT("Destination selected: %s. Press Launch Route."), *BuildCelestialBodyDisplayName(SelectedHubRouteDestination.BodyActor.Get()))
 			: FString::Printf(
 				TEXT("%s"),
-				DestinationCount > 0 ? TEXT("Select destination Hub.") : TEXT("No destination Hub available.")));
+				DestinationCount > 0
+					? (bCanLaunchStarFuelMissile ? TEXT("Select destination Hub or launch fuel missile.") : TEXT("Select destination Hub."))
+					: (bCanLaunchStarFuelMissile ? TEXT("Fuel missile ready.") : TEXT("No destination Hub available."))));
 	HubRouteStatusTextBlock->SetText(FText::FromString(StatusText));
 
 	FString NewSignature = FString::Printf(
-		TEXT("Hub:%s:%s:%d:%d:%s:Selected:%s:%s"),
+		TEXT("Hub:%s:%s:%d:%d:%d:%d:%s:Selected:%s:%s"),
 		*GetNameSafe(SourceHub.BodyActor.Get()),
 		*SourceHub.HubOccupantId.ToString(),
 		DestinationCount,
 		ConnectedRouteCount,
+		ActiveMissileCount,
+		StarFuelMissileCargoStackCount,
 		*StatusText,
 		bHasSelectedHubRouteDestination ? *GetNameSafe(SelectedHubRouteDestination.BodyActor.Get()) : TEXT("None"),
 		bHasSelectedHubRouteDestination ? *SelectedHubRouteDestination.HubOccupantId.ToString() : TEXT("None"));
@@ -2996,11 +3507,20 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		HubRouteLaunchActions,
 		HubRouteRemovalActions,
 		HubRouteDebugOrbitActions,
+		HubStarFuelMissileLaunchActions,
 		HubRouteSettingActions);
 	HubRouteDestinationActions.Reserve(DestinationCount);
 	HubRouteLaunchActions.Reserve(bHasSelectedHubRouteDestination ? 1 : 0);
 	HubRouteRemovalActions.Reserve(ConnectedRouteCount);
+	HubStarFuelMissileLaunchActions.Reserve(1);
 	HubRouteSettingActions.Reserve(ConnectedRouteCount * (AvailableCargoResourceIds.Num() + 3));
+
+	AddHubStarFuelMissileLaunchButton(
+		WidgetTree,
+		HubDestinationButtonBox,
+		this,
+		HubStarFuelMissileLaunchActions,
+		bCanLaunchStarFuelMissile);
 
 	for (const FSRSpaceLogisticsHubEndpoint& HubEndpoint : HubEndpoints)
 	{
@@ -3141,6 +3661,7 @@ void USRFacilityControlWidget::RefreshControlText()
 				HubRouteLaunchActions,
 				HubRouteRemovalActions,
 				HubRouteDebugOrbitActions,
+				HubStarFuelMissileLaunchActions,
 				HubRouteSettingActions);
 			HubRoutePanelSignature.Reset();
 		}

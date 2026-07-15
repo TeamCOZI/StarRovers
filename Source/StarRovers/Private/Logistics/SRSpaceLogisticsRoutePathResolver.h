@@ -33,6 +33,18 @@ public:
 		FVector& OutTargetLocation,
 		FVector& OutTravelDirection);
 
+	static float ResolveStarFuelMissileMotionProgressRatio(
+		const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		const FSRSpaceLogisticsStarFuelMissile& Missile,
+		float TravelProgressSeconds);
+
+	static bool ResolveStarFuelMissileVisualWorldLocation(
+		const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		const FSRSpaceLogisticsStarFuelMissile& Missile,
+		FVector& OutLocation,
+		FVector& OutTargetLocation,
+		FVector& OutTravelDirection);
+
 	static float EstimateRoutePathLength(
 		const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 		const FSRSpaceLogisticsHubRoute& HubRoute,
@@ -48,4 +60,8 @@ public:
 	static float ResolveTravelDurationSeconds(
 		const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 		const FSRSpaceLogisticsHubRoute& HubRoute);
+
+	static float ResolveStarFuelMissileTravelDurationSeconds(
+		const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		const FSRSpaceLogisticsStarFuelMissile& Missile);
 };
