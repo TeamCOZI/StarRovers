@@ -20,6 +20,7 @@ namespace
 		bool bHasLastAttachedTag = false;
 		ESRResourceProcessTag LastAttachedTag = ESRResourceProcessTag::Responsive;
 		int32 EnergyChangeCount = 0;
+		double TagEffectEnergyChangeAmount = 0.0;
 	};
 
 	double ApplyTagEffectDirection(double EnergyDelta, const FSRFacilityEffectContext& EffectContext)
@@ -29,11 +30,13 @@ namespace
 
 	FSRFacilityEffectContext MakeEffectContext(
 		const StarRovers::FacilityProcessing::FSRFacilityProcessContext& ProcessContext,
-		int32 InitialEnergyChangeCount = 0)
+		int32 InitialEnergyChangeCount = 0,
+		double InitialTagEffectEnergyChangeAmount = 0.0)
 	{
 		FSRFacilityEffectContext EffectContext;
 		EffectContext.bInvertTagEffects = ProcessContext.bInvertTagEffects;
 		EffectContext.EnergyChangeCount = FMath::Max(0, InitialEnergyChangeCount);
+		EffectContext.TagEffectEnergyChangeAmount = FMath::Max(0.0, InitialTagEffectEnergyChangeAmount);
 		return EffectContext;
 	}
 
@@ -250,6 +253,18 @@ namespace
 		return nullptr;
 	}
 
+	int32 FindFirstResourceIndex(const TArray<FSRResourceInstance>& ResourceInstances)
+	{
+		for (int32 ResourceIndex = 0; ResourceIndex < ResourceInstances.Num(); ++ResourceIndex)
+		{
+			if (!ResourceInstances[ResourceIndex].ResourceId.IsNone())
+			{
+				return ResourceIndex;
+			}
+		}
+		return INDEX_NONE;
+	}
+
 	float ResolveFacilityProcessSeconds(
 		const FSRFacilityInstance& FacilityInstance,
 		ESRFacilityTemperatureState EffectiveTemperatureState,
@@ -459,6 +474,8 @@ namespace
 			return static_cast<double>(CountTagStacks(ResourceInstance, EffectSpec.ResourceTag));
 		case ESRFacilityEnergyAdjustmentValueSource::EnergyChangeCount:
 			return static_cast<double>(FMath::Max(0, EffectContext.EnergyChangeCount));
+		case ESRFacilityEnergyAdjustmentValueSource::TagEffectEnergyChangeAmount:
+			return EffectContext.TagEffectEnergyChangeAmount;
 		case ESRFacilityEnergyAdjustmentValueSource::FixedValue:
 		default:
 			return EffectSpec.Value;
@@ -871,8 +888,96 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 		return;
 	}
 
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Synthesize)
+	{
+		int32 InitialEnergyChangeCount = 0;
+		TArray<FSRResourceInstance> ProcessedResources;
+		TArray<double> TagEffectEnergyChangeAmounts;
+		BuildProcessedResourcesBeforeFacilityEffects(
+			FacilityInstance,
+			InputResources,
+			ProcessedResources,
+			InitialEnergyChangeCount,
+			TagEffectEnergyChangeAmounts);
+
+		TArray<FSRResourceInstance> SynthesisResources;
+		SynthesisResources.Reserve(ProcessedResources.Num());
+		TArray<FSRResourceInstance> AdditionalOutputs;
+		AdditionalOutputs.Reserve(CountAdditionalOutputResourcesForInputCount(FacilityDataAsset, InputResources.Num()));
+		for (int32 ResourceIndex = 0; ResourceIndex < ProcessedResources.Num(); ++ResourceIndex)
+		{
+			const FSRResourceInstance& ProcessedResource = ProcessedResources[ResourceIndex];
+			if (ProcessedResource.ResourceId.IsNone())
+			{
+				continue;
+			}
+
+			FSRResourceInstance SynthesisResource = ProcessedResource;
+			bool bHasSynthesisResource = true;
+			TArray<FSRResourceInstance> IgnoredAdditionalOutputs;
+			ApplyFacilityEffects(
+				FacilityInstance,
+				InputResources,
+				SynthesisResource,
+				bHasSynthesisResource,
+				IgnoredAdditionalOutputs,
+				InitialEnergyChangeCount,
+				TagEffectEnergyChangeAmounts.IsValidIndex(ResourceIndex) ? TagEffectEnergyChangeAmounts[ResourceIndex] : 0.0,
+				true,
+				false);
+			if (bHasSynthesisResource && !SynthesisResource.ResourceId.IsNone())
+			{
+				SynthesisResources.Add(SynthesisResource);
+			}
+		}
+
+		FSRResourceInstance BaselineOutputResource = ProcessedResources.IsEmpty()
+			? FSRResourceInstance()
+			: BuildSynthesisProductResource(ProcessedResources);
+		FSRResourceInstance OutputResource = SynthesisResources.IsEmpty()
+			? FSRResourceInstance()
+			: BuildSynthesisProductResource(SynthesisResources);
+		bool bHasPrimaryResource = !OutputResource.ResourceId.IsNone();
+		ApplyFacilityEffects(
+			FacilityInstance,
+			InputResources,
+			OutputResource,
+			bHasPrimaryResource,
+			AdditionalOutputs,
+			InitialEnergyChangeCount,
+			0.0,
+			false,
+			true);
+
+		if (OutBaselinePrimaryResource)
+		{
+			*OutBaselinePrimaryResource = BaselineOutputResource;
+		}
+		const int32 OutputCount = ResolvePrimaryOutputCountForAdditionalOutputs(
+			FacilityInstance,
+			bHasPrimaryResource,
+			AdditionalOutputs.Num());
+		if (OutPrimaryOutputCount)
+		{
+			*OutPrimaryOutputCount = OutputCount;
+		}
+		OutOutputResources.Reserve(OutputCount + AdditionalOutputs.Num());
+		for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
+		{
+			OutOutputResources.Add(OutputResource);
+		}
+		OutOutputResources.Append(AdditionalOutputs);
+		return;
+	}
+
 	int32 InitialEnergyChangeCount = 0;
-	FSRResourceInstance OutputResource = BuildBaseOutputResource(FacilityInstance, InputResources, InitialEnergyChangeCount);
+	double InitialTagEffectEnergyChangeAmount = 0.0;
+	FSRResourceInstance OutputResource = BuildBaseOutputResource(
+		FacilityInstance,
+		InputResources,
+		InitialEnergyChangeCount,
+		InitialTagEffectEnergyChangeAmount);
 	BuildOutputResourcesFromPrimaryResource(
 		FacilityInstance,
 		InputResources,
@@ -880,7 +985,8 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 		OutOutputResources,
 		OutPrimaryOutputCount,
 		OutBaselinePrimaryResource,
-		InitialEnergyChangeCount);
+		InitialEnergyChangeCount,
+		InitialTagEffectEnergyChangeAmount);
 }
 
 void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
@@ -890,7 +996,8 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 	TArray<FSRResourceInstance>& OutOutputResources,
 	int32* OutPrimaryOutputCount,
 	FSRResourceInstance* OutBaselinePrimaryResource,
-	int32 InitialEnergyChangeCount)
+	int32 InitialEnergyChangeCount,
+	double InitialTagEffectEnergyChangeAmount)
 {
 	OutOutputResources.Reset();
 	if (OutPrimaryOutputCount)
@@ -922,7 +1029,8 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 		OutputResource,
 		bHasPrimaryResource,
 		AdditionalOutputs,
-		InitialEnergyChangeCount);
+		InitialEnergyChangeCount,
+		InitialTagEffectEnergyChangeAmount);
 
 	const int32 OutputCount = ResolvePrimaryOutputCountForAdditionalOutputs(
 		FacilityInstance,
@@ -940,19 +1048,23 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 	OutOutputResources.Append(AdditionalOutputs);
 }
 
-FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
+void FSRFacilityOutputResourceBuilder::BuildProcessedResourcesBeforeFacilityEffects(
 	const FSRFacilityInstance& FacilityInstance,
 	const TArray<FSRResourceInstance>& ConsumedResources,
-	int32& OutEnergyChangeCount)
+	TArray<FSRResourceInstance>& OutProcessedResources,
+	int32& OutEnergyChangeCount,
+	TArray<double>& OutTagEffectEnergyChangeAmounts)
 {
 	OutEnergyChangeCount = 0;
+	OutProcessedResources = ConsumedResources;
+	OutTagEffectEnergyChangeAmounts.Reset();
+	OutTagEffectEnergyChangeAmounts.SetNumZeroed(OutProcessedResources.Num());
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-	if (!IsValid(FacilityDataAsset) || ConsumedResources.IsEmpty())
+	if (!IsValid(FacilityDataAsset) || OutProcessedResources.IsEmpty())
 	{
-		return !ConsumedResources.IsEmpty() ? ConsumedResources[0] : FSRResourceInstance();
+		return;
 	}
 
-	TArray<FSRResourceInstance> ProcessedResources = ConsumedResources;
 	const FSRResourceInstance* ConditionResource = FindFirstResource(ConsumedResources);
 	const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
 		StarRovers::FacilityProcessing::ResolveProcessContext(
@@ -961,38 +1073,83 @@ FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
 		ConditionResource);
 	FSRFacilityEffectContext PreProcessingEffectContext = MakeEffectContext(ProcessContext);
 	const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
-	ConsumeEnergyInputsForFacilityPass(ProcessedResources, EffectiveTemperatureState, PreProcessingEffectContext);
+	ConsumeEnergyInputsForFacilityPass(OutProcessedResources, EffectiveTemperatureState, PreProcessingEffectContext);
 	const int32 ChargeStacksToAdd = ResolveChargeStacksToAddForProcessingPass(
 		FacilityInstance,
 		EffectiveTemperatureState,
 		ConditionResource);
-	for (FSRResourceInstance& ProcessedResource : ProcessedResources)
+	for (int32 ResourceIndex = 0; ResourceIndex < OutProcessedResources.Num(); ++ResourceIndex)
 	{
+		FSRResourceInstance& ProcessedResource = OutProcessedResources[ResourceIndex];
+		const double EnergyBeforeTagEffects = ProcessedResource.EnergyValue;
 		ApplyTagEffects(EffectiveTemperatureState, ChargeStacksToAdd, PreProcessingEffectContext, ProcessedResource);
+		OutTagEffectEnergyChangeAmounts[ResourceIndex] = FMath::Abs(ProcessedResource.EnergyValue - EnergyBeforeTagEffects);
 	}
 	OutEnergyChangeCount = PreProcessingEffectContext.EnergyChangeCount;
+}
+
+FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
+	const FSRFacilityInstance& FacilityInstance,
+	const TArray<FSRResourceInstance>& ConsumedResources,
+	int32& OutEnergyChangeCount,
+	double& OutTagEffectEnergyChangeAmount)
+{
+	OutEnergyChangeCount = 0;
+	OutTagEffectEnergyChangeAmount = 0.0;
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+	if (!IsValid(FacilityDataAsset) || ConsumedResources.IsEmpty())
+	{
+		return !ConsumedResources.IsEmpty() ? ConsumedResources[0] : FSRResourceInstance();
+	}
+
+	TArray<FSRResourceInstance> ProcessedResources;
+	TArray<double> TagEffectEnergyChangeAmounts;
+	BuildProcessedResourcesBeforeFacilityEffects(
+		FacilityInstance,
+		ConsumedResources,
+		ProcessedResources,
+		OutEnergyChangeCount,
+		TagEffectEnergyChangeAmounts);
 
 	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Process)
 	{
-		if (const FSRResourceInstance* EnergyResource = FindFirstResource(ProcessedResources))
+		const int32 ResourceIndex = FindFirstResourceIndex(ProcessedResources);
+		if (ProcessedResources.IsValidIndex(ResourceIndex))
 		{
-			return *EnergyResource;
+			OutTagEffectEnergyChangeAmount = TagEffectEnergyChangeAmounts.IsValidIndex(ResourceIndex)
+				? TagEffectEnergyChangeAmounts[ResourceIndex]
+				: 0.0;
+			return ProcessedResources[ResourceIndex];
 		}
+		OutTagEffectEnergyChangeAmount = TagEffectEnergyChangeAmounts.IsValidIndex(0)
+			? TagEffectEnergyChangeAmounts[0]
+			: 0.0;
 		return ProcessedResources[0];
 	}
 
 	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Split)
 	{
 		const int32 PrimaryOutputCount = FMath::Max(1, ResolvePrimaryOutputCount(FacilityInstance));
-		if (const FSRResourceInstance* EnergyResource = FindFirstResource(ProcessedResources))
+		const int32 ResourceIndex = FindFirstResourceIndex(ProcessedResources);
+		if (ProcessedResources.IsValidIndex(ResourceIndex))
 		{
-			FSRResourceInstance OutputResource = *EnergyResource;
-			OutputResource.EnergyValue = EnergyResource->EnergyValue / static_cast<double>(PrimaryOutputCount);
+			OutTagEffectEnergyChangeAmount = TagEffectEnergyChangeAmounts.IsValidIndex(ResourceIndex)
+				? TagEffectEnergyChangeAmounts[ResourceIndex] / static_cast<double>(PrimaryOutputCount)
+				: 0.0;
+			FSRResourceInstance OutputResource = ProcessedResources[ResourceIndex];
+			OutputResource.EnergyValue = ProcessedResources[ResourceIndex].EnergyValue / static_cast<double>(PrimaryOutputCount);
 			return OutputResource;
 		}
+		OutTagEffectEnergyChangeAmount = TagEffectEnergyChangeAmounts.IsValidIndex(0)
+			? TagEffectEnergyChangeAmounts[0] / static_cast<double>(PrimaryOutputCount)
+			: 0.0;
 		return ProcessedResources[0];
 	}
 
+	for (const double TagEffectEnergyChangeAmount : TagEffectEnergyChangeAmounts)
+	{
+		OutTagEffectEnergyChangeAmount += FMath::Max(0.0, TagEffectEnergyChangeAmount);
+	}
 	return BuildSynthesisProductResource(ProcessedResources);
 }
 
@@ -1002,7 +1159,10 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 	FSRResourceInstance& ResourceInstance,
 	bool& bHasPrimaryResource,
 	TArray<FSRResourceInstance>& OutAdditionalOutputs,
-	int32 InitialEnergyChangeCount)
+	int32 InitialEnergyChangeCount,
+	double InitialTagEffectEnergyChangeAmount,
+	bool bApplyResourceEffects,
+	bool bApplyAdditionalOutputEffects)
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	if (!IsValid(FacilityDataAsset))
@@ -1017,7 +1177,10 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 			FacilityInstance.TemperatureState,
 			bHasPrimaryResource ? &ResourceInstance : nullptr,
 			bHasPrimaryResource ? &BaselineResource : nullptr);
-	FSRFacilityEffectContext EffectContext = MakeEffectContext(ProcessContext, InitialEnergyChangeCount);
+	FSRFacilityEffectContext EffectContext = MakeEffectContext(
+		ProcessContext,
+		InitialEnergyChangeCount,
+		InitialTagEffectEnergyChangeAmount);
 	if (bHasPrimaryResource)
 	{
 		SeedLastAttachedTagFromResource(EffectContext, ResourceInstance);
@@ -1040,6 +1203,10 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 		switch (EffectSpec.EffectKind)
 		{
 		case ESRFacilityEffectKind::AdjustEnergy:
+			if (!bApplyResourceEffects)
+			{
+				break;
+			}
 			if (bHasPrimaryResource)
 			{
 				const double EnergyAdjustmentValue = ResolveEnergyAdjustmentValue(
@@ -1050,6 +1217,10 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 				{
 					MultiplyEnergyValue(ResourceInstance, EnergyAdjustmentValue, EffectContext);
 				}
+				else if (EffectSpec.EnergyAdjustmentMode == ESRFacilityEnergyAdjustmentMode::Subtract)
+				{
+					AddEnergyDelta(ResourceInstance, -EnergyAdjustmentValue, EffectContext);
+				}
 				else
 				{
 					AddEnergyDelta(ResourceInstance, EnergyAdjustmentValue, EffectContext);
@@ -1057,6 +1228,10 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 			}
 			break;
 		case ESRFacilityEffectKind::AdjustProcessLimit:
+			if (!bApplyResourceEffects)
+			{
+				break;
+			}
 			if (bHasPrimaryResource)
 			{
 				const int32 TargetProcessLimit = EffectSpec.ProcessLimitMode == ESRFacilityProcessLimitAdjustmentMode::SetValue
@@ -1069,9 +1244,17 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 			}
 			break;
 		case ESRFacilityEffectKind::RemoveResource:
+			if (!bApplyResourceEffects)
+			{
+				break;
+			}
 			bHasPrimaryResource = false;
 			break;
 		case ESRFacilityEffectKind::AttachTag:
+			if (!bApplyResourceEffects)
+			{
+				break;
+			}
 			if (bHasPrimaryResource)
 			{
 				ESRResourceProcessTag TagToAttach = EffectSpec.ResourceTag;
@@ -1090,6 +1273,10 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 			}
 			break;
 		case ESRFacilityEffectKind::ProduceWaste:
+			if (!bApplyAdditionalOutputEffects)
+			{
+				break;
+			}
 			if (IsValid(EffectSpec.ProducedResource.Get()))
 			{
 				for (int32 OutputIndex = 0; OutputIndex < Count; ++OutputIndex)
@@ -1105,6 +1292,10 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 		case ESRFacilityEffectKind::InvertTagEffects:
 			break;
 		case ESRFacilityEffectKind::DuplicateInputResource:
+			if (!bApplyAdditionalOutputEffects)
+			{
+				break;
+			}
 			for (int32 DuplicateIndex = 0; DuplicateIndex < Count; ++DuplicateIndex)
 			{
 				for (const FSRResourceInstance& InputResource : InputResources)
@@ -1119,6 +1310,10 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 		case ESRFacilityEffectKind::OverrideProcessTemperature:
 			break;
 		case ESRFacilityEffectKind::TriggerTagEffect:
+			if (!bApplyResourceEffects)
+			{
+				break;
+			}
 			if (bHasPrimaryResource)
 			{
 				TriggerTagsForEffect(
@@ -1132,12 +1327,20 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 		case ESRFacilityEffectKind::AdjustProcessTime:
 			break;
 		case ESRFacilityEffectKind::RemoveTag:
+			if (!bApplyResourceEffects)
+			{
+				break;
+			}
 			if (bHasPrimaryResource)
 			{
 				RemoveTagsForEffect(ResourceInstance, EffectSpec, EffectContext);
 			}
 			break;
 		case ESRFacilityEffectKind::MultiplyEnergyByConsumedProcessLimit:
+			if (!bApplyResourceEffects)
+			{
+				break;
+			}
 			if (bHasPrimaryResource)
 			{
 				MultiplyEnergyValue(
@@ -1147,6 +1350,10 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 			}
 			break;
 		case ESRFacilityEffectKind::ChangeResourceType:
+			if (!bApplyResourceEffects)
+			{
+				break;
+			}
 			if (bHasPrimaryResource && IsValid(EffectSpec.TargetResource.Get()))
 			{
 				ResourceInstance.ResourceDataAsset = EffectSpec.TargetResource;

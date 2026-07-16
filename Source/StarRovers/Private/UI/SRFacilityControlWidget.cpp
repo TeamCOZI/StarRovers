@@ -173,6 +173,8 @@ namespace
 			return TEXT("Tag Stack");
 		case ESRFacilityEnergyAdjustmentValueSource::EnergyChangeCount:
 			return TEXT("Energy Changes");
+		case ESRFacilityEnergyAdjustmentValueSource::TagEffectEnergyChangeAmount:
+			return TEXT("Tag Energy Change");
 		default:
 			return TEXT("Value");
 		}
@@ -180,7 +182,16 @@ namespace
 
 	const TCHAR* GetEnergyAdjustmentModeLabel(ESRFacilityEnergyAdjustmentMode AdjustmentMode)
 	{
-		return AdjustmentMode == ESRFacilityEnergyAdjustmentMode::Multiply ? TEXT("*") : TEXT("+");
+		switch (AdjustmentMode)
+		{
+		case ESRFacilityEnergyAdjustmentMode::Multiply:
+			return TEXT("*");
+		case ESRFacilityEnergyAdjustmentMode::Subtract:
+			return TEXT("-");
+		case ESRFacilityEnergyAdjustmentMode::Add:
+		default:
+			return TEXT("+");
+		}
 	}
 
 	const TCHAR* GetProcessTimeModeLabel(ESRFacilityProcessTimeAdjustmentMode ProcessTimeMode)
@@ -243,6 +254,11 @@ namespace
 		default:
 			return TEXT("Tag Target");
 		}
+	}
+
+	const TCHAR* GetConditionLogicLabel(ESRFacilityConditionLogic ConditionLogic)
+	{
+		return ConditionLogic == ESRFacilityConditionLogic::Or ? TEXT("||") : TEXT("&&");
 	}
 
 	const TCHAR* GetHubRoutePhaseLabel(ESRSpaceLogisticsHubRoutePhase Phase)
@@ -805,11 +821,9 @@ namespace
 		}
 
 		return FString::Printf(
-			TEXT("Mining Target\nDeposit: %s\nResource: %s\nRemaining: %d / %d"),
+			TEXT("Mining Target\nDeposit: %s\nResource: %s\nRemaining: Infinite"),
 			ResourceDeposit.StructureId.IsNone() ? *ResourceDeposit.OccupantId.ToString() : *ResourceDeposit.StructureId.ToString(),
-			*BuildResourceDataAssetDisplayName(ResourceDeposit.ResourceDataAsset.Get()),
-			FMath::Max(0, ResourceDeposit.RemainingAmount),
-			FMath::Max(0, ResourceDeposit.TotalAmount));
+			*BuildResourceDataAssetDisplayName(ResourceDeposit.ResourceDataAsset.Get()));
 	}
 
 	bool HasAvailableInputPortCapacity(const FSRFacilityInstance& FacilityInstance)
@@ -850,96 +864,141 @@ namespace
 
 	FString BuildFacilityEffectSummary(const FSRFacilityEffectSpec& EffectSpec)
 	{
-		auto AppendConditions = [&EffectSpec](FString BaseSummary)
+		auto BuildConditionSummary = [](const FSRFacilityEffectConditionSpec& ConditionSpec)
 		{
-			if (EffectSpec.Conditions.IsEmpty())
+			switch (ConditionSpec.ConditionKind)
+			{
+			case ESRFacilityEffectConditionKind::EnergyAtLeast:
+			case ESRFacilityEffectConditionKind::EnergyAtMost:
+			case ESRFacilityEffectConditionKind::EnergyGreaterThan:
+			case ESRFacilityEffectConditionKind::EnergyLessThan:
+				return FString::Printf(
+					TEXT("%s %s"),
+					GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
+					*FormatFacilityEnergyDisplayValue(ConditionSpec.EnergyValue));
+			case ESRFacilityEffectConditionKind::EnergyIncreased:
+			case ESRFacilityEffectConditionKind::EnergyDecreased:
+			case ESRFacilityEffectConditionKind::PrimeEnergy:
+				return FString(GetEffectConditionKindLabel(ConditionSpec.ConditionKind));
+			case ESRFacilityEffectConditionKind::Tag:
+				if (ConditionSpec.TagTarget == ESRFacilityTagConditionTarget::AllTags)
+				{
+					if (ConditionSpec.TagMode == ESRFacilityTagConditionMode::StackCountAtLeast)
+					{
+						return FString::Printf(
+							TEXT("%s %s %d"),
+							GetTagConditionTargetLabel(ConditionSpec.TagTarget),
+							GetTagConditionModeLabel(ConditionSpec.TagMode),
+							FMath::Max(1, ConditionSpec.TagStackCount));
+					}
+					return FString::Printf(
+						TEXT("%s %s"),
+						GetTagConditionModeLabel(ConditionSpec.TagMode),
+						GetTagConditionTargetLabel(ConditionSpec.TagTarget));
+				}
+				if (ConditionSpec.TagMode == ESRFacilityTagConditionMode::StackCountAtLeast)
+				{
+					return FString::Printf(
+						TEXT("%s %s %d"),
+						GetResourceProcessTagLabel(ConditionSpec.ResourceTag),
+						GetTagConditionModeLabel(ConditionSpec.TagMode),
+						FMath::Max(1, ConditionSpec.TagStackCount));
+				}
+				return FString::Printf(
+					TEXT("%s %s"),
+					GetTagConditionModeLabel(ConditionSpec.TagMode),
+					GetResourceProcessTagLabel(ConditionSpec.ResourceTag));
+			case ESRFacilityEffectConditionKind::TemperatureState:
+				return FString::Printf(
+					TEXT("%s %s"),
+					GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
+					GetFacilityTemperatureLabel(ConditionSpec.TemperatureState));
+			case ESRFacilityEffectConditionKind::ProcessCountEquals:
+				return FString::Printf(
+					TEXT("%s = %d"),
+					GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
+					FMath::Max(0, ConditionSpec.ProcessCount));
+			default:
+				return FString(GetEffectConditionKindLabel(ConditionSpec.ConditionKind));
+			}
+		};
+
+		auto BuildConditionListSummary = [&BuildConditionSummary](
+			const TArray<FSRFacilityEffectConditionSpec>& Conditions,
+			ESRFacilityConditionLogic ConditionLogic)
+		{
+			FString Summary;
+			const int32 VisibleConditionCount = FMath::Min(Conditions.Num(), 2);
+			for (int32 ConditionIndex = 0; ConditionIndex < VisibleConditionCount; ++ConditionIndex)
+			{
+				if (ConditionIndex > 0)
+				{
+					Summary += FString::Printf(TEXT(" %s "), GetConditionLogicLabel(ConditionLogic));
+				}
+				Summary += BuildConditionSummary(Conditions[ConditionIndex]);
+			}
+
+			if (Conditions.Num() > VisibleConditionCount)
+			{
+				Summary += FString::Printf(TEXT(" +%d"), Conditions.Num() - VisibleConditionCount);
+			}
+			return Summary;
+		};
+
+		auto AppendConditions = [&EffectSpec, &BuildConditionListSummary](FString BaseSummary)
+		{
+			TArray<FString> RequiredConditionParts;
+			if (!EffectSpec.Conditions.IsEmpty())
+			{
+				RequiredConditionParts.Add(BuildConditionListSummary(
+					EffectSpec.Conditions,
+					ESRFacilityConditionLogic::And));
+			}
+
+			TArray<FString> GroupParts;
+			int32 ActiveGroupCount = 0;
+			for (const FSRFacilityEffectConditionGroupSpec& ConditionGroup : EffectSpec.ConditionGroups)
+			{
+				if (ConditionGroup.Conditions.IsEmpty())
+				{
+					continue;
+				}
+
+				++ActiveGroupCount;
+				if (GroupParts.Num() >= 2)
+				{
+					continue;
+				}
+
+				FString GroupSummary = BuildConditionListSummary(
+					ConditionGroup.Conditions,
+					ConditionGroup.ConditionLogic);
+				if (ConditionGroup.Conditions.Num() > 1)
+				{
+					GroupSummary = FString::Printf(TEXT("(%s)"), *GroupSummary);
+				}
+				GroupParts.Add(GroupSummary);
+			}
+
+			if (!GroupParts.IsEmpty())
+			{
+				FString GroupSummary = FString::Join(GroupParts, *FString::Printf(
+					TEXT(" %s "),
+					GetConditionLogicLabel(EffectSpec.ConditionGroupLogic)));
+				if (ActiveGroupCount > GroupParts.Num())
+				{
+					GroupSummary += FString::Printf(TEXT(" +%d"), ActiveGroupCount - GroupParts.Num());
+				}
+				RequiredConditionParts.Add(GroupSummary);
+			}
+
+			if (RequiredConditionParts.IsEmpty())
 			{
 				return BaseSummary;
 			}
 
 			BaseSummary += TEXT(" if ");
-			const int32 VisibleConditionCount = FMath::Min(EffectSpec.Conditions.Num(), 2);
-			for (int32 ConditionIndex = 0; ConditionIndex < VisibleConditionCount; ++ConditionIndex)
-			{
-				if (ConditionIndex > 0)
-				{
-					BaseSummary += TEXT(" && ");
-				}
-
-				const FSRFacilityEffectConditionSpec& ConditionSpec = EffectSpec.Conditions[ConditionIndex];
-				switch (ConditionSpec.ConditionKind)
-				{
-				case ESRFacilityEffectConditionKind::EnergyAtLeast:
-				case ESRFacilityEffectConditionKind::EnergyAtMost:
-				case ESRFacilityEffectConditionKind::EnergyGreaterThan:
-				case ESRFacilityEffectConditionKind::EnergyLessThan:
-					BaseSummary += FString::Printf(
-						TEXT("%s %s"),
-						GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
-						*FormatFacilityEnergyDisplayValue(ConditionSpec.EnergyValue));
-					break;
-				case ESRFacilityEffectConditionKind::EnergyIncreased:
-				case ESRFacilityEffectConditionKind::EnergyDecreased:
-				case ESRFacilityEffectConditionKind::PrimeEnergy:
-					BaseSummary += GetEffectConditionKindLabel(ConditionSpec.ConditionKind);
-					break;
-				case ESRFacilityEffectConditionKind::Tag:
-					if (ConditionSpec.TagTarget == ESRFacilityTagConditionTarget::AllTags)
-					{
-						if (ConditionSpec.TagMode == ESRFacilityTagConditionMode::StackCountAtLeast)
-						{
-							BaseSummary += FString::Printf(
-								TEXT("%s %s %d"),
-								GetTagConditionTargetLabel(ConditionSpec.TagTarget),
-								GetTagConditionModeLabel(ConditionSpec.TagMode),
-								FMath::Max(1, ConditionSpec.TagStackCount));
-						}
-						else
-						{
-							BaseSummary += FString::Printf(
-								TEXT("%s %s"),
-								GetTagConditionModeLabel(ConditionSpec.TagMode),
-								GetTagConditionTargetLabel(ConditionSpec.TagTarget));
-						}
-					}
-					else if (ConditionSpec.TagMode == ESRFacilityTagConditionMode::StackCountAtLeast)
-					{
-						BaseSummary += FString::Printf(
-							TEXT("%s %s %d"),
-							GetResourceProcessTagLabel(ConditionSpec.ResourceTag),
-							GetTagConditionModeLabel(ConditionSpec.TagMode),
-							FMath::Max(1, ConditionSpec.TagStackCount));
-					}
-					else
-					{
-						BaseSummary += FString::Printf(
-							TEXT("%s %s"),
-							GetTagConditionModeLabel(ConditionSpec.TagMode),
-							GetResourceProcessTagLabel(ConditionSpec.ResourceTag));
-					}
-					break;
-				case ESRFacilityEffectConditionKind::TemperatureState:
-					BaseSummary += FString::Printf(
-						TEXT("%s %s"),
-						GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
-						GetFacilityTemperatureLabel(ConditionSpec.TemperatureState));
-					break;
-				case ESRFacilityEffectConditionKind::ProcessCountEquals:
-					BaseSummary += FString::Printf(
-						TEXT("%s = %d"),
-						GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
-						FMath::Max(0, ConditionSpec.ProcessCount));
-					break;
-				default:
-					BaseSummary += GetEffectConditionKindLabel(ConditionSpec.ConditionKind);
-					break;
-				}
-			}
-
-			if (EffectSpec.Conditions.Num() > VisibleConditionCount)
-			{
-				BaseSummary += FString::Printf(TEXT(" +%d"), EffectSpec.Conditions.Num() - VisibleConditionCount);
-			}
+			BaseSummary += FString::Join(RequiredConditionParts, TEXT(" && "));
 			return BaseSummary;
 		};
 
@@ -949,9 +1008,24 @@ namespace
 		case ESRFacilityEffectKind::AdjustEnergy:
 			if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue)
 			{
-				EffectSummary = EffectSpec.EnergyAdjustmentMode == ESRFacilityEnergyAdjustmentMode::Multiply
-					? FString::Printf(TEXT("%s * %s"), GetEffectKindLabel(EffectSpec.EffectKind), *FormatFacilityEnergyDisplayValue(EffectSpec.Value))
-					: FString::Printf(TEXT("%s %+.1f"), GetEffectKindLabel(EffectSpec.EffectKind), EffectSpec.Value);
+				if (EffectSpec.EnergyAdjustmentMode == ESRFacilityEnergyAdjustmentMode::Multiply)
+				{
+					EffectSummary = FString::Printf(
+						TEXT("%s * %s"),
+						GetEffectKindLabel(EffectSpec.EffectKind),
+						*FormatFacilityEnergyDisplayValue(EffectSpec.Value));
+				}
+				else if (EffectSpec.EnergyAdjustmentMode == ESRFacilityEnergyAdjustmentMode::Subtract)
+				{
+					EffectSummary = FString::Printf(
+						TEXT("%s - %s"),
+						GetEffectKindLabel(EffectSpec.EffectKind),
+						*FormatFacilityEnergyDisplayValue(FMath::Abs(EffectSpec.Value)));
+				}
+				else
+				{
+					EffectSummary = FString::Printf(TEXT("%s %+.1f"), GetEffectKindLabel(EffectSpec.EffectKind), EffectSpec.Value);
+				}
 			}
 			else if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagStackCount)
 			{

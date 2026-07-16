@@ -90,6 +90,7 @@ enum class ESRFacilityEnergyAdjustmentValueSource : uint8
 	RemainingProcessLimit UMETA(DisplayName = "RemainingProcessLimit"),
 	TagStackCount UMETA(DisplayName = "TagStackCount"),
 	EnergyChangeCount UMETA(DisplayName = "EnergyChangeCount"),
+	TagEffectEnergyChangeAmount UMETA(DisplayName = "TagEffectEnergyChangeAmount"),
 };
 
 UENUM(BlueprintType)
@@ -97,6 +98,7 @@ enum class ESRFacilityEnergyAdjustmentMode : uint8
 {
 	Add = 0 UMETA(DisplayName = "Add"),
 	Multiply = 1 UMETA(DisplayName = "Multiply"),
+	Subtract = 2 UMETA(DisplayName = "Subtract"),
 };
 
 UENUM(BlueprintType)
@@ -141,6 +143,13 @@ enum class ESRFacilityTagConditionTarget : uint8
 {
 	SpecificTag UMETA(DisplayName = "SpecificTag"),
 	AllTags UMETA(DisplayName = "AllTags"),
+};
+
+UENUM(BlueprintType)
+enum class ESRFacilityConditionLogic : uint8
+{
+	And UMETA(DisplayName = "And"),
+	Or UMETA(DisplayName = "Or"),
 };
 
 USTRUCT(BlueprintType)
@@ -194,6 +203,18 @@ struct STARROVERS_API FSRFacilityEffectConditionSpec
 		EditCondition = "ConditionKind == ESRFacilityEffectConditionKind::ProcessCountEquals",
 		EditConditionHides))
 	int32 ProcessCount = 0;
+};
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRFacilityEffectConditionGroupSpec
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility|Condition Group", meta = (DisplayName = "ConditionLogic"))
+	ESRFacilityConditionLogic ConditionLogic = ESRFacilityConditionLogic::And;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility|Condition Group", meta = (DisplayName = "Conditions"))
+	TArray<FSRFacilityEffectConditionSpec> Conditions;
 };
 
 USTRUCT(BlueprintType)
@@ -292,6 +313,12 @@ struct STARROVERS_API FSRFacilityEffectSpec
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "Conditions"))
 	TArray<FSRFacilityEffectConditionSpec> Conditions;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "ConditionGroupLogic"))
+	ESRFacilityConditionLogic ConditionGroupLogic = ESRFacilityConditionLogic::Or;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "ConditionGroups"))
+	TArray<FSRFacilityEffectConditionGroupSpec> ConditionGroups;
 };
 
 USTRUCT(BlueprintType)

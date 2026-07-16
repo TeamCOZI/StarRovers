@@ -38,7 +38,6 @@ bool FSRFacilityMiningTargetResolver::FindTargetDeposit(
 
 	if (!FacilityInstance.MiningTargetDepositOccupantId.IsNone()
 		&& StructureInstanceManager->GetResourceDepositInstance(FacilityInstance.MiningTargetDepositOccupantId, OutResourceDeposit)
-		&& OutResourceDeposit.RemainingAmount > 0
 		&& IsValid(OutResourceDeposit.ResourceDataAsset.Get()))
 	{
 		return true;

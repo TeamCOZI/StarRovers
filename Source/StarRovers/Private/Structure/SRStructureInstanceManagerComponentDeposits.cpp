@@ -4,6 +4,13 @@
 
 namespace
 {
+	constexpr int32 InfiniteResourceDepositAmount = MAX_int32;
+
+	bool IsResourceDepositMineable(const FSRResourceDepositInstance& ResourceDeposit)
+	{
+		return IsValid(ResourceDeposit.ResourceDataAsset.Get());
+	}
+
 	void AppendNeighborCellIds(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRPlanetSurfaceGridCellId& CellId,
@@ -73,8 +80,7 @@ bool USRStructureInstanceManagerComponent::FindAdjacentResourceDeposit(
 		VisitedOccupantIds.Add(NeighborCellInfo.OccupantId);
 		const FSRResourceDepositInstance* ResourceDeposit = ResourceDepositsByOccupantId.Find(NeighborCellInfo.OccupantId);
 		if (!ResourceDeposit
-			|| ResourceDeposit->RemainingAmount <= 0
-			|| !IsValid(ResourceDeposit->ResourceDataAsset.Get()))
+			|| !IsResourceDepositMineable(*ResourceDeposit))
 		{
 			continue;
 		}
@@ -101,8 +107,7 @@ bool USRStructureInstanceManagerComponent::TryHarvestResourceDeposit(
 
 	FSRResourceDepositInstance* ResourceDeposit = ResourceDepositsByOccupantId.Find(DepositOccupantId);
 	if (!ResourceDeposit
-		|| ResourceDeposit->RemainingAmount <= 0
-		|| !IsValid(ResourceDeposit->ResourceDataAsset.Get()))
+		|| !IsResourceDepositMineable(*ResourceDeposit))
 	{
 		return false;
 	}
@@ -111,13 +116,7 @@ bool USRStructureInstanceManagerComponent::TryHarvestResourceDeposit(
 	OutResourceInstance.ResourceInstanceId = FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits));
 	OutResourceInstance.StackCount = 1;
 
-	ResourceDeposit->RemainingAmount = FMath::Max(0, ResourceDeposit->RemainingAmount - 1);
 	OutUpdatedResourceDeposit = *ResourceDeposit;
-	if (ResourceDeposit->RemainingAmount <= 0)
-	{
-		RemoveStructureByOccupantId(SurfaceGrid, DepositOccupantId);
-	}
-
 	return !OutResourceInstance.ResourceId.IsNone();
 }
 
@@ -128,8 +127,7 @@ void USRStructureInstanceManagerComponent::RegisterResourceDeposit(
 	ResourceDepositsByOccupantId.Remove(PlacedStructure.OccupantId);
 	if (PlacedStructure.OccupantId.IsNone()
 		|| !StructureData.bIsResourceDeposit
-		|| !IsValid(StructureData.DepositResourceDataAsset.Get())
-		|| StructureData.DepositTotalAmount <= 0)
+		|| !IsValid(StructureData.DepositResourceDataAsset.Get()))
 	{
 		return;
 	}
@@ -139,7 +137,7 @@ void USRStructureInstanceManagerComponent::RegisterResourceDeposit(
 	ResourceDeposit.StructureId = PlacedStructure.StructureId;
 	ResourceDeposit.ResourceDataAsset = StructureData.DepositResourceDataAsset;
 	ResourceDeposit.ResourceId = StructureData.DepositResourceDataAsset->ResourceId;
-	ResourceDeposit.TotalAmount = FMath::Max(0, StructureData.DepositTotalAmount);
-	ResourceDeposit.RemainingAmount = ResourceDeposit.TotalAmount;
+	ResourceDeposit.TotalAmount = InfiniteResourceDepositAmount;
+	ResourceDeposit.RemainingAmount = InfiniteResourceDepositAmount;
 	ResourceDepositsByOccupantId.Add(ResourceDeposit.OccupantId, ResourceDeposit);
 }

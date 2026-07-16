@@ -198,11 +198,15 @@ private:
 
 	FSRStructureVisualGroup& FindOrCreateVisualGroup(USRStructureDataAsset* StructureDataAsset, FName VisualKey, bool bUseStaticMeshMaterials, ESRStructureVisualOverride VisualOverride = ESRStructureVisualOverride::None);
 	bool IsDeletePreviewTarget(FName OccupantId) const;
+	ESRStructureVisualOverride GetVisualOverrideForOccupant(FName OccupantId) const;
+	bool BuildPlacedStructureInstanceWorldTransform(const FSRPlacedStructureInstance& PlacedStructure, FTransform& OutInstanceWorldTransform) const;
 	void RemoveStructureByOccupantId(USRPlanetSurfaceGrid* SurfaceGrid, FName OccupantId);
 	void RemoveStructuresByOccupantIds(USRPlanetSurfaceGrid* SurfaceGrid, TConstArrayView<FName> OccupantIds);
 	void RemoveVisualInstances(FName VisualKey, const TArray<FName>& RemovedOccupantIds);
+	bool RemoveVisualInstanceIndices(FName VisualKey, TArray<int32> InstanceIndicesToRemove);
+	void MoveVisualInstanceToOverride(FName OccupantId, ESRStructureVisualOverride VisualOverride);
+	void RefreshVisualInstancesForOccupants(const TSet<FName>& OccupantIds);
 	void RebuildVisualGroup(FName VisualKey);
-	void RefreshVisualGroupsForPreviewState();
 	void RegisterResourceDeposit(const FSRPlacedStructureInstance& PlacedStructure, const FSRStructureData& StructureData);
 	void RefreshStructureNameLabel(USRPlanetSurfaceGrid* SurfaceGrid, const FSRPlacedStructureInstance& PlacedStructure);
 	void RefreshAllStructureNameLabels(USRPlanetSurfaceGrid* SurfaceGrid);

@@ -109,13 +109,11 @@ bool USRFacilityNetworkComponent::TryStartProcessing(FSRFacilityInstance& Facili
 		const FString FacilityLogName = BuildFacilityLogName(FacilityInstance);
 		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
-			TEXT("[FacilityNetwork] Mining started: OccupantId=%s Facility=%s Deposit=%s ResourceId=%s Remaining=%d/%d Owner=%s"),
+			TEXT("[FacilityNetwork] Mining started: OccupantId=%s Facility=%s Deposit=%s ResourceId=%s Available=Infinite Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
 			*FacilityLogName,
 			*StartResult.MiningResult.ResourceDeposit.OccupantId.ToString(),
 			*StartResult.MiningResult.ResourceDeposit.ResourceId.ToString(),
-			StartResult.MiningResult.ResourceDeposit.RemainingAmount,
-			StartResult.MiningResult.ResourceDeposit.TotalAmount,
 			*GetNameSafe(GetOwner()));
 		return true;
 	}
@@ -153,13 +151,11 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 		const FString FacilityLogName = BuildFacilityLogName(FacilityInstance);
 		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
-			TEXT("[FacilityNetwork] Mining completed: OccupantId=%s Facility=%s Deposit=%s ResourceId=%s Remaining=%d/%d Owner=%s"),
+			TEXT("[FacilityNetwork] Mining completed: OccupantId=%s Facility=%s Deposit=%s ResourceId=%s Available=Infinite Owner=%s"),
 			*FacilityInstance.OccupantId.ToString(),
 			*FacilityLogName,
 			*CompletionResult.MiningResult.DepositOccupantId.ToString(),
 			*CompletionResult.MiningResult.MinedResource.ResourceId.ToString(),
-			CompletionResult.MiningResult.RemainingAmount,
-			CompletionResult.MiningResult.TotalAmount,
 			*GetNameSafe(GetOwner()));
 		return true;
 	}

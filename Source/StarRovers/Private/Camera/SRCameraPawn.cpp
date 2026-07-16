@@ -48,7 +48,9 @@ void ASRCameraPawn::ConfigureSpringArmCollision()
 		return;
 	}
 
-	SpringArm->bDoCollisionTest = true;
+	// Space-scale zoom already uses explicit boundary/body avoidance. A SpringArm sweep across
+	// the whole space sphere can stall badly at maximum zoom distance.
+	SpringArm->bDoCollisionTest = false;
 	SpringArm->ProbeChannel = ECC_Camera;
 	SpringArm->ProbeSize = 25.0f;
 }

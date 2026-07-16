@@ -129,11 +129,29 @@ namespace StarRovers::FacilityEffects
 		}
 	}
 
-	inline bool DoEffectConditionsPass(
-		const FSRFacilityEffectSpec& EffectSpec,
+	inline bool DoConditionListPass(
+		const TArray<FSRFacilityEffectConditionSpec>& Conditions,
+		ESRFacilityConditionLogic ConditionLogic,
 		const FSRFacilityEffectConditionContext& Context)
 	{
-		for (const FSRFacilityEffectConditionSpec& ConditionSpec : EffectSpec.Conditions)
+		if (Conditions.IsEmpty())
+		{
+			return true;
+		}
+
+		if (ConditionLogic == ESRFacilityConditionLogic::Or)
+		{
+			for (const FSRFacilityEffectConditionSpec& ConditionSpec : Conditions)
+			{
+				if (DoesEffectConditionPass(ConditionSpec, Context))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		for (const FSRFacilityEffectConditionSpec& ConditionSpec : Conditions)
 		{
 			if (!DoesEffectConditionPass(ConditionSpec, Context))
 			{
@@ -141,5 +159,49 @@ namespace StarRovers::FacilityEffects
 			}
 		}
 		return true;
+	}
+
+	inline bool DoConditionGroupsPass(
+		const FSRFacilityEffectSpec& EffectSpec,
+		const FSRFacilityEffectConditionContext& Context)
+	{
+		int32 ActiveGroupCount = 0;
+		for (const FSRFacilityEffectConditionGroupSpec& ConditionGroup : EffectSpec.ConditionGroups)
+		{
+			if (ConditionGroup.Conditions.IsEmpty())
+			{
+				continue;
+			}
+
+			++ActiveGroupCount;
+			const bool bGroupPasses = DoConditionListPass(
+				ConditionGroup.Conditions,
+				ConditionGroup.ConditionLogic,
+				Context);
+			if (EffectSpec.ConditionGroupLogic == ESRFacilityConditionLogic::Or)
+			{
+				if (bGroupPasses)
+				{
+					return true;
+				}
+			}
+			else if (!bGroupPasses)
+			{
+				return false;
+			}
+		}
+
+		return ActiveGroupCount <= 0 || EffectSpec.ConditionGroupLogic == ESRFacilityConditionLogic::And;
+	}
+
+	inline bool DoEffectConditionsPass(
+		const FSRFacilityEffectSpec& EffectSpec,
+		const FSRFacilityEffectConditionContext& Context)
+	{
+		if (!DoConditionListPass(EffectSpec.Conditions, ESRFacilityConditionLogic::And, Context))
+		{
+			return false;
+		}
+		return DoConditionGroupsPass(EffectSpec, Context);
 	}
 }

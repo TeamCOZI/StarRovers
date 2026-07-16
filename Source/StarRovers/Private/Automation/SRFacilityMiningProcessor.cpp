@@ -119,9 +119,7 @@ bool FSRFacilityMiningProcessor::TryCompleteMining(
 	{
 		FSRFacilityProcessingInventoryRouter::StoreOutputResources(FacilityInstance, OutputResources);
 	}
-	FacilityInstance.MiningTargetDepositOccupantId = UpdatedResourceDeposit.RemainingAmount > 0
-		? UpdatedResourceDeposit.OccupantId
-		: NAME_None;
+	FacilityInstance.MiningTargetDepositOccupantId = UpdatedResourceDeposit.OccupantId;
 	FacilityInstance.ProcessingInventory.Reset();
 	ResetMiningProgressState(FacilityInstance);
 
