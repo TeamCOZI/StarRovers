@@ -122,6 +122,8 @@ namespace
 			return TEXT("Invert Heat");
 		case ESRFacilityEffectKind::InvertTagEffects:
 			return TEXT("Invert Tag Effects");
+		case ESRFacilityEffectKind::DoubleTagEffects:
+			return TEXT("Double Tag Effects");
 		case ESRFacilityEffectKind::DuplicateInputResource:
 			return TEXT("Duplicate Input");
 		case ESRFacilityEffectKind::OverrideProcessTemperature:
@@ -132,10 +134,10 @@ namespace
 			return TEXT("Adjust Process Time");
 		case ESRFacilityEffectKind::RemoveTag:
 			return TEXT("Remove Tag");
-		case ESRFacilityEffectKind::MultiplyEnergyByConsumedProcessLimit:
-			return TEXT("Energy * Lost Limit");
 		case ESRFacilityEffectKind::ChangeResourceType:
 			return TEXT("Change Resource Type");
+		case ESRFacilityEffectKind::TransferTagsToWaste:
+			return TEXT("Transfer Tags To Waste");
 		default:
 			return TEXT("Effect");
 		}
@@ -143,7 +145,17 @@ namespace
 
 	const TCHAR* GetAttachTagSourceLabel(ESRFacilityAttachTagSource AttachTagSource)
 	{
-		return AttachTagSource == ESRFacilityAttachTagSource::LastAttachedTag ? TEXT("Last Tag") : TEXT("Specific");
+		switch (AttachTagSource)
+		{
+		case ESRFacilityAttachTagSource::SpecificTag:
+			return TEXT("Specific");
+		case ESRFacilityAttachTagSource::LastAttachedTag:
+			return TEXT("Last Tag");
+		case ESRFacilityAttachTagSource::MissingTags:
+			return TEXT("Missing Tags");
+		default:
+			return TEXT("Tag Source");
+		}
 	}
 
 	const TCHAR* GetEffectTagTargetLabel(ESRFacilityEffectTagTarget TagTarget)
@@ -175,6 +187,10 @@ namespace
 			return TEXT("Energy Changes");
 		case ESRFacilityEnergyAdjustmentValueSource::TagEffectEnergyChangeAmount:
 			return TEXT("Tag Energy Change");
+		case ESRFacilityEnergyAdjustmentValueSource::ProcessCount:
+			return TEXT("Process Count");
+		case ESRFacilityEnergyAdjustmentValueSource::TagKindCount:
+			return TEXT("Tag Kinds");
 		default:
 			return TEXT("Value");
 		}
@@ -197,6 +213,16 @@ namespace
 		default:
 			return TEXT("+");
 		}
+	}
+
+	FString BuildEnergyValueMultiplierSummary(const FSRFacilityEffectSpec& EffectSpec)
+	{
+		if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue
+			|| FMath::IsNearlyEqual(EffectSpec.EnergyValueMultiplier, 1.0))
+		{
+			return FString();
+		}
+		return FString::Printf(TEXT(" x%s"), *FormatFacilityEnergyDisplayValue(EffectSpec.EnergyValueMultiplier));
 	}
 
 	const TCHAR* GetProcessTimeModeLabel(ESRFacilityProcessTimeAdjustmentMode ProcessTimeMode)
@@ -1049,20 +1075,24 @@ namespace
 				const TCHAR* TagStackTargetLabel = EffectSpec.TagStackCountTarget == ESRFacilityTagStackCountTarget::All
 					? GetTagStackCountTargetLabel(EffectSpec.TagStackCountTarget)
 					: GetResourceProcessTagLabel(EffectSpec.ResourceTag);
+				const FString MultiplierSummary = BuildEnergyValueMultiplierSummary(EffectSpec);
 				EffectSummary = FString::Printf(
-					TEXT("%s %s %s %s"),
+					TEXT("%s %s %s %s%s"),
 					GetEffectKindLabel(EffectSpec.EffectKind),
 					GetEnergyAdjustmentModeLabel(EffectSpec.EnergyAdjustmentMode),
 					GetEnergyValueSourceLabel(EffectSpec.EnergyValueSource),
-					TagStackTargetLabel);
+					TagStackTargetLabel,
+					*MultiplierSummary);
 			}
 			else
 			{
+				const FString MultiplierSummary = BuildEnergyValueMultiplierSummary(EffectSpec);
 				EffectSummary = FString::Printf(
-					TEXT("%s %s %s"),
+					TEXT("%s %s %s%s"),
 					GetEffectKindLabel(EffectSpec.EffectKind),
 					GetEnergyAdjustmentModeLabel(EffectSpec.EnergyAdjustmentMode),
-					GetEnergyValueSourceLabel(EffectSpec.EnergyValueSource));
+					GetEnergyValueSourceLabel(EffectSpec.EnergyValueSource),
+					*MultiplierSummary);
 			}
 			break;
 		case ESRFacilityEffectKind::AdjustProcessLimit:
@@ -1074,17 +1104,29 @@ namespace
 			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
 			break;
 		case ESRFacilityEffectKind::AttachTag:
-			EffectSummary = EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::LastAttachedTag
-				? FString::Printf(
+			if (EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::MissingTags)
+			{
+				EffectSummary = FString::Printf(
+					TEXT("%s %s"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetAttachTagSourceLabel(EffectSpec.AttachTagSource));
+			}
+			else if (EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::LastAttachedTag)
+			{
+				EffectSummary = FString::Printf(
 					TEXT("%s %s x%d"),
 					GetEffectKindLabel(EffectSpec.EffectKind),
 					GetAttachTagSourceLabel(EffectSpec.AttachTagSource),
-					FMath::Max(1, EffectSpec.Count))
-				: FString::Printf(
+					FMath::Max(1, EffectSpec.Count));
+			}
+			else
+			{
+				EffectSummary = FString::Printf(
 					TEXT("%s %s x%d"),
 					GetEffectKindLabel(EffectSpec.EffectKind),
 					GetResourceProcessTagLabel(EffectSpec.ResourceTag),
 					FMath::Max(1, EffectSpec.Count));
+			}
 			break;
 		case ESRFacilityEffectKind::ProduceWaste:
 			EffectSummary = FString::Printf(
@@ -1095,6 +1137,17 @@ namespace
 					: TEXT("None"),
 				FMath::Max(1, EffectSpec.Count));
 			break;
+		case ESRFacilityEffectKind::TransferTagsToWaste:
+			EffectSummary = FString::Printf(
+				TEXT("%s %s -> %s"),
+				GetEffectKindLabel(EffectSpec.EffectKind),
+				EffectSpec.TagTarget == ESRFacilityEffectTagTarget::SpecificTag
+					? GetResourceProcessTagLabel(EffectSpec.ResourceTag)
+					: GetEffectTagTargetLabel(EffectSpec.TagTarget),
+				IsValid(EffectSpec.ProducedResource.Get())
+					? *EffectSpec.ProducedResource->ResourceId.ToString()
+					: TEXT("None"));
+			break;
 		case ESRFacilityEffectKind::AdjustCellTemperature:
 			EffectSummary = FString::Printf(
 				TEXT("%s %+d R%d"),
@@ -1104,6 +1157,7 @@ namespace
 			break;
 		case ESRFacilityEffectKind::InvertHeat:
 		case ESRFacilityEffectKind::InvertTagEffects:
+		case ESRFacilityEffectKind::DoubleTagEffects:
 			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
 			break;
 		case ESRFacilityEffectKind::DuplicateInputResource:
@@ -1161,9 +1215,6 @@ namespace
 					TEXT("%s %s"),
 					GetEffectKindLabel(EffectSpec.EffectKind),
 					GetEffectTagTargetLabel(EffectSpec.TagTarget));
-			break;
-		case ESRFacilityEffectKind::MultiplyEnergyByConsumedProcessLimit:
-			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
 			break;
 		case ESRFacilityEffectKind::ChangeResourceType:
 			EffectSummary = FString::Printf(

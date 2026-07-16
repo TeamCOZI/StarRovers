@@ -13,6 +13,7 @@ namespace StarRovers::FacilityProcessing
 		bool bInvertTagEffects = false;
 		bool bHasProcessTemperatureOverride = false;
 		ESRFacilityTemperatureState ProcessTemperatureOverride = ESRFacilityTemperatureState::Normal;
+		int32 TagEffectApplicationCount = 1;
 	};
 
 	inline ESRFacilityTemperatureState InvertTemperatureState(ESRFacilityTemperatureState TemperatureState)
@@ -95,6 +96,10 @@ namespace StarRovers::FacilityProcessing
 			else if (EffectSpec.EffectKind == ESRFacilityEffectKind::InvertTagEffects)
 			{
 				ProcessContext.bInvertTagEffects = !ProcessContext.bInvertTagEffects;
+			}
+			else if (EffectSpec.EffectKind == ESRFacilityEffectKind::DoubleTagEffects)
+			{
+				ProcessContext.TagEffectApplicationCount = FMath::Max(1, ProcessContext.TagEffectApplicationCount) * 2;
 			}
 
 			ProcessContext.EffectiveTemperatureState = ResolveEffectiveTemperatureState(ProcessContext);
