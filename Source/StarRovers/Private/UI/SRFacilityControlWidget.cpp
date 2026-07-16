@@ -180,6 +180,11 @@ namespace
 		}
 	}
 
+	const TCHAR* GetTagStackCountTargetLabel(ESRFacilityTagStackCountTarget TagStackCountTarget)
+	{
+		return TagStackCountTarget == ESRFacilityTagStackCountTarget::All ? TEXT("All") : TEXT("Specific");
+	}
+
 	const TCHAR* GetEnergyAdjustmentModeLabel(ESRFacilityEnergyAdjustmentMode AdjustmentMode)
 	{
 		switch (AdjustmentMode)
@@ -197,6 +202,18 @@ namespace
 	const TCHAR* GetProcessTimeModeLabel(ESRFacilityProcessTimeAdjustmentMode ProcessTimeMode)
 	{
 		return ProcessTimeMode == ESRFacilityProcessTimeAdjustmentMode::Multiply ? TEXT("*") : TEXT("+");
+	}
+
+	const TCHAR* GetProcessTimeValueSourceLabel(ESRFacilityProcessTimeAdjustmentValueSource ValueSource)
+	{
+		switch (ValueSource)
+		{
+		case ESRFacilityProcessTimeAdjustmentValueSource::TagStackCount:
+			return TEXT("Tag Stack");
+		case ESRFacilityProcessTimeAdjustmentValueSource::FixedValue:
+		default:
+			return TEXT("Fixed");
+		}
 	}
 
 	const TCHAR* GetEffectConditionKindLabel(ESRFacilityEffectConditionKind ConditionKind)
@@ -1029,12 +1046,15 @@ namespace
 			}
 			else if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagStackCount)
 			{
+				const TCHAR* TagStackTargetLabel = EffectSpec.TagStackCountTarget == ESRFacilityTagStackCountTarget::All
+					? GetTagStackCountTargetLabel(EffectSpec.TagStackCountTarget)
+					: GetResourceProcessTagLabel(EffectSpec.ResourceTag);
 				EffectSummary = FString::Printf(
 					TEXT("%s %s %s %s"),
 					GetEffectKindLabel(EffectSpec.EffectKind),
 					GetEnergyAdjustmentModeLabel(EffectSpec.EnergyAdjustmentMode),
 					GetEnergyValueSourceLabel(EffectSpec.EnergyValueSource),
-					GetResourceProcessTagLabel(EffectSpec.ResourceTag));
+					TagStackTargetLabel);
 			}
 			else
 			{
@@ -1110,11 +1130,26 @@ namespace
 					GetEffectTagTargetLabel(EffectSpec.TagTarget));
 			break;
 		case ESRFacilityEffectKind::AdjustProcessTime:
-			EffectSummary = FString::Printf(
-				TEXT("%s %s %.2f"),
-				GetEffectKindLabel(EffectSpec.EffectKind),
-				GetProcessTimeModeLabel(EffectSpec.ProcessTimeMode),
-				EffectSpec.Value);
+			if (EffectSpec.ProcessTimeValueSource == ESRFacilityProcessTimeAdjustmentValueSource::TagStackCount)
+			{
+				const TCHAR* TagStackTargetLabel = EffectSpec.TagStackCountTarget == ESRFacilityTagStackCountTarget::All
+					? GetTagStackCountTargetLabel(EffectSpec.TagStackCountTarget)
+					: GetResourceProcessTagLabel(EffectSpec.ResourceTag);
+				EffectSummary = FString::Printf(
+					TEXT("%s %s %s %s"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetProcessTimeModeLabel(EffectSpec.ProcessTimeMode),
+					GetProcessTimeValueSourceLabel(EffectSpec.ProcessTimeValueSource),
+					TagStackTargetLabel);
+			}
+			else
+			{
+				EffectSummary = FString::Printf(
+					TEXT("%s %s %.2f"),
+					GetEffectKindLabel(EffectSpec.EffectKind),
+					GetProcessTimeModeLabel(EffectSpec.ProcessTimeMode),
+					EffectSpec.Value);
+			}
 			break;
 		case ESRFacilityEffectKind::RemoveTag:
 			EffectSummary = EffectSpec.TagTarget == ESRFacilityEffectTagTarget::SpecificTag

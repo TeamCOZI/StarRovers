@@ -190,6 +190,19 @@ namespace
 		return CountTagStacks(ResourceInstance.Tags, Tag);
 	}
 
+	int32 CountAllTagStacks(const FSRResourceInstance& ResourceInstance)
+	{
+		int32 StackCount = 0;
+		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
+		{
+			if (TagStack.StackCount > 0)
+			{
+				StackCount += TagStack.StackCount;
+			}
+		}
+		return StackCount;
+	}
+
 	const TCHAR* GetResourceProcessTagFormulaLabel(ESRResourceProcessTag Tag)
 	{
 		switch (Tag)
@@ -437,58 +450,13 @@ namespace
 		return INDEX_NONE;
 	}
 
-	float ResolveFacilityProcessSeconds(
-		const FSRFacilityInstance& FacilityInstance,
-		ESRFacilityTemperatureState EffectiveTemperatureState,
-		const FSRResourceInstance* ConditionResource)
-	{
-		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-		float ProcessSeconds = IsValid(FacilityDataAsset)
-			? FMath::Max(0.01f, FacilityDataAsset->BaseProcessSeconds)
-			: 1.0f;
-		if (EffectiveTemperatureState == ESRFacilityTemperatureState::Cold)
-		{
-			ProcessSeconds *= 2.0f;
-		}
-		if (!IsValid(FacilityDataAsset))
-		{
-			return ProcessSeconds;
-		}
-
-		for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
-		{
-			const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
-			{
-				ConditionResource,
-				ConditionResource,
-				EffectiveTemperatureState
-			};
-			if (EffectSpec.EffectKind != ESRFacilityEffectKind::AdjustProcessTime
-				|| !StarRovers::FacilityEffects::DoEffectConditionsPass(EffectSpec, ConditionContext))
-			{
-				continue;
-			}
-
-			if (EffectSpec.ProcessTimeMode == ESRFacilityProcessTimeAdjustmentMode::Multiply)
-			{
-				ProcessSeconds *= static_cast<float>(EffectSpec.Value);
-			}
-			else
-			{
-				ProcessSeconds += static_cast<float>(EffectSpec.Value);
-			}
-			ProcessSeconds = FMath::Max(0.01f, ProcessSeconds);
-		}
-		return FMath::Max(0.01f, ProcessSeconds);
-	}
-
 	int32 ResolveChargeStacksToAddForProcessingPass(
 		const FSRFacilityInstance& FacilityInstance,
 		ESRFacilityTemperatureState EffectiveTemperatureState,
 		const FSRResourceInstance* ConditionResource)
 	{
-		return FMath::Max(0, FMath::FloorToInt(ResolveFacilityProcessSeconds(
-			FacilityInstance,
+		return FMath::Max(0, FMath::FloorToInt(StarRovers::FacilityProcessing::ResolveFacilityProcessSeconds(
+			FacilityInstance.FacilityDataAsset.Get(),
 			EffectiveTemperatureState,
 			ConditionResource)))
 			* StarRovers::FacilityResources::ChargeStacksPerProcessingSecond;
@@ -767,7 +735,10 @@ namespace
 		case ESRFacilityEnergyAdjustmentValueSource::RemainingProcessLimit:
 			return static_cast<double>(FMath::Max(0, ResourceInstance.RemainingProcessLimit));
 		case ESRFacilityEnergyAdjustmentValueSource::TagStackCount:
-			return static_cast<double>(CountTagStacks(ResourceInstance, EffectSpec.ResourceTag));
+			return static_cast<double>(
+				EffectSpec.TagStackCountTarget == ESRFacilityTagStackCountTarget::All
+					? CountAllTagStacks(ResourceInstance)
+					: CountTagStacks(ResourceInstance, EffectSpec.ResourceTag));
 		case ESRFacilityEnergyAdjustmentValueSource::EnergyChangeCount:
 			return static_cast<double>(FMath::Max(0, EffectContext.EnergyChangeCount));
 		case ESRFacilityEnergyAdjustmentValueSource::TagEffectEnergyChangeAmount:
@@ -806,6 +777,13 @@ namespace
 				FMath::Max(0, ResourceInstance.RemainingProcessLimit),
 				*FormatEnergyFormulaValue(ResolvedValue));
 		case ESRFacilityEnergyAdjustmentValueSource::TagStackCount:
+			if (EffectSpec.TagStackCountTarget == ESRFacilityTagStackCountTarget::All)
+			{
+				return FString::Printf(
+					TEXT("TagStackCount All x%d => %s"),
+					CountAllTagStacks(ResourceInstance),
+					*FormatEnergyFormulaValue(ResolvedValue));
+			}
 			return FString::Printf(
 				TEXT("TagStackCount %s x%d => %s"),
 				GetResourceProcessTagFormulaLabel(EffectSpec.ResourceTag),

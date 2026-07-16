@@ -103,6 +103,77 @@ namespace StarRovers::FacilityProcessing
 		return ProcessContext;
 	}
 
+	inline double ResolveProcessTimeAdjustmentValue(
+		const FSRFacilityEffectSpec& EffectSpec,
+		const FSRResourceInstance* ConditionResource)
+	{
+		if (EffectSpec.ProcessTimeValueSource == ESRFacilityProcessTimeAdjustmentValueSource::TagStackCount)
+		{
+			if (!ConditionResource)
+			{
+				return 0.0;
+			}
+			return static_cast<double>(
+				EffectSpec.TagStackCountTarget == ESRFacilityTagStackCountTarget::All
+					? StarRovers::FacilityEffects::CountAllTagStacks(*ConditionResource)
+					: StarRovers::FacilityEffects::CountTagStacks(*ConditionResource, EffectSpec.ResourceTag));
+		}
+		return EffectSpec.Value;
+	}
+
+	inline float ApplyProcessTimeAdjustment(
+		float ProcessSeconds,
+		const FSRFacilityEffectSpec& EffectSpec,
+		const FSRResourceInstance* ConditionResource)
+	{
+		const double AdjustmentValue = ResolveProcessTimeAdjustmentValue(EffectSpec, ConditionResource);
+		if (EffectSpec.ProcessTimeMode == ESRFacilityProcessTimeAdjustmentMode::Multiply)
+		{
+			ProcessSeconds *= static_cast<float>(AdjustmentValue);
+		}
+		else
+		{
+			ProcessSeconds += static_cast<float>(AdjustmentValue);
+		}
+		return FMath::Max(0.01f, ProcessSeconds);
+	}
+
+	inline float ResolveFacilityProcessSeconds(
+		const USRFacilityDataAsset* FacilityDataAsset,
+		ESRFacilityTemperatureState EffectiveTemperatureState,
+		const FSRResourceInstance* ConditionResource)
+	{
+		float ProcessSeconds = IsValid(FacilityDataAsset)
+			? FMath::Max(0.01f, FacilityDataAsset->BaseProcessSeconds)
+			: 1.0f;
+		if (EffectiveTemperatureState == ESRFacilityTemperatureState::Cold)
+		{
+			ProcessSeconds *= 2.0f;
+		}
+		if (!IsValid(FacilityDataAsset))
+		{
+			return ProcessSeconds;
+		}
+
+		for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
+		{
+			const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
+			{
+				ConditionResource,
+				ConditionResource,
+				EffectiveTemperatureState
+			};
+			if (EffectSpec.EffectKind != ESRFacilityEffectKind::AdjustProcessTime
+				|| !StarRovers::FacilityEffects::DoEffectConditionsPass(EffectSpec, ConditionContext))
+			{
+				continue;
+			}
+
+			ProcessSeconds = ApplyProcessTimeAdjustment(ProcessSeconds, EffectSpec, ConditionResource);
+		}
+		return FMath::Max(0.01f, ProcessSeconds);
+	}
+
 	inline FSRFacilityProcessContext ResolveProcessContext(
 		const FSRFacilityInstance& FacilityInstance,
 		const TArray<FSRResourceInstance>& ResourceInstances)

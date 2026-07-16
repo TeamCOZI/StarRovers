@@ -167,44 +167,12 @@ bool FSRFacilityProcessingRuleEvaluator::CanMiningRun(
 float FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(const FSRFacilityInstance& FacilityInstance)
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-	float ProcessSeconds = IsValid(FacilityDataAsset) ? FMath::Max(0.01f, FacilityDataAsset->BaseProcessSeconds) : 1.0f;
 	const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
 		StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, FacilityInstance.ProcessingInventory);
-	const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
-	if (EffectiveTemperatureState == ESRFacilityTemperatureState::Cold)
-	{
-		ProcessSeconds *= 2.0f;
-	}
-	if (!IsValid(FacilityDataAsset))
-	{
-		return ProcessSeconds;
-	}
-
 	const FSRResourceInstance* ConditionResource =
 		StarRovers::FacilityProcessing::FindFirstProcessResource(FacilityInstance.ProcessingInventory);
-	for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
-	{
-		const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
-		{
-			ConditionResource,
-			ConditionResource,
-			EffectiveTemperatureState
-		};
-		if (EffectSpec.EffectKind != ESRFacilityEffectKind::AdjustProcessTime
-			|| !StarRovers::FacilityEffects::DoEffectConditionsPass(EffectSpec, ConditionContext))
-		{
-			continue;
-		}
-
-		if (EffectSpec.ProcessTimeMode == ESRFacilityProcessTimeAdjustmentMode::Multiply)
-		{
-			ProcessSeconds *= static_cast<float>(EffectSpec.Value);
-		}
-		else
-		{
-			ProcessSeconds += static_cast<float>(EffectSpec.Value);
-		}
-		ProcessSeconds = FMath::Max(0.01f, ProcessSeconds);
-	}
-	return FMath::Max(0.01f, ProcessSeconds);
+	return StarRovers::FacilityProcessing::ResolveFacilityProcessSeconds(
+		FacilityDataAsset,
+		ProcessContext.EffectiveTemperatureState,
+		ConditionResource);
 }

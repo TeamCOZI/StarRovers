@@ -93,6 +93,13 @@ enum class ESRFacilityEnergyAdjustmentValueSource : uint8
 };
 
 UENUM(BlueprintType)
+enum class ESRFacilityTagStackCountTarget : uint8
+{
+	SpecificTag UMETA(DisplayName = "SpecificTag"),
+	All UMETA(DisplayName = "All"),
+};
+
+UENUM(BlueprintType)
 enum class ESRFacilityEnergyAdjustmentMode : uint8
 {
 	Add = 0 UMETA(DisplayName = "Add"),
@@ -112,6 +119,13 @@ enum class ESRFacilityProcessTimeAdjustmentMode : uint8
 {
 	AddSeconds UMETA(DisplayName = "AddSeconds"),
 	Multiply UMETA(DisplayName = "Multiply"),
+};
+
+UENUM(BlueprintType)
+enum class ESRFacilityProcessTimeAdjustmentValueSource : uint8
+{
+	FixedValue UMETA(DisplayName = "FixedValue"),
+	TagStackCount UMETA(DisplayName = "TagStackCount"),
 };
 
 UENUM(BlueprintType)
@@ -226,7 +240,7 @@ struct STARROVERS_API FSRFacilityEffectSpec
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
 		DisplayName = "Value",
-		EditCondition = "(EffectKind == ESRFacilityEffectKind::AdjustEnergy && EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue) || EffectKind == ESRFacilityEffectKind::AdjustProcessLimit || EffectKind == ESRFacilityEffectKind::AdjustProcessTime",
+		EditCondition = "(EffectKind == ESRFacilityEffectKind::AdjustEnergy && EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue) || EffectKind == ESRFacilityEffectKind::AdjustProcessLimit || (EffectKind == ESRFacilityEffectKind::AdjustProcessTime && ProcessTimeValueSource == ESRFacilityProcessTimeAdjustmentValueSource::FixedValue)",
 		EditConditionHides))
 	double Value = 0.0;
 
@@ -251,8 +265,20 @@ struct STARROVERS_API FSRFacilityEffectSpec
 	int32 TemperatureStepDelta = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
+		DisplayName = "ProcessTimeValueSource",
+		EditCondition = "EffectKind == ESRFacilityEffectKind::AdjustProcessTime",
+		EditConditionHides))
+	ESRFacilityProcessTimeAdjustmentValueSource ProcessTimeValueSource = ESRFacilityProcessTimeAdjustmentValueSource::FixedValue;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
+		DisplayName = "TagStackCountTarget",
+		EditCondition = "(EffectKind == ESRFacilityEffectKind::AdjustEnergy && EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagStackCount) || (EffectKind == ESRFacilityEffectKind::AdjustProcessTime && ProcessTimeValueSource == ESRFacilityProcessTimeAdjustmentValueSource::TagStackCount)",
+		EditConditionHides))
+	ESRFacilityTagStackCountTarget TagStackCountTarget = ESRFacilityTagStackCountTarget::SpecificTag;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
 		DisplayName = "ResourceTag",
-		EditCondition = "(EffectKind == ESRFacilityEffectKind::AttachTag && AttachTagSource == ESRFacilityAttachTagSource::SpecificTag) || (EffectKind == ESRFacilityEffectKind::AdjustEnergy && EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagStackCount) || ((EffectKind == ESRFacilityEffectKind::TriggerTagEffect || EffectKind == ESRFacilityEffectKind::RemoveTag) && TagTarget == ESRFacilityEffectTagTarget::SpecificTag)",
+		EditCondition = "(EffectKind == ESRFacilityEffectKind::AttachTag && AttachTagSource == ESRFacilityAttachTagSource::SpecificTag) || (EffectKind == ESRFacilityEffectKind::AdjustEnergy && EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagStackCount && TagStackCountTarget == ESRFacilityTagStackCountTarget::SpecificTag) || (EffectKind == ESRFacilityEffectKind::AdjustProcessTime && ProcessTimeValueSource == ESRFacilityProcessTimeAdjustmentValueSource::TagStackCount && TagStackCountTarget == ESRFacilityTagStackCountTarget::SpecificTag) || ((EffectKind == ESRFacilityEffectKind::TriggerTagEffect || EffectKind == ESRFacilityEffectKind::RemoveTag) && TagTarget == ESRFacilityEffectTagTarget::SpecificTag)",
 		EditConditionHides))
 	ESRResourceProcessTag ResourceTag = ESRResourceProcessTag::Responsive;
 
