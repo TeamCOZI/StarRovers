@@ -124,6 +124,12 @@ struct STARROVERS_API FSRStructureData
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Automation", meta = (DisplayName = "FacilityDataAsset"))
 	TObjectPtr<USRFacilityDataAsset> FacilityDataAsset = nullptr;
 
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Automation", meta = (DisplayName = "bProcessReady"))
+	bool bProcessReady = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Automation", meta = (DisplayName = "bDeliveryReady"))
+	bool bDeliveryReady = true;
+
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "bIsResourceDeposit"))
 	bool bIsResourceDeposit = false;
 
@@ -320,6 +326,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Automation", meta = (DisplayName = "FacilityDataAsset"))
 	TObjectPtr<USRFacilityDataAsset> FacilityDataAsset = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Automation", meta = (DisplayName = "bProcessReady"))
+	bool bProcessReady = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Automation", meta = (DisplayName = "bDeliveryReady"))
+	bool bDeliveryReady = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "bIsResourceDeposit"))
 	bool bIsResourceDeposit = false;

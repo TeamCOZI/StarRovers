@@ -14,6 +14,8 @@ USRStructureDataAsset::USRStructureDataAsset()
 	bAvailableForConstruction = true;
 	bDestroyableByConstruction = true;
 	BuildKind = ESRStructureBuildKind::Structure;
+	bProcessReady = true;
+	bDeliveryReady = true;
 	bIsResourceDeposit = false;
 	DepositTotalAmount = 0;
 	ConveyorLayer = 0;
@@ -46,6 +48,8 @@ FSRStructureData USRStructureDataAsset::BuildData() const
 	Result.bDestroyableByConstruction = bDestroyableByConstruction;
 	Result.BuildKind = BuildKind;
 	Result.FacilityDataAsset = FacilityDataAsset;
+	Result.bProcessReady = bProcessReady;
+	Result.bDeliveryReady = bDeliveryReady;
 	Result.bIsResourceDeposit = bIsResourceDeposit;
 	Result.DepositResourceDataAsset = DepositResourceDataAsset;
 	Result.DepositTotalAmount = FMath::Max(0, DepositTotalAmount);

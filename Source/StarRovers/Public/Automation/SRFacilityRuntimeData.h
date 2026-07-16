@@ -97,8 +97,8 @@ struct STARROVERS_API FSRFacilityInstance
 	bool bProcessing = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "bProcessEnabled"))
-	bool bProcessEnabled = false;
+	bool bProcessEnabled = true;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "bDeliverEnabled"))
-	bool bDeliverEnabled = false;
+	bool bDeliverEnabled = true;
 };

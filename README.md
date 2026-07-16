@@ -60,7 +60,7 @@ C++ code lives under `Source/StarRovers`.
 Source folders are organized by owner:
 
 - `Assembly`: build/placement mode owner
-- `Automation`: facility/resource processing owner
+- `Automation`: facility runtime state, processing, transfer, and resource-output owner
 - `Camera`: pawn, controller, focus, input, and UI routing owner
 - `Celestial`: celestial actors, runtime data, and dynamic mesh owner
 - `Conveyor`: conveyor network, placement, visuals, and transport owner
@@ -69,7 +69,7 @@ Source folders are organized by owner:
 - `Performance`: lightweight performance configuration/helpers
 - `Rendering`: render-facing components and visual utilities
 - `Simulation`: run/system simulation owner
-- `Structure`: structure data and placed-instance owner
+- `Structure`: structure data, placement defaults, and placed-instance owner
 - `Surface`: planet grid, terrain, interaction, and cell-state owner
 - `UI`: native widget owners
 - `Utility`: diagnostics, timing, shared utility helpers
@@ -148,7 +148,7 @@ The player builds automation infrastructure on planet/moon surfaces.
 - Resource extraction facilities
 - Mining, processing, synthesis, and Hub facilities
 - Surface logistics through Conveyor paths
-- Storage, splitter, merger, and filter-style logistics control
+- Storage, merger, and filter-style logistics control
 - Placement optimization based on terrain, Biome, and resource conditions
 - Efficiency changes from temperature, process tags, and resource properties
 
@@ -160,7 +160,7 @@ The core surface automation model is cell occupancy and item flow.
 - Conveyors build paths using cell and layer data.
 - Conveyors move resources from a facility Output Port to another facility Input Port.
 - Facility input, processing, and output behavior can depend on Cell temperature, resource process tags, and Facility DA effects.
-- Facility UI shows process state, process/deliver toggles, per-port resource slots, output preview, and compact process-tag state.
+- Facility UI shows process state, process/deliver readiness, per-port resource slots, output preview with Energy formula breakdown, and compact process-tag state.
 - The player combines limited space and resource flow to raise stellar fuel production.
 
 ### 4.3 Stellar Fuel Production
@@ -183,7 +183,7 @@ Facilities are broadly split into:
 - Synthesis facility: combines processed input resources into one output resource.
 - Hub facility: connects surface automation inventories to space logistics.
 
-Resource processing is affected by Remaining Process Limit, Cell temperature, process tags, and ordered Facility DA effects. Facility DA effects can be conditional. Synthesis uses processed input Energy values to produce a combined output.
+Resource processing applies Remaining Process Limit cost, Cell temperature, attached process tags, and ordered Facility DA effects. Attached tags resolve in attach order, and Facility DA effects can be conditional. Synthesis uses processed input Energy values to produce a combined output.
 
 Facility temperature states affect processing:
 

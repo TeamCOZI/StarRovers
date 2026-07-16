@@ -93,8 +93,8 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 	FacilityInstance.TemperatureState = ESRFacilityTemperatureState::Normal;
 	FacilityInstance.ProcessProgressSeconds = 0.0f;
 	FacilityInstance.bProcessing = false;
-	FacilityInstance.bProcessEnabled = false;
-	FacilityInstance.bDeliverEnabled = false;
+	FacilityInstance.bProcessEnabled = StructureData.bProcessReady;
+	FacilityInstance.bDeliverEnabled = StructureData.bDeliveryReady;
 	FacilityInstance.MiningTargetDepositOccupantId = NAME_None;
 	FacilityInstance.ProcessingInventory.Reset();
 	FSRFacilityPortInventoryBuilder::Initialize(FacilityInstance);

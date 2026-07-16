@@ -1415,17 +1415,21 @@ namespace
 		}
 
 		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
-		AddInventoryCardText(WidgetTree, CardCanvas, TEXT("Energy Formula"), FVector2D(7.0f, 5.0f), FVector2D(206.0f, 18.0f), 9, AccentColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, TEXT("Energy Formula"), FVector2D(7.0f, 5.0f), FVector2D(266.0f, 18.0f), 9, AccentColor);
 
 		UTextBlock* FormulaTextBlock = ConstructTextBlock(WidgetTree, NAME_None, 9, FLinearColor(0.90f, 0.94f, 0.96f, 1.0f));
 		FormulaTextBlock->SetText(FText::FromString(FormulaText));
 		FormulaTextBlock->SetAutoWrapText(true);
 		FormulaTextBlock->SetJustification(ETextJustify::Left);
-		AddWidgetToCanvas(CardCanvas, FormulaTextBlock, FVector2D(8.0f, 28.0f), FVector2D(208.0f, 56.0f));
+
+		UScrollBox* FormulaScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
+		FormulaScrollBox->SetOrientation(Orient_Vertical);
+		FormulaScrollBox->AddChild(FormulaTextBlock);
+		AddWidgetToCanvas(CardCanvas, FormulaScrollBox, FVector2D(8.0f, 28.0f), FVector2D(264.0f, 112.0f));
 
 		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		CardSizeBox->SetWidthOverride(224.0f);
-		CardSizeBox->SetHeightOverride(90.0f);
+		CardSizeBox->SetWidthOverride(280.0f);
+		CardSizeBox->SetHeightOverride(150.0f);
 		CardSizeBox->AddChild(CardCanvas);
 
 		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, FLinearColor(0.125f, 0.160f, 0.180f, 0.98f), FMargin(0.0f));
