@@ -8,16 +8,7 @@ namespace
 {
 	FString FormatEnergyValue(double Value)
 	{
-		const double AbsValue = FMath::Abs(Value);
-		if (AbsValue >= 1000.0)
-		{
-			return FString::Printf(TEXT("%.0f"), Value);
-		}
-		if (AbsValue >= 100.0)
-		{
-			return FString::Printf(TEXT("%.1f"), Value);
-		}
-		return FString::Printf(TEXT("%.2f"), Value);
+		return FString::Printf(TEXT("%.1f"), Value);
 	}
 
 	bool ResolveOutwardNormal(

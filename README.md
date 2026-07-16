@@ -47,7 +47,7 @@ This section is a compact file-structure map. Use it to find the relevant source
 - `Docs/`: planning/reference notes
 - `.gitignore`, `.gitattributes`: repository rules
 
-Generated or local-only directories such as `Binaries/`, `Intermediate/`, `Saved/`, `DerivedDataCache/`, and `.vs/` are not part of the source structure map.
+Generated or local/editor-only files and directories such as `Binaries/`, `Intermediate/`, `Saved/`, `DerivedDataCache/`, `.vs/`, `.vscode/`, `*.sln`, and `*.code-workspace` are not part of the source structure map.
 
 ### 3.2 Source Layout
 
@@ -65,7 +65,7 @@ Source folders are organized by owner:
 - `Celestial`: celestial actors, runtime data, and dynamic mesh owner
 - `Conveyor`: conveyor network, placement, visuals, and transport owner
 - `Gravity`: gravity relationship components
-- `Logistics`: space route and spaceship logistics owner
+- `Logistics`: hub endpoints, space routes, spaceship, and star-fuel missile logistics owner
 - `Performance`: lightweight performance configuration/helpers
 - `Rendering`: render-facing components and visual utilities
 - `Simulation`: run/system simulation owner
@@ -146,7 +146,7 @@ The player builds automation infrastructure on planet/moon surfaces.
 
 - Surface Grid-based construction
 - Resource extraction facilities
-- Processing, synthesis, and splitting facilities
+- Mining, processing, synthesis, and Hub facilities
 - Surface logistics through Conveyor paths
 - Storage, splitter, merger, and filter-style logistics control
 - Placement optimization based on terrain, Biome, and resource conditions
@@ -178,31 +178,32 @@ Resources are Energy resources with an `EnergyValue`, Remaining Process Limit, p
 
 Facilities are broadly split into:
 
+- Mining facility: extracts resources from surface deposits or terrain-defined targets.
 - Processing facility: processes input resources and applies tag/facility effects.
 - Synthesis facility: combines processed input resources into one output resource.
-- Split facility: consumes one resource and splits it into multiple outputs.
+- Hub facility: connects surface automation inventories to space logistics.
 
-Resource processing is affected by Remaining Process Limit, Cell temperature, process tags, and Facility DA effects. Synthesis uses processed input Energy values to produce a combined output.
+Resource processing is affected by Remaining Process Limit, Cell temperature, process tags, and ordered Facility DA effects. Facility DA effects can be conditional. Synthesis uses processed input Energy values to produce a combined output.
 
 Facility temperature states affect processing:
 
-- Frozen / Overheated: facility stops.
+- Frozen / Overheated: facility normally stops unless a facility effect overrides the process temperature.
 - Cold: processing is slower and enables cold-only resource behavior.
 - Normal: no special modifier.
 - Hot: consumed resources lose additional Remaining Process Limit.
 
-### 4.4 Spaceship Routes / Interplanetary Logistics
+### 4.4 Space Logistics / Stellar Fuel Delivery
 
-Resources and stellar fuel produced on planets/moons are moved through spaceship routes.
+Resources produced on planets/moons move through Hub-based space logistics.
 
-- Routes between celestial bodies
-- Stellar fuel delivery to the parent star
+- Hub-to-Hub spaceship routes between celestial bodies
+- Star-fuel missiles launched from Hubs to the parent star
 - Intermediate resource exchange between planets
 - Throughput, travel time, and storage management
 - Logistics efficiency affected by orbit, gravity zones, and distance
 - Route timing optimized against stellar fuel cycle timing
 
-Spaceship routes are the higher-level logistics layer connecting surface automation to star maintenance.
+Space logistics is the higher-level layer connecting surface automation to star maintenance. Hub routes are reusable transport links, while star-fuel missiles directly deliver carried Energy to the parent star.
 
 ### 4.5 Star Maintenance / Red Giant Pressure
 

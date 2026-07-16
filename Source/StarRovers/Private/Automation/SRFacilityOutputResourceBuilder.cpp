@@ -86,6 +86,33 @@ namespace
 		return CountTagStacks(ResourceInstance.Tags, Tag);
 	}
 
+	bool TryResolveLastActiveTag(const TArray<FSRResourceTagStack>& Tags, ESRResourceProcessTag& OutTag)
+	{
+		for (int32 TagIndex = Tags.Num() - 1; TagIndex >= 0; --TagIndex)
+		{
+			const FSRResourceTagStack& TagStack = Tags[TagIndex];
+			if (TagStack.StackCount > 0)
+			{
+				OutTag = TagStack.Tag;
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	void SeedLastAttachedTagFromResource(
+		FSRFacilityEffectContext& EffectContext,
+		const FSRResourceInstance& ResourceInstance)
+	{
+		ESRResourceProcessTag LastActiveTag = ESRResourceProcessTag::Responsive;
+		if (TryResolveLastActiveTag(ResourceInstance.Tags, LastActiveTag))
+		{
+			EffectContext.LastAttachedTag = LastActiveTag;
+			EffectContext.bHasLastAttachedTag = true;
+		}
+	}
+
 	void SetEnergyValue(FSRResourceInstance& ResourceInstance, double NewEnergyValue, FSRFacilityEffectContext& EffectContext)
 	{
 		if (!FMath::IsNearlyEqual(ResourceInstance.EnergyValue, NewEnergyValue))
@@ -991,6 +1018,10 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 			bHasPrimaryResource ? &ResourceInstance : nullptr,
 			bHasPrimaryResource ? &BaselineResource : nullptr);
 	FSRFacilityEffectContext EffectContext = MakeEffectContext(ProcessContext, InitialEnergyChangeCount);
+	if (bHasPrimaryResource)
+	{
+		SeedLastAttachedTagFromResource(EffectContext, ResourceInstance);
+	}
 	const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
 	for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
 	{
@@ -1131,15 +1162,19 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 void FSRFacilityOutputResourceBuilder::AddTagStack(FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag, int32 Count)
 {
 	const int32 SafeCount = FMath::Max(1, Count);
-	for (FSRResourceTagStack& TagStack : ResourceInstance.Tags)
+	for (int32 TagIndex = 0; TagIndex < ResourceInstance.Tags.Num(); ++TagIndex)
 	{
+		FSRResourceTagStack& TagStack = ResourceInstance.Tags[TagIndex];
 		if (TagStack.Tag == Tag)
 		{
-			TagStack.StackCount += SafeCount;
-			if (Tag == ESRResourceProcessTag::HalfLife && TagStack.RemainingCycles <= 0)
+			FSRResourceTagStack UpdatedTagStack = TagStack;
+			UpdatedTagStack.StackCount += SafeCount;
+			if (Tag == ESRResourceProcessTag::HalfLife && UpdatedTagStack.RemainingCycles <= 0)
 			{
-				TagStack.RemainingCycles = StarRovers::FacilityResources::HalfLifeDefaultCycles;
+				UpdatedTagStack.RemainingCycles = StarRovers::FacilityResources::HalfLifeDefaultCycles;
 			}
+			ResourceInstance.Tags.RemoveAt(TagIndex);
+			ResourceInstance.Tags.Add(UpdatedTagStack);
 			return;
 		}
 	}

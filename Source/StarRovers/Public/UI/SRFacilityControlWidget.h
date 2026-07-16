@@ -304,6 +304,9 @@ protected:
 	TObjectPtr<UButton> DebugAddNitainButton;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UButton> DebugAddWasteButton;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UCheckBox> DeliverCheckBox;
 
 	UPROPERTY(Transient)
@@ -357,6 +360,9 @@ private:
 
 	UFUNCTION()
 	void HandleDebugAddNitainClicked();
+
+	UFUNCTION()
+	void HandleDebugAddWasteClicked();
 
 	void BuildFacilityControlWidgetTree();
 	void BindControlHandlers();

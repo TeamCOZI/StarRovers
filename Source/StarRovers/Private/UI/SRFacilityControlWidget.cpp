@@ -32,6 +32,11 @@
 
 namespace
 {
+	FString FormatFacilityEnergyDisplayValue(double Value)
+	{
+		return FString::Printf(TEXT("%.1f"), Value);
+	}
+
 	const TCHAR* GetFacilityTemperatureLabel(ESRFacilityTemperatureState TemperatureState)
 	{
 		switch (TemperatureState)
@@ -559,10 +564,10 @@ namespace
 		}
 
 		FString Summary = FString::Printf(
-			TEXT("%s x%d\nEnergy Total: %.2f\nLimit: %d\nUsed: %d"),
+			TEXT("%s x%d\nEnergy Total: %s\nLimit: %d\nUsed: %d"),
 			*BuildResourceDisplayName(ResourceInstance),
 			FMath::Max(0, ResourceInstance.StackCount),
-			ResourceInstance.EnergyValue,
+			*FormatFacilityEnergyDisplayValue(ResourceInstance.EnergyValue),
 			ResourceInstance.RemainingProcessLimit,
 			ResourceInstance.ProcessCount);
 
@@ -582,8 +587,8 @@ namespace
 
 		FString Summary = BuildResourceDisplayName(*ResourceInstance);
 		Summary += FString::Printf(
-			TEXT("\nEnergy Total: %.2f  Limit: %d"),
-			ResourceInstance->EnergyValue,
+			TEXT("\nEnergy Total: %s  Limit: %d"),
+			*FormatFacilityEnergyDisplayValue(ResourceInstance->EnergyValue),
 			ResourceInstance->RemainingProcessLimit);
 		if (!ResourceInstance->Tags.IsEmpty())
 		{
@@ -734,7 +739,7 @@ namespace
 	FString BuildInlineResourceSummary(const FSRResourceInstance& ResourceInstance)
 	{
 		FString Summary = BuildResourceDisplayName(ResourceInstance);
-		Summary += FString::Printf(TEXT("  Energy Total: %.2f"), ResourceInstance.EnergyValue);
+		Summary += FString::Printf(TEXT("  Energy Total: %s"), *FormatFacilityEnergyDisplayValue(ResourceInstance.EnergyValue));
 		return Summary;
 	}
 
@@ -869,9 +874,9 @@ namespace
 				case ESRFacilityEffectConditionKind::EnergyGreaterThan:
 				case ESRFacilityEffectConditionKind::EnergyLessThan:
 					BaseSummary += FString::Printf(
-						TEXT("%s %.2f"),
+						TEXT("%s %s"),
 						GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
-						ConditionSpec.EnergyValue);
+						*FormatFacilityEnergyDisplayValue(ConditionSpec.EnergyValue));
 					break;
 				case ESRFacilityEffectConditionKind::EnergyIncreased:
 				case ESRFacilityEffectConditionKind::EnergyDecreased:
@@ -945,8 +950,8 @@ namespace
 			if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue)
 			{
 				EffectSummary = EffectSpec.EnergyAdjustmentMode == ESRFacilityEnergyAdjustmentMode::Multiply
-					? FString::Printf(TEXT("%s * %.2f"), GetEffectKindLabel(EffectSpec.EffectKind), EffectSpec.Value)
-					: FString::Printf(TEXT("%s %+.2f"), GetEffectKindLabel(EffectSpec.EffectKind), EffectSpec.Value);
+					? FString::Printf(TEXT("%s * %s"), GetEffectKindLabel(EffectSpec.EffectKind), *FormatFacilityEnergyDisplayValue(EffectSpec.Value))
+					: FString::Printf(TEXT("%s %+.1f"), GetEffectKindLabel(EffectSpec.EffectKind), EffectSpec.Value);
 			}
 			else if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagStackCount)
 			{
@@ -1251,7 +1256,7 @@ namespace
 			Center = BuildResourceDisplayName(*ResourceInstance);
 			CardColor = FLinearColor(0.125f, 0.175f, 0.160f, 0.98f);
 			TopLeft = BuildResourceTagCardLabel(*ResourceInstance);
-			TopRight = FString::Printf(TEXT("E:%.0f"), ResourceInstance->EnergyValue);
+			TopRight = FString::Printf(TEXT("E:%s"), *FormatFacilityEnergyDisplayValue(ResourceInstance->EnergyValue));
 			BottomLeft = FString::Printf(TEXT("L:%d"), ResourceInstance->RemainingProcessLimit);
 			BottomRight = FString::Printf(TEXT("%d/%d"), SlotStackCount, Capacity);
 		}
@@ -1291,7 +1296,7 @@ namespace
 		const bool bHasResource = !ResourceInstance.ResourceId.IsNone();
 		const FString TopLeft = bHasResource ? BuildResourceTagCardLabel(ResourceInstance) : TEXT("-");
 		const FString TopRight = bHasResource
-			? FString::Printf(TEXT("E:%.0f"), ResourceInstance.EnergyValue)
+			? FString::Printf(TEXT("E:%s"), *FormatFacilityEnergyDisplayValue(ResourceInstance.EnergyValue))
 			: TEXT("-");
 		const FString Center = bHasResource ? BuildResourceDisplayName(ResourceInstance) : TEXT("Empty");
 		const FString BottomLeft = bHasResource
@@ -1761,6 +1766,7 @@ namespace
 				{ TEXT("Territe"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddTerrite", "+T") },
 				{ TEXT("Aquid"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddAquid", "+A") },
 				{ TEXT("Nitain"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddNitain", "+N") },
+				{ TEXT("Waste"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddWaste", "+W") },
 			};
 
 			for (int32 ButtonIndex = 0; ButtonIndex < UE_ARRAY_COUNT(ButtonSpecs); ++ButtonIndex)
@@ -2256,6 +2262,13 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 		return true;
 	}
 
+	if (IsWidgetUnderScreenPosition(DebugAddWasteButton, ScreenPosition) && DebugAddWasteButton->GetIsEnabled())
+	{
+		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddWasteButton"));
+		HandleDebugAddWasteClicked();
+		return true;
+	}
+
 	for (USRHubRouteDestinationAction* HubRouteDestinationAction : HubRouteDestinationActions)
 	{
 		if (IsValid(HubRouteDestinationAction) && HubRouteDestinationAction->TryHandleManualClick(ScreenPosition))
@@ -2334,6 +2347,10 @@ bool USRFacilityControlWidget::AddDebugInputResourceToPort(int32 InputPortIndex,
 	else if (ResourceId == FName(TEXT("Nitain")))
 	{
 		ResourceInstance = MakeDebugEnergyResource(TEXT("Nitain"), 3.0, 2);
+	}
+	else if (ResourceId == FName(TEXT("Waste")))
+	{
+		ResourceInstance = MakeDebugEnergyResource(TEXT("Waste"), 0.1, 3);
 	}
 	else
 	{
@@ -2736,6 +2753,22 @@ void USRFacilityControlWidget::HandleDebugAddNitainClicked()
 	RefreshControlText();
 }
 
+void USRFacilityControlWidget::HandleDebugAddWasteClicked()
+{
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl DebugAddWasteButton OnClicked"));
+
+	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
+	if (!IsValid(FacilityNetwork) || FocusedOccupantId.IsNone())
+	{
+		return;
+	}
+
+	FacilityNetwork->AddInputResource(
+		FocusedOccupantId,
+		MakeDebugEnergyResource(TEXT("Waste"), 0.1, 3));
+	RefreshControlText();
+}
+
 void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 {
 	if (!WidgetTree)
@@ -2764,6 +2797,7 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		DebugAddTerriteButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDebugAddTerriteButton"))));
 		DebugAddAquidButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDebugAddAquidButton"))));
 		DebugAddNitainButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDebugAddNitainButton"))));
+		DebugAddWasteButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDebugAddWasteButton"))));
 		DeliverCheckBox = Cast<UCheckBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDeliverCheckBox"))));
 		DeliverStatusTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDeliverStatusTextBlock"))));
 		HubRouteTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubRouteTextBlock"))));
@@ -2982,7 +3016,17 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		NSLOCTEXT("StarRoversFacilityControl", "DebugAddNitain", "+ Nitain"));
 	if (UHorizontalBoxSlot* NitainButtonSlot = DebugInputRow->AddChildToHorizontalBox(DebugAddNitainButton))
 	{
+		NitainButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
 		NitainButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+
+	DebugAddWasteButton = ConstructDebugInputButton(
+		WidgetTree,
+		TEXT("FacilityControlDebugAddWasteButton"),
+		NSLOCTEXT("StarRoversFacilityControl", "DebugAddWaste", "+ Waste"));
+	if (UHorizontalBoxSlot* WasteButtonSlot = DebugInputRow->AddChildToHorizontalBox(DebugAddWasteButton))
+	{
+		WasteButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
 	DebugInputBox->AddChildToVerticalBox(DebugInputRow);
 	AddWidgetToCanvas(
@@ -3088,6 +3132,11 @@ void USRFacilityControlWidget::BindControlHandlers()
 	{
 		DebugAddNitainButton->OnClicked.RemoveDynamic(this, &USRFacilityControlWidget::HandleDebugAddNitainClicked);
 		DebugAddNitainButton->OnClicked.AddDynamic(this, &USRFacilityControlWidget::HandleDebugAddNitainClicked);
+	}
+	if (DebugAddWasteButton)
+	{
+		DebugAddWasteButton->OnClicked.RemoveDynamic(this, &USRFacilityControlWidget::HandleDebugAddWasteClicked);
+		DebugAddWasteButton->OnClicked.AddDynamic(this, &USRFacilityControlWidget::HandleDebugAddWasteClicked);
 	}
 }
 
@@ -3753,6 +3802,10 @@ void USRFacilityControlWidget::RefreshControlText()
 	if (DebugAddNitainButton)
 	{
 		DebugAddNitainButton->SetIsEnabled(bCanDebugAddInput);
+	}
+	if (DebugAddWasteButton)
+	{
+		DebugAddWasteButton->SetIsEnabled(bCanDebugAddInput);
 	}
 	bUpdatingControls = false;
 
