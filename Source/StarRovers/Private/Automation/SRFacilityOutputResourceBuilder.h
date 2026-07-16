@@ -33,7 +33,8 @@ public:
 		int32* OutPrimaryOutputCount = nullptr,
 		FSRResourceInstance* OutBaselinePrimaryResource = nullptr,
 		int32 InitialEnergyChangeCount = 0,
-		double InitialTagEffectEnergyChangeAmount = 0.0);
+		double InitialTagEffectEnergyChangeAmount = 0.0,
+		const FSRResourceInstance* ConditionBaselineResource = nullptr);
 
 private:
 	static void BuildProcessedResourcesBeforeFacilityEffects(
@@ -41,13 +42,15 @@ private:
 		const TArray<FSRResourceInstance>& ConsumedResources,
 		TArray<FSRResourceInstance>& OutProcessedResources,
 		int32& OutEnergyChangeCount,
-		TArray<double>& OutTagEffectEnergyChangeAmounts);
+		TArray<double>& OutTagEffectEnergyChangeAmounts,
+		TArray<FSRResourceInstance>* OutResourcesBeforeTagEffects = nullptr);
 
 	static FSRResourceInstance BuildBaseOutputResource(
 		const FSRFacilityInstance& FacilityInstance,
 		const TArray<FSRResourceInstance>& ConsumedResources,
 		int32& OutEnergyChangeCount,
-		double& OutTagEffectEnergyChangeAmount);
+		double& OutTagEffectEnergyChangeAmount,
+		FSRResourceInstance* OutConditionBaselineResource = nullptr);
 
 	static void ApplyFacilityEffects(
 		const FSRFacilityInstance& FacilityInstance,
@@ -58,7 +61,8 @@ private:
 		int32 InitialEnergyChangeCount,
 		double InitialTagEffectEnergyChangeAmount,
 		bool bApplyResourceEffects = true,
-		bool bApplyAdditionalOutputEffects = true);
+		bool bApplyAdditionalOutputEffects = true,
+		const FSRResourceInstance* ConditionBaselineResource = nullptr);
 
 	static void AddTagStack(FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag, int32 Count);
 };

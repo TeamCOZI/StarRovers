@@ -106,3 +106,48 @@ bool USRPlanetSurfaceGrid::ClearInteractionPortPreviewCellIds()
 	NotifyInteractionStateChanged();
 	return true;
 }
+
+bool USRPlanetSurfaceGrid::SetInteractionHoverGridHighlightCellIds(
+	const TArray<FSRPlanetSurfaceGridCellId>& OccupiedCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& InputPortCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& OutputPortCellIds)
+{
+	const auto IsValidCellId = [this](const FSRPlanetSurfaceGridCellId& CandidateCellId)
+	{
+		return IsInteractionCellIdValid(CandidateCellId);
+	};
+
+	const bool bOccupiedChanged = SurfaceGridInteractionState::SetValidatedUniqueCellIds(
+		OccupiedCellIds,
+		HoverGridOccupiedCellIds,
+		IsValidCellId);
+	const bool bInputChanged = SurfaceGridInteractionState::SetValidatedUniqueCellIds(
+		InputPortCellIds,
+		HoverGridInputPortCellIds,
+		IsValidCellId);
+	const bool bOutputChanged = SurfaceGridInteractionState::SetValidatedUniqueCellIds(
+		OutputPortCellIds,
+		HoverGridOutputPortCellIds,
+		IsValidCellId);
+	if (!bOccupiedChanged && !bInputChanged && !bOutputChanged)
+	{
+		return false;
+	}
+
+	NotifyInteractionStateChanged();
+	return true;
+}
+
+bool USRPlanetSurfaceGrid::ClearInteractionHoverGridHighlightCellIds()
+{
+	const bool bOccupiedChanged = SurfaceGridInteractionState::ClearCellIds(HoverGridOccupiedCellIds);
+	const bool bInputChanged = SurfaceGridInteractionState::ClearCellIds(HoverGridInputPortCellIds);
+	const bool bOutputChanged = SurfaceGridInteractionState::ClearCellIds(HoverGridOutputPortCellIds);
+	if (!bOccupiedChanged && !bInputChanged && !bOutputChanged)
+	{
+		return false;
+	}
+
+	NotifyInteractionStateChanged();
+	return true;
+}

@@ -29,6 +29,11 @@ void USRPlanetSurfaceGrid::SetHoveredInteractionGridPatchVisible(bool bNewVisibl
 	}
 
 	bHoveredInteractionGridPatchVisible = bNewVisible;
+	if (!bHoveredInteractionGridPatchVisible)
+	{
+		ClearInteractionHoverGridHighlightCellIds();
+	}
+
 	if (bHasHoveredCell)
 	{
 		NotifyInteractionStateChanged();
@@ -131,6 +136,19 @@ void USRPlanetSurfaceGrid::SetFacilityPortPreviewCells(
 void USRPlanetSurfaceGrid::ClearFacilityPortPreviewCells()
 {
 	ClearInteractionPortPreviewCellIds();
+}
+
+void USRPlanetSurfaceGrid::SetHoverGridHighlightCells(
+	const TArray<FSRPlanetSurfaceGridCellId>& OccupiedCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& InputPortCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& OutputPortCellIds)
+{
+	SetInteractionHoverGridHighlightCellIds(OccupiedCellIds, InputPortCellIds, OutputPortCellIds);
+}
+
+void USRPlanetSurfaceGrid::ClearHoverGridHighlightCells()
+{
+	ClearInteractionHoverGridHighlightCellIds();
 }
 
 void USRPlanetSurfaceGrid::SetOccupiedPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds)

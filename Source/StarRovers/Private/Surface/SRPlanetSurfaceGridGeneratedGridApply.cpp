@@ -25,6 +25,9 @@ void USRPlanetSurfaceGrid::AssignGeneratedGridBuildCells(TArray<FSRPlanetSurface
 		SelectedCellId,
 		InputPortPreviewCellIds,
 		OutputPortPreviewCellIds,
+		HoverGridOccupiedCellIds,
+		HoverGridInputPortCellIds,
+		HoverGridOutputPortCellIds,
 		DeletionPreviewCellIds,
 		ConstructionReplacementPreviewCellIds,
 		InvalidPreviewCellIds);

@@ -36,6 +36,9 @@ bool USRPlanetSurfaceGrid::ShouldShowInteractionOverlayForCurrentState() const
 		OccupiedPreviewCellIds,
 		InputPortPreviewCellIds,
 		OutputPortPreviewCellIds,
+		HoverGridOccupiedCellIds,
+		HoverGridInputPortCellIds,
+		HoverGridOutputPortCellIds,
 		DeletionPreviewCellIds,
 		ConstructionReplacementPreviewCellIds,
 		InvalidPreviewCellIds);
@@ -48,6 +51,7 @@ void USRPlanetSurfaceGrid::ClearInteractionStateForHiddenGrid()
 	ClearSelectedFootprintCells();
 	ClearPlacementPreviewCells();
 	ClearAreaSelectionCells();
+	ClearHoverGridHighlightCells();
 	ClearOccupiedPreviewCells();
 	ClearFacilityPortPreviewCells();
 	ClearDeletionPreviewCells();

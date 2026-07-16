@@ -53,6 +53,14 @@ bool StarRovers::SurfaceGridInteractionOverlayBuilder::BuildInteractionOverlayMe
 
 	AppendPreviewCells(
 		OverlayMesh,
+		Input.HoverGridOccupiedCellIds,
+		Input.OccupiedCellColor,
+		Input.DebugLineThickness * 2.0f,
+		GetCellById,
+		AppendInteractionCell);
+
+	AppendPreviewCells(
+		OverlayMesh,
 		Input.OccupiedPreviewCellIds,
 		Input.OccupiedCellColor,
 		Input.DebugLineThickness * 2.5f,
@@ -131,6 +139,22 @@ bool StarRovers::SurfaceGridInteractionOverlayBuilder::BuildInteractionOverlayMe
 
 	AppendPreviewCells(
 		OverlayMesh,
+		Input.HoverGridInputPortCellIds,
+		Input.InputPortPreviewCellColor,
+		Input.DebugLineThickness * 2.5f,
+		GetCellById,
+		AppendInteractionCell);
+
+	AppendPreviewCells(
+		OverlayMesh,
+		Input.HoverGridOutputPortCellIds,
+		Input.OutputPortPreviewCellColor,
+		Input.DebugLineThickness * 2.5f,
+		GetCellById,
+		AppendInteractionCell);
+
+	AppendPreviewCells(
+		OverlayMesh,
 		Input.InputPortPreviewCellIds,
 		Input.InputPortPreviewCellColor,
 		Input.DebugLineThickness * 3.0f,
@@ -180,7 +204,10 @@ bool StarRovers::SurfaceGridInteractionOverlayBuilder::BuildInteractionOverlayMe
 			|| HasAnyCells(Input.SelectedFootprintCellIds)
 			|| HasAnyCells(Input.PlacementPreviewCellIds)
 			|| HasAnyCells(Input.AreaSelectionCellIds)
+			|| HasAnyCells(Input.HoverGridOccupiedCellIds)
 			|| HasAnyCells(Input.OccupiedPreviewCellIds)
+			|| HasAnyCells(Input.HoverGridInputPortCellIds)
+			|| HasAnyCells(Input.HoverGridOutputPortCellIds)
 			|| HasAnyCells(Input.InputPortPreviewCellIds)
 			|| HasAnyCells(Input.OutputPortPreviewCellIds)
 			|| HasAnyCells(Input.DeletionPreviewCellIds)

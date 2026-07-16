@@ -155,6 +155,15 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Facility")
     void ClearFacilityPortPreviewCells();
 
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Hover")
+    void SetHoverGridHighlightCells(
+        const TArray<FSRPlanetSurfaceGridCellId>& OccupiedCellIds,
+        const TArray<FSRPlanetSurfaceGridCellId>& InputPortCellIds,
+        const TArray<FSRPlanetSurfaceGridCellId>& OutputPortCellIds);
+
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface|Hover")
+    void ClearHoverGridHighlightCells();
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     void SetOccupiedPreviewCells(const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
 
@@ -310,6 +319,15 @@ protected:
     TArray<FSRPlanetSurfaceGridCellId> OutputPortPreviewCellIds;
 
     UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> HoverGridOccupiedCellIds;
+
+    UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> HoverGridInputPortCellIds;
+
+    UPROPERTY()
+    TArray<FSRPlanetSurfaceGridCellId> HoverGridOutputPortCellIds;
+
+    UPROPERTY()
     TArray<FSRPlanetSurfaceGridCellId> OccupiedPreviewCellIds;
 
     UPROPERTY()
@@ -388,6 +406,11 @@ private:
         const TArray<FSRPlanetSurfaceGridCellId>& InputConnectionCellIds,
         const TArray<FSRPlanetSurfaceGridCellId>& OutputConnectionCellIds);
     bool ClearInteractionPortPreviewCellIds();
+    bool SetInteractionHoverGridHighlightCellIds(
+        const TArray<FSRPlanetSurfaceGridCellId>& OccupiedCellIds,
+        const TArray<FSRPlanetSurfaceGridCellId>& InputPortCellIds,
+        const TArray<FSRPlanetSurfaceGridCellId>& OutputPortCellIds);
+    bool ClearInteractionHoverGridHighlightCellIds();
     void NotifyInteractionStateChanged();
     void UpdateDebugTickState();
     void AppendInteractionCell(UE::Geometry::FDynamicMesh3& OverlayMesh, const FSRPlanetSurfaceGridCell& Cell, const FLinearColor& LineColor, float LineThickness) const;

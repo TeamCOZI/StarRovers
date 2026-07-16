@@ -13,6 +13,7 @@ void USRAssemblyComponent::ClearSurfaceGridInteraction(AActor* SurfaceActor)
 	if (CurrentSurfaceGrid)
 	{
 		CurrentSurfaceGrid->ClearHoveredCell();
+		CurrentSurfaceGrid->ClearHoverGridHighlightCells();
 		CurrentSurfaceGrid->ClearSelectedCell();
 		CurrentSurfaceGrid->ClearSelectedFootprintCells();
 		CurrentSurfaceGrid->ClearPlacementPreviewCells();
@@ -53,6 +54,7 @@ void USRAssemblyComponent::ClearSurfaceHover()
 	if (IsValid(HoveredSurfaceGrid))
 	{
 		HoveredSurfaceGrid->ClearHoveredCell();
+		HoveredSurfaceGrid->ClearHoverGridHighlightCells();
 		HoveredSurfaceGrid->ClearSelectedFootprintCells();
 		HoveredSurfaceGrid->ClearPlacementPreviewCells();
 		HoveredSurfaceGrid->ClearOccupiedPreviewCells();
@@ -83,6 +85,7 @@ void USRAssemblyComponent::ClearSurfaceHoverPreview()
 	if (IsValid(HoveredSurfaceGrid))
 	{
 		HoveredSurfaceGrid->ClearHoveredCell();
+		HoveredSurfaceGrid->ClearHoverGridHighlightCells();
 		HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
 	}
 

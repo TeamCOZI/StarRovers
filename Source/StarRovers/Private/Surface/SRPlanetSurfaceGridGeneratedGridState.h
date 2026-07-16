@@ -25,6 +25,9 @@ namespace StarRovers::SurfaceGridGeneratedGridState
 		FSRPlanetSurfaceGridCellId& SelectedCellId,
 		TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& OutputPortPreviewCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& HoverGridOccupiedCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& HoverGridInputPortCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& HoverGridOutputPortCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& DeletionPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& ConstructionReplacementPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& InvalidPreviewCellIds);

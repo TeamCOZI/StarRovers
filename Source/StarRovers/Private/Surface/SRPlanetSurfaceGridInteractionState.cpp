@@ -135,6 +135,9 @@ bool StarRovers::SurfaceGridInteractionState::HasInteractionOverlayContent(
 	const TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& OutputPortPreviewCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& HoverGridOccupiedCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& HoverGridInputPortCellIds,
+	const TArray<FSRPlanetSurfaceGridCellId>& HoverGridOutputPortCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& DeletionPreviewCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& ConstructionReplacementPreviewCellIds,
 	const TArray<FSRPlanetSurfaceGridCellId>& InvalidPreviewCellIds)
@@ -147,6 +150,9 @@ bool StarRovers::SurfaceGridInteractionState::HasInteractionOverlayContent(
 		|| !OccupiedPreviewCellIds.IsEmpty()
 		|| !InputPortPreviewCellIds.IsEmpty()
 		|| !OutputPortPreviewCellIds.IsEmpty()
+		|| !HoverGridOccupiedCellIds.IsEmpty()
+		|| !HoverGridInputPortCellIds.IsEmpty()
+		|| !HoverGridOutputPortCellIds.IsEmpty()
 		|| !DeletionPreviewCellIds.IsEmpty()
 		|| !ConstructionReplacementPreviewCellIds.IsEmpty()
 		|| !InvalidPreviewCellIds.IsEmpty();
@@ -164,6 +170,9 @@ void StarRovers::SurfaceGridInteractionState::ResetInteractionState(
 	TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& OutputPortPreviewCellIds,
+	TArray<FSRPlanetSurfaceGridCellId>& HoverGridOccupiedCellIds,
+	TArray<FSRPlanetSurfaceGridCellId>& HoverGridInputPortCellIds,
+	TArray<FSRPlanetSurfaceGridCellId>& HoverGridOutputPortCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& DeletionPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& ConstructionReplacementPreviewCellIds,
 	TArray<FSRPlanetSurfaceGridCellId>& InvalidPreviewCellIds)
@@ -179,6 +188,9 @@ void StarRovers::SurfaceGridInteractionState::ResetInteractionState(
 	OccupiedPreviewCellIds.Reset();
 	InputPortPreviewCellIds.Reset();
 	OutputPortPreviewCellIds.Reset();
+	HoverGridOccupiedCellIds.Reset();
+	HoverGridInputPortCellIds.Reset();
+	HoverGridOutputPortCellIds.Reset();
 	DeletionPreviewCellIds.Reset();
 	ConstructionReplacementPreviewCellIds.Reset();
 	InvalidPreviewCellIds.Reset();

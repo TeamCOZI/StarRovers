@@ -36,6 +36,9 @@ namespace StarRovers::SurfaceGridInteractionOverlayBuilder
 		const TArray<FSRPlanetSurfaceGridCellId>* AreaSelectionCellIds = nullptr;
 		const TArray<FSRPlanetSurfaceGridCellId>* InputPortPreviewCellIds = nullptr;
 		const TArray<FSRPlanetSurfaceGridCellId>* OutputPortPreviewCellIds = nullptr;
+		const TArray<FSRPlanetSurfaceGridCellId>* HoverGridOccupiedCellIds = nullptr;
+		const TArray<FSRPlanetSurfaceGridCellId>* HoverGridInputPortCellIds = nullptr;
+		const TArray<FSRPlanetSurfaceGridCellId>* HoverGridOutputPortCellIds = nullptr;
 		const TArray<FSRPlanetSurfaceGridCellId>* OccupiedPreviewCellIds = nullptr;
 		const TArray<FSRPlanetSurfaceGridCellId>* DeletionPreviewCellIds = nullptr;
 		const TArray<FSRPlanetSurfaceGridCellId>* ConstructionReplacementPreviewCellIds = nullptr;

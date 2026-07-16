@@ -176,6 +176,9 @@ void USRPlanetSurfaceGrid::RebuildInteractionOverlayMesh(bool bIncludeCellHighli
 	BuildInput.InvalidPreviewCellColor = InvalidPreviewCellColor;
 	BuildInput.DebugLineThickness = DebugLineThickness;
 	BuildInput.AreaSelectionCellIds = &AreaSelectionCellIds;
+	BuildInput.HoverGridOccupiedCellIds = &HoverGridOccupiedCellIds;
+	BuildInput.HoverGridInputPortCellIds = &HoverGridInputPortCellIds;
+	BuildInput.HoverGridOutputPortCellIds = &HoverGridOutputPortCellIds;
 	BuildInput.InputPortPreviewCellIds = &InputPortPreviewCellIds;
 	BuildInput.OutputPortPreviewCellIds = &OutputPortPreviewCellIds;
 	BuildInput.OccupiedPreviewCellIds = &OccupiedPreviewCellIds;

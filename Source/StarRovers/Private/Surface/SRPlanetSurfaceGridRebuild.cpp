@@ -38,6 +38,9 @@ void USRPlanetSurfaceGrid::ResetSurfaceInteractionState()
 		OccupiedPreviewCellIds,
 		InputPortPreviewCellIds,
 		OutputPortPreviewCellIds,
+		HoverGridOccupiedCellIds,
+		HoverGridInputPortCellIds,
+		HoverGridOutputPortCellIds,
 		DeletionPreviewCellIds,
 		ConstructionReplacementPreviewCellIds,
 		InvalidPreviewCellIds);

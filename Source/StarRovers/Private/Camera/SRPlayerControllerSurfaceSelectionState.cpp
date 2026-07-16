@@ -31,5 +31,6 @@ void FSRPlayerControllerSurfaceSelectionState::ClearFocusedActorHover(
 	if (USRPlanetSurfaceGrid* FocusedSurfaceGrid = USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(FocusedActor))
 	{
 		FocusedSurfaceGrid->ClearHoveredCell();
+		FocusedSurfaceGrid->ClearHoverGridHighlightCells();
 	}
 }

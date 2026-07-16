@@ -44,6 +44,9 @@ namespace StarRovers::SurfaceGridInteractionState
 		const TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& OutputPortPreviewCellIds,
+		const TArray<FSRPlanetSurfaceGridCellId>& HoverGridOccupiedCellIds,
+		const TArray<FSRPlanetSurfaceGridCellId>& HoverGridInputPortCellIds,
+		const TArray<FSRPlanetSurfaceGridCellId>& HoverGridOutputPortCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& DeletionPreviewCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& ConstructionReplacementPreviewCellIds,
 		const TArray<FSRPlanetSurfaceGridCellId>& InvalidPreviewCellIds);
@@ -60,6 +63,9 @@ namespace StarRovers::SurfaceGridInteractionState
 		TArray<FSRPlanetSurfaceGridCellId>& OccupiedPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& InputPortPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& OutputPortPreviewCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& HoverGridOccupiedCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& HoverGridInputPortCellIds,
+		TArray<FSRPlanetSurfaceGridCellId>& HoverGridOutputPortCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& DeletionPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& ConstructionReplacementPreviewCellIds,
 		TArray<FSRPlanetSurfaceGridCellId>& InvalidPreviewCellIds);
