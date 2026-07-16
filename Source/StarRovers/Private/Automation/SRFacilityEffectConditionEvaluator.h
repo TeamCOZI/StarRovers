@@ -121,7 +121,7 @@ namespace StarRovers::FacilityEffects
 		case ESRFacilityEffectConditionKind::TemperatureState:
 			return Context.TemperatureState == ConditionSpec.TemperatureState;
 		case ESRFacilityEffectConditionKind::ProcessCountEquals:
-			return CurrentResource && CurrentResource->ProcessCount == FMath::Max(0, ConditionSpec.ProcessCount);
+			return CurrentResource && CurrentResource->ProcessCount >= FMath::Max(0, ConditionSpec.ProcessCount);
 		case ESRFacilityEffectConditionKind::PrimeEnergy:
 			return CurrentResource && IsPrimeEnergyValue(CurrentResource->EnergyValue);
 		default:

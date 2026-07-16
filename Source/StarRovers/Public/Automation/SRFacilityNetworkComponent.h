@@ -110,7 +110,8 @@ public:
 		FName OccupantId,
 		FSRResourceInstance& OutPrimaryOutput,
 		TArray<FSRResourceInstance>& OutAdditionalOutputs,
-		int32& OutOutputCount) const;
+		int32& OutOutputCount,
+		TArray<FString>& OutEnergyFormulaTexts) const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Mining")
 	bool GetFacilityMiningTarget(FName OccupantId, FSRResourceDepositInstance& OutResourceDeposit) const;

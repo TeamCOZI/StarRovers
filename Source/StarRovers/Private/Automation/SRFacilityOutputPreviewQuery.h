@@ -15,5 +15,6 @@ public:
 		FName OccupantId,
 		FSRResourceInstance& OutPrimaryOutput,
 		TArray<FSRResourceInstance>& OutAdditionalOutputs,
-		int32& OutOutputCount);
+		int32& OutOutputCount,
+		TArray<FString>& OutEnergyFormulaTexts);
 };

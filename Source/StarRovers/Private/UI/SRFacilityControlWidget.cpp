@@ -220,7 +220,7 @@ namespace
 		case ESRFacilityEffectConditionKind::TemperatureState:
 			return TEXT("Temp");
 		case ESRFacilityEffectConditionKind::ProcessCountEquals:
-			return TEXT("Process Count");
+			return TEXT("Process Count >=");
 		case ESRFacilityEffectConditionKind::PrimeEnergy:
 			return TEXT("Prime Energy");
 		default:
@@ -915,7 +915,7 @@ namespace
 					GetFacilityTemperatureLabel(ConditionSpec.TemperatureState));
 			case ESRFacilityEffectConditionKind::ProcessCountEquals:
 				return FString::Printf(
-					TEXT("%s = %d"),
+					TEXT("%s %d"),
 					GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
 					FMath::Max(0, ConditionSpec.ProcessCount));
 			default:
@@ -1395,6 +1395,40 @@ namespace
 		CardSizeBox->AddChild(CardCanvas);
 
 		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, CardColor, FMargin(0.0f));
+		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, InnerBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(3.0f));
+		if (UHorizontalBoxSlot* Slot = SlotBox->AddChildToHorizontalBox(OuterBorder))
+		{
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddEnergyFormulaCard(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* SlotBox,
+		const FString& FormulaText,
+		const FLinearColor& AccentColor)
+	{
+		if (!WidgetTree || !SlotBox || FormulaText.IsEmpty())
+		{
+			return;
+		}
+
+		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
+		AddInventoryCardText(WidgetTree, CardCanvas, TEXT("Energy Formula"), FVector2D(7.0f, 5.0f), FVector2D(206.0f, 18.0f), 9, AccentColor);
+
+		UTextBlock* FormulaTextBlock = ConstructTextBlock(WidgetTree, NAME_None, 9, FLinearColor(0.90f, 0.94f, 0.96f, 1.0f));
+		FormulaTextBlock->SetText(FText::FromString(FormulaText));
+		FormulaTextBlock->SetAutoWrapText(true);
+		FormulaTextBlock->SetJustification(ETextJustify::Left);
+		AddWidgetToCanvas(CardCanvas, FormulaTextBlock, FVector2D(8.0f, 28.0f), FVector2D(208.0f, 56.0f));
+
+		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		CardSizeBox->SetWidthOverride(224.0f);
+		CardSizeBox->SetHeightOverride(90.0f);
+		CardSizeBox->AddChild(CardCanvas);
+
+		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, FLinearColor(0.125f, 0.160f, 0.180f, 0.98f), FMargin(0.0f));
 		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, InnerBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(3.0f));
 		if (UHorizontalBoxSlot* Slot = SlotBox->AddChildToHorizontalBox(OuterBorder))
 		{
@@ -3345,20 +3379,39 @@ void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComp
 	}
 
 	TArray<FSRResourceInstance> PreviewOutputs;
+	TArray<FString> PreviewOutputEnergyFormulas;
 	if (IsValid(FacilityNetwork))
 	{
 		FSRResourceInstance PrimaryOutput;
 		TArray<FSRResourceInstance> AdditionalOutputs;
 		int32 OutputCount = 0;
-		if (FacilityNetwork->GetFacilityOutputPreview(FocusedOccupantId, PrimaryOutput, AdditionalOutputs, OutputCount))
+		TArray<FString> EnergyFormulaTexts;
+		if (FacilityNetwork->GetFacilityOutputPreview(
+			FocusedOccupantId,
+			PrimaryOutput,
+			AdditionalOutputs,
+			OutputCount,
+			EnergyFormulaTexts))
 		{
 			const int32 PrimaryOutputCount = FMath::Max(0, OutputCount);
 			PreviewOutputs.Reserve(PrimaryOutputCount + AdditionalOutputs.Num());
+			PreviewOutputEnergyFormulas.Reserve(PrimaryOutputCount + AdditionalOutputs.Num());
 			for (int32 OutputIndex = 0; OutputIndex < PrimaryOutputCount; ++OutputIndex)
 			{
 				PreviewOutputs.Add(PrimaryOutput);
+				PreviewOutputEnergyFormulas.Add(EnergyFormulaTexts.IsValidIndex(OutputIndex)
+					? EnergyFormulaTexts[OutputIndex]
+					: FString());
 			}
+			const int32 AdditionalFormulaOffset = PrimaryOutputCount;
 			PreviewOutputs.Append(AdditionalOutputs);
+			for (int32 AdditionalOutputIndex = 0; AdditionalOutputIndex < AdditionalOutputs.Num(); ++AdditionalOutputIndex)
+			{
+				const int32 FormulaIndex = AdditionalFormulaOffset + AdditionalOutputIndex;
+				PreviewOutputEnergyFormulas.Add(EnergyFormulaTexts.IsValidIndex(FormulaIndex)
+					? EnergyFormulaTexts[FormulaIndex]
+					: FString());
+			}
 		}
 	}
 
@@ -3377,6 +3430,10 @@ void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComp
 	{
 		NewSignature += TEXT("|");
 		NewSignature += BuildResourceSlotText(TEXT("Output"), PreviewIndex, NAME_None, &PreviewOutputs[PreviewIndex], TEXT("No Preview"));
+		NewSignature += TEXT("|F:");
+		NewSignature += PreviewOutputEnergyFormulas.IsValidIndex(PreviewIndex)
+			? PreviewOutputEnergyFormulas[PreviewIndex]
+			: FString();
 	}
 	if (OutputResourcePanelSignature == NewSignature)
 	{
@@ -3395,13 +3452,22 @@ void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComp
 		return;
 	}
 
-	for (const FSRResourceInstance& PreviewOutput : PreviewOutputs)
+	for (int32 PreviewIndex = 0; PreviewIndex < PreviewOutputs.Num(); ++PreviewIndex)
 	{
+		const FSRResourceInstance& PreviewOutput = PreviewOutputs[PreviewIndex];
 		AddPreviewResourceCard(
 			WidgetTree,
 			OutputResourceSlotBox,
 			PreviewOutput,
 			FLinearColor(0.84f, 1.0f, 0.90f, 1.0f));
+		if (PreviewOutputEnergyFormulas.IsValidIndex(PreviewIndex))
+		{
+			AddEnergyFormulaCard(
+				WidgetTree,
+				OutputResourceSlotBox,
+				PreviewOutputEnergyFormulas[PreviewIndex],
+				FLinearColor(0.78f, 1.0f, 0.86f, 1.0f));
+		}
 	}
 }
 

@@ -27,7 +27,6 @@ enum class ESRFacilityOperationKind : uint8
 {
 	Process = 0 UMETA(DisplayName = "Process"),
 	Synthesize = 1 UMETA(DisplayName = "Synthesize"),
-	Split = 2 UMETA(Hidden, DisplayName = "Split"),
 	Mine = 3 UMETA(DisplayName = "Mine"),
 };
 
@@ -124,7 +123,7 @@ enum class ESRFacilityEffectConditionKind : uint8
 	EnergyDecreased = 3 UMETA(DisplayName = "EnergyDecreased"),
 	Tag = 4 UMETA(DisplayName = "Tag"),
 	TemperatureState = 5 UMETA(DisplayName = "TemperatureState"),
-	ProcessCountEquals = 6 UMETA(DisplayName = "ProcessCountEquals"),
+	ProcessCountEquals = 6 UMETA(DisplayName = "ProcessCountAtLeast"),
 	PrimeEnergy = 7 UMETA(DisplayName = "PrimeEnergy"),
 	EnergyGreaterThan = 8 UMETA(DisplayName = "EnergyGreaterThan"),
 	EnergyLessThan = 9 UMETA(DisplayName = "EnergyLessThan"),

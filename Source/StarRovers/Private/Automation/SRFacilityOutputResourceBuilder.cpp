@@ -28,6 +28,107 @@ namespace
 		return EffectContext.bInvertTagEffects ? -EnergyDelta : EnergyDelta;
 	}
 
+	FString FormatEnergyFormulaValue(double Value)
+	{
+		return FString::Printf(TEXT("%.1f"), Value);
+	}
+
+	void AppendEnergyFormulaLine(FString* FormulaText, const FString& Line)
+	{
+		if (!FormulaText || Line.IsEmpty())
+		{
+			return;
+		}
+
+		if (!FormulaText->IsEmpty())
+		{
+			FormulaText->Append(TEXT("\n"));
+		}
+		FormulaText->Append(Line);
+	}
+
+	void AppendEnergyTransitionFormula(
+		FString* FormulaText,
+		const TCHAR* Label,
+		double BeforeEnergy,
+		double AfterEnergy)
+	{
+		if (!FormulaText || FMath::IsNearlyEqual(BeforeEnergy, AfterEnergy))
+		{
+			return;
+		}
+
+		AppendEnergyFormulaLine(
+			FormulaText,
+			FString::Printf(
+				TEXT("%s: %s -> %s"),
+				Label,
+				*FormatEnergyFormulaValue(BeforeEnergy),
+				*FormatEnergyFormulaValue(AfterEnergy)));
+	}
+
+	void AppendEnergyDeltaFormula(
+		FString* FormulaText,
+		const TCHAR* Label,
+		double BeforeEnergy,
+		double Delta,
+		double AfterEnergy)
+	{
+		if (!FormulaText || FMath::IsNearlyEqual(BeforeEnergy, AfterEnergy))
+		{
+			return;
+		}
+
+		AppendEnergyFormulaLine(
+			FormulaText,
+			FString::Printf(
+				TEXT("%s: %s %s %s = %s"),
+				Label,
+				*FormatEnergyFormulaValue(BeforeEnergy),
+				Delta < 0.0 ? TEXT("-") : TEXT("+"),
+				*FormatEnergyFormulaValue(FMath::Abs(Delta)),
+				*FormatEnergyFormulaValue(AfterEnergy)));
+	}
+
+	void AppendEnergyMultiplyFormula(
+		FString* FormulaText,
+		const TCHAR* Label,
+		double BeforeEnergy,
+		double Multiplier,
+		double AfterEnergy)
+	{
+		if (!FormulaText || FMath::IsNearlyEqual(BeforeEnergy, AfterEnergy))
+		{
+			return;
+		}
+
+		AppendEnergyFormulaLine(
+			FormulaText,
+			FString::Printf(
+				TEXT("%s: %s * %s = %s"),
+				Label,
+				*FormatEnergyFormulaValue(BeforeEnergy),
+				*FormatEnergyFormulaValue(Multiplier),
+				*FormatEnergyFormulaValue(AfterEnergy)));
+	}
+
+	const TCHAR* GetEnergyFormulaEffectLabel(ESRFacilityEffectKind EffectKind)
+	{
+		switch (EffectKind)
+		{
+		case ESRFacilityEffectKind::AdjustEnergy:
+			return TEXT("AdjustEnergy");
+		case ESRFacilityEffectKind::AdjustProcessLimit:
+			return TEXT("AdjustProcessLimit");
+		case ESRFacilityEffectKind::TriggerTagEffect:
+			return TEXT("TriggerTagEffect");
+		case ESRFacilityEffectKind::MultiplyEnergyByConsumedProcessLimit:
+			return TEXT("ConsumedLimitMultiplier");
+		default:
+			return TEXT("Effect");
+		}
+	}
+
 	FSRFacilityEffectContext MakeEffectContext(
 		const StarRovers::FacilityProcessing::FSRFacilityProcessContext& ProcessContext,
 		int32 InitialEnergyChangeCount = 0,
@@ -149,6 +250,11 @@ namespace
 		}
 	}
 
+	void IncrementProcessCount(FSRResourceInstance& ResourceInstance, int32 CountToAdd = 1)
+	{
+		ResourceInstance.ProcessCount = FMath::Max(0, ResourceInstance.ProcessCount) + FMath::Max(0, CountToAdd);
+	}
+
 	bool CanEnergyResourceEnterFacility(
 		const FSRResourceInstance& ResourceInstance,
 		ESRFacilityTemperatureState TemperatureState)
@@ -236,7 +342,6 @@ namespace
 		FSRFacilityEffectContext& EffectContext)
 	{
 		SetProcessLimitAndApplyHyperReactive(ResourceInstance, ResourceInstance.RemainingProcessLimit - 1, EffectContext);
-		++ResourceInstance.ProcessCount;
 		if (TemperatureState == ESRFacilityTemperatureState::Hot)
 		{
 			SetProcessLimitAndApplyHyperReactive(ResourceInstance, ResourceInstance.RemainingProcessLimit - 1, EffectContext);
@@ -703,6 +808,53 @@ namespace
 		return OutputResource;
 	}
 
+	FString BuildSynthesisEnergyFormulaText(
+		const TArray<FSRResourceInstance>& SynthesisResources,
+		const TArray<FString>& SynthesisEnergyFormulaTexts,
+		const FSRResourceInstance& OutputResource)
+	{
+		FString FormulaText;
+		for (int32 ResourceIndex = 0; ResourceIndex < SynthesisEnergyFormulaTexts.Num(); ++ResourceIndex)
+		{
+			if (!SynthesisEnergyFormulaTexts[ResourceIndex].IsEmpty())
+			{
+				AppendEnergyFormulaLine(
+					&FormulaText,
+					FString::Printf(
+						TEXT("Input %d formula:\n%s"),
+						ResourceIndex + 1,
+						*SynthesisEnergyFormulaTexts[ResourceIndex]));
+			}
+		}
+
+		FString ProductFormula;
+		for (const FSRResourceInstance& ResourceInstance : SynthesisResources)
+		{
+			if (ResourceInstance.ResourceId.IsNone())
+			{
+				continue;
+			}
+
+			if (!ProductFormula.IsEmpty())
+			{
+				ProductFormula += TEXT(" * ");
+			}
+			ProductFormula += FormatEnergyFormulaValue(ResourceInstance.EnergyValue);
+		}
+
+		if (!ProductFormula.IsEmpty())
+		{
+			AppendEnergyFormulaLine(
+				&FormulaText,
+				FString::Printf(
+					TEXT("Synthesize: %s = %s"),
+					*ProductFormula,
+					*FormatEnergyFormulaValue(OutputResource.EnergyValue)));
+		}
+
+		return FormulaText;
+	}
+
 	int32 CountAdditionalOutputResourcesForInputCount(
 		const USRFacilityDataAsset* FacilityDataAsset,
 		int32 InputResourceCount)
@@ -763,19 +915,12 @@ namespace
 			return 0;
 		}
 
-		const int32 OutputPortCount = FacilityInstance.OutputPortInventories.Num();
-		if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Split)
-		{
-			const int32 PrimaryOutputCount = OutputPortCount - FMath::Max(0, AdditionalOutputCount);
-			return PrimaryOutputCount >= 2 ? PrimaryOutputCount : 0;
-		}
-
 		if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine)
 		{
-			return OutputPortCount > 0 ? 1 : 0;
+			return FacilityInstance.OutputPortInventories.Num() > 0 ? 1 : 0;
 		}
 
-		return OutputPortCount > 0 ? 1 : 0;
+		return FacilityInstance.OutputPortInventories.Num() > 0 ? 1 : 0;
 	}
 
 	FSRResourceInstance MakeDuplicatedResourceInstance(const FSRResourceInstance& ResourceInstance)
@@ -826,8 +971,6 @@ bool FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(
 		return EnergyCount >= 1;
 	case ESRFacilityOperationKind::Synthesize:
 		return EnergyCount >= 1;
-	case ESRFacilityOperationKind::Split:
-		return EnergyCount == 1;
 	case ESRFacilityOperationKind::Mine:
 		return InputResources.IsEmpty();
 	default:
@@ -858,12 +1001,6 @@ int32 FSRFacilityOutputResourceBuilder::ResolvePrimaryOutputCount(const FSRFacil
 	if (DoesEffectSequenceRemovePrimaryOutput(FacilityDataAsset))
 	{
 		return 0;
-	}
-
-	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Split)
-	{
-		const int32 PrimaryOutputCount = OutputPortCount - ProducedOutputCount;
-		return PrimaryOutputCount >= 2 ? PrimaryOutputCount : 0;
 	}
 
 	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine)
@@ -898,7 +1035,8 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 	const TArray<FSRResourceInstance>& InputResources,
 	TArray<FSRResourceInstance>& OutOutputResources,
 	int32* OutPrimaryOutputCount,
-	FSRResourceInstance* OutBaselinePrimaryResource)
+	FSRResourceInstance* OutBaselinePrimaryResource,
+	TArray<FString>* OutEnergyFormulaTexts)
 {
 	OutOutputResources.Reset();
 	if (OutPrimaryOutputCount)
@@ -908,6 +1046,10 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 	if (OutBaselinePrimaryResource)
 	{
 		*OutBaselinePrimaryResource = FSRResourceInstance();
+	}
+	if (OutEnergyFormulaTexts)
+	{
+		OutEnergyFormulaTexts->Reset();
 	}
 	if (!IsValid(FacilityInstance.FacilityDataAsset.Get()) || InputResources.IsEmpty())
 	{
@@ -921,17 +1063,22 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 		TArray<FSRResourceInstance> ProcessedResources;
 		TArray<FSRResourceInstance> ResourcesBeforeTagEffects;
 		TArray<double> TagEffectEnergyChangeAmounts;
+		TArray<FString> ProcessedEnergyFormulaTexts;
 		BuildProcessedResourcesBeforeFacilityEffects(
 			FacilityInstance,
 			InputResources,
 			ProcessedResources,
 			InitialEnergyChangeCount,
 			TagEffectEnergyChangeAmounts,
-			&ResourcesBeforeTagEffects);
+			&ResourcesBeforeTagEffects,
+			&ProcessedEnergyFormulaTexts);
 
 		TArray<FSRResourceInstance> SynthesisResources;
+		TArray<FString> SynthesisEnergyFormulaTexts;
 		SynthesisResources.Reserve(ProcessedResources.Num());
+		SynthesisEnergyFormulaTexts.Reserve(ProcessedResources.Num());
 		TArray<FSRResourceInstance> AdditionalOutputs;
+		TArray<FString> AdditionalOutputEnergyFormulaTexts;
 		AdditionalOutputs.Reserve(CountAdditionalOutputResourcesForInputCount(FacilityDataAsset, InputResources.Num()));
 		for (int32 ResourceIndex = 0; ResourceIndex < ProcessedResources.Num(); ++ResourceIndex)
 		{
@@ -947,6 +1094,9 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 			const FSRResourceInstance* ConditionBaselineResource = ResourcesBeforeTagEffects.IsValidIndex(ResourceIndex)
 				? &ResourcesBeforeTagEffects[ResourceIndex]
 				: &ProcessedResource;
+			FString SynthesisResourceFormula = ProcessedEnergyFormulaTexts.IsValidIndex(ResourceIndex)
+				? ProcessedEnergyFormulaTexts[ResourceIndex]
+				: FString::Printf(TEXT("Input %d: %s"), ResourceIndex + 1, *FormatEnergyFormulaValue(ProcessedResource.EnergyValue));
 			ApplyFacilityEffects(
 				FacilityInstance,
 				InputResources,
@@ -957,10 +1107,12 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 				TagEffectEnergyChangeAmounts.IsValidIndex(ResourceIndex) ? TagEffectEnergyChangeAmounts[ResourceIndex] : 0.0,
 				true,
 				false,
-				ConditionBaselineResource);
+				ConditionBaselineResource,
+				&SynthesisResourceFormula);
 			if (bHasSynthesisResource && !SynthesisResource.ResourceId.IsNone())
 			{
 				SynthesisResources.Add(SynthesisResource);
+				SynthesisEnergyFormulaTexts.Add(MoveTemp(SynthesisResourceFormula));
 			}
 		}
 
@@ -970,6 +1122,10 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 		FSRResourceInstance OutputResource = SynthesisResources.IsEmpty()
 			? FSRResourceInstance()
 			: BuildSynthesisProductResource(SynthesisResources);
+		FString OutputEnergyFormulaText = BuildSynthesisEnergyFormulaText(
+			SynthesisResources,
+			SynthesisEnergyFormulaTexts,
+			OutputResource);
 		bool bHasPrimaryResource = !OutputResource.ResourceId.IsNone();
 		ApplyFacilityEffects(
 			FacilityInstance,
@@ -981,7 +1137,13 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 			0.0,
 			false,
 			true,
-			&BaselineOutputResource);
+			&BaselineOutputResource,
+			&OutputEnergyFormulaText,
+			&AdditionalOutputEnergyFormulaTexts);
+		if (bHasPrimaryResource)
+		{
+			IncrementProcessCount(OutputResource, SynthesisResources.Num());
+		}
 
 		if (OutBaselinePrimaryResource)
 		{
@@ -999,20 +1161,30 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 		for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
 		{
 			OutOutputResources.Add(OutputResource);
+			if (OutEnergyFormulaTexts)
+			{
+				OutEnergyFormulaTexts->Add(OutputEnergyFormulaText);
+			}
 		}
 		OutOutputResources.Append(AdditionalOutputs);
+		if (OutEnergyFormulaTexts)
+		{
+			OutEnergyFormulaTexts->Append(AdditionalOutputEnergyFormulaTexts);
+		}
 		return;
 	}
 
 	int32 InitialEnergyChangeCount = 0;
 	double InitialTagEffectEnergyChangeAmount = 0.0;
 	FSRResourceInstance ConditionBaselineResource;
+	FString OutputEnergyFormulaText;
 	FSRResourceInstance OutputResource = BuildBaseOutputResource(
 		FacilityInstance,
 		InputResources,
 		InitialEnergyChangeCount,
 		InitialTagEffectEnergyChangeAmount,
-		&ConditionBaselineResource);
+		&ConditionBaselineResource,
+		&OutputEnergyFormulaText);
 	BuildOutputResourcesFromPrimaryResource(
 		FacilityInstance,
 		InputResources,
@@ -1020,9 +1192,12 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 		OutOutputResources,
 		OutPrimaryOutputCount,
 		OutBaselinePrimaryResource,
+		OutEnergyFormulaTexts,
 		InitialEnergyChangeCount,
 		InitialTagEffectEnergyChangeAmount,
-		&ConditionBaselineResource);
+		&ConditionBaselineResource,
+		1,
+		&OutputEnergyFormulaText);
 }
 
 void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
@@ -1032,9 +1207,12 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 	TArray<FSRResourceInstance>& OutOutputResources,
 	int32* OutPrimaryOutputCount,
 	FSRResourceInstance* OutBaselinePrimaryResource,
+	TArray<FString>* OutEnergyFormulaTexts,
 	int32 InitialEnergyChangeCount,
 	double InitialTagEffectEnergyChangeAmount,
-	const FSRResourceInstance* ConditionBaselineResource)
+	const FSRResourceInstance* ConditionBaselineResource,
+	int32 CompletedProcessCountIncrement,
+	const FString* PrimaryEnergyFormulaText)
 {
 	OutOutputResources.Reset();
 	if (OutPrimaryOutputCount)
@@ -1044,6 +1222,10 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 	if (OutBaselinePrimaryResource)
 	{
 		*OutBaselinePrimaryResource = FSRResourceInstance();
+	}
+	if (OutEnergyFormulaTexts)
+	{
+		OutEnergyFormulaTexts->Reset();
 	}
 	if (!IsValid(FacilityInstance.FacilityDataAsset.Get()) || PrimaryResource.ResourceId.IsNone())
 	{
@@ -1056,9 +1238,13 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 	}
 	FSRResourceInstance OutputResource = PrimaryResource;
 	TArray<FSRResourceInstance> AdditionalOutputs;
+	TArray<FString> AdditionalOutputEnergyFormulaTexts;
 	AdditionalOutputs.Reserve(CountAdditionalOutputResourcesForInputCount(
 		FacilityInstance.FacilityDataAsset.Get(),
 		InputResources.Num()));
+	FString OutputEnergyFormulaText = PrimaryEnergyFormulaText
+		? *PrimaryEnergyFormulaText
+		: FString::Printf(TEXT("Input: %s"), *FormatEnergyFormulaValue(OutputResource.EnergyValue));
 	bool bHasPrimaryResource = true;
 	ApplyFacilityEffects(
 		FacilityInstance,
@@ -1070,7 +1256,9 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 		InitialTagEffectEnergyChangeAmount,
 		true,
 		true,
-		ConditionBaselineResource);
+		ConditionBaselineResource,
+		&OutputEnergyFormulaText,
+		&AdditionalOutputEnergyFormulaTexts);
 
 	const int32 OutputCount = ResolvePrimaryOutputCountForAdditionalOutputs(
 		FacilityInstance,
@@ -1080,12 +1268,24 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 	{
 		*OutPrimaryOutputCount = OutputCount;
 	}
+	if (bHasPrimaryResource && CompletedProcessCountIncrement > 0)
+	{
+		IncrementProcessCount(OutputResource, CompletedProcessCountIncrement);
+	}
 	OutOutputResources.Reserve(OutputCount + AdditionalOutputs.Num());
 	for (int32 OutputIndex = 0; OutputIndex < OutputCount; ++OutputIndex)
 	{
 		OutOutputResources.Add(OutputResource);
+		if (OutEnergyFormulaTexts)
+		{
+			OutEnergyFormulaTexts->Add(OutputEnergyFormulaText);
+		}
 	}
 	OutOutputResources.Append(AdditionalOutputs);
+	if (OutEnergyFormulaTexts)
+	{
+		OutEnergyFormulaTexts->Append(AdditionalOutputEnergyFormulaTexts);
+	}
 }
 
 void FSRFacilityOutputResourceBuilder::BuildProcessedResourcesBeforeFacilityEffects(
@@ -1094,7 +1294,8 @@ void FSRFacilityOutputResourceBuilder::BuildProcessedResourcesBeforeFacilityEffe
 	TArray<FSRResourceInstance>& OutProcessedResources,
 	int32& OutEnergyChangeCount,
 	TArray<double>& OutTagEffectEnergyChangeAmounts,
-	TArray<FSRResourceInstance>* OutResourcesBeforeTagEffects)
+	TArray<FSRResourceInstance>* OutResourcesBeforeTagEffects,
+	TArray<FString>* OutEnergyFormulaTexts)
 {
 	OutEnergyChangeCount = 0;
 	OutProcessedResources = ConsumedResources;
@@ -1103,6 +1304,18 @@ void FSRFacilityOutputResourceBuilder::BuildProcessedResourcesBeforeFacilityEffe
 	if (OutResourcesBeforeTagEffects)
 	{
 		OutResourcesBeforeTagEffects->Reset();
+	}
+	if (OutEnergyFormulaTexts)
+	{
+		OutEnergyFormulaTexts->Reset();
+		OutEnergyFormulaTexts->SetNum(OutProcessedResources.Num());
+		for (int32 ResourceIndex = 0; ResourceIndex < OutProcessedResources.Num(); ++ResourceIndex)
+		{
+			(*OutEnergyFormulaTexts)[ResourceIndex] = FString::Printf(
+				TEXT("Input %d: %s"),
+				ResourceIndex + 1,
+				*FormatEnergyFormulaValue(OutProcessedResources[ResourceIndex].EnergyValue));
+		}
 	}
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	if (!IsValid(FacilityDataAsset) || OutProcessedResources.IsEmpty())
@@ -1118,7 +1331,27 @@ void FSRFacilityOutputResourceBuilder::BuildProcessedResourcesBeforeFacilityEffe
 		ConditionResource);
 	FSRFacilityEffectContext PreProcessingEffectContext = MakeEffectContext(ProcessContext);
 	const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
+	TArray<double> EnergyBeforeProcessStep;
+	if (OutEnergyFormulaTexts)
+	{
+		EnergyBeforeProcessStep.Reserve(OutProcessedResources.Num());
+		for (const FSRResourceInstance& ResourceInstance : OutProcessedResources)
+		{
+			EnergyBeforeProcessStep.Add(ResourceInstance.EnergyValue);
+		}
+	}
 	ConsumeEnergyInputsForFacilityPass(OutProcessedResources, EffectiveTemperatureState, PreProcessingEffectContext);
+	if (OutEnergyFormulaTexts)
+	{
+		for (int32 ResourceIndex = 0; ResourceIndex < OutProcessedResources.Num(); ++ResourceIndex)
+		{
+			AppendEnergyTransitionFormula(
+				&(*OutEnergyFormulaTexts)[ResourceIndex],
+				TEXT("Process step"),
+				EnergyBeforeProcessStep.IsValidIndex(ResourceIndex) ? EnergyBeforeProcessStep[ResourceIndex] : OutProcessedResources[ResourceIndex].EnergyValue,
+				OutProcessedResources[ResourceIndex].EnergyValue);
+		}
+	}
 	const int32 ChargeStacksToAdd = ResolveChargeStacksToAddForProcessingPass(
 		FacilityInstance,
 		EffectiveTemperatureState,
@@ -1132,6 +1365,14 @@ void FSRFacilityOutputResourceBuilder::BuildProcessedResourcesBeforeFacilityEffe
 		FSRResourceInstance& ProcessedResource = OutProcessedResources[ResourceIndex];
 		const double EnergyBeforeTagEffects = ProcessedResource.EnergyValue;
 		ApplyTagEffects(EffectiveTemperatureState, ChargeStacksToAdd, PreProcessingEffectContext, ProcessedResource);
+		if (OutEnergyFormulaTexts && OutEnergyFormulaTexts->IsValidIndex(ResourceIndex))
+		{
+			AppendEnergyTransitionFormula(
+				&(*OutEnergyFormulaTexts)[ResourceIndex],
+				TEXT("Tag effects"),
+				EnergyBeforeTagEffects,
+				ProcessedResource.EnergyValue);
+		}
 		OutTagEffectEnergyChangeAmounts[ResourceIndex] = FMath::Abs(ProcessedResource.EnergyValue - EnergyBeforeTagEffects);
 	}
 	OutEnergyChangeCount = PreProcessingEffectContext.EnergyChangeCount;
@@ -1142,13 +1383,18 @@ FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
 	const TArray<FSRResourceInstance>& ConsumedResources,
 	int32& OutEnergyChangeCount,
 	double& OutTagEffectEnergyChangeAmount,
-	FSRResourceInstance* OutConditionBaselineResource)
+	FSRResourceInstance* OutConditionBaselineResource,
+	FString* OutEnergyFormulaText)
 {
 	OutEnergyChangeCount = 0;
 	OutTagEffectEnergyChangeAmount = 0.0;
 	if (OutConditionBaselineResource)
 	{
 		*OutConditionBaselineResource = FSRResourceInstance();
+	}
+	if (OutEnergyFormulaText)
+	{
+		OutEnergyFormulaText->Reset();
 	}
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	if (!IsValid(FacilityDataAsset) || ConsumedResources.IsEmpty())
@@ -1159,13 +1405,15 @@ FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
 	TArray<FSRResourceInstance> ProcessedResources;
 	TArray<FSRResourceInstance> ResourcesBeforeTagEffects;
 	TArray<double> TagEffectEnergyChangeAmounts;
+	TArray<FString> EnergyFormulaTexts;
 	BuildProcessedResourcesBeforeFacilityEffects(
 		FacilityInstance,
 		ConsumedResources,
 		ProcessedResources,
 		OutEnergyChangeCount,
 		TagEffectEnergyChangeAmounts,
-		&ResourcesBeforeTagEffects);
+		&ResourcesBeforeTagEffects,
+		&EnergyFormulaTexts);
 
 	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Process)
 	{
@@ -1181,6 +1429,12 @@ FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
 			OutTagEffectEnergyChangeAmount = TagEffectEnergyChangeAmounts.IsValidIndex(ResourceIndex)
 				? TagEffectEnergyChangeAmounts[ResourceIndex]
 				: 0.0;
+			if (OutEnergyFormulaText)
+			{
+				*OutEnergyFormulaText = EnergyFormulaTexts.IsValidIndex(ResourceIndex)
+					? EnergyFormulaTexts[ResourceIndex]
+					: FString::Printf(TEXT("Input %d: %s"), ResourceIndex + 1, *FormatEnergyFormulaValue(ProcessedResources[ResourceIndex].EnergyValue));
+			}
 			return ProcessedResources[ResourceIndex];
 		}
 		if (OutConditionBaselineResource)
@@ -1192,41 +1446,12 @@ FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
 		OutTagEffectEnergyChangeAmount = TagEffectEnergyChangeAmounts.IsValidIndex(0)
 			? TagEffectEnergyChangeAmounts[0]
 			: 0.0;
-		return ProcessedResources[0];
-	}
-
-	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Split)
-	{
-		const int32 PrimaryOutputCount = FMath::Max(1, ResolvePrimaryOutputCount(FacilityInstance));
-		const int32 ResourceIndex = FindFirstResourceIndex(ProcessedResources);
-		if (ProcessedResources.IsValidIndex(ResourceIndex))
+		if (OutEnergyFormulaText)
 		{
-			OutTagEffectEnergyChangeAmount = TagEffectEnergyChangeAmounts.IsValidIndex(ResourceIndex)
-				? TagEffectEnergyChangeAmounts[ResourceIndex] / static_cast<double>(PrimaryOutputCount)
-				: 0.0;
-			FSRResourceInstance OutputResource = ProcessedResources[ResourceIndex];
-			OutputResource.EnergyValue = ProcessedResources[ResourceIndex].EnergyValue / static_cast<double>(PrimaryOutputCount);
-			if (OutConditionBaselineResource)
-			{
-				*OutConditionBaselineResource = ResourcesBeforeTagEffects.IsValidIndex(ResourceIndex)
-					? ResourcesBeforeTagEffects[ResourceIndex]
-					: ProcessedResources[ResourceIndex];
-				OutConditionBaselineResource->EnergyValue =
-					OutConditionBaselineResource->EnergyValue / static_cast<double>(PrimaryOutputCount);
-			}
-			return OutputResource;
+			*OutEnergyFormulaText = EnergyFormulaTexts.IsValidIndex(0)
+				? EnergyFormulaTexts[0]
+				: FString::Printf(TEXT("Input 1: %s"), *FormatEnergyFormulaValue(ProcessedResources[0].EnergyValue));
 		}
-		if (OutConditionBaselineResource)
-		{
-			*OutConditionBaselineResource = ResourcesBeforeTagEffects.IsValidIndex(0)
-				? ResourcesBeforeTagEffects[0]
-				: ProcessedResources[0];
-			OutConditionBaselineResource->EnergyValue =
-				OutConditionBaselineResource->EnergyValue / static_cast<double>(PrimaryOutputCount);
-		}
-		OutTagEffectEnergyChangeAmount = TagEffectEnergyChangeAmounts.IsValidIndex(0)
-			? TagEffectEnergyChangeAmounts[0] / static_cast<double>(PrimaryOutputCount)
-			: 0.0;
 		return ProcessedResources[0];
 	}
 
@@ -1240,7 +1465,15 @@ FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
 			? BuildSynthesisProductResource(ProcessedResources)
 			: BuildSynthesisProductResource(ResourcesBeforeTagEffects);
 	}
-	return BuildSynthesisProductResource(ProcessedResources);
+	FSRResourceInstance SynthesisProductResource = BuildSynthesisProductResource(ProcessedResources);
+	if (OutEnergyFormulaText)
+	{
+		*OutEnergyFormulaText = BuildSynthesisEnergyFormulaText(
+			ProcessedResources,
+			EnergyFormulaTexts,
+			SynthesisProductResource);
+	}
+	return SynthesisProductResource;
 }
 
 void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
@@ -1253,7 +1486,9 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 	double InitialTagEffectEnergyChangeAmount,
 	bool bApplyResourceEffects,
 	bool bApplyAdditionalOutputEffects,
-	const FSRResourceInstance* ConditionBaselineResource)
+	const FSRResourceInstance* ConditionBaselineResource,
+	FString* EnergyFormulaText,
+	TArray<FString>* OutAdditionalOutputEnergyFormulaTexts)
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	if (!IsValid(FacilityDataAsset))
@@ -1296,6 +1531,9 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 		const FSRResourceInstance* ResourceBeforeEffect = bHasPrimaryResource ? &ResourceInstance : nullptr;
 		const double EnergyValueBeforeEffect = ResourceBeforeEffect ? ResourceBeforeEffect->EnergyValue : 0.0;
 		const int32 EnergyChangeCountBeforeEffect = EffectContext.EnergyChangeCount;
+		bool bTraceAdjustEnergyFormula = false;
+		double AdjustEnergyFormulaValue = 0.0;
+		ESRFacilityEnergyAdjustmentMode AdjustEnergyFormulaMode = ESRFacilityEnergyAdjustmentMode::Add;
 		const int32 Count = FMath::Max(1, EffectSpec.Count);
 		switch (EffectSpec.EffectKind)
 		{
@@ -1310,6 +1548,9 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 					EffectSpec,
 					ResourceInstance,
 					EffectContext);
+				bTraceAdjustEnergyFormula = true;
+				AdjustEnergyFormulaValue = EnergyAdjustmentValue;
+				AdjustEnergyFormulaMode = EffectSpec.EnergyAdjustmentMode;
 				if (EffectSpec.EnergyAdjustmentMode == ESRFacilityEnergyAdjustmentMode::Multiply)
 				{
 					MultiplyEnergyValue(ResourceInstance, EnergyAdjustmentValue, EffectContext);
@@ -1379,6 +1620,12 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 				for (int32 OutputIndex = 0; OutputIndex < Count; ++OutputIndex)
 				{
 					FSRResourceInstance WasteResource = EffectSpec.ProducedResource->BuildDefaultInstance();
+					if (OutAdditionalOutputEnergyFormulaTexts)
+					{
+						OutAdditionalOutputEnergyFormulaTexts->Add(FString::Printf(
+							TEXT("Waste base: %s"),
+							*FormatEnergyFormulaValue(WasteResource.EnergyValue)));
+					}
 					OutAdditionalOutputs.Add(WasteResource);
 				}
 			}
@@ -1400,6 +1647,12 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 					if (!InputResource.ResourceId.IsNone() && InputResource.StackCount > 0)
 					{
 						OutAdditionalOutputs.Add(MakeDuplicatedResourceInstance(InputResource));
+						if (OutAdditionalOutputEnergyFormulaTexts)
+						{
+							OutAdditionalOutputEnergyFormulaTexts->Add(FString::Printf(
+								TEXT("Duplicate input: %s"),
+								*FormatEnergyFormulaValue(InputResource.EnergyValue)));
+						}
 					}
 				}
 			}
@@ -1465,6 +1718,41 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 			EnergyValueBeforeEffect,
 			EnergyChangeCountBeforeEffect,
 			EffectContext);
+		if (bHasPrimaryResource && !FMath::IsNearlyEqual(EnergyValueBeforeEffect, ResourceInstance.EnergyValue))
+		{
+			if (bTraceAdjustEnergyFormula)
+			{
+				if (AdjustEnergyFormulaMode == ESRFacilityEnergyAdjustmentMode::Multiply)
+				{
+					AppendEnergyMultiplyFormula(
+						EnergyFormulaText,
+						TEXT("AdjustEnergy"),
+						EnergyValueBeforeEffect,
+						AdjustEnergyFormulaValue,
+						ResourceInstance.EnergyValue);
+				}
+				else
+				{
+					const double Delta = AdjustEnergyFormulaMode == ESRFacilityEnergyAdjustmentMode::Subtract
+						? -AdjustEnergyFormulaValue
+						: AdjustEnergyFormulaValue;
+					AppendEnergyDeltaFormula(
+						EnergyFormulaText,
+						TEXT("AdjustEnergy"),
+						EnergyValueBeforeEffect,
+						Delta,
+						ResourceInstance.EnergyValue);
+				}
+			}
+			else
+			{
+				AppendEnergyTransitionFormula(
+					EnergyFormulaText,
+					GetEnergyFormulaEffectLabel(EffectSpec.EffectKind),
+					EnergyValueBeforeEffect,
+					ResourceInstance.EnergyValue);
+			}
+		}
 	}
 }
 

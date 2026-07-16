@@ -23,7 +23,8 @@ public:
 		const TArray<FSRResourceInstance>& InputResources,
 		TArray<FSRResourceInstance>& OutOutputResources,
 		int32* OutPrimaryOutputCount = nullptr,
-		FSRResourceInstance* OutBaselinePrimaryResource = nullptr);
+		FSRResourceInstance* OutBaselinePrimaryResource = nullptr,
+		TArray<FString>* OutEnergyFormulaTexts = nullptr);
 
 	static void BuildOutputResourcesFromPrimaryResource(
 		const FSRFacilityInstance& FacilityInstance,
@@ -32,9 +33,12 @@ public:
 		TArray<FSRResourceInstance>& OutOutputResources,
 		int32* OutPrimaryOutputCount = nullptr,
 		FSRResourceInstance* OutBaselinePrimaryResource = nullptr,
+		TArray<FString>* OutEnergyFormulaTexts = nullptr,
 		int32 InitialEnergyChangeCount = 0,
 		double InitialTagEffectEnergyChangeAmount = 0.0,
-		const FSRResourceInstance* ConditionBaselineResource = nullptr);
+		const FSRResourceInstance* ConditionBaselineResource = nullptr,
+		int32 CompletedProcessCountIncrement = 0,
+		const FString* PrimaryEnergyFormulaText = nullptr);
 
 private:
 	static void BuildProcessedResourcesBeforeFacilityEffects(
@@ -43,14 +47,16 @@ private:
 		TArray<FSRResourceInstance>& OutProcessedResources,
 		int32& OutEnergyChangeCount,
 		TArray<double>& OutTagEffectEnergyChangeAmounts,
-		TArray<FSRResourceInstance>* OutResourcesBeforeTagEffects = nullptr);
+		TArray<FSRResourceInstance>* OutResourcesBeforeTagEffects = nullptr,
+		TArray<FString>* OutEnergyFormulaTexts = nullptr);
 
 	static FSRResourceInstance BuildBaseOutputResource(
 		const FSRFacilityInstance& FacilityInstance,
 		const TArray<FSRResourceInstance>& ConsumedResources,
 		int32& OutEnergyChangeCount,
 		double& OutTagEffectEnergyChangeAmount,
-		FSRResourceInstance* OutConditionBaselineResource = nullptr);
+		FSRResourceInstance* OutConditionBaselineResource = nullptr,
+		FString* OutEnergyFormulaText = nullptr);
 
 	static void ApplyFacilityEffects(
 		const FSRFacilityInstance& FacilityInstance,
@@ -62,7 +68,9 @@ private:
 		double InitialTagEffectEnergyChangeAmount,
 		bool bApplyResourceEffects = true,
 		bool bApplyAdditionalOutputEffects = true,
-		const FSRResourceInstance* ConditionBaselineResource = nullptr);
+		const FSRResourceInstance* ConditionBaselineResource = nullptr,
+		FString* EnergyFormulaText = nullptr,
+		TArray<FString>* OutAdditionalOutputEnergyFormulaTexts = nullptr);
 
 	static void AddTagStack(FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag, int32 Count);
 };

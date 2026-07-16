@@ -12,11 +12,13 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 	FName OccupantId,
 	FSRResourceInstance& OutPrimaryOutput,
 	TArray<FSRResourceInstance>& OutAdditionalOutputs,
-	int32& OutOutputCount)
+	int32& OutOutputCount,
+	TArray<FString>& OutEnergyFormulaTexts)
 {
 	OutPrimaryOutput = FSRResourceInstance();
 	OutAdditionalOutputs.Reset();
 	OutOutputCount = 0;
+	OutEnergyFormulaTexts.Reset();
 
 	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
 	if (!FacilityInstance || !IsValid(FacilityInstance->FacilityDataAsset.Get()))
@@ -34,13 +36,16 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 		}
 
 		TArray<FSRResourceInstance> PreviewOutputs;
+		TArray<FString> PreviewEnergyFormulaTexts;
 		int32 PrimaryOutputCount = 0;
 		FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 			*FacilityInstance,
 			TArray<FSRResourceInstance>(),
 			ResourceDeposit.ResourceDataAsset->BuildDefaultInstance(),
 			PreviewOutputs,
-			&PrimaryOutputCount);
+			&PrimaryOutputCount,
+			nullptr,
+			&PreviewEnergyFormulaTexts);
 		if (PreviewOutputs.IsEmpty())
 		{
 			OutOutputCount = 0;
@@ -53,6 +58,7 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 			OutAdditionalOutputs.Add(PreviewOutputs[OutputIndex]);
 		}
 		OutOutputCount = PrimaryOutputCount;
+		OutEnergyFormulaTexts = MoveTemp(PreviewEnergyFormulaTexts);
 		return !OutPrimaryOutput.ResourceId.IsNone();
 	}
 
@@ -78,12 +84,15 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 	}
 
 	TArray<FSRResourceInstance> PreviewOutputs;
+	TArray<FString> PreviewEnergyFormulaTexts;
 	int32 PrimaryOutputCount = 0;
 	FSRFacilityOutputResourceBuilder::BuildOutputResources(
 		*FacilityInstance,
 		PreviewInputs,
 		PreviewOutputs,
-		&PrimaryOutputCount);
+		&PrimaryOutputCount,
+		nullptr,
+		&PreviewEnergyFormulaTexts);
 	if (PreviewOutputs.IsEmpty())
 	{
 		if (FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(*FacilityInstance))
@@ -100,5 +109,6 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 		OutAdditionalOutputs.Add(PreviewOutputs[OutputIndex]);
 	}
 	OutOutputCount = PrimaryOutputCount;
+	OutEnergyFormulaTexts = MoveTemp(PreviewEnergyFormulaTexts);
 	return true;
 }
