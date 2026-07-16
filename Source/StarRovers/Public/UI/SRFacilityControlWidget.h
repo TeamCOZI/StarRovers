@@ -25,10 +25,12 @@ class STARROVERS_API USRFacilityInputSlotDebugAction : public UObject
 	GENERATED_BODY()
 
 public:
-	void Initialize(USRFacilityControlWidget* InOwnerWidget, int32 InInputPortIndex, FName InResourceId);
+	void Initialize(USRFacilityControlWidget* InOwnerWidget, int32 InInputPortIndex, FName InResourceId, UButton* InButton);
 
 	UFUNCTION()
 	void HandleClicked();
+
+	bool TryHandleManualClick(const FVector2D& ScreenPosition);
 
 private:
 	UPROPERTY(Transient)
@@ -36,6 +38,9 @@ private:
 
 	int32 InputPortIndex = INDEX_NONE;
 	FName ResourceId = NAME_None;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> Button;
 };
 
 UCLASS()

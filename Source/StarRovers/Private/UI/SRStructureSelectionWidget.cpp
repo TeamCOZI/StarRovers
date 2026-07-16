@@ -27,7 +27,7 @@ namespace
 {
 	constexpr int32 StructureCategoryButtonCount = 4;
 	constexpr int32 FacilityButtonCount = 5;
-	constexpr int32 StructureTabCount = 4;
+	constexpr int32 DefaultStructureTabIndicatorCapacity = 4;
 	constexpr int32 StructureCategoryIconTextureSize = 64;
 	constexpr float DefaultCategoryButtonLength = 48.0f;
 	constexpr float DefaultFacilityButtonLength = 72.0f;
@@ -342,6 +342,7 @@ void USRStructureSelectionWidget::SetBuildOptions(const TArray<FSRStructureBuild
 	RebuildCategorizedBuildOptions();
 	RebuildBuildOptions();
 	RefreshCategoryButtonStyles();
+	RefreshFacilityButtonBarVisibility();
 	RefreshFacilityButtonLabels();
 	RefreshFacilityButtonStyles();
 	RefreshSelectedStructureText();
@@ -503,7 +504,13 @@ bool USRStructureSelectionWidget::AdvanceStructureSelectionTab()
 		return false;
 	}
 
-	SetStructureSelectionTabIndex((SelectedStructureTabIndex + 1) % StructureTabCount);
+	const int32 PageCount = GetSelectedFacilityPageCount();
+	if (PageCount <= 0)
+	{
+		return false;
+	}
+
+	SetStructureSelectionTabIndex((SelectedStructureTabIndex + 1) % PageCount);
 	return true;
 }
 
@@ -611,13 +618,6 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 			}
 		}
 
-		for (int32 TabIndex = 0; TabIndex < StructureTabCount; ++TabIndex)
-		{
-			const int32 DisplayIndex = TabIndex + 1;
-			StructureTabIndicatorSizeBoxes.Add(Cast<USizeBox>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("StructureTabIndicatorSizeBox%d"), DisplayIndex)))));
-			StructureTabIndicatorImages.Add(Cast<UImage>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("StructureTabIndicatorImage%d"), DisplayIndex)))));
-		}
-
 		bool bHasRequiredCategoryButtons = CategoryBarBorder
 			&& CategoryButtonRowBox
 			&& CategoryButtons.Num() == StructureCategoryButtonCount
@@ -647,14 +647,12 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 			bHasRequiredFacilityButtons = bHasRequiredFacilityButtons && IsValid(FacilityButtonGapSizeBox);
 		}
 
-		bool bHasRequiredTabIndicators = StructureTabBarBorder && StructureTabIndicatorRowBox && StructureTabIndicatorImages.Num() == StructureTabCount;
-		for (UImage* TabIndicatorImage : StructureTabIndicatorImages)
-		{
-			bHasRequiredTabIndicators = bHasRequiredTabIndicators && IsValid(TabIndicatorImage);
-		}
+		const bool bHasRequiredTabIndicatorHost = StructureTabBarBorder && StructureTabIndicatorRowBox;
 
-		if (bHasRequiredCategoryButtons && bHasRequiredFacilityButtons && bHasRequiredTabIndicators)
+		if (bHasRequiredCategoryButtons && bHasRequiredFacilityButtons && bHasRequiredTabIndicatorHost)
 		{
+			RebuildStructureTabIndicators();
+
 			for (int32 ButtonIndex = 0; ButtonIndex < CategoryButtons.Num(); ++ButtonIndex)
 			{
 				UButton* CategoryButton = CategoryButtons[ButtonIndex];
@@ -786,49 +784,10 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 		TEXT("StructureTabIndicatorRowBox"));
 	StructureTabBarBorder->SetContent(StructureTabIndicatorRowBox);
 
-	auto AddTabEqualSpacer = [this](const TCHAR* SpacerName)
-	{
-		if (!WidgetTree || !StructureTabIndicatorRowBox)
-		{
-			return;
-		}
-
-		USpacer* Spacer = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), SpacerName);
-		if (UHorizontalBoxSlot* SpacerSlot = StructureTabIndicatorRowBox->AddChildToHorizontalBox(Spacer))
-		{
-			SpacerSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		}
-	};
-
 	StructureTabIndicatorSizeBoxes.Reset();
 	StructureTabIndicatorImages.Reset();
 
-	AddTabEqualSpacer(TEXT("StructureTabIndicatorSpacer0"));
-	for (int32 TabIndex = 0; TabIndex < StructureTabCount; ++TabIndex)
-	{
-		const int32 DisplayIndex = TabIndex + 1;
-
-		USizeBox* TabIndicatorSizeBox = WidgetTree->ConstructWidget<USizeBox>(
-			USizeBox::StaticClass(),
-			FName(*FString::Printf(TEXT("StructureTabIndicatorSizeBox%d"), DisplayIndex)));
-		TabIndicatorSizeBox->SetVisibility(ESlateVisibility::HitTestInvisible);
-		StructureTabIndicatorSizeBoxes.Add(TabIndicatorSizeBox);
-
-		UImage* TabIndicatorImage = WidgetTree->ConstructWidget<UImage>(
-			UImage::StaticClass(),
-			FName(*FString::Printf(TEXT("StructureTabIndicatorImage%d"), DisplayIndex)));
-		TabIndicatorImage->SetVisibility(ESlateVisibility::HitTestInvisible);
-		StructureTabIndicatorImages.Add(TabIndicatorImage);
-		TabIndicatorSizeBox->AddChild(TabIndicatorImage);
-
-		if (UHorizontalBoxSlot* IndicatorSlot = StructureTabIndicatorRowBox->AddChildToHorizontalBox(TabIndicatorSizeBox))
-		{
-			IndicatorSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			IndicatorSlot->SetVerticalAlignment(VAlign_Center);
-		}
-
-		AddTabEqualSpacer(*FString::Printf(TEXT("StructureTabIndicatorSpacer%d"), DisplayIndex));
-	}
+	RebuildStructureTabIndicators();
 
 	FacilityButtonBarBorder = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(),
@@ -1281,12 +1240,18 @@ void USRStructureSelectionWidget::RebuildCategorizedBuildOptions()
 	else if (SelectedCategoryIndex != 2 && SelectedCategoryIndex != 3)
 	{
 		SelectedFacilityButtonIndex = INDEX_NONE;
+		SelectedStructureTabIndex = 0;
 	}
 	else if (SelectedFacilityButtonIndex != INDEX_NONE
 		&& !IsBuildOptionSelectable(GetFacilityButtonStructureId(SelectedFacilityButtonIndex)))
 	{
 		SelectedFacilityButtonIndex = INDEX_NONE;
 	}
+
+	const int32 PageCount = GetSelectedFacilityPageCount();
+	SelectedStructureTabIndex = PageCount > 0
+		? FMath::Clamp(SelectedStructureTabIndex, 0, PageCount - 1)
+		: 0;
 }
 
 void USRStructureSelectionWidget::RebuildBuildOptionIndex()
@@ -1413,6 +1378,24 @@ void USRStructureSelectionWidget::SyncStructureTabBarLayout()
 		return;
 	}
 
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(StructureTabBarBorder->Slot))
+	{
+		const int32 PageCount = GetSelectedFacilityPageCount();
+		const float PageScale = PageCount > 0
+			? FMath::Max(1.0f, static_cast<float>(PageCount) / static_cast<float>(DefaultStructureTabIndicatorCapacity))
+			: 1.0f;
+		const float ClampedWidthRatio = FMath::Clamp(StructureTabBarWidthViewportRatio * PageScale, 0.0f, 1.0f);
+		const float ClampedCategoryHeightRatio = FMath::Clamp(CategoryBarHeightViewportRatio, 0.0f, 1.0f);
+		const float ClampedFacilityHeightRatio = FMath::Clamp(FacilityButtonBarHeightViewportRatio, 0.0f, 1.0f);
+		const float ClampedTabHeightRatio = FMath::Clamp(StructureTabBarHeightViewportRatio, 0.0f, 1.0f);
+		const float LeftAnchor = (1.0f - ClampedWidthRatio) * 0.5f;
+		const float RightAnchor = 1.0f - LeftAnchor;
+		const float BottomAnchor = 1.0f - ClampedCategoryHeightRatio - ClampedFacilityHeightRatio;
+		const float TopAnchor = FMath::Clamp(BottomAnchor - ClampedTabHeightRatio, 0.0f, 1.0f);
+		CanvasSlot->SetAnchors(FAnchors(LeftAnchor, TopAnchor, RightAnchor, FMath::Clamp(BottomAnchor, 0.0f, 1.0f)));
+		CanvasSlot->SetOffsets(FMargin(0.0f));
+	}
+
 	const FVector2D BarLocalSize = StructureTabBarBorder->GetCachedGeometry().GetLocalSize();
 	const float IndicatorHeightRatio = FMath::Clamp(StructureTabIndicatorHeightRatio, 0.0f, 1.0f);
 	const float BarHeight = BarLocalSize.Y > UE_SMALL_NUMBER
@@ -1432,6 +1415,64 @@ void USRStructureSelectionWidget::SyncStructureTabBarLayout()
 	}
 }
 
+void USRStructureSelectionWidget::RebuildStructureTabIndicators()
+{
+	if (!WidgetTree || !StructureTabIndicatorRowBox)
+	{
+		return;
+	}
+
+	StructureTabIndicatorRowBox->ClearChildren();
+	StructureTabIndicatorSizeBoxes.Reset();
+	StructureTabIndicatorImages.Reset();
+
+	const int32 PageCount = GetSelectedFacilityPageCount();
+	if (PageCount <= 0)
+	{
+		SelectedStructureTabIndex = 0;
+		return;
+	}
+
+	auto AddTabEqualSpacer = [this]()
+	{
+		if (!WidgetTree || !StructureTabIndicatorRowBox)
+		{
+			return;
+		}
+
+		USpacer* Spacer = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass());
+		if (UHorizontalBoxSlot* SpacerSlot = StructureTabIndicatorRowBox->AddChildToHorizontalBox(Spacer))
+		{
+			SpacerSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+	};
+
+	AddTabEqualSpacer();
+	for (int32 TabIndex = 0; TabIndex < PageCount; ++TabIndex)
+	{
+		USizeBox* TabIndicatorSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		TabIndicatorSizeBox->SetVisibility(ESlateVisibility::HitTestInvisible);
+		StructureTabIndicatorSizeBoxes.Add(TabIndicatorSizeBox);
+
+		UImage* TabIndicatorImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+		TabIndicatorImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+		StructureTabIndicatorImages.Add(TabIndicatorImage);
+		TabIndicatorSizeBox->AddChild(TabIndicatorImage);
+
+		if (UHorizontalBoxSlot* IndicatorSlot = StructureTabIndicatorRowBox->AddChildToHorizontalBox(TabIndicatorSizeBox))
+		{
+			IndicatorSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			IndicatorSlot->SetVerticalAlignment(VAlign_Center);
+		}
+
+		AddTabEqualSpacer();
+	}
+
+	RefreshStructureTabIndicatorBrushes();
+	RefreshStructureTabIndicatorStyles();
+	SyncStructureTabBarLayout();
+}
+
 void USRStructureSelectionWidget::RefreshFacilityButtonBarVisibility()
 {
 	if (!FacilityButtonBarBorder)
@@ -1440,10 +1481,23 @@ void USRStructureSelectionWidget::RefreshFacilityButtonBarVisibility()
 	}
 
 	const bool bShouldShowFacilityButtons = SelectedCategoryIndex == 2 || SelectedCategoryIndex == 3;
+	const int32 PageCount = GetSelectedFacilityPageCount();
+	if (bShouldShowFacilityButtons && PageCount > 0)
+	{
+		SelectedStructureTabIndex = FMath::Clamp(SelectedStructureTabIndex, 0, PageCount - 1);
+	}
+	else
+	{
+		SelectedStructureTabIndex = 0;
+	}
+	RebuildStructureTabIndicators();
+
 	FacilityButtonBarBorder->SetVisibility(bShouldShowFacilityButtons ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	if (StructureTabBarBorder)
 	{
-		StructureTabBarBorder->SetVisibility(bShouldShowFacilityButtons ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		StructureTabBarBorder->SetVisibility(bShouldShowFacilityButtons && PageCount > 0
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
 	}
 	if (!bShouldShowFacilityButtons)
 	{
@@ -1562,12 +1616,20 @@ void USRStructureSelectionWidget::RefreshStructureTabIndicatorBrushes()
 
 void USRStructureSelectionWidget::RefreshStructureTabIndicatorStyles()
 {
-	SelectedStructureTabIndex = FMath::Clamp(SelectedStructureTabIndex, 0, StructureTabCount - 1);
+	const int32 PageCount = GetSelectedFacilityPageCount();
+	if (PageCount <= 0)
+	{
+		SelectedStructureTabIndex = 0;
+		return;
+	}
+
+	SelectedStructureTabIndex = FMath::Clamp(SelectedStructureTabIndex, 0, PageCount - 1);
 
 	for (int32 TabIndex = 0; TabIndex < StructureTabIndicatorImages.Num(); ++TabIndex)
 	{
 		if (UImage* IndicatorImage = StructureTabIndicatorImages[TabIndex])
 		{
+			IndicatorImage->SetVisibility(TabIndex < PageCount ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 			IndicatorImage->SetColorAndOpacity(TabIndex == SelectedStructureTabIndex
 				? SelectedStructureTabIndicatorColor
 				: InactiveStructureTabIndicatorColor);
@@ -1577,13 +1639,18 @@ void USRStructureSelectionWidget::RefreshStructureTabIndicatorStyles()
 
 void USRStructureSelectionWidget::SetStructureSelectionTabIndex(int32 NewTabIndex)
 {
-	if (StructureTabCount <= 0)
+	const int32 PageCount = GetSelectedFacilityPageCount();
+	if (PageCount <= 0)
 	{
-		SelectedStructureTabIndex = INDEX_NONE;
+		SelectedStructureTabIndex = 0;
 		return;
 	}
 
-	SelectedStructureTabIndex = (NewTabIndex % StructureTabCount + StructureTabCount) % StructureTabCount;
+	SelectedStructureTabIndex = (NewTabIndex % PageCount + PageCount) % PageCount;
+	if (StructureTabIndicatorImages.Num() != PageCount)
+	{
+		RebuildStructureTabIndicators();
+	}
 	RefreshStructureTabIndicatorStyles();
 	RefreshFacilityButtonLabels();
 	RefreshFacilityButtonStyles();
@@ -1766,6 +1833,17 @@ const TArray<FName>* USRStructureSelectionWidget::GetSelectedFacilityBuildOption
 	}
 
 	return nullptr;
+}
+
+int32 USRStructureSelectionWidget::GetSelectedFacilityPageCount() const
+{
+	const TArray<FName>* FacilityBuildOptionIds = GetSelectedFacilityBuildOptionIds();
+	if (!FacilityBuildOptionIds || FacilityBuildOptionIds->IsEmpty() || FacilityButtonCount <= 0)
+	{
+		return 0;
+	}
+
+	return FMath::DivideAndRoundUp(FacilityBuildOptionIds->Num(), FacilityButtonCount);
 }
 
 FName USRStructureSelectionWidget::GetFacilityButtonStructureId(int32 FacilityButtonIndex) const

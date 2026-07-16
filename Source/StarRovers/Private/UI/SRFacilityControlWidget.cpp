@@ -1494,7 +1494,7 @@ namespace
 		}
 
 		USRFacilityInputSlotDebugAction* Action = NewObject<USRFacilityInputSlotDebugAction>(OwnerWidget);
-		Action->Initialize(OwnerWidget, InputPortIndex, ResourceId);
+		Action->Initialize(OwnerWidget, InputPortIndex, ResourceId, Button);
 		OutActions.Add(Action);
 		Button->OnClicked.AddDynamic(Action, &USRFacilityInputSlotDebugAction::HandleClicked);
 	}
@@ -1805,71 +1805,100 @@ namespace
 
 	void AddInputResourceSlotCard(
 		UWidgetTree* WidgetTree,
-		UVerticalBox* SlotBox,
+		UHorizontalBox* SlotBox,
 		USRFacilityControlWidget* OwnerWidget,
 		TArray<TObjectPtr<USRFacilityInputSlotDebugAction>>& OutActions,
-		const FString& Text,
+		const FSRFacilityPortInventory& PortInventory,
 		int32 InputPortIndex,
-		bool bCanAddResource,
-		bool bShowDebugButtons)
+		const TCHAR* FallbackLabel,
+		const FLinearColor& AccentColor)
 	{
 		if (!WidgetTree || !SlotBox)
 		{
 			return;
 		}
 
+		const int32 Capacity = FMath::Max(1, PortInventory.Capacity);
+		const int32 SlotStackCount = StarRovers::FacilityResources::GetInventorySlotStackCount(PortInventory);
+		const FSRResourceInstance* ResourceInstance = PortInventory.Inventory.IsEmpty()
+			? nullptr
+			: &PortInventory.Inventory[0];
+		const bool bHasResource = ResourceInstance && !ResourceInstance->ResourceId.IsNone();
+		const bool bHasCapacity = SlotStackCount < Capacity;
+		const FString PortLabel = BuildInventoryCardPortLabel(PortInventory, InputPortIndex, FallbackLabel);
+		const FString ResourceText = bHasResource
+			? BuildCompactResourceSummary(ResourceInstance)
+			: FString(TEXT("Empty"));
+		const FString Text = FString::Printf(TEXT("%s  %d/%d\n%s"), *PortLabel, SlotStackCount, Capacity, *ResourceText);
+		const FLinearColor CardColor = bHasResource
+			? FLinearColor(0.125f, 0.175f, 0.160f, 0.98f)
+			: FLinearColor(0.145f, 0.170f, 0.190f, 0.98f);
+
 		UVerticalBox* CardBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-		UTextBlock* SlotTextBlock = ConstructTextBlock(WidgetTree, NAME_None, 11, FLinearColor(0.84f, 0.91f, 1.0f, 1.0f));
+		UTextBlock* SlotTextBlock = ConstructTextBlock(WidgetTree, NAME_None, 10, FLinearColor(0.90f, 0.94f, 0.96f, 1.0f));
 		SlotTextBlock->SetText(FText::FromString(Text));
 		if (UVerticalBoxSlot* TextSlot = CardBox->AddChildToVerticalBox(SlotTextBlock))
 		{
-			TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+			TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 5.0f));
 			TextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		}
 
-		if (bShowDebugButtons)
+		UHorizontalBox* ButtonRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+		struct FSRFacilityInputDebugButtonSpec
 		{
-			UHorizontalBox* ButtonRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-			struct FSRFacilityInputDebugButtonSpec
-			{
-				FName ResourceId;
-				FText Label;
-			};
-			const FSRFacilityInputDebugButtonSpec ButtonSpecs[] =
-			{
-				{ TEXT("Territe"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddTerrite", "+T") },
-				{ TEXT("Aquid"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddAquid", "+A") },
-				{ TEXT("Nitain"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddNitain", "+N") },
-				{ TEXT("Waste"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddWaste", "+W") },
-			};
+			FName ResourceId;
+			FText Label;
+			double EnergyValue = 0.0;
+			int32 RemainingProcessLimit = 0;
+		};
+		const FSRFacilityInputDebugButtonSpec ButtonSpecs[] =
+		{
+			{ TEXT("Territe"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddTerrite", "+T"), 1.0, 3 },
+			{ TEXT("Aquid"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddAquid", "+A"), 0.0, 5 },
+			{ TEXT("Nitain"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddNitain", "+N"), 3.0, 2 },
+			{ TEXT("Waste"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddWaste", "+W"), 0.1, 3 },
+		};
 
-			for (int32 ButtonIndex = 0; ButtonIndex < UE_ARRAY_COUNT(ButtonSpecs); ++ButtonIndex)
+		for (int32 ButtonIndex = 0; ButtonIndex < UE_ARRAY_COUNT(ButtonSpecs); ++ButtonIndex)
+		{
+			const FSRFacilityInputDebugButtonSpec& ButtonSpec = ButtonSpecs[ButtonIndex];
+			FSRResourceInstance CandidateResource;
+			CandidateResource.ResourceInstanceId = FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits));
+			CandidateResource.ResourceId = ButtonSpec.ResourceId;
+			CandidateResource.EnergyValue = ButtonSpec.EnergyValue;
+			CandidateResource.RemainingProcessLimit = ButtonSpec.RemainingProcessLimit;
+			CandidateResource.StackCount = 1;
+
+			UButton* Button = ConstructDebugInputButton(WidgetTree, NAME_None, ButtonSpec.Label);
+			Button->SetIsEnabled(StarRovers::FacilityResources::CanInventorySlotAcceptResource(PortInventory, CandidateResource));
+			BindInputSlotDebugButton(Button, OwnerWidget, OutActions, InputPortIndex, ButtonSpec.ResourceId);
+			if (UHorizontalBoxSlot* ButtonSlot = ButtonRow->AddChildToHorizontalBox(Button))
 			{
-				UButton* Button = ConstructDebugInputButton(WidgetTree, NAME_None, ButtonSpecs[ButtonIndex].Label);
-				Button->SetIsEnabled(bCanAddResource);
-				BindInputSlotDebugButton(Button, OwnerWidget, OutActions, InputPortIndex, ButtonSpecs[ButtonIndex].ResourceId);
-				if (UHorizontalBoxSlot* ButtonSlot = ButtonRow->AddChildToHorizontalBox(Button))
-				{
-					ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, ButtonIndex < UE_ARRAY_COUNT(ButtonSpecs) - 1 ? 4.0f : 0.0f, 0.0f));
-					ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-				}
-			}
-			if (UVerticalBoxSlot* ButtonRowSlot = CardBox->AddChildToVerticalBox(ButtonRow))
-			{
-				ButtonRowSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+				ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, ButtonIndex < UE_ARRAY_COUNT(ButtonSpecs) - 1 ? 4.0f : 0.0f, 0.0f));
+				ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			}
 		}
+		if (UVerticalBoxSlot* ButtonRowSlot = CardBox->AddChildToVerticalBox(ButtonRow))
+		{
+			ButtonRowSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+
+		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		CardSizeBox->SetWidthOverride(132.0f);
+		CardSizeBox->SetHeightOverride(92.0f);
+		CardSizeBox->AddChild(CardBox);
 
 		UBorder* SlotBorder = ConstructSectionBorder(
 			WidgetTree,
 			NAME_None,
-			CardBox,
-			bCanAddResource ? FLinearColor(0.080f, 0.105f, 0.135f, 0.98f) : FLinearColor(0.060f, 0.070f, 0.082f, 0.98f),
-			FMargin(7.0f, 5.0f));
-		if (UVerticalBoxSlot* Slot = SlotBox->AddChildToVerticalBox(SlotBorder))
+			CardSizeBox,
+			bHasCapacity ? CardColor : FLinearColor(0.060f, 0.070f, 0.082f, 0.98f),
+			FMargin(5.0f, 3.0f));
+		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, SlotBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(2.0f));
+		if (UHorizontalBoxSlot* Slot = SlotBox->AddChildToHorizontalBox(OuterBorder))
 		{
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 5.0f));
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 		}
 	}
 
@@ -1886,11 +1915,12 @@ namespace
 	}
 }
 
-void USRFacilityInputSlotDebugAction::Initialize(USRFacilityControlWidget* InOwnerWidget, int32 InInputPortIndex, FName InResourceId)
+void USRFacilityInputSlotDebugAction::Initialize(USRFacilityControlWidget* InOwnerWidget, int32 InInputPortIndex, FName InResourceId, UButton* InButton)
 {
 	OwnerWidget = InOwnerWidget;
 	InputPortIndex = InInputPortIndex;
 	ResourceId = InResourceId;
+	Button = InButton;
 }
 
 void USRFacilityInputSlotDebugAction::HandleClicked()
@@ -1903,6 +1933,19 @@ void USRFacilityInputSlotDebugAction::HandleClicked()
 	{
 		OwnerWidget->AddDebugInputResourceToPort(InputPortIndex, ResourceId);
 	}
+}
+
+bool USRFacilityInputSlotDebugAction::TryHandleManualClick(const FVector2D& ScreenPosition)
+{
+	if (!IsValid(Button.Get())
+		|| !Button->GetIsEnabled()
+		|| !IsWidgetUnderScreenPosition(Button.Get(), ScreenPosition))
+	{
+		return false;
+	}
+
+	HandleClicked();
+	return true;
 }
 
 void USRHubRouteDestinationAction::Initialize(
@@ -2341,6 +2384,15 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved DebugAddWasteButton"));
 		HandleDebugAddWasteClicked();
 		return true;
+	}
+
+	for (USRFacilityInputSlotDebugAction* InputSlotDebugAction : InputSlotDebugActions)
+	{
+		if (IsValid(InputSlotDebugAction) && InputSlotDebugAction->TryHandleManualClick(ScreenPosition))
+		{
+			SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved InputSlotDebugButton"));
+			return true;
+		}
 	}
 
 	for (USRHubRouteDestinationAction* HubRouteDestinationAction : HubRouteDestinationActions)
@@ -3265,7 +3317,6 @@ void USRFacilityControlWidget::RefreshInputResourceSlots(USRFacilityNetworkCompo
 
 	InputResourcePanelSignature = NewSignature;
 	InputResourceSlotBox->ClearChildren();
-	InputSlotDebugActions.Reset();
 	if (PreviewResources.IsEmpty())
 	{
 		AddInventoryInfoCard(
@@ -3377,6 +3428,7 @@ void USRFacilityControlWidget::RefreshInputInventorySlots(
 
 	InputInventoryPanelSignature = NewSignature;
 	InputInventorySlotBox->ClearChildren();
+	InputSlotDebugActions.Reset();
 	if (bIsMiningFacility)
 	{
 		AddInventoryInfoCard(WidgetTree, InputInventorySlotBox, EmptyText, FLinearColor(0.82f, 0.88f, 1.0f, 1.0f));
@@ -3391,9 +3443,11 @@ void USRFacilityControlWidget::RefreshInputInventorySlots(
 
 	for (int32 SlotIndex = 0; SlotIndex < FacilityInstance.InputPortInventories.Num(); ++SlotIndex)
 	{
-		AddInventorySlotCard(
+		AddInputResourceSlotCard(
 			WidgetTree,
 			InputInventorySlotBox,
+			this,
+			InputSlotDebugActions,
 			FacilityInstance.InputPortInventories[SlotIndex],
 			SlotIndex,
 			TEXT("Input"),
@@ -3779,7 +3833,6 @@ void USRFacilityControlWidget::RefreshControlText()
 		if (InputResourceSlotBox)
 		{
 			InputResourceSlotBox->ClearChildren();
-			InputSlotDebugActions.Reset();
 			InputResourcePanelSignature.Reset();
 		}
 		if (OutputResourceSlotBox)
@@ -3790,6 +3843,7 @@ void USRFacilityControlWidget::RefreshControlText()
 		if (InputInventorySlotBox)
 		{
 			InputInventorySlotBox->ClearChildren();
+			InputSlotDebugActions.Reset();
 			InputInventoryPanelSignature.Reset();
 		}
 		if (OutputInventorySlotBox)

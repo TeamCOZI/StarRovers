@@ -332,6 +332,7 @@ private:
 	void RefreshFacilityButtonStyles();
 	void RefreshPointerHoverState();
 	void SyncStructureTabBarLayout();
+	void RebuildStructureTabIndicators();
 	void EnsureDefaultStructureTabIndicatorTexture();
 	void RefreshStructureTabIndicatorBrushes();
 	void RefreshStructureTabIndicatorStyles();
@@ -345,6 +346,7 @@ private:
 	void SetHoveredFacilityButton(int32 FacilityButtonIndex);
 	void ClearHoveredFacilityButton();
 	const TArray<FName>* GetSelectedFacilityBuildOptionIds() const;
+	int32 GetSelectedFacilityPageCount() const;
 	FName GetFacilityButtonStructureId(int32 FacilityButtonIndex) const;
 	bool IsStructureCategoryAvailable(int32 CategoryIndex) const;
 	bool IsBuildOptionSelectable(FName StructureId) const;
