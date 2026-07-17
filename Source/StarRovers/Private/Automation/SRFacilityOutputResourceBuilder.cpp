@@ -227,7 +227,6 @@ namespace
 			ESRResourceProcessTag::Responsive,
 			ESRResourceProcessTag::HalfLife,
 			ESRResourceProcessTag::Volatile,
-			ESRResourceProcessTag::Singularity,
 			ESRResourceProcessTag::Supercooled,
 			ESRResourceProcessTag::HyperReactive,
 			ESRResourceProcessTag::Charge,
@@ -254,8 +253,6 @@ namespace
 			return TEXT("H");
 		case ESRResourceProcessTag::Volatile:
 			return TEXT("V");
-		case ESRResourceProcessTag::Singularity:
-			return TEXT("Si");
 		case ESRResourceProcessTag::Supercooled:
 			return TEXT("Su");
 		case ESRResourceProcessTag::HyperReactive:
@@ -379,9 +376,25 @@ namespace
 		ESRFacilityTemperatureState TemperatureState)
 	{
 		return ResourceInstance.RemainingProcessLimit > 0
-			&& !HasTag(ResourceInstance, ESRResourceProcessTag::Singularity)
 			&& (!HasTag(ResourceInstance, ESRResourceProcessTag::Supercooled)
 				|| TemperatureState == ESRFacilityTemperatureState::Cold);
+	}
+
+	int32 ResolveAdjustedProcessLimit(
+		const FSRResourceInstance& ResourceInstance,
+		const FSRFacilityEffectSpec& EffectSpec)
+	{
+		const int32 CurrentProcessLimit = FMath::Max(0, ResourceInstance.RemainingProcessLimit);
+		switch (EffectSpec.ProcessLimitMode)
+		{
+		case ESRFacilityProcessLimitAdjustmentMode::SetValue:
+			return FMath::RoundToInt(EffectSpec.Value);
+		case ESRFacilityProcessLimitAdjustmentMode::Multiply:
+			return FMath::RoundToInt(static_cast<double>(CurrentProcessLimit) * EffectSpec.Value);
+		case ESRFacilityProcessLimitAdjustmentMode::AddValue:
+		default:
+			return CurrentProcessLimit + FMath::RoundToInt(EffectSpec.Value);
+		}
 	}
 
 	void MergeTagStacks(TArray<FSRResourceTagStack>& InOutTags, const TArray<FSRResourceTagStack>& TagsToMerge)
@@ -523,12 +536,12 @@ namespace
 	int32 ResolveChargeStacksToAddForProcessingPass(
 		const FSRFacilityInstance& FacilityInstance,
 		ESRFacilityTemperatureState EffectiveTemperatureState,
-		const FSRResourceInstance* ConditionResource)
+		const TArray<FSRResourceInstance>& ConditionResources)
 	{
 		return FMath::Max(0, FMath::FloorToInt(StarRovers::FacilityProcessing::ResolveFacilityProcessSeconds(
 			FacilityInstance.FacilityDataAsset.Get(),
 			EffectiveTemperatureState,
-			ConditionResource)))
+			ConditionResources)))
 			* StarRovers::FacilityResources::ChargeStacksPerProcessingSecond;
 	}
 
@@ -800,7 +813,6 @@ namespace
 				break;
 
 			case ESRResourceProcessTag::HyperReactive:
-			case ESRResourceProcessTag::Singularity:
 			default:
 				break;
 			}
@@ -968,13 +980,62 @@ namespace
 		return false;
 	}
 
-	void RemoveTagStack(FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag)
+	void RemoveTagStackCount(FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag, int32 CountToRemove)
 	{
+		int32 RemainingCountToRemove = FMath::Max(0, CountToRemove);
+		if (RemainingCountToRemove <= 0)
+		{
+			return;
+		}
+
 		for (int32 TagIndex = ResourceInstance.Tags.Num() - 1; TagIndex >= 0; --TagIndex)
 		{
-			if (ResourceInstance.Tags[TagIndex].Tag == Tag)
+			FSRResourceTagStack& TagStack = ResourceInstance.Tags[TagIndex];
+			if (TagStack.Tag != Tag || TagStack.StackCount <= 0)
+			{
+				continue;
+			}
+
+			const int32 RemovedCount = FMath::Min(RemainingCountToRemove, TagStack.StackCount);
+			TagStack.StackCount -= RemovedCount;
+			RemainingCountToRemove -= RemovedCount;
+			if (TagStack.StackCount <= 0)
 			{
 				ResourceInstance.Tags.RemoveAt(TagIndex);
+			}
+			if (RemainingCountToRemove <= 0)
+			{
+				return;
+			}
+		}
+	}
+
+	void RemoveAllTagStackCount(FSRResourceInstance& ResourceInstance, int32 CountToRemove)
+	{
+		int32 RemainingCountToRemove = FMath::Max(0, CountToRemove);
+		if (RemainingCountToRemove <= 0)
+		{
+			return;
+		}
+
+		for (int32 TagIndex = ResourceInstance.Tags.Num() - 1; TagIndex >= 0; --TagIndex)
+		{
+			FSRResourceTagStack& TagStack = ResourceInstance.Tags[TagIndex];
+			if (TagStack.StackCount <= 0)
+			{
+				continue;
+			}
+
+			const int32 RemovedCount = FMath::Min(RemainingCountToRemove, TagStack.StackCount);
+			TagStack.StackCount -= RemovedCount;
+			RemainingCountToRemove -= RemovedCount;
+			if (TagStack.StackCount <= 0)
+			{
+				ResourceInstance.Tags.RemoveAt(TagIndex);
+			}
+			if (RemainingCountToRemove <= 0)
+			{
+				return;
 			}
 		}
 	}
@@ -984,8 +1045,16 @@ namespace
 		const FSRFacilityEffectSpec& EffectSpec,
 		const FSRFacilityEffectContext& EffectContext)
 	{
+		const bool bRemoveCountOnly = EffectSpec.EffectKind == ESRFacilityEffectKind::RemoveTag
+			&& EffectSpec.RemoveTagAmountMode == ESRFacilityRemoveTagAmountMode::Count;
+		const int32 CountToRemove = FMath::Max(1, EffectSpec.Count);
 		if (EffectSpec.TagTarget == ESRFacilityEffectTagTarget::AllTags)
 		{
+			if (bRemoveCountOnly)
+			{
+				RemoveAllTagStackCount(ResourceInstance, CountToRemove);
+				return;
+			}
 			ResourceInstance.Tags.Reset();
 			return;
 		}
@@ -993,7 +1062,12 @@ namespace
 		ESRResourceProcessTag Tag = ESRResourceProcessTag::Responsive;
 		if (ResolveSpecificEffectTag(EffectSpec, EffectContext, Tag))
 		{
-			RemoveTagStack(ResourceInstance, Tag);
+			if (bRemoveCountOnly)
+			{
+				RemoveTagStackCount(ResourceInstance, Tag, CountToRemove);
+				return;
+			}
+			RemoveTagStackCount(ResourceInstance, Tag, TNumericLimits<int32>::Max());
 		}
 	}
 
@@ -1247,7 +1321,6 @@ namespace
 				ResourceInstance.EnergyValue);
 			break;
 		}
-		case ESRResourceProcessTag::Singularity:
 		default:
 			break;
 		}
@@ -1875,7 +1948,7 @@ void FSRFacilityOutputResourceBuilder::BuildProcessedResourcesBeforeFacilityEffe
 	const int32 ChargeStacksToAdd = ResolveChargeStacksToAddForProcessingPass(
 		FacilityInstance,
 		EffectiveTemperatureState,
-		ConditionResource);
+		ConsumedResources);
 	if (OutResourcesBeforeTagEffects)
 	{
 		*OutResourcesBeforeTagEffects = OutProcessedResources;
@@ -2097,9 +2170,7 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 			}
 			if (bHasPrimaryResource)
 			{
-				const int32 TargetProcessLimit = EffectSpec.ProcessLimitMode == ESRFacilityProcessLimitAdjustmentMode::SetValue
-					? FMath::RoundToInt(EffectSpec.Value)
-					: ResourceInstance.RemainingProcessLimit + FMath::RoundToInt(EffectSpec.Value);
+				const int32 TargetProcessLimit = ResolveAdjustedProcessLimit(ResourceInstance, EffectSpec);
 				SetProcessLimitAndApplyHyperReactive(
 					ResourceInstance,
 					TargetProcessLimit,
@@ -2128,7 +2199,6 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 						ESRResourceProcessTag::Responsive,
 						ESRResourceProcessTag::HalfLife,
 						ESRResourceProcessTag::Volatile,
-						ESRResourceProcessTag::Singularity,
 						ESRResourceProcessTag::Supercooled,
 						ESRResourceProcessTag::HyperReactive,
 						ESRResourceProcessTag::Charge,
@@ -2143,6 +2213,23 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 
 						AddTagStack(ResourceInstance, TagToAttach, 1);
 						EffectContext.LastAttachedTag = TagToAttach;
+						EffectContext.bHasLastAttachedTag = true;
+					}
+					break;
+				}
+				if (EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::AttachedTags)
+				{
+					const TArray<FSRResourceTagStack> TagsToAttach = ResourceInstance.Tags;
+					for (const FSRResourceTagStack& TagStack : TagsToAttach)
+					{
+						const int32 SafeStackCount = FMath::Max(0, TagStack.StackCount);
+						if (SafeStackCount <= 0)
+						{
+							continue;
+						}
+
+						AddTagStack(ResourceInstance, TagStack.Tag, SafeStackCount);
+						EffectContext.LastAttachedTag = TagStack.Tag;
 						EffectContext.bHasLastAttachedTag = true;
 					}
 					break;

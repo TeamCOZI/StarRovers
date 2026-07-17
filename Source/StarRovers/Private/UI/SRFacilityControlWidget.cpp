@@ -66,8 +66,6 @@ namespace
 			return TEXT("HalfLife");
 		case ESRResourceProcessTag::Volatile:
 			return TEXT("Volatile");
-		case ESRResourceProcessTag::Singularity:
-			return TEXT("Singularity");
 		case ESRResourceProcessTag::Supercooled:
 			return TEXT("Supercooled");
 		case ESRResourceProcessTag::HyperReactive:
@@ -89,8 +87,6 @@ namespace
 			return TEXT("H");
 		case ESRResourceProcessTag::Volatile:
 			return TEXT("V");
-		case ESRResourceProcessTag::Singularity:
-			return TEXT("Si");
 		case ESRResourceProcessTag::Supercooled:
 			return TEXT("Su");
 		case ESRResourceProcessTag::HyperReactive:
@@ -153,6 +149,8 @@ namespace
 			return TEXT("Last Tag");
 		case ESRFacilityAttachTagSource::MissingTags:
 			return TEXT("Missing Tags");
+		case ESRFacilityAttachTagSource::AttachedTags:
+			return TEXT("Attached Tags");
 		default:
 			return TEXT("Tag Source");
 		}
@@ -167,10 +165,17 @@ namespace
 		case ESRFacilityEffectTagTarget::LastAttachedTag:
 			return TEXT("Last Tag");
 		case ESRFacilityEffectTagTarget::AllTags:
-			return TEXT("All Tags");
+			return TEXT("Attached Tags");
 		default:
 			return TEXT("Tag Target");
 		}
+	}
+
+	FString BuildRemoveTagAmountSummary(const FSRFacilityEffectSpec& EffectSpec)
+	{
+		return EffectSpec.RemoveTagAmountMode == ESRFacilityRemoveTagAmountMode::Count
+			? FString::Printf(TEXT(" x%d"), FMath::Max(1, EffectSpec.Count))
+			: FString(TEXT(" All"));
 	}
 
 	const TCHAR* GetEnergyValueSourceLabel(ESRFacilityEnergyAdjustmentValueSource ValueSource)
@@ -212,6 +217,20 @@ namespace
 		case ESRFacilityEnergyAdjustmentMode::Add:
 		default:
 			return TEXT("+");
+		}
+	}
+
+	FString BuildProcessLimitAdjustmentSummary(const FSRFacilityEffectSpec& EffectSpec)
+	{
+		switch (EffectSpec.ProcessLimitMode)
+		{
+		case ESRFacilityProcessLimitAdjustmentMode::SetValue:
+			return FString::Printf(TEXT("= %d"), FMath::RoundToInt(EffectSpec.Value));
+		case ESRFacilityProcessLimitAdjustmentMode::Multiply:
+			return FString::Printf(TEXT("x%s"), *FormatFacilityEnergyDisplayValue(EffectSpec.Value));
+		case ESRFacilityProcessLimitAdjustmentMode::AddValue:
+		default:
+			return FString::Printf(TEXT("%+d"), FMath::RoundToInt(EffectSpec.Value));
 		}
 	}
 
@@ -1096,15 +1115,17 @@ namespace
 			}
 			break;
 		case ESRFacilityEffectKind::AdjustProcessLimit:
-			EffectSummary = EffectSpec.ProcessLimitMode == ESRFacilityProcessLimitAdjustmentMode::SetValue
-				? FString::Printf(TEXT("%s = %d"), GetEffectKindLabel(EffectSpec.EffectKind), FMath::RoundToInt(EffectSpec.Value))
-				: FString::Printf(TEXT("%s %+d"), GetEffectKindLabel(EffectSpec.EffectKind), FMath::RoundToInt(EffectSpec.Value));
+			EffectSummary = FString::Printf(
+				TEXT("%s %s"),
+				GetEffectKindLabel(EffectSpec.EffectKind),
+				*BuildProcessLimitAdjustmentSummary(EffectSpec));
 			break;
 		case ESRFacilityEffectKind::RemoveResource:
 			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
 			break;
 		case ESRFacilityEffectKind::AttachTag:
-			if (EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::MissingTags)
+			if (EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::MissingTags
+				|| EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::AttachedTags)
 			{
 				EffectSummary = FString::Printf(
 					TEXT("%s %s"),
@@ -1206,16 +1227,21 @@ namespace
 			}
 			break;
 		case ESRFacilityEffectKind::RemoveTag:
+		{
+			const FString AmountSummary = BuildRemoveTagAmountSummary(EffectSpec);
 			EffectSummary = EffectSpec.TagTarget == ESRFacilityEffectTagTarget::SpecificTag
 				? FString::Printf(
-					TEXT("%s %s"),
+					TEXT("%s %s%s"),
 					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetResourceProcessTagLabel(EffectSpec.ResourceTag))
+					GetResourceProcessTagLabel(EffectSpec.ResourceTag),
+					*AmountSummary)
 				: FString::Printf(
-					TEXT("%s %s"),
+					TEXT("%s %s%s"),
 					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetEffectTagTargetLabel(EffectSpec.TagTarget));
+					GetEffectTagTargetLabel(EffectSpec.TagTarget),
+					*AmountSummary);
 			break;
+		}
 		case ESRFacilityEffectKind::ChangeResourceType:
 			EffectSummary = FString::Printf(
 				TEXT("%s %s"),

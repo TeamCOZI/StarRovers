@@ -12,7 +12,6 @@ enum class ESRResourceProcessTag : uint8
 	Responsive = 0 UMETA(DisplayName = "HeatResponsive"),
 	HalfLife = 2 UMETA(DisplayName = "HalfLife"),
 	Volatile = 3 UMETA(DisplayName = "Volatile"),
-	Singularity = 4 UMETA(DisplayName = "Singularity"),
 	Supercooled = 5 UMETA(DisplayName = "Supercooled"),
 	HyperReactive = 6 UMETA(DisplayName = "HyperReactive"),
 	Charge = 7 UMETA(DisplayName = "Charge"),

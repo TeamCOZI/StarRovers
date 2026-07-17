@@ -74,6 +74,7 @@ enum class ESRFacilityAttachTagSource : uint8
 	SpecificTag UMETA(DisplayName = "SpecificTag"),
 	LastAttachedTag UMETA(DisplayName = "LastAttachedTag"),
 	MissingTags UMETA(DisplayName = "MissingTags"),
+	AttachedTags UMETA(DisplayName = "AttachedTags"),
 };
 
 UENUM(BlueprintType)
@@ -81,7 +82,14 @@ enum class ESRFacilityEffectTagTarget : uint8
 {
 	SpecificTag UMETA(DisplayName = "SpecificTag"),
 	LastAttachedTag UMETA(DisplayName = "LastAttachedTag"),
-	AllTags UMETA(DisplayName = "AllTags"),
+	AllTags UMETA(DisplayName = "AttachedTags"),
+};
+
+UENUM(BlueprintType)
+enum class ESRFacilityRemoveTagAmountMode : uint8
+{
+	All UMETA(DisplayName = "All"),
+	Count UMETA(DisplayName = "Count"),
 };
 
 UENUM(BlueprintType)
@@ -116,6 +124,7 @@ enum class ESRFacilityProcessLimitAdjustmentMode : uint8
 {
 	AddValue UMETA(DisplayName = "AddValue"),
 	SetValue UMETA(DisplayName = "SetValue"),
+	Multiply UMETA(DisplayName = "Multiply"),
 };
 
 UENUM(BlueprintType)
@@ -251,7 +260,7 @@ struct STARROVERS_API FSRFacilityEffectSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
 		DisplayName = "Count",
 		ClampMin = "1",
-		EditCondition = "(EffectKind == ESRFacilityEffectKind::AttachTag && AttachTagSource != ESRFacilityAttachTagSource::MissingTags) || EffectKind == ESRFacilityEffectKind::ProduceWaste || EffectKind == ESRFacilityEffectKind::DuplicateInputResource",
+		EditCondition = "(EffectKind == ESRFacilityEffectKind::AttachTag && (AttachTagSource == ESRFacilityAttachTagSource::SpecificTag || AttachTagSource == ESRFacilityAttachTagSource::LastAttachedTag)) || EffectKind == ESRFacilityEffectKind::ProduceWaste || EffectKind == ESRFacilityEffectKind::DuplicateInputResource || (EffectKind == ESRFacilityEffectKind::RemoveTag && RemoveTagAmountMode == ESRFacilityRemoveTagAmountMode::Count)",
 		EditConditionHides))
 	int32 Count = 1;
 
@@ -309,6 +318,12 @@ struct STARROVERS_API FSRFacilityEffectSpec
 		EditCondition = "EffectKind == ESRFacilityEffectKind::TriggerTagEffect || EffectKind == ESRFacilityEffectKind::RemoveTag || EffectKind == ESRFacilityEffectKind::TransferTagsToWaste",
 		EditConditionHides))
 	ESRFacilityEffectTagTarget TagTarget = ESRFacilityEffectTagTarget::SpecificTag;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
+		DisplayName = "RemoveTagAmountMode",
+		EditCondition = "EffectKind == ESRFacilityEffectKind::RemoveTag",
+		EditConditionHides))
+	ESRFacilityRemoveTagAmountMode RemoveTagAmountMode = ESRFacilityRemoveTagAmountMode::All;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
 		DisplayName = "EnergyValueSource",

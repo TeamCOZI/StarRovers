@@ -169,10 +169,8 @@ float FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(const FSRFacilit
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
 		StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, FacilityInstance.ProcessingInventory);
-	const FSRResourceInstance* ConditionResource =
-		StarRovers::FacilityProcessing::FindFirstProcessResource(FacilityInstance.ProcessingInventory);
 	return StarRovers::FacilityProcessing::ResolveFacilityProcessSeconds(
 		FacilityDataAsset,
 		ProcessContext.EffectiveTemperatureState,
-		ConditionResource);
+		FacilityInstance.ProcessingInventory);
 }

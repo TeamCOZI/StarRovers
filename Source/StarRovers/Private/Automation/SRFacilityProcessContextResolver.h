@@ -110,10 +110,26 @@ namespace StarRovers::FacilityProcessing
 
 	inline double ResolveProcessTimeAdjustmentValue(
 		const FSRFacilityEffectSpec& EffectSpec,
-		const FSRResourceInstance* ConditionResource)
+		const FSRResourceInstance* ConditionResource,
+		const TArray<FSRResourceInstance>* ProcessResources = nullptr)
 	{
 		if (EffectSpec.ProcessTimeValueSource == ESRFacilityProcessTimeAdjustmentValueSource::TagStackCount)
 		{
+			if (ProcessResources)
+			{
+				int32 StackCount = 0;
+				for (const FSRResourceInstance& ProcessResource : *ProcessResources)
+				{
+					if (ProcessResource.ResourceId.IsNone())
+					{
+						continue;
+					}
+					StackCount += EffectSpec.TagStackCountTarget == ESRFacilityTagStackCountTarget::All
+						? StarRovers::FacilityEffects::CountAllTagStacks(ProcessResource)
+						: StarRovers::FacilityEffects::CountTagStacks(ProcessResource, EffectSpec.ResourceTag);
+				}
+				return static_cast<double>(StackCount);
+			}
 			if (!ConditionResource)
 			{
 				return 0.0;
@@ -129,9 +145,10 @@ namespace StarRovers::FacilityProcessing
 	inline float ApplyProcessTimeAdjustment(
 		float ProcessSeconds,
 		const FSRFacilityEffectSpec& EffectSpec,
-		const FSRResourceInstance* ConditionResource)
+		const FSRResourceInstance* ConditionResource,
+		const TArray<FSRResourceInstance>* ProcessResources = nullptr)
 	{
-		const double AdjustmentValue = ResolveProcessTimeAdjustmentValue(EffectSpec, ConditionResource);
+		const double AdjustmentValue = ResolveProcessTimeAdjustmentValue(EffectSpec, ConditionResource, ProcessResources);
 		if (EffectSpec.ProcessTimeMode == ESRFacilityProcessTimeAdjustmentMode::Multiply)
 		{
 			ProcessSeconds *= static_cast<float>(AdjustmentValue);
@@ -146,7 +163,8 @@ namespace StarRovers::FacilityProcessing
 	inline float ResolveFacilityProcessSeconds(
 		const USRFacilityDataAsset* FacilityDataAsset,
 		ESRFacilityTemperatureState EffectiveTemperatureState,
-		const FSRResourceInstance* ConditionResource)
+		const FSRResourceInstance* ConditionResource,
+		const TArray<FSRResourceInstance>* ProcessResources = nullptr)
 	{
 		float ProcessSeconds = IsValid(FacilityDataAsset)
 			? FMath::Max(0.01f, FacilityDataAsset->BaseProcessSeconds)
@@ -174,9 +192,21 @@ namespace StarRovers::FacilityProcessing
 				continue;
 			}
 
-			ProcessSeconds = ApplyProcessTimeAdjustment(ProcessSeconds, EffectSpec, ConditionResource);
+			ProcessSeconds = ApplyProcessTimeAdjustment(ProcessSeconds, EffectSpec, ConditionResource, ProcessResources);
 		}
 		return FMath::Max(0.01f, ProcessSeconds);
+	}
+
+	inline float ResolveFacilityProcessSeconds(
+		const USRFacilityDataAsset* FacilityDataAsset,
+		ESRFacilityTemperatureState EffectiveTemperatureState,
+		const TArray<FSRResourceInstance>& ProcessResources)
+	{
+		return ResolveFacilityProcessSeconds(
+			FacilityDataAsset,
+			EffectiveTemperatureState,
+			FindFirstProcessResource(ProcessResources),
+			&ProcessResources);
 	}
 
 	inline FSRFacilityProcessContext ResolveProcessContext(
