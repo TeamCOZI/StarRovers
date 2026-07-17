@@ -19,6 +19,16 @@ public:
 		TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
 		int32& NextStarFuelMissileSequence);
 
+	static bool LaunchFromHubInputPort(
+		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		const FSRSpaceLogisticsHubEndpoint& SourceHub,
+		int32 InputPortIndex,
+		FName& OutMissileId,
+		float InitialSpeedUnitsPerSecond,
+		float LaunchAccelerationUnitsPerSecondSquared,
+		TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
+		int32& NextStarFuelMissileSequence);
+
 	static void ProcessMissiles(
 		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 		float DeltaTime,
@@ -30,6 +40,11 @@ private:
 
 	static bool TryTakeFuelCargoFromHub(
 		const FSRSpaceLogisticsHubEndpoint& SourceHub,
+		FSRResourceInstance& OutCargo);
+
+	static bool TryTakeFuelCargoFromHubInputPort(
+		const FSRSpaceLogisticsHubEndpoint& SourceHub,
+		int32 InputPortIndex,
 		FSRResourceInstance& OutCargo);
 
 	static void ApplyMissileFlightSettings(

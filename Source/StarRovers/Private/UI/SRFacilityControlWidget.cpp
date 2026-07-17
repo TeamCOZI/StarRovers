@@ -32,6 +32,8 @@
 
 namespace
 {
+	constexpr int32 FacilityInventoryGridColumnCount = 4;
+
 	FString FormatFacilityEnergyDisplayValue(double Value)
 	{
 		return FString::Printf(TEXT("%.1f"), Value);
@@ -1410,9 +1412,54 @@ namespace
 		AddWidgetToCanvas(CardCanvas, TextBlock, Position, Size);
 	}
 
+	UHorizontalBox* FindOrAddInventoryGridRow(
+		UWidgetTree* WidgetTree,
+		UVerticalBox* GridBox,
+		int32 SlotIndex)
+	{
+		if (!WidgetTree || !GridBox)
+		{
+			return nullptr;
+		}
+
+		const int32 SafeSlotIndex = FMath::Max(0, SlotIndex);
+		const int32 RowIndex = SafeSlotIndex / FacilityInventoryGridColumnCount;
+		while (GridBox->GetChildrenCount() <= RowIndex)
+		{
+			UHorizontalBox* NewRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), NAME_None);
+			if (UVerticalBoxSlot* RowSlot = GridBox->AddChildToVerticalBox(NewRow))
+			{
+				RowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+				RowSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			}
+		}
+
+		return Cast<UHorizontalBox>(GridBox->GetChildAt(RowIndex));
+	}
+
+	void AddWidgetToInventoryGrid(
+		UWidgetTree* WidgetTree,
+		UVerticalBox* GridBox,
+		UWidget* Widget,
+		int32 SlotIndex)
+	{
+		UHorizontalBox* Row = FindOrAddInventoryGridRow(WidgetTree, GridBox, SlotIndex);
+		if (!Row || !Widget)
+		{
+			return;
+		}
+
+		const int32 ColumnIndex = FMath::Max(0, SlotIndex) % FacilityInventoryGridColumnCount;
+		if (UHorizontalBoxSlot* Slot = Row->AddChildToHorizontalBox(Widget))
+		{
+			Slot->SetPadding(FMargin(0.0f, 0.0f, ColumnIndex < FacilityInventoryGridColumnCount - 1 ? 6.0f : 0.0f, 0.0f));
+			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
 	void AddInventorySlotCard(
 		UWidgetTree* WidgetTree,
-		UHorizontalBox* SlotBox,
+		UVerticalBox* SlotBox,
 		const FSRFacilityPortInventory& PortInventory,
 		int32 SlotIndex,
 		const TCHAR* FallbackLabel,
@@ -1448,24 +1495,20 @@ namespace
 		}
 
 		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
-		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(7.0f, 5.0f), FVector2D(60.0f, 18.0f), TopLeft.Len() > 9 ? 8 : 9, AccentColor);
-		AddInventoryCardText(WidgetTree, CardCanvas, TopRight, FVector2D(58.0f, 5.0f), FVector2D(46.0f, 18.0f), 9, AccentColor, ETextJustify::Right);
-		AddInventoryCardText(WidgetTree, CardCanvas, Center, FVector2D(8.0f, 34.0f), FVector2D(96.0f, 24.0f), 12, MainTextColor, ETextJustify::Center);
-		AddInventoryCardText(WidgetTree, CardCanvas, BottomLeft, FVector2D(7.0f, 68.0f), FVector2D(54.0f, 18.0f), 9, MainTextColor);
-		AddInventoryCardText(WidgetTree, CardCanvas, BottomRight, FVector2D(55.0f, 68.0f), FVector2D(49.0f, 18.0f), 9, MainTextColor, ETextJustify::Right);
+		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(5.0f, 4.0f), FVector2D(42.0f, 16.0f), TopLeft.Len() > 8 ? 7 : 8, AccentColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, TopRight, FVector2D(40.0f, 4.0f), FVector2D(38.0f, 16.0f), 8, AccentColor, ETextJustify::Right);
+		AddInventoryCardText(WidgetTree, CardCanvas, Center, FVector2D(5.0f, 28.0f), FVector2D(74.0f, 22.0f), 10, MainTextColor, ETextJustify::Center);
+		AddInventoryCardText(WidgetTree, CardCanvas, BottomLeft, FVector2D(5.0f, 60.0f), FVector2D(34.0f, 16.0f), 8, MainTextColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, BottomRight, FVector2D(38.0f, 60.0f), FVector2D(40.0f, 16.0f), 8, MainTextColor, ETextJustify::Right);
 
 		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		CardSizeBox->SetWidthOverride(112.0f);
-		CardSizeBox->SetHeightOverride(90.0f);
+		CardSizeBox->SetWidthOverride(84.0f);
+		CardSizeBox->SetHeightOverride(78.0f);
 		CardSizeBox->AddChild(CardCanvas);
 
 		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, CardColor, FMargin(0.0f));
 		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, InnerBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(3.0f));
-		if (UHorizontalBoxSlot* Slot = SlotBox->AddChildToHorizontalBox(OuterBorder))
-		{
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-		}
+		AddWidgetToInventoryGrid(WidgetTree, SlotBox, OuterBorder, SlotIndex);
 	}
 
 	void AddPreviewResourceCard(
@@ -1584,6 +1627,35 @@ namespace
 			Slot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
 			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 		}
+	}
+
+	void AddInventoryInfoCard(
+		UWidgetTree* WidgetTree,
+		UVerticalBox* SlotBox,
+		const FString& Text,
+		const FLinearColor& AccentColor)
+	{
+		if (!WidgetTree || !SlotBox)
+		{
+			return;
+		}
+
+		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
+		AddInventoryCardText(WidgetTree, CardCanvas, TEXT("Info"), FVector2D(5.0f, 4.0f), FVector2D(74.0f, 16.0f), 8, AccentColor);
+
+		UTextBlock* CenterTextBlock = ConstructTextBlock(WidgetTree, NAME_None, 11, FLinearColor(0.90f, 0.94f, 0.96f, 1.0f));
+		CenterTextBlock->SetText(FText::FromString(Text));
+		CenterTextBlock->SetJustification(ETextJustify::Center);
+		AddWidgetToCanvas(CardCanvas, CenterTextBlock, FVector2D(5.0f, 27.0f), FVector2D(74.0f, 40.0f));
+
+		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		CardSizeBox->SetWidthOverride(84.0f);
+		CardSizeBox->SetHeightOverride(78.0f);
+		CardSizeBox->AddChild(CardCanvas);
+
+		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, FLinearColor(0.145f, 0.170f, 0.190f, 0.98f), FMargin(0.0f));
+		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, InnerBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(3.0f));
+		AddWidgetToInventoryGrid(WidgetTree, SlotBox, OuterBorder, 0);
 	}
 
 	UButton* ConstructDebugInputButton(UWidgetTree* WidgetTree, const FName& ButtonName, const FText& Label)
@@ -1955,13 +2027,16 @@ namespace
 
 	void AddInputResourceSlotCard(
 		UWidgetTree* WidgetTree,
-		UHorizontalBox* SlotBox,
+		UVerticalBox* SlotBox,
 		USRFacilityControlWidget* OwnerWidget,
 		TArray<TObjectPtr<USRFacilityInputSlotDebugAction>>& OutActions,
+		TArray<TObjectPtr<USRHubAutoMissileInventorySlotAction>>& OutAutoMissileActions,
 		const FSRFacilityPortInventory& PortInventory,
 		int32 InputPortIndex,
 		const TCHAR* FallbackLabel,
-		const FLinearColor& AccentColor)
+		const FLinearColor& AccentColor,
+		bool bAutoMissileLaunchEnabled,
+		bool bAutoMissileLaunchSelectionActive)
 	{
 		if (!WidgetTree || !SlotBox)
 		{
@@ -1975,18 +2050,34 @@ namespace
 			: &PortInventory.Inventory[0];
 		const bool bHasResource = ResourceInstance && !ResourceInstance->ResourceId.IsNone();
 		const bool bHasCapacity = SlotStackCount < Capacity;
-		const FString PortLabel = BuildInventoryCardPortLabel(PortInventory, InputPortIndex, FallbackLabel);
+		FString PortLabel = BuildInventoryCardPortLabel(PortInventory, InputPortIndex, FallbackLabel);
+		if (bAutoMissileLaunchEnabled)
+		{
+			PortLabel += TEXT(" [M]");
+		}
+		else if (bAutoMissileLaunchSelectionActive)
+		{
+			PortLabel += TEXT(" [?]");
+		}
 		const FString ResourceText = bHasResource
 			? BuildCompactResourceSummary(ResourceInstance)
 			: FString(TEXT("Empty"));
 		const FString Text = FString::Printf(TEXT("%s  %d/%d\n%s"), *PortLabel, SlotStackCount, Capacity, *ResourceText);
-		const FLinearColor CardColor = bHasResource
-			? FLinearColor(0.125f, 0.175f, 0.160f, 0.98f)
-			: FLinearColor(0.145f, 0.170f, 0.190f, 0.98f);
+		const FLinearColor CardColor = bAutoMissileLaunchEnabled
+			? FLinearColor(0.190f, 0.115f, 0.065f, 0.98f)
+			: (bHasResource
+				? FLinearColor(0.125f, 0.175f, 0.160f, 0.98f)
+				: FLinearColor(0.145f, 0.170f, 0.190f, 0.98f));
+		const FLinearColor OuterBorderColor = bAutoMissileLaunchEnabled
+			? FLinearColor(0.900f, 0.360f, 0.115f, 1.0f)
+			: (bAutoMissileLaunchSelectionActive
+				? FLinearColor(0.780f, 0.620f, 0.180f, 1.0f)
+				: FLinearColor(0.005f, 0.006f, 0.007f, 1.0f));
 
 		UVerticalBox* CardBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-		UTextBlock* SlotTextBlock = ConstructTextBlock(WidgetTree, NAME_None, 10, FLinearColor(0.90f, 0.94f, 0.96f, 1.0f));
+		UTextBlock* SlotTextBlock = ConstructTextBlock(WidgetTree, NAME_None, 8, FLinearColor(0.90f, 0.94f, 0.96f, 1.0f));
 		SlotTextBlock->SetText(FText::FromString(Text));
+		SlotTextBlock->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* TextSlot = CardBox->AddChildToVerticalBox(SlotTextBlock))
 		{
 			TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 5.0f));
@@ -2034,8 +2125,8 @@ namespace
 		}
 
 		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		CardSizeBox->SetWidthOverride(132.0f);
-		CardSizeBox->SetHeightOverride(92.0f);
+		CardSizeBox->SetWidthOverride(84.0f);
+		CardSizeBox->SetHeightOverride(98.0f);
 		CardSizeBox->AddChild(CardBox);
 
 		UBorder* SlotBorder = ConstructSectionBorder(
@@ -2044,12 +2135,14 @@ namespace
 			CardSizeBox,
 			bHasCapacity ? CardColor : FLinearColor(0.060f, 0.070f, 0.082f, 0.98f),
 			FMargin(5.0f, 3.0f));
-		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, SlotBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(2.0f));
-		if (UHorizontalBoxSlot* Slot = SlotBox->AddChildToHorizontalBox(OuterBorder))
+		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, SlotBorder, OuterBorderColor, FMargin(2.0f));
+		if (OwnerWidget && InputPortIndex != INDEX_NONE)
 		{
-			Slot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
-			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			USRHubAutoMissileInventorySlotAction* AutoMissileAction = NewObject<USRHubAutoMissileInventorySlotAction>(OwnerWidget);
+			AutoMissileAction->Initialize(OwnerWidget, InputPortIndex, OuterBorder);
+			OutAutoMissileActions.Add(AutoMissileAction);
 		}
+		AddWidgetToInventoryGrid(WidgetTree, SlotBox, OuterBorder, InputPortIndex);
 	}
 
 	FSRResourceInstance MakeDebugEnergyResource(FName ResourceId, double EnergyValue, int32 RemainingProcessLimit)
@@ -2240,7 +2333,7 @@ void USRHubStarFuelMissileLaunchAction::HandleClicked()
 
 	if (IsValid(OwnerWidget))
 	{
-		OwnerWidget->LaunchStarFuelMissileFromFocusedHub();
+		OwnerWidget->BeginSelectStarFuelMissileAutoLaunchSlot();
 	}
 }
 
@@ -2255,6 +2348,26 @@ bool USRHubStarFuelMissileLaunchAction::TryHandleManualClick(const FVector2D& Sc
 
 	HandleClicked();
 	return true;
+}
+
+void USRHubAutoMissileInventorySlotAction::Initialize(
+	USRFacilityControlWidget* InOwnerWidget,
+	int32 InInputPortIndex,
+	UWidget* InSlotWidget)
+{
+	OwnerWidget = InOwnerWidget;
+	InputPortIndex = InInputPortIndex;
+	SlotWidget = InSlotWidget;
+}
+
+bool USRHubAutoMissileInventorySlotAction::TryHandleManualClick(const FVector2D& ScreenPosition)
+{
+	if (!IsValid(SlotWidget.Get()) || !IsWidgetUnderScreenPosition(SlotWidget.Get(), ScreenPosition))
+	{
+		return false;
+	}
+
+	return IsValid(OwnerWidget) && OwnerWidget->SelectStarFuelMissileAutoLaunchInputPort(InputPortIndex);
 }
 
 void USRHubRouteSettingAction::InitializeMaxCargoStackCount(
@@ -2433,8 +2546,10 @@ void USRFacilityControlWidget::SetFocusedFacility(AActor* NewFocusedActor, FName
 	{
 		LastHubRouteStatus.Reset();
 		HubRoutePanelSignature.Reset();
+		InputInventoryPanelSignature.Reset();
 		SelectedHubRouteDestination = FSRSpaceLogisticsHubEndpoint();
 		bHasSelectedHubRouteDestination = false;
+		bSelectingHubStarFuelMissileAutoLaunchSlot = false;
 	}
 	RefreshControlText();
 }
@@ -2446,8 +2561,10 @@ void USRFacilityControlWidget::ClearFocusedFacility()
 	bHasFocusedFacility = false;
 	LastHubRouteStatus.Reset();
 	HubRoutePanelSignature.Reset();
+	InputInventoryPanelSignature.Reset();
 	SelectedHubRouteDestination = FSRSpaceLogisticsHubEndpoint();
 	bHasSelectedHubRouteDestination = false;
+	bSelectingHubStarFuelMissileAutoLaunchSlot = false;
 	RefreshControlText();
 }
 
@@ -2541,6 +2658,15 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 		if (IsValid(InputSlotDebugAction) && InputSlotDebugAction->TryHandleManualClick(ScreenPosition))
 		{
 			SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved InputSlotDebugButton"));
+			return true;
+		}
+	}
+
+	for (USRHubAutoMissileInventorySlotAction* HubAutoMissileInventorySlotAction : HubAutoMissileInventorySlotActions)
+	{
+		if (IsValid(HubAutoMissileInventorySlotAction) && HubAutoMissileInventorySlotAction->TryHandleManualClick(ScreenPosition))
+		{
+			SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved HubAutoMissileInventorySlot"));
 			return true;
 		}
 	}
@@ -2808,6 +2934,72 @@ bool USRFacilityControlWidget::LaunchStarFuelMissileFromFocusedHub()
 	return bLaunched;
 }
 
+bool USRFacilityControlWidget::BeginSelectStarFuelMissileAutoLaunchSlot()
+{
+	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
+	if (!IsValid(FacilityNetwork) || !FacilityNetwork->IsHubFacility(FocusedOccupantId))
+	{
+		LastHubRouteStatus = TEXT("Missile auto-launch failed: selected facility is not a Hub.");
+		RefreshControlText();
+		return false;
+	}
+
+	FSRFacilityInstance FacilityInstance;
+	if (!FacilityNetwork->GetFacilityInstance(FocusedOccupantId, FacilityInstance) || FacilityInstance.InputPortInventories.IsEmpty())
+	{
+		LastHubRouteStatus = TEXT("Missile auto-launch failed: no input inventory slots.");
+		RefreshControlText();
+		return false;
+	}
+
+	bSelectingHubStarFuelMissileAutoLaunchSlot = !bSelectingHubStarFuelMissileAutoLaunchSlot;
+	LastHubRouteStatus = bSelectingHubStarFuelMissileAutoLaunchSlot
+		? TEXT("Select an input inventory slot to toggle missile auto-launch.")
+		: TEXT("Missile auto-launch slot selection canceled.");
+	InputInventoryPanelSignature.Reset();
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return true;
+}
+
+bool USRFacilityControlWidget::SelectStarFuelMissileAutoLaunchInputPort(int32 InputPortIndex)
+{
+	if (!bSelectingHubStarFuelMissileAutoLaunchSlot)
+	{
+		return false;
+	}
+
+	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
+	FSRFacilityInstance FacilityInstance;
+	if (!IsValid(FacilityNetwork)
+		|| !FacilityNetwork->IsHubFacility(FocusedOccupantId)
+		|| !FacilityNetwork->GetFacilityInstance(FocusedOccupantId, FacilityInstance)
+		|| !FacilityInstance.InputPortInventories.IsValidIndex(InputPortIndex))
+	{
+		LastHubRouteStatus = TEXT("Missile auto-launch failed: invalid input inventory slot.");
+		bSelectingHubStarFuelMissileAutoLaunchSlot = false;
+		InputInventoryPanelSignature.Reset();
+		HubRoutePanelSignature.Reset();
+		RefreshControlText();
+		return false;
+	}
+
+	const bool bCurrentlyEnabled = FacilityNetwork->IsHubStarFuelMissileAutoLaunchInputPort(FocusedOccupantId, InputPortIndex);
+	const bool bSet = FacilityNetwork->SetHubStarFuelMissileAutoLaunchInputPort(FocusedOccupantId, InputPortIndex, !bCurrentlyEnabled);
+	const FString SlotLabel = BuildInventoryCardPortLabel(FacilityInstance.InputPortInventories[InputPortIndex], InputPortIndex, TEXT("Input"));
+	LastHubRouteStatus = bSet
+		? FString::Printf(
+			TEXT("Missile auto-launch %s: %s."),
+			bCurrentlyEnabled ? TEXT("disabled") : TEXT("enabled"),
+			*SlotLabel)
+		: FString::Printf(TEXT("Missile auto-launch failed: %s."), *SlotLabel);
+	bSelectingHubStarFuelMissileAutoLaunchSlot = false;
+	InputInventoryPanelSignature.Reset();
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return bSet;
+}
+
 bool USRFacilityControlWidget::RemoveHubRoute(FName RouteId)
 {
 	if (RouteId.IsNone())
@@ -3067,9 +3259,9 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		OutputPreviewTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputPreviewTextBlock"))));
 		OutputResourceSlotBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputResourceSlotBox"))));
 		InputInventoryTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputInventoryTextBlock"))));
-		InputInventorySlotBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputInventorySlotBox"))));
+		InputInventorySlotBox = Cast<UVerticalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputInventorySlotBox"))));
 		OutputInventoryTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputInventoryTextBlock"))));
-		OutputInventorySlotBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputInventorySlotBox"))));
+		OutputInventorySlotBox = Cast<UVerticalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputInventorySlotBox"))));
 		DebugAddTerriteButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDebugAddTerriteButton"))));
 		DebugAddAquidButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDebugAddAquidButton"))));
 		DebugAddNitainButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDebugAddNitainButton"))));
@@ -3218,8 +3410,8 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		InputInventoryTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 	}
 	UScrollBox* InputInventoryScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("FacilityControlInputInventoryScrollBox"));
-	InputInventoryScrollBox->SetOrientation(Orient_Horizontal);
-	InputInventorySlotBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FacilityControlInputInventorySlotBox"));
+	InputInventoryScrollBox->SetOrientation(Orient_Vertical);
+	InputInventorySlotBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlInputInventorySlotBox"));
 	InputInventoryScrollBox->AddChild(InputInventorySlotBox);
 	if (UVerticalBoxSlot* InputInventorySlotsSlot = InputInventorySectionBox->AddChildToVerticalBox(InputInventoryScrollBox))
 	{
@@ -3234,8 +3426,8 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		OutputInventoryTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 	}
 	UScrollBox* OutputInventoryScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("FacilityControlOutputInventoryScrollBox"));
-	OutputInventoryScrollBox->SetOrientation(Orient_Horizontal);
-	OutputInventorySlotBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FacilityControlOutputInventorySlotBox"));
+	OutputInventoryScrollBox->SetOrientation(Orient_Vertical);
+	OutputInventorySlotBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlOutputInventorySlotBox"));
 	OutputInventoryScrollBox->AddChild(OutputInventorySlotBox);
 	if (UVerticalBoxSlot* OutputInventorySlotsSlot = OutputInventorySectionBox->AddChildToVerticalBox(OutputInventoryScrollBox))
 	{
@@ -3600,9 +3792,17 @@ void USRFacilityControlWidget::RefreshInputInventorySlots(
 	const FString EmptyText = bIsMiningFacility
 		? BuildMiningTargetSummary(FacilityNetwork, FacilityInstance.OccupantId)
 		: TEXT("No input slots");
-	const FString NewSignature = bIsMiningFacility
+	FString NewSignature = bIsMiningFacility
 		? FString::Printf(TEXT("InputMining:%s"), *EmptyText)
 		: BuildInventoryPanelSignature(TEXT("Input"), FacilityInstance.InputPortInventories, EmptyText);
+	if (!bIsMiningFacility)
+	{
+		NewSignature += FString::Printf(TEXT("|MissileSelect:%d"), bSelectingHubStarFuelMissileAutoLaunchSlot ? 1 : 0);
+		for (const int32 InputPortIndex : FacilityInstance.StarFuelMissileAutoLaunchInputPortIndices)
+		{
+			NewSignature += FString::Printf(TEXT("|MissileAuto:%d"), InputPortIndex);
+		}
+	}
 	if (InputInventoryPanelSignature == NewSignature)
 	{
 		return;
@@ -3611,6 +3811,7 @@ void USRFacilityControlWidget::RefreshInputInventorySlots(
 	InputInventoryPanelSignature = NewSignature;
 	InputInventorySlotBox->ClearChildren();
 	InputSlotDebugActions.Reset();
+	HubAutoMissileInventorySlotActions.Reset();
 	if (bIsMiningFacility)
 	{
 		AddInventoryInfoCard(WidgetTree, InputInventorySlotBox, EmptyText, FLinearColor(0.82f, 0.88f, 1.0f, 1.0f));
@@ -3630,10 +3831,13 @@ void USRFacilityControlWidget::RefreshInputInventorySlots(
 			InputInventorySlotBox,
 			this,
 			InputSlotDebugActions,
+			HubAutoMissileInventorySlotActions,
 			FacilityInstance.InputPortInventories[SlotIndex],
 			SlotIndex,
 			TEXT("Input"),
-			FLinearColor(0.82f, 0.88f, 1.0f, 1.0f));
+			FLinearColor(0.82f, 0.88f, 1.0f, 1.0f),
+			FacilityInstance.StarFuelMissileAutoLaunchInputPortIndices.Contains(SlotIndex),
+			bSelectingHubStarFuelMissileAutoLaunchSlot);
 	}
 }
 
@@ -3752,13 +3956,15 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 
 	ASRStar* PrimaryStar = ResolvePrimaryStarForHubUI(World);
 	const int32 StarFuelMissileCargoStackCount = CountAvailableStarFuelMissileCargoStacks(FacilityInstance, PrimaryStar);
-	const bool bCanLaunchStarFuelMissile = IsValid(PrimaryStar) && StarFuelMissileCargoStackCount > 0;
+	const bool bCanConfigureStarFuelMissileAutoLaunch = IsValid(PrimaryStar) && !FacilityInstance.InputPortInventories.IsEmpty();
 	const int32 ActiveMissileCount = CountActiveStarFuelMissilesForHub(StarFuelMissiles, SourceHub);
 
 	TArray<FName> AvailableCargoResourceIds;
+	TArray<int32> AutoLaunchInputPortIndices;
 	if (IsValid(FacilityNetwork))
 	{
 		FacilityNetwork->GetHubOutboundCargoResourceIds(FocusedOccupantId, AvailableCargoResourceIds);
+		FacilityNetwork->GetHubStarFuelMissileAutoLaunchInputPorts(FocusedOccupantId, AutoLaunchInputPortIndices);
 	}
 
 	int32 DestinationCount = 0;
@@ -3812,31 +4018,42 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 	}
 
 	HubRouteTextBlock->SetText(FText::FromString(FString::Printf(
-		TEXT("Hub Routes (%d active, %d missiles)"),
+		TEXT("Hub Routes (%d active, %d missiles, %d auto)"),
 		ConnectedRouteCount,
-		ActiveMissileCount)));
+		ActiveMissileCount,
+		AutoLaunchInputPortIndices.Num())));
 	const FString StatusText = !LastHubRouteStatus.IsEmpty()
 		? LastHubRouteStatus
-		: (bHasSelectedHubRouteDestination
-			? FString::Printf(TEXT("Destination selected: %s. Press Launch Route."), *BuildCelestialBodyDisplayName(SelectedHubRouteDestination.BodyActor.Get()))
-			: FString::Printf(
-				TEXT("%s"),
-				DestinationCount > 0
-					? (bCanLaunchStarFuelMissile ? TEXT("Select destination Hub or launch fuel missile.") : TEXT("Select destination Hub."))
-					: (bCanLaunchStarFuelMissile ? TEXT("Fuel missile ready.") : TEXT("No destination Hub available."))));
+		: (bSelectingHubStarFuelMissileAutoLaunchSlot
+			? FString(TEXT("Select an input inventory slot to toggle missile auto-launch."))
+			: (bHasSelectedHubRouteDestination
+				? FString::Printf(TEXT("Destination selected: %s. Press Launch Route."), *BuildCelestialBodyDisplayName(SelectedHubRouteDestination.BodyActor.Get()))
+				: FString::Printf(
+					TEXT("%s"),
+					AutoLaunchInputPortIndices.Num() > 0
+						? TEXT("Missile auto-launch linked. Cargo entering linked slots will launch.")
+						: (DestinationCount > 0
+							? TEXT("Select destination Hub or link missile auto-launch.")
+							: TEXT("No destination Hub available.")))));
 	HubRouteStatusTextBlock->SetText(FText::FromString(StatusText));
 
 	FString NewSignature = FString::Printf(
-		TEXT("Hub:%s:%s:%d:%d:%d:%d:%s:Selected:%s:%s"),
+		TEXT("Hub:%s:%s:%d:%d:%d:%d:%d:%d:%s:Selected:%s:%s"),
 		*GetNameSafe(SourceHub.BodyActor.Get()),
 		*SourceHub.HubOccupantId.ToString(),
 		DestinationCount,
 		ConnectedRouteCount,
 		ActiveMissileCount,
+		AutoLaunchInputPortIndices.Num(),
+		bSelectingHubStarFuelMissileAutoLaunchSlot ? 1 : 0,
 		StarFuelMissileCargoStackCount,
 		*StatusText,
 		bHasSelectedHubRouteDestination ? *GetNameSafe(SelectedHubRouteDestination.BodyActor.Get()) : TEXT("None"),
 		bHasSelectedHubRouteDestination ? *SelectedHubRouteDestination.HubOccupantId.ToString() : TEXT("None"));
+	for (const int32 AutoLaunchInputPortIndex : AutoLaunchInputPortIndices)
+	{
+		NewSignature += FString::Printf(TEXT("|MissileAuto:%d"), AutoLaunchInputPortIndex);
+	}
 	for (const FSRSpaceLogisticsHubEndpoint& HubEndpoint : HubEndpoints)
 	{
 		if (!HubEndpoint.IsValid() || AreHubEndpointKeysEqual(HubEndpoint, SourceHub))
@@ -3900,7 +4117,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		HubDestinationButtonBox,
 		this,
 		HubStarFuelMissileLaunchActions,
-		bCanLaunchStarFuelMissile);
+		bCanConfigureStarFuelMissileAutoLaunch);
 
 	for (const FSRSpaceLogisticsHubEndpoint& HubEndpoint : HubEndpoints)
 	{
@@ -4026,6 +4243,7 @@ void USRFacilityControlWidget::RefreshControlText()
 		{
 			InputInventorySlotBox->ClearChildren();
 			InputSlotDebugActions.Reset();
+			HubAutoMissileInventorySlotActions.Reset();
 			InputInventoryPanelSignature.Reset();
 		}
 		if (OutputInventorySlotBox)

@@ -18,12 +18,4 @@ public:
 		FSRCameraFocusSurfaceRuntimeState& FocusSurface,
 		float SmoothTime,
 		float DeltaSeconds);
-
-private:
-	static FQuat SmoothDampQuat(
-		const FQuat& Current,
-		const FQuat& Target,
-		FVector& CurrentAngularVelocity,
-		float SmoothTime,
-		float DeltaTime);
 };

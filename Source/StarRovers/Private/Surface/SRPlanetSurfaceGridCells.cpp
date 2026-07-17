@@ -4,6 +4,7 @@
 #include "SRPlanetSurfaceGridCellPose.h"
 #include "SRPlanetSurfaceGridCellQuery.h"
 #include "SRPlanetSurfaceGridFootprint.h"
+#include "SRPlanetSurfaceGridOwnerBody.h"
 #include "SRPlanetSurfaceGridProjectionQuery.h"
 #include "SRPlanetSurfaceGridTemperatureState.h"
 
@@ -11,6 +12,7 @@ namespace SurfaceGridCellIndex = StarRovers::SurfaceGridCellIndex;
 namespace SurfaceGridCellPose = StarRovers::SurfaceGridCellPose;
 namespace SurfaceGridCellQuery = StarRovers::SurfaceGridCellQuery;
 namespace SurfaceGridFootprint = StarRovers::SurfaceGridFootprint;
+namespace SurfaceGridOwnerBody = StarRovers::SurfaceGridOwnerBody;
 namespace SurfaceGridProjectionQuery = StarRovers::SurfaceGridProjectionQuery;
 namespace SurfaceGridTemperatureState = StarRovers::SurfaceGridTemperatureState;
 
@@ -87,7 +89,7 @@ bool USRPlanetSurfaceGrid::GetCellTemperatureState(const FSRPlanetSurfaceGridCel
 
 bool USRPlanetSurfaceGrid::SetCellTemperatureState(const FSRPlanetSurfaceGridCellId& CellId, ESRFacilityTemperatureState TemperatureState)
 {
-	return SurfaceGridTemperatureState::SetCellTemperatureState(
+	const bool bUpdated = SurfaceGridTemperatureState::SetCellTemperatureState(
 		Cells,
 		CellId,
 		TemperatureState,
@@ -107,11 +109,17 @@ bool USRPlanetSurfaceGrid::SetCellTemperatureState(const FSRPlanetSurfaceGridCel
 		{
 			StoreCellInfo(CellInfo);
 		});
+	if (bUpdated)
+	{
+		SurfaceGridOwnerBody::ApplySurfaceTemperatureStateColor(GetOwner(), CellId, TemperatureState);
+		RequestInteractionHighlightRefresh();
+	}
+	return bUpdated;
 }
 
 bool USRPlanetSurfaceGrid::SetCellSurfaceTemperature(const FSRPlanetSurfaceGridCellId& CellId, float SurfaceTemperature)
 {
-	return SurfaceGridTemperatureState::SetCellSurfaceTemperature(
+	const bool bUpdated = SurfaceGridTemperatureState::SetCellSurfaceTemperature(
 		Cells,
 		CellId,
 		SurfaceTemperature,
@@ -131,6 +139,13 @@ bool USRPlanetSurfaceGrid::SetCellSurfaceTemperature(const FSRPlanetSurfaceGridC
 		{
 			StoreCellInfo(CellInfo);
 		});
+	if (bUpdated)
+	{
+		const ESRFacilityTemperatureState TemperatureState = SurfaceGridTemperatureState::ResolveTemperatureStateFromSurfaceTemperature(SurfaceTemperature);
+		SurfaceGridOwnerBody::ApplySurfaceTemperatureStateColor(GetOwner(), CellId, TemperatureState);
+		RequestInteractionHighlightRefresh();
+	}
+	return bUpdated;
 }
 
 bool USRPlanetSurfaceGrid::GetFootprintCellIds(

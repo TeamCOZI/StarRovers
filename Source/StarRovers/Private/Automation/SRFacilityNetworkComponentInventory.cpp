@@ -3,6 +3,7 @@
 #include "SRFacilityDirectInventoryRouter.h"
 #include "SRFacilityHubCargoRouter.h"
 #include "SRFacilityResourceOperations.h"
+#include "Logistics/SRSpaceLogisticsSubsystem.h"
 #include "Utility/SRLog.h"
 
 bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRResourceInstance& ResourceInstance)
@@ -26,6 +27,7 @@ bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRRe
 	}
 
 	SetComponentTickEnabled(bAutoProcessFacilities);
+	TryAutoLaunchStarFuelMissilesFromInputPort(*FacilityInstance, TransferResult.PortIndex);
 	if (bLogFacilityNetworkEvents)
 	{
 		SR_LOG(FacilityNetwork,
@@ -46,11 +48,13 @@ bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRRe
 bool USRFacilityNetworkComponent::AddInputResourceToPort(FName OccupantId, int32 InputPortIndex, const FSRResourceInstance& ResourceInstance)
 {
 	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
-	if (!FacilityInstance || !FSRFacilityDirectInventoryRouter::TryAddInputResourceToPort(*FacilityInstance, InputPortIndex, ResourceInstance))
+	FSRFacilityInventoryTransferResult TransferResult;
+	if (!FacilityInstance || !FSRFacilityDirectInventoryRouter::TryAddInputResourceToPort(*FacilityInstance, InputPortIndex, ResourceInstance, &TransferResult))
 	{
 		return false;
 	}
 	SetComponentTickEnabled(bAutoProcessFacilities);
+	TryAutoLaunchStarFuelMissilesFromInputPort(*FacilityInstance, TransferResult.PortIndex);
 	return true;
 }
 
@@ -164,6 +168,45 @@ bool USRFacilityNetworkComponent::TryTakeHubOutboundCargoMatching(
 	return true;
 }
 
+bool USRFacilityNetworkComponent::TryTakeHubOutboundCargoMatchingFromInputPort(
+	FName OccupantId,
+	int32 InputPortIndex,
+	int32 MaxStackCount,
+	TFunctionRef<bool(const FSRResourceInstance&)> CargoPredicate,
+	FSRResourceInstance& OutCargo)
+{
+	OutCargo = FSRResourceInstance();
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	FSRFacilityHubCargoTransferResult TransferResult;
+	if (!FacilityInstance
+		|| !FSRFacilityHubCargoRouter::TryTakeOutboundCargoMatchingFromInputPort(
+			*FacilityInstance,
+			InputPortIndex,
+			MaxStackCount,
+			CargoPredicate,
+			OutCargo,
+			&TransferResult))
+	{
+		return false;
+	}
+
+	if (bLogFacilityNetworkEvents)
+	{
+		SR_LOG(FacilityNetwork,
+			LogTemp,
+			Display,
+			TEXT("[FacilityNetwork][Hub] Matching outbound cargo taken from input port: OccupantId=%s Port=%s PortIndex=%d ResourceId=%s StackCount=%d RemainingPortInput=%d Owner=%s"),
+			*OccupantId.ToString(),
+			*TransferResult.PortId.ToString(),
+			InputPortIndex,
+			*OutCargo.ResourceId.ToString(),
+			OutCargo.StackCount,
+			TransferResult.RemainingPortStackCount,
+			*GetNameSafe(GetOwner()));
+	}
+	return true;
+}
+
 void USRFacilityNetworkComponent::GetHubOutboundCargoResourceIds(FName OccupantId, TArray<FName>& OutResourceIds) const
 {
 	OutResourceIds.Reset();
@@ -174,6 +217,58 @@ void USRFacilityNetworkComponent::GetHubOutboundCargoResourceIds(FName OccupantI
 	}
 
 	FSRFacilityHubCargoRouter::GetOutboundCargoResourceIds(*FacilityInstance, OutResourceIds);
+}
+
+bool USRFacilityNetworkComponent::SetHubStarFuelMissileAutoLaunchInputPort(FName OccupantId, int32 InputPortIndex, bool bEnabled)
+{
+	FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance
+		|| !FSRFacilityHubCargoRouter::IsHubFacility(*FacilityInstance)
+		|| !FacilityInstance->InputPortInventories.IsValidIndex(InputPortIndex))
+	{
+		return false;
+	}
+
+	FacilityInstance->StarFuelMissileAutoLaunchInputPortIndices.RemoveAll([](int32 StoredInputPortIndex)
+	{
+		return StoredInputPortIndex == INDEX_NONE;
+	});
+
+	if (bEnabled)
+	{
+		FacilityInstance->StarFuelMissileAutoLaunchInputPortIndices.AddUnique(InputPortIndex);
+		TryAutoLaunchStarFuelMissilesFromInputPort(*FacilityInstance, InputPortIndex);
+	}
+	else
+	{
+		FacilityInstance->StarFuelMissileAutoLaunchInputPortIndices.Remove(InputPortIndex);
+	}
+	return true;
+}
+
+bool USRFacilityNetworkComponent::IsHubStarFuelMissileAutoLaunchInputPort(FName OccupantId, int32 InputPortIndex) const
+{
+	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	return FacilityInstance
+		&& FSRFacilityHubCargoRouter::IsHubFacility(*FacilityInstance)
+		&& FacilityInstance->StarFuelMissileAutoLaunchInputPortIndices.Contains(InputPortIndex);
+}
+
+void USRFacilityNetworkComponent::GetHubStarFuelMissileAutoLaunchInputPorts(FName OccupantId, TArray<int32>& OutInputPortIndices) const
+{
+	OutInputPortIndices.Reset();
+	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!FacilityInstance || !FSRFacilityHubCargoRouter::IsHubFacility(*FacilityInstance))
+	{
+		return;
+	}
+
+	OutInputPortIndices = FacilityInstance->StarFuelMissileAutoLaunchInputPortIndices;
+	OutInputPortIndices.RemoveAll([FacilityInstance](int32 InputPortIndex)
+	{
+		return !FacilityInstance->InputPortInventories.IsValidIndex(InputPortIndex);
+	});
+	OutInputPortIndices.Sort();
 }
 
 bool USRFacilityNetworkComponent::CanStoreHubInboundCargo(FName OccupantId, const FSRResourceInstance& Cargo) const
@@ -203,4 +298,71 @@ bool USRFacilityNetworkComponent::TryStoreHubInboundCargo(FName OccupantId, cons
 			*GetNameSafe(GetOwner()));
 	}
 	return true;
+}
+
+void USRFacilityNetworkComponent::TryAutoLaunchStarFuelMissilesFromInputPort(FSRFacilityInstance& FacilityInstance, int32 InputPortIndex)
+{
+	if (!FacilityInstance.InputPortInventories.IsValidIndex(InputPortIndex)
+		|| !FacilityInstance.StarFuelMissileAutoLaunchInputPortIndices.Contains(InputPortIndex)
+		|| !FSRFacilityHubCargoRouter::IsHubFacility(FacilityInstance))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
+		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
+		: nullptr;
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		return;
+	}
+
+	FSRSpaceLogisticsHubEndpoint SourceHub;
+	if (!SpaceLogisticsSubsystem->GetHubEndpoint(GetOwner(), FacilityInstance.OccupantId, SourceHub))
+	{
+		return;
+	}
+
+	const auto HasMissileFuelCargo = [&FacilityInstance, InputPortIndex]()
+	{
+		if (!FacilityInstance.InputPortInventories.IsValidIndex(InputPortIndex))
+		{
+			return false;
+		}
+
+		const FSRFacilityPortInventory& InputPortInventory = FacilityInstance.InputPortInventories[InputPortIndex];
+		for (const FSRResourceInstance& ResourceInstance : InputPortInventory.Inventory)
+		{
+			if (!ResourceInstance.ResourceId.IsNone()
+				&& ResourceInstance.StackCount > 0
+				&& FMath::Max(0.0, ResourceInstance.EnergyValue) * static_cast<double>(FMath::Max(1, ResourceInstance.StackCount)) > UE_DOUBLE_SMALL_NUMBER)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	if (!HasMissileFuelCargo())
+	{
+		return;
+	}
+
+	const int32 MaxLaunchAttempts = FMath::Max(
+		1,
+		StarRovers::FacilityResources::GetInventorySlotStackCount(FacilityInstance.InputPortInventories[InputPortIndex]));
+	for (int32 LaunchAttempt = 0; LaunchAttempt < MaxLaunchAttempts; ++LaunchAttempt)
+	{
+		if (!HasMissileFuelCargo())
+		{
+			break;
+		}
+
+		FName MissileId = NAME_None;
+		if (!SpaceLogisticsSubsystem->LaunchStarFuelMissileFromHubInputPort(SourceHub, InputPortIndex, MissileId))
+		{
+			break;
+		}
+	}
 }

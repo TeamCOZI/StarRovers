@@ -32,24 +32,12 @@ namespace
 			return false;
 		}
 
-		const int32 FootprintCellsX = StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, FacilityInstance.PlacementRotationSteps);
-		const int32 FootprintCellsY = StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, FacilityInstance.PlacementRotationSteps);
-		if (PortSpec.CellOffsetX < 0
-			|| PortSpec.CellOffsetY < 0
-			|| PortSpec.CellOffsetX >= FootprintCellsX
-			|| PortSpec.CellOffsetY >= FootprintCellsY)
-		{
-			return false;
-		}
-
-		const int32 FootprintIndex = PortSpec.CellOffsetY * FootprintCellsX + PortSpec.CellOffsetX;
-		if (!FacilityInstance.FootprintCellIds.IsValidIndex(FootprintIndex))
-		{
-			return false;
-		}
-
-		OutCellId = FacilityInstance.FootprintCellIds[FootprintIndex];
-		return true;
+		return StarRovers::Structure::SurfacePorts::TryGetPortFootprintCellId(
+			FacilityInstance.FootprintCellIds,
+			StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, FacilityInstance.PlacementRotationSteps),
+			StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, FacilityInstance.PlacementRotationSteps),
+			PortSpec,
+			OutCellId);
 	}
 
 	bool IsConveyorCellConnectedToExplicitPort(

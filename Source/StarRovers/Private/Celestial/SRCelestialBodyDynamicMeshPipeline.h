@@ -83,6 +83,7 @@ namespace StarRovers::Celestial::DynamicMesh
 		uint32 SourceHashB = 0;
 		float HeightOffset = 0.0f;
 		FLinearColor SurfaceColor = FLinearColor::White;
+		FLinearColor TerrainBaseColor = FLinearColor::White;
 		int32 MaterialId = 0;
 		FSRPlanetSurfaceGridCellId CellId;
 		FSRCelestialBodyDynamicMeshQuadFeatureMaskRef SurfaceFeatureMaskRef;
@@ -210,6 +211,7 @@ namespace StarRovers::Celestial::DynamicMesh
 			const FVector& CellNormal,
 			float HeightOffset,
 			const FLinearColor& SurfaceColor,
+			const FLinearColor& TerrainBaseColor,
 			const FSRCelestialBodyDynamicMeshQuadRenderData& SurfaceRenderData,
 			int32 SurfaceFeatureMaskEdgeIndex,
 			int32 MaterialId,
@@ -217,6 +219,7 @@ namespace StarRovers::Celestial::DynamicMesh
 		void RegisterCellEdges(
 			const FSRCelestialBodyDynamicMeshSurfaceCellGeometry& CellGeometry,
 			const FSRPlanetTerrainSample& TerrainSample,
+			const FLinearColor& TerrainBaseColor,
 			const FSRCelestialBodyDynamicMeshQuadRenderData& SurfaceRenderData,
 			int32 MaterialId,
 			const FSRPlanetSurfaceGridCellId& CellId,
@@ -409,6 +412,7 @@ namespace StarRovers::Celestial::DynamicMesh
 		const FSRPlanetSurfaceGridCellId& CellId,
 		const FSRCelestialBodyDynamicMeshSurfaceCellGeometry& CellGeometry,
 		const FSRPlanetTerrainSample& TerrainSample,
+		const FLinearColor& TerrainBaseColor,
 		int32 MaterialId,
 		bool bProfileBuildBreakdown,
 		double& SurfaceAppendMs);
@@ -486,7 +490,8 @@ namespace StarRovers::Celestial::DynamicMesh
 		bool bDoubleSided = false,
 		const FSRCelestialBodyDynamicMeshTerrainVertexKey* VertexKeys = nullptr,
 		const FVector* NormalReferenceDirectionOverride = nullptr,
-		bool bAllowUnweldedFallbackForFailedTriangles = false);
+		bool bAllowUnweldedFallbackForFailedTriangles = false,
+		const FLinearColor* TerrainBaseColorOverride = nullptr);
 	int32 ResolvePreparedSurfaceGridCellIndex(
 		const TArray<int32>& CachedCellIndexByFlatId,
 		int32 FaceResolution,

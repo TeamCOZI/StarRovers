@@ -50,57 +50,35 @@ namespace StarRovers::FacilityResources
 
 	inline bool AreResourceTagStacksEquivalent(const TArray<FSRResourceTagStack>& LeftTags, const TArray<FSRResourceTagStack>& RightTags)
 	{
-		int32 LeftValidCount = 0;
+		TArray<const FSRResourceTagStack*> LeftValidTags;
+		TArray<const FSRResourceTagStack*> RightValidTags;
 		for (const FSRResourceTagStack& LeftTag : LeftTags)
 		{
 			if (LeftTag.StackCount > 0)
 			{
-				++LeftValidCount;
+				LeftValidTags.Add(&LeftTag);
 			}
 		}
-
-		TArray<bool> bMatchedRightTags;
-		bMatchedRightTags.Init(false, RightTags.Num());
-		int32 RightValidCount = 0;
 		for (const FSRResourceTagStack& RightTag : RightTags)
 		{
 			if (RightTag.StackCount > 0)
 			{
-				++RightValidCount;
+				RightValidTags.Add(&RightTag);
 			}
 		}
 
-		if (LeftValidCount != RightValidCount)
+		if (LeftValidTags.Num() != RightValidTags.Num())
 		{
 			return false;
 		}
 
-		for (const FSRResourceTagStack& LeftTag : LeftTags)
+		for (int32 TagIndex = 0; TagIndex < LeftValidTags.Num(); ++TagIndex)
 		{
-			if (LeftTag.StackCount <= 0)
-			{
-				continue;
-			}
-
-			bool bMatched = false;
-			for (int32 RightIndex = 0; RightIndex < RightTags.Num(); ++RightIndex)
-			{
-				const FSRResourceTagStack& RightTag = RightTags[RightIndex];
-				if (bMatchedRightTags[RightIndex]
-					|| RightTag.StackCount <= 0
-					|| LeftTag.Tag != RightTag.Tag
-					|| LeftTag.StackCount != RightTag.StackCount
-					|| LeftTag.RemainingCycles != RightTag.RemainingCycles)
-				{
-					continue;
-				}
-
-				bMatchedRightTags[RightIndex] = true;
-				bMatched = true;
-				break;
-			}
-
-			if (!bMatched)
+			const FSRResourceTagStack& LeftTag = *LeftValidTags[TagIndex];
+			const FSRResourceTagStack& RightTag = *RightValidTags[TagIndex];
+			if (LeftTag.Tag != RightTag.Tag
+				|| LeftTag.StackCount != RightTag.StackCount
+				|| LeftTag.RemainingCycles != RightTag.RemainingCycles)
 			{
 				return false;
 			}
@@ -112,8 +90,10 @@ namespace StarRovers::FacilityResources
 	inline bool AreResourceInstancesStackEquivalent(const FSRResourceInstance& Left, const FSRResourceInstance& Right)
 	{
 		return Left.ResourceId == Right.ResourceId
+			&& Left.ResourceDataAsset == Right.ResourceDataAsset
 			&& FMath::IsNearlyEqual(Left.EnergyValue, Right.EnergyValue)
 			&& Left.RemainingProcessLimit == Right.RemainingProcessLimit
+			&& Left.ProcessCount == Right.ProcessCount
 			&& AreResourceTagStacksEquivalent(Left.Tags, Right.Tags);
 	}
 

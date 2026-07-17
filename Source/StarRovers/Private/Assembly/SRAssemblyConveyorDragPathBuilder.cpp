@@ -71,18 +71,13 @@ namespace StarRovers::Assembly
 				return false;
 			}
 
-			const int32 FootprintCellsX = StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacedStructure.PlacementRotationSteps);
-			const int32 FootprintCellsY = StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, PlacedStructure.PlacementRotationSteps);
-			if (PortSpec.CellOffsetX < 0
-				|| PortSpec.CellOffsetY < 0
-				|| PortSpec.CellOffsetX >= FootprintCellsX
-				|| PortSpec.CellOffsetY >= FootprintCellsY)
-			{
-				return false;
-			}
-
-			const int32 FootprintIndex = PortSpec.CellOffsetY * FootprintCellsX + PortSpec.CellOffsetX;
-			if (!PlacedStructure.FootprintCellIds.IsValidIndex(FootprintIndex))
+			FSRPlanetSurfaceGridCellId PortFootprintCellId;
+			if (!StarRovers::Structure::SurfacePorts::TryGetPortFootprintCellId(
+				PlacedStructure.FootprintCellIds,
+				StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacedStructure.PlacementRotationSteps),
+				StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, PlacedStructure.PlacementRotationSteps),
+				PortSpec,
+				PortFootprintCellId))
 			{
 				return false;
 			}
@@ -90,7 +85,7 @@ namespace StarRovers::Assembly
 			FSRPlanetSurfaceGridCellId ConnectionCellId;
 			if (!StarRovers::Structure::SurfacePorts::TryGetPortConnectionCellId(
 				SurfaceGrid,
-				PlacedStructure.FootprintCellIds[FootprintIndex],
+				PortFootprintCellId,
 				PortSpec.Direction,
 				ConnectionCellId))
 			{

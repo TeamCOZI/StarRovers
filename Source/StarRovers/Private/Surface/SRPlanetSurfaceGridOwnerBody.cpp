@@ -88,4 +88,14 @@ namespace StarRovers::SurfaceGridOwnerBody
 			OwnerBody->ClearSurfaceCellHighlights();
 		}
 	}
+
+	bool ApplySurfaceTemperatureStateColor(
+		AActor* Owner,
+		const FSRPlanetSurfaceGridCellId& CellId,
+		ESRFacilityTemperatureState TemperatureState)
+	{
+		ASRCelestialBody* OwnerBody = Cast<ASRCelestialBody>(Owner);
+		return IsValid(OwnerBody)
+			&& OwnerBody->ApplySurfaceTemperatureStateColor(CellId, TemperatureState);
+	}
 }

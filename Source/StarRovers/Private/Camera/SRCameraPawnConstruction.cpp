@@ -82,4 +82,8 @@ void ASRCameraPawn::InitializeCameraDefaults()
 	DragStartMouseScreenPosition = FVector2D::ZeroVector;
 	DragStartFocusDragOffset = FVector::ZeroVector;
 	DragStartTargetLocation = FVector::ZeroVector;
+	bHasFocusSurfaceCenterTarget = false;
+	FocusSurfaceCenterTargetActorLocalDirection = FVector::ZeroVector;
+	FocusSurfaceCenterTargetRotationOffset = FQuat::Identity;
+	FocusSurfaceCenterTargetRadius = 0.0f;
 }

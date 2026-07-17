@@ -66,6 +66,13 @@ struct STARROVERS_API FSRDynamicMeshGenerationSnapshot
 	float RiverStrength = 0.28f;
 	float LakeStrength = 0.18f;
 	float TemperatureFrequency = 1.75f;
+	bool bApplyTemperatureStateSurfaceColor = true;
+	float TemperatureStateSurfaceColorBlendAlpha = 0.6f;
+	FLinearColor FrozenTemperatureStateSurfaceColor = FLinearColor(0.12f, 0.82f, 1.0f, 1.0f);
+	FLinearColor ColdTemperatureStateSurfaceColor = FLinearColor(0.16f, 0.32f, 1.0f, 1.0f);
+	FLinearColor NormalTemperatureStateSurfaceColor = FLinearColor(0.50f, 0.86f, 0.42f, 1.0f);
+	FLinearColor HotTemperatureStateSurfaceColor = FLinearColor(1.0f, 0.50f, 0.08f, 1.0f);
+	FLinearColor OverheatedTemperatureStateSurfaceColor = FLinearColor(1.0f, 0.08f, 0.03f, 1.0f);
 	float MoistureFrequency = 2.5f;
 	float DetailFrequency = 18.0f;
 	float DetailStrength = 0.45f;
@@ -98,6 +105,9 @@ struct STARROVERS_API FSRDynamicMeshGenerationSnapshot
 	FSRCompiledTerrainNoiseDescriptor RiverNoise[2];
 	FSRCompiledTerrainNoiseDescriptor LakeNoise[2];
 	FSRCompiledTerrainNoiseDescriptor RareRegionNoise;
+
+	FLinearColor GetTemperatureStateSurfaceColor(ESRFacilityTemperatureState TemperatureState) const;
+	FLinearColor ApplyTemperatureStateSurfaceColor(const FLinearColor& BaseColor, ESRFacilityTemperatureState TemperatureState) const;
 };
 
 USTRUCT(BlueprintType)
@@ -197,6 +207,27 @@ struct STARROVERS_API FSRDynamicMeshGeneration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "TemperatureFrequency", ClampMin = "0.01", ToolTip = "기온 노이즈의 샘플 빈도입니다. 값을 키우면 뜨겁고 추운 구역이 더 자잘하게 반복되고, 줄이면 넓은 기후대가 생깁니다."))
 	float TemperatureFrequency = 1.75f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation|Temperature Surface Color", meta = (DisplayName = "bApplyTemperatureStateSurfaceColor", ToolTip = "When enabled, terrain surface vertex colors are tinted by each cell's current TemperatureState. Runtime temperature changes update the affected cell colors."))
+	bool bApplyTemperatureStateSurfaceColor = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation|Temperature Surface Color", meta = (DisplayName = "TemperatureStateSurfaceColorBlendAlpha", ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bApplyTemperatureStateSurfaceColor", ToolTip = "How strongly each TemperatureState color tints the terrain surface color. 1.0 fully replaces the biome color."))
+	float TemperatureStateSurfaceColorBlendAlpha = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation|Temperature Surface Color", meta = (DisplayName = "FrozenTemperatureStateSurfaceColor", EditCondition = "bApplyTemperatureStateSurfaceColor"))
+	FLinearColor FrozenTemperatureStateSurfaceColor = FLinearColor(0.12f, 0.82f, 1.0f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation|Temperature Surface Color", meta = (DisplayName = "ColdTemperatureStateSurfaceColor", EditCondition = "bApplyTemperatureStateSurfaceColor"))
+	FLinearColor ColdTemperatureStateSurfaceColor = FLinearColor(0.16f, 0.32f, 1.0f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation|Temperature Surface Color", meta = (DisplayName = "NormalTemperatureStateSurfaceColor", EditCondition = "bApplyTemperatureStateSurfaceColor"))
+	FLinearColor NormalTemperatureStateSurfaceColor = FLinearColor(0.50f, 0.86f, 0.42f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation|Temperature Surface Color", meta = (DisplayName = "HotTemperatureStateSurfaceColor", EditCondition = "bApplyTemperatureStateSurfaceColor"))
+	FLinearColor HotTemperatureStateSurfaceColor = FLinearColor(1.0f, 0.50f, 0.08f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation|Temperature Surface Color", meta = (DisplayName = "OverheatedTemperatureStateSurfaceColor", EditCondition = "bApplyTemperatureStateSurfaceColor"))
+	FLinearColor OverheatedTemperatureStateSurfaceColor = FLinearColor(1.0f, 0.08f, 0.03f, 1.0f);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "MoistureFrequency", ClampMin = "0.01", ToolTip = "습도 노이즈의 샘플 빈도입니다. 값을 키우면 습윤/건조 구역이 더 자잘해지고, 줄이면 넓은 습도대가 생깁니다."))
 	float MoistureFrequency = 2.5f;
 
@@ -218,6 +249,8 @@ struct STARROVERS_API FSRDynamicMeshGeneration
 	void NormalizeBiomeMaterials(const TArray<TObjectPtr<USRPlanetBiomeDataAsset>>& AllowedBiomeDataAssets);
 	UMaterialInterface* GetBiomeMaterial(FName BiomeId) const;
 	int32 GetBiomeMaterialSlotIndex(FName BiomeId) const;
+	FLinearColor GetTemperatureStateSurfaceColor(ESRFacilityTemperatureState TemperatureState) const;
+	FLinearColor ApplyTemperatureStateSurfaceColor(const FLinearColor& BaseColor, ESRFacilityTemperatureState TemperatureState) const;
 	FSRDynamicMeshGenerationSnapshot MakeThreadSafeSnapshot() const;
 };
 

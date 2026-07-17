@@ -9,6 +9,7 @@ struct FSRCelestialBodyDynamicMeshColorElement
 	int32 MeshComponentIndex = INDEX_NONE;
 	int32 ElementId = INDEX_NONE;
 	FLinearColor BaseColor = FLinearColor::White;
+	FLinearColor TerrainBaseColor = FLinearColor::White;
 };
 
 struct FSRCelestialBodyDynamicMeshQuadFeatureMaskRef

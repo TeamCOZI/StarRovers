@@ -30,41 +30,13 @@ namespace
 		return true;
 	}
 
-	bool ResolveFacilityFootprintCellId(
-		const FSRFocusedSurfaceStructureInfo& StructureInfo,
-		int32 FootprintCellsX,
-		int32 FootprintCellX,
-		int32 FootprintCellY,
-		FSRPlanetSurfaceGridCellId& OutCellId)
-	{
-		OutCellId = FSRPlanetSurfaceGridCellId();
-		if (StructureInfo.FootprintCellIds.IsEmpty())
-		{
-			return false;
-		}
-
-		const int32 SafeFootprintCellsX = FMath::Max(1, FootprintCellsX);
-		if (FootprintCellX < 0 || FootprintCellY < 0)
-		{
-			return false;
-		}
-
-		const int32 FootprintIndex = FootprintCellY * SafeFootprintCellsX + FootprintCellX;
-		if (StructureInfo.FootprintCellIds.IsValidIndex(FootprintIndex))
-		{
-			OutCellId = StructureInfo.FootprintCellIds[FootprintIndex];
-			return true;
-		}
-
-		return false;
-	}
-
 	void AppendFocusedFacilityPortInfo(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRFocusedSurfaceStructureInfo& StructureInfo,
 		ESRStructurePortKind PortKind,
 		const FSRStructurePortSpec& PortSpec,
 		int32 FootprintCellsX,
+		int32 FootprintCellsY,
 		TArray<FSRFocusedFacilityPortInfo>& OutFacilityPorts)
 	{
 		FSRFocusedFacilityPortInfo PortInfo;
@@ -72,7 +44,12 @@ namespace
 		PortInfo.Direction = PortSpec.Direction;
 		PortInfo.FootprintCellX = FMath::Max(0, PortSpec.CellOffsetX);
 		PortInfo.FootprintCellY = FMath::Max(0, PortSpec.CellOffsetY);
-		if (!ResolveFacilityFootprintCellId(StructureInfo, FootprintCellsX, PortSpec.CellOffsetX, PortSpec.CellOffsetY, PortInfo.FootprintCellId))
+		if (!StarRovers::Structure::SurfacePorts::TryGetPortFootprintCellId(
+			StructureInfo.FootprintCellIds,
+			FootprintCellsX,
+			FootprintCellsY,
+			PortSpec,
+			PortInfo.FootprintCellId))
 		{
 			return;
 		}
@@ -174,6 +151,7 @@ bool StarRovers::Assembly::FSRAssemblySurfaceFocusInfoBuilder::TryBuildSelectedS
 	FSRStructureData StructureDataForPorts;
 	bool bHasStructureDataForPorts = false;
 	int32 StructureFootprintCellsX = 1;
+	int32 StructureFootprintCellsY = 1;
 	int32 PlacedStructureRotationSteps = 0;
 
 	if (USRStructureInstanceManagerComponent* StructureInstanceManager = FocusedActor->FindComponentByClass<USRStructureInstanceManagerComponent>())
@@ -196,6 +174,7 @@ bool StarRovers::Assembly::FSRAssemblySurfaceFocusInfoBuilder::TryBuildSelectedS
 		StructureDataForPorts = StructureData;
 		bHasStructureDataForPorts = true;
 		StructureFootprintCellsX = StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacedStructureRotationSteps);
+		StructureFootprintCellsY = StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, PlacedStructureRotationSteps);
 		OutStructureInfo.StructureId = OutStructureInfo.StructureId.IsNone() ? StructureData.StructureId : OutStructureInfo.StructureId;
 		OutStructureInfo.DisplayName = StructureData.DisplayName.IsEmpty()
 			? FText::FromName(OutStructureInfo.StructureId)
@@ -221,6 +200,7 @@ bool StarRovers::Assembly::FSRAssemblySurfaceFocusInfoBuilder::TryBuildSelectedS
 			OutStructureInfo,
 			StructureDataForPorts,
 			StructureFootprintCellsX,
+			StructureFootprintCellsY,
 			PlacedStructureRotationSteps,
 			OutStructureInfo.FacilityPorts);
 	}
@@ -234,6 +214,7 @@ void StarRovers::Assembly::FSRAssemblySurfaceFocusInfoBuilder::BuildFocusedFacil
 	const FSRFocusedSurfaceStructureInfo& StructureInfo,
 	const FSRStructureData& StructureData,
 	int32 FootprintCellsX,
+	int32 FootprintCellsY,
 	int32 PlacementRotationSteps,
 	TArray<FSRFocusedFacilityPortInfo>& OutFacilityPorts)
 {
@@ -257,6 +238,7 @@ void StarRovers::Assembly::FSRAssemblySurfaceFocusInfoBuilder::BuildFocusedFacil
 			ESRStructurePortKind::Input,
 			RotatedPortSpec,
 			FootprintCellsX,
+			FootprintCellsY,
 			OutFacilityPorts);
 	}
 
@@ -272,6 +254,7 @@ void StarRovers::Assembly::FSRAssemblySurfaceFocusInfoBuilder::BuildFocusedFacil
 			ESRStructurePortKind::Output,
 			RotatedPortSpec,
 			FootprintCellsX,
+			FootprintCellsY,
 			OutFacilityPorts);
 	}
 }

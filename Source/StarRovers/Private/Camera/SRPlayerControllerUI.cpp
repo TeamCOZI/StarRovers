@@ -10,6 +10,8 @@
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 #include "UI/SRCelestialBodyOverviewWidget.h"
 #include "UI/SRFacilityControlWidget.h"
+#include "UI/SRFocusedHubShortcutWidget.h"
+#include "UI/SRGameOverWidget.h"
 #include "UI/SRStructureSelectionWidget.h"
 #include "UI/SRTimeControlWidget.h"
 
@@ -81,6 +83,16 @@ USRFacilityControlWidget* ASRPlayerController::GetFacilityControlWidget() const
 	return FacilityControlWidget;
 }
 
+USRFocusedHubShortcutWidget* ASRPlayerController::GetFocusedHubShortcutWidget() const
+{
+	return FocusedHubShortcutWidget;
+}
+
+USRGameOverWidget* ASRPlayerController::GetGameOverWidget() const
+{
+	return GameOverWidget;
+}
+
 bool ASRPlayerController::IsPointerOverFacilityControlWidget() const
 {
 	return IsValid(FacilityControlWidget) && FacilityControlWidget->IsPointerOverControlPanel();
@@ -89,11 +101,13 @@ bool ASRPlayerController::IsPointerOverFacilityControlWidget() const
 bool ASRPlayerController::IsPointerOverBlockingUI() const
 {
 	return (IsValid(FacilityControlWidget) && FacilityControlWidget->IsPointerOverControlPanel())
+		|| (IsValid(FocusedHubShortcutWidget) && FocusedHubShortcutWidget->IsPointerOverHubShortcutUI())
 		|| (IsValid(FocusInfoWidget) && FocusInfoWidget->IsPointerOverFocusInfoUI())
 		|| (IsValid(OverviewWidget) && OverviewWidget->IsPointerOverOverviewUI())
 		|| (IsValid(TimeControlWidget) && TimeControlWidget->IsPointerOverTimeControlPanel())
 		|| (IsValid(AugmentChoiceWidget) && AugmentChoiceWidget->IsVisible())
-		|| (IsValid(StructureSelectionWidget) && StructureSelectionWidget->IsPointerOverStructureSelectionPanel());
+		|| (IsValid(StructureSelectionWidget) && StructureSelectionWidget->IsPointerOverStructureSelectionPanel())
+		|| (IsValid(GameOverWidget) && GameOverWidget->IsVisible());
 }
 
 int32 ASRPlayerController::ResolveWidgetLayerZOrder(ESRPlayerUILayer WidgetLayer) const
@@ -425,6 +439,31 @@ void ASRPlayerController::CreateFacilityControlWidget()
 	FacilityControlWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
 
+void ASRPlayerController::CreateFocusedHubShortcutWidget()
+{
+	if (!IsLocalController() || FocusedHubShortcutWidget)
+	{
+		return;
+	}
+
+	TSubclassOf<USRFocusedHubShortcutWidget> WidgetClass = FocusedHubShortcutWidgetClass;
+	if (!WidgetClass)
+	{
+		WidgetClass = USRFocusedHubShortcutWidget::StaticClass();
+	}
+
+	FocusedHubShortcutWidget = CreateWidget<USRFocusedHubShortcutWidget>(this, WidgetClass);
+	if (!FocusedHubShortcutWidget)
+	{
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController failed to create FocusedHubShortcutWidget from '%s'."), *GetNameSafe(WidgetClass));
+		return;
+	}
+
+	FocusedHubShortcutWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::HubShortcut));
+	FocusedHubShortcutWidget->OnHubShortcutRequested().AddUObject(this, &ASRPlayerController::HandleFocusedHubShortcutRequested);
+	FocusedHubShortcutWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+
 void ASRPlayerController::RefreshFacilityControlWidget()
 {
 	if (!FacilityControlWidget)
@@ -447,6 +486,43 @@ void ASRPlayerController::RefreshFacilityControlWidget()
 
 	FacilityControlWidget->ClearFocusedFacility();
 	FacilityControlWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void ASRPlayerController::CreateGameOverWidget()
+{
+	if (!IsLocalController() || GameOverWidget)
+	{
+		return;
+	}
+
+	TSubclassOf<USRGameOverWidget> WidgetClass = GameOverWidgetClass;
+	if (!WidgetClass)
+	{
+		WidgetClass = USRGameOverWidget::StaticClass();
+	}
+
+	GameOverWidget = CreateWidget<USRGameOverWidget>(this, WidgetClass);
+	if (!GameOverWidget)
+	{
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController failed to create GameOverWidget from '%s'."), *GetNameSafe(WidgetClass));
+		return;
+	}
+
+	GameOverWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::GameOver));
+	GameOverWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void ASRPlayerController::ShowGameOverScreen(ASRStar* Star)
+{
+	CreateGameOverWidget();
+	if (!GameOverWidget)
+	{
+		return;
+	}
+
+	GameOverWidget->SetGameOverStar(Star);
+	GameOverWidget->SetVisibility(ESlateVisibility::Visible);
+	bShowMouseCursor = true;
 }
 
 void ASRPlayerController::GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const

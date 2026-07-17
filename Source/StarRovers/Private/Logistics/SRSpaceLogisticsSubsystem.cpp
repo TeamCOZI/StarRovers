@@ -218,6 +218,24 @@ bool USRSpaceLogisticsSubsystem::LaunchStarFuelMissileFromHub(
 		NextStarFuelMissileSequence);
 }
 
+bool USRSpaceLogisticsSubsystem::LaunchStarFuelMissileFromHubInputPort(
+	const FSRSpaceLogisticsHubEndpoint& SourceHub,
+	int32 InputPortIndex,
+	FName& OutMissileId,
+	float InitialSpeedUnitsPerSecond,
+	float LaunchAccelerationUnitsPerSecondSquared)
+{
+	return FSRSpaceLogisticsStarFuelMissileProcessor::LaunchFromHubInputPort(
+		*this,
+		SourceHub,
+		InputPortIndex,
+		OutMissileId,
+		InitialSpeedUnitsPerSecond,
+		LaunchAccelerationUnitsPerSecondSquared,
+		StarFuelMissiles,
+		NextStarFuelMissileSequence);
+}
+
 void USRSpaceLogisticsSubsystem::ClearHubRoutes()
 {
 	FSRSpaceLogisticsRouteRegistry::ClearHubRoutes(HubRoutes, SpaceshipActorsByRouteId);

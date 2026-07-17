@@ -1,6 +1,7 @@
 #include "Camera/SRPlayerController.h"
 
 #include "Camera/SRCameraPawn.h"
+#include "Celestial/SRStar.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "SRPlayerControllerFocusInfoState.h"
@@ -223,12 +224,14 @@ void ASRPlayerController::TryBindCelestialBodyRegistryEvents()
 		BoundCelestialBodyRegistry->OnCelestialBodiesChanged().RemoveAll(this);
 		BoundCelestialBodyRegistry->OnPrimaryStarActorChanged().RemoveAll(this);
 	}
+	BindPrimaryStarGameOver(nullptr);
 
 	BoundCelestialBodyRegistry = CelestialBodyRegistry;
 	if (IsValid(BoundCelestialBodyRegistry))
 	{
 		BoundCelestialBodyRegistry->OnCelestialBodiesChanged().AddUObject(this, &ASRPlayerController::HandleCelestialBodiesChanged);
 		BoundCelestialBodyRegistry->OnPrimaryStarActorChanged().AddUObject(this, &ASRPlayerController::HandlePrimaryStarActorChanged);
+		BindPrimaryStarGameOver(BoundCelestialBodyRegistry->GetPrimaryStarActor());
 	}
 }
 
@@ -242,15 +245,19 @@ void ASRPlayerController::HandleFocusedActorChanged(AActor* NewFocusedActor)
 	{
 		UpdateSelection(NewFocusedActor);
 	}
+	RefreshFocusedHubShortcutWidget(true);
 }
 
 void ASRPlayerController::HandleCelestialBodiesChanged()
 {
 	RefreshOverviewWidget();
+	RefreshFocusedHubShortcutWidget(true);
 }
 
 void ASRPlayerController::HandlePrimaryStarActorChanged(AActor* NewPrimaryStarActor)
 {
+	BindPrimaryStarGameOver(NewPrimaryStarActor);
+
 	if (!RuntimeState.bPendingInitialPrimaryStarFocus)
 	{
 		return;
@@ -263,6 +270,47 @@ void ASRPlayerController::HandlePrimaryStarActorChanged(AActor* NewPrimaryStarAc
 
 	RequestFocusActor(NewPrimaryStarActor, true);
 	RuntimeState.bPendingInitialPrimaryStarFocus = false;
+}
+
+void ASRPlayerController::BindPrimaryStarGameOver(AActor* PrimaryStarActor)
+{
+	ASRStar* PrimaryStar = Cast<ASRStar>(PrimaryStarActor);
+	if (BoundGameOverStar == PrimaryStar)
+	{
+		if (IsValid(PrimaryStar) && PrimaryStar->HasTriggeredSupernovaGameOver())
+		{
+			ShowGameOverScreen(PrimaryStar);
+		}
+		return;
+	}
+
+	if (IsValid(BoundGameOverStar))
+	{
+		BoundGameOverStar->OnStellarSupernovaGameOver.RemoveDynamic(this, &ASRPlayerController::HandlePrimaryStarGameOver);
+	}
+
+	BoundGameOverStar = PrimaryStar;
+	if (!IsValid(BoundGameOverStar))
+	{
+		return;
+	}
+
+	BoundGameOverStar->OnStellarSupernovaGameOver.RemoveDynamic(this, &ASRPlayerController::HandlePrimaryStarGameOver);
+	BoundGameOverStar->OnStellarSupernovaGameOver.AddDynamic(this, &ASRPlayerController::HandlePrimaryStarGameOver);
+	if (BoundGameOverStar->HasTriggeredSupernovaGameOver())
+	{
+		ShowGameOverScreen(BoundGameOverStar);
+	}
+}
+
+void ASRPlayerController::HandlePrimaryStarGameOver(ASRStar* Star)
+{
+	if (!IsValid(Star))
+	{
+		return;
+	}
+
+	ShowGameOverScreen(Star);
 }
 
 void ASRPlayerController::UpdateSelection(AActor* NewSelectedActor)
@@ -292,4 +340,5 @@ void ASRPlayerController::UpdateSelection(AActor* NewSelectedActor)
 	}
 	RefreshOverviewWidget();
 	OnSelectionChanged(SelectedActor);
+	RefreshFocusedHubShortcutWidget(true);
 }

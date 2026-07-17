@@ -78,6 +78,14 @@ public:
 		float InitialSpeedUnitsPerSecond = -1.0f,
 		float LaunchAccelerationUnitsPerSecondSquared = -1.0f);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Missile")
+	bool LaunchStarFuelMissileFromHubInputPort(
+		const FSRSpaceLogisticsHubEndpoint& SourceHub,
+		int32 InputPortIndex,
+		FName& OutMissileId,
+		float InitialSpeedUnitsPerSecond = -1.0f,
+		float LaunchAccelerationUnitsPerSecondSquared = -1.0f);
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Route")
 	void ClearHubRoutes();
 

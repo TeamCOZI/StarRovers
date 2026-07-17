@@ -61,17 +61,17 @@ Source folders are organized by owner:
 
 - `Assembly`: build/placement mode owner
 - `Automation`: facility runtime state, processing, transfer, and resource-output owner
-- `Camera`: pawn, controller, focus, input, and UI routing owner
-- `Celestial`: celestial actors, runtime data, and dynamic mesh owner
+- `Camera`: camera pawn/frame update, player controller, focus, input, shortcuts, and UI routing owner
+- `Celestial`: celestial actors, runtime data, dynamic mesh, and surface visual-state owner
 - `Conveyor`: conveyor network, placement, visuals, and transport owner
 - `Gravity`: gravity relationship components
-- `Logistics`: hub endpoints, space routes, spaceship, and star-fuel missile logistics owner
+- `Logistics`: hub endpoints, space routes, spaceship, and star-fuel missile launch/delivery owner
 - `Performance`: lightweight performance configuration/helpers
 - `Rendering`: render-facing components and visual utilities
 - `Simulation`: run/system simulation owner
 - `Structure`: structure data, placement defaults, and placed-instance owner
 - `Surface`: planet grid, terrain, interaction, and cell-state owner
-- `UI`: native widget owners
+- `UI`: native widget owners for runtime/gameplay screens
 - `Utility`: diagnostics, timing, shared utility helpers
 - `Editor`: editor-only commandlets and tools
 

@@ -7,6 +7,7 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Gravity/SRGravityParent.h"
+#include "Simulation/SROrbit.h"
 
 namespace
 {
@@ -21,14 +22,30 @@ void ASRCameraPawn::FocusActor(AActor* NewFocusActor)
 void ASRCameraPawn::FocusActorWithTransition(AActor* NewFocusActor, bool bUseArcTransition)
 {
 	AActor* PreviousFocusedActor = FocusedActor.Get();
+	if (IsValid(PreviousFocusedActor))
+	{
+		RemoveTickPrerequisiteActor(PreviousFocusedActor);
+		if (USROrbit* PreviousOrbit = PreviousFocusedActor->FindComponentByClass<USROrbit>())
+		{
+			RemoveTickPrerequisiteComponent(PreviousOrbit);
+		}
+	}
+
 	FocusedActor = NewFocusActor;
 	FocusDragOffset = FVector::ZeroVector;
 	FocusSurface.ResetRotation();
 	FocusArcTransition.Reset();
+	ClearFocusSurfaceCenterTarget();
 	ClearFocusSurfaceMotion();
 
 	if (FocusedActor)
 	{
+		AddTickPrerequisiteActor(FocusedActor);
+		if (USROrbit* FocusedOrbit = FocusedActor->FindComponentByClass<USROrbit>())
+		{
+			AddTickPrerequisiteComponent(FocusedOrbit);
+		}
+
 		DragTargetLocation = GetFocusLocation();
 		const FVector CurrentLocation = GetActorLocation();
 		const FVector DesiredLocation = DragTargetLocation;
@@ -87,6 +104,15 @@ void ASRCameraPawn::ClearFocusActor()
 {
 	AActor* PreviousFocusedActor = FocusedActor.Get();
 	const bool bHadFocusedActor = FocusedActor != nullptr;
+	if (IsValid(PreviousFocusedActor))
+	{
+		RemoveTickPrerequisiteActor(PreviousFocusedActor);
+		if (USROrbit* PreviousOrbit = PreviousFocusedActor->FindComponentByClass<USROrbit>())
+		{
+			RemoveTickPrerequisiteComponent(PreviousOrbit);
+		}
+	}
+
 	const FQuat CurrentCameraWorldRotation = Camera ? Camera->GetComponentQuat().GetNormalized() : FQuat::Identity;
 	const float CurrentZoomDistance = SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget;
 	if (FocusedActor)
@@ -100,6 +126,7 @@ void ASRCameraPawn::ClearFocusActor()
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
 	FocusSurface.ResetRotation();
 	FocusArcTransition.Reset();
+	ClearFocusSurfaceCenterTarget();
 	ClearFocusSurfaceMotion();
 	if (bHadFocusedActor && Camera)
 	{
@@ -125,6 +152,7 @@ AActor* ASRCameraPawn::GetFocusedActor() const
 void ASRCameraPawn::SnapToFocusTarget()
 {
 	FocusArcTransition.Reset();
+	ClearFocusSurfaceCenterTarget();
 	FocusTrackingDelta = FVector::ZeroVector;
 	FocusTrackingDeltaVelocity = FVector::ZeroVector;
 	if (FocusedActor)
@@ -154,6 +182,7 @@ void ASRCameraPawn::ResetFocus()
 
 	FocusDragOffset = FVector::ZeroVector;
 	FocusArcTransition.Reset();
+	ClearFocusSurfaceCenterTarget();
 	FSRCameraFocusSurfaceRigAlignmentController::StartRotationReset(FocusSurface);
 	ClearFocusSurfaceMotion();
 	bIsDragging = false;

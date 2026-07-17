@@ -14,6 +14,7 @@ class UHorizontalBox;
 class UProgressBar;
 class UTextBlock;
 class UVerticalBox;
+class UWidget;
 class USRFacilityNetworkComponent;
 class USRFacilityControlWidget;
 class USRSpaceLogisticsSubsystem;
@@ -157,6 +158,26 @@ private:
 };
 
 UCLASS()
+class STARROVERS_API USRHubAutoMissileInventorySlotAction : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	void Initialize(USRFacilityControlWidget* InOwnerWidget, int32 InInputPortIndex, UWidget* InSlotWidget);
+
+	bool TryHandleManualClick(const FVector2D& ScreenPosition);
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<USRFacilityControlWidget> OwnerWidget;
+
+	int32 InputPortIndex = INDEX_NONE;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> SlotWidget;
+};
+
+UCLASS()
 class STARROVERS_API USRHubRouteSettingAction : public UObject
 {
 	GENERATED_BODY()
@@ -230,6 +251,12 @@ public:
 	bool LaunchStarFuelMissileFromFocusedHub();
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool BeginSelectStarFuelMissileAutoLaunchSlot();
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool SelectStarFuelMissileAutoLaunchInputPort(int32 InputPortIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
 	bool RemoveHubRoute(FName RouteId);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
@@ -291,13 +318,13 @@ protected:
 	TObjectPtr<UTextBlock> InputInventoryTextBlock;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UHorizontalBox> InputInventorySlotBox;
+	TObjectPtr<UVerticalBox> InputInventorySlotBox;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> OutputInventoryTextBlock;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UHorizontalBox> OutputInventorySlotBox;
+	TObjectPtr<UVerticalBox> OutputInventorySlotBox;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> DebugAddTerriteButton;
@@ -343,6 +370,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<USRHubStarFuelMissileLaunchAction>> HubStarFuelMissileLaunchActions;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USRHubAutoMissileInventorySlotAction>> HubAutoMissileInventorySlotActions;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<USRHubRouteSettingAction>> HubRouteSettingActions;
@@ -393,4 +423,5 @@ private:
 	FSRSpaceLogisticsHubEndpoint SelectedHubRouteDestination;
 
 	bool bHasSelectedHubRouteDestination = false;
+	bool bSelectingHubStarFuelMissileAutoLaunchSlot = false;
 };

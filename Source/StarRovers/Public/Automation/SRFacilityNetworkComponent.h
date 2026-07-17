@@ -64,8 +64,24 @@ public:
 		TFunctionRef<bool(const FSRResourceInstance&)> CargoPredicate,
 		FSRResourceInstance& OutCargo);
 
+	bool TryTakeHubOutboundCargoMatchingFromInputPort(
+		FName OccupantId,
+		int32 InputPortIndex,
+		int32 MaxStackCount,
+		TFunctionRef<bool(const FSRResourceInstance&)> CargoPredicate,
+		FSRResourceInstance& OutCargo);
+
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Hub")
 	void GetHubOutboundCargoResourceIds(FName OccupantId, TArray<FName>& OutResourceIds) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool SetHubStarFuelMissileAutoLaunchInputPort(FName OccupantId, int32 InputPortIndex, bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Hub")
+	bool IsHubStarFuelMissileAutoLaunchInputPort(FName OccupantId, int32 InputPortIndex) const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Hub")
+	void GetHubStarFuelMissileAutoLaunchInputPorts(FName OccupantId, TArray<int32>& OutInputPortIndices) const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Hub")
 	bool CanStoreHubInboundCargo(FName OccupantId, const FSRResourceInstance& Cargo) const;
@@ -174,6 +190,7 @@ private:
 	int32 ProcessFacilities(float DeltaTime);
 	bool TryStartProcessing(FSRFacilityInstance& FacilityInstance);
 	bool TryCompleteProcessing(FSRFacilityInstance& FacilityInstance);
+	void TryAutoLaunchStarFuelMissilesFromInputPort(FSRFacilityInstance& FacilityInstance, int32 InputPortIndex);
 
 	UPROPERTY(Transient)
 	FSRFacilityNetworkRuntimeState RuntimeState;

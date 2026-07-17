@@ -7,6 +7,52 @@
 
 namespace StarRovers::Structure::SurfacePorts
 {
+	inline bool ShouldInvertDisplayPortOffsetsForFace(ESRCubeSphereFace Face)
+	{
+		return Face == ESRCubeSphereFace::PositiveZ || Face == ESRCubeSphereFace::NegativeZ;
+	}
+
+	inline bool TryGetPortFootprintCellId(
+		const TArray<FSRPlanetSurfaceGridCellId>& FootprintCellIds,
+		int32 FootprintCellsX,
+		int32 FootprintCellsY,
+		const FSRStructurePortSpec& PortSpec,
+		FSRPlanetSurfaceGridCellId& OutFootprintCellId)
+	{
+		OutFootprintCellId = FSRPlanetSurfaceGridCellId();
+		if (FootprintCellIds.IsEmpty())
+		{
+			return false;
+		}
+
+		const int32 SafeFootprintCellsX = FMath::Max(1, FootprintCellsX);
+		const int32 SafeFootprintCellsY = FMath::Max(1, FootprintCellsY);
+		if (PortSpec.CellOffsetX < 0
+			|| PortSpec.CellOffsetY < 0
+			|| PortSpec.CellOffsetX >= SafeFootprintCellsX
+			|| PortSpec.CellOffsetY >= SafeFootprintCellsY)
+		{
+			return false;
+		}
+
+		int32 FootprintCellX = PortSpec.CellOffsetX;
+		int32 FootprintCellY = PortSpec.CellOffsetY;
+		if (ShouldInvertDisplayPortOffsetsForFace(FootprintCellIds[0].Face))
+		{
+			FootprintCellX = SafeFootprintCellsX - 1 - FootprintCellX;
+			FootprintCellY = SafeFootprintCellsY - 1 - FootprintCellY;
+		}
+
+		const int32 FootprintIndex = FootprintCellY * SafeFootprintCellsX + FootprintCellX;
+		if (!FootprintCellIds.IsValidIndex(FootprintIndex))
+		{
+			return false;
+		}
+
+		OutFootprintCellId = FootprintCellIds[FootprintIndex];
+		return true;
+	}
+
 	inline bool TryResolvePortDirectionStep(ESRStructurePortDirection Direction, FIntPoint& OutStep)
 	{
 		switch (Direction)

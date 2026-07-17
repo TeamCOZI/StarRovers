@@ -18,7 +18,8 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	bool bDoubleSided,
 	const FSRCelestialBodyDynamicMeshTerrainVertexKey* VertexKeys,
 	const FVector* NormalReferenceDirectionOverride,
-	bool bAllowUnweldedFallbackForFailedTriangles)
+	bool bAllowUnweldedFallbackForFailedTriangles,
+	const FLinearColor* TerrainBaseColorOverride)
 {
 	FSRCelestialBodyDynamicMeshQuadRenderData RenderData;
 	MeshComponentIndex = 0;
@@ -121,7 +122,8 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 	RenderData.FeatureMaskRef.InputEdgeToFeatureMaskEdgeIndex[2] = InputEdgeToFeatureMaskEdgeIndex[2];
 	RenderData.FeatureMaskRef.InputEdgeToFeatureMaskEdgeIndex[3] = InputEdgeToFeatureMaskEdgeIndex[3];
 
-	auto TrackColorElement = [&RenderData, &SurfaceColor, MeshComponentIndex](int32 ColorElementId)
+	const FLinearColor& TerrainBaseColor = TerrainBaseColorOverride ? *TerrainBaseColorOverride : SurfaceColor;
+	auto TrackColorElement = [&RenderData, &SurfaceColor, &TerrainBaseColor, MeshComponentIndex](int32 ColorElementId)
 	{
 		if (ColorElementId == INDEX_NONE)
 		{
@@ -132,6 +134,7 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendFlatColoredDynamicMeshQuad(
 		ColorElement.MeshComponentIndex = MeshComponentIndex;
 		ColorElement.ElementId = ColorElementId;
 		ColorElement.BaseColor = SurfaceColor;
+		ColorElement.TerrainBaseColor = TerrainBaseColor;
 		RenderData.ColorElements.Add(ColorElement);
 	};
 	TrackColorElement(Color0);

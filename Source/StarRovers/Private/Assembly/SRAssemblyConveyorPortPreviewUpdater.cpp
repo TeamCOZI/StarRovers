@@ -91,6 +91,7 @@ bool StarRovers::Assembly::FSRAssemblyConveyorPortPreviewUpdater::Update(
 			StructureInfo,
 			StructureData,
 			StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, PlacedStructure.PlacementRotationSteps),
+			StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, PlacedStructure.PlacementRotationSteps),
 			PlacedStructure.PlacementRotationSteps,
 			FacilityPorts);
 

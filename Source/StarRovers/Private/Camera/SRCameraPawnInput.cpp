@@ -290,6 +290,7 @@ void ASRCameraPawn::HandleDragHoldStarted()
 	}
 
 	FocusArcTransition.Reset();
+	ClearFocusSurfaceCenterTarget();
 	bIsDragging = true;
 	bHasDragStartMousePosition = false;
 
@@ -322,6 +323,7 @@ void ASRCameraPawn::HandleFocusSurfaceDragHoldStarted()
 	}
 
 	FocusArcTransition.Reset();
+	ClearFocusSurfaceCenterTarget();
 	bIsDraggingFocusSurface = ShouldDragFocusedSurface();
 	if (!bIsDraggingFocusSurface)
 	{
@@ -431,6 +433,7 @@ void ASRCameraPawn::HandleFocusSurface(const FInputActionValue& Value)
 		return;
 	}
 
+	ClearFocusSurfaceCenterTarget();
 	bIsFocusSurfaceActive = ShouldAllowFocusSurface();
 }
 
@@ -453,23 +456,10 @@ bool ASRCameraPawn::TryStartFocusSurfaceGridAlignment()
 	}
 
 	const float CurrentZoomDistance = FMath::Max(1.0f, SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
-	const FQuat BaseViewQuat = GetViewRotationForZoom(CurrentZoomDistance).Quaternion();
-	const FQuat ViewQuat = (FocusSurface.Rotation.GetNormalized() * BaseViewQuat).GetNormalized();
-
-	ApplyZoomDrivenViewRotation(CurrentZoomDistance);
-	UpdateComponentTransforms();
-	if (SpringArm)
-	{
-		SpringArm->UpdateComponentToWorld();
-	}
-	if (Camera)
-	{
-		Camera->UpdateComponentToWorld();
-	}
 
 	FVector AlignmentAxis = FVector::ZeroVector;
 	float AlignmentAngleRadians = 0.0f;
-	if (!TryComputeFocusSurfaceGridAlignmentDelta(ViewQuat, CurrentZoomDistance, AlignmentAxis, AlignmentAngleRadians)
+	if (!TryComputeFocusSurfaceGridAlignmentDelta(GetActorLocation(), FocusSurface.Rotation, CurrentZoomDistance, AlignmentAxis, AlignmentAngleRadians)
 		|| FMath::IsNearlyZero(AlignmentAngleRadians))
 	{
 		return false;
@@ -490,6 +480,7 @@ bool ASRCameraPawn::TryStartFocusSurfaceGridAlignment()
 		return false;
 	}
 
+	ClearFocusSurfaceCenterTarget();
 	ClearFocusSurfaceMotion();
 	return true;
 }

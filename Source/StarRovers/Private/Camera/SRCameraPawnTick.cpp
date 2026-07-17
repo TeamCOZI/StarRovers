@@ -11,7 +11,6 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 
 	ApplyMappingContext();
 	UpdateFocusSurface(DeltaSeconds);
-	UpdateFocusSurfaceRotation(DeltaSeconds);
 
 	if (FocusedActor)
 	{
@@ -29,6 +28,13 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 	}
 
 	const bool bHasFocusedActor = IsValid(FocusedActor);
+	const bool bUpdateCenterTargetAfterPivot = bHasFocusSurfaceCenterTarget;
+	const float CurrentZoomDistance = FMath::Max(1.0f, SpringArm ? SpringArm->TargetArmLength : ZoomDistanceTarget);
+	if (!bUpdateCenterTargetAfterPivot)
+	{
+		UpdateFocusSurfaceRotation(DeltaSeconds, GetActorLocation(), CurrentZoomDistance);
+	}
+
 	FSRCameraPivotUpdateSettings PivotUpdateSettings;
 	PivotUpdateSettings.CurrentLocation = GetActorLocation();
 	PivotUpdateSettings.FocusLocation = bHasFocusedActor ? GetFocusLocation() : DragTargetLocation;
@@ -56,8 +62,14 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 			return ClampZoomDistance(ZoomDistance);
 		});
 	const FVector NewLocation = PivotUpdate.NewLocation;
-	FSRCameraZoomUpdateController::Update(
-		SpringArm,
+	if (bUpdateCenterTargetAfterPivot)
+	{
+		UpdateFocusSurfaceRotation(DeltaSeconds, NewLocation, CurrentZoomDistance);
+	}
+
+	const FVector CameraDirectionFromPivot = GetCameraDirectionFromPivot(FocusSurface.Rotation);
+	const float NewZoomDistance = FSRCameraZoomUpdateController::Update(
+		CurrentZoomDistance,
 		ZoomDistanceTarget,
 		NewLocation,
 		DeltaSeconds,
@@ -66,29 +78,16 @@ void ASRCameraPawn::Tick(float DeltaSeconds)
 		{
 			return ClampZoomDistance(ZoomDistance);
 		},
-		[this](float ZoomDistance, const FVector& PivotLocation)
+		[this, CameraDirectionFromPivot](float ZoomDistance, const FVector& PivotLocation)
 		{
-			return ClampZoomDistanceAgainstSpace(ZoomDistance, PivotLocation);
+			return ClampZoomDistanceAgainstSpace(ZoomDistance, PivotLocation, CameraDirectionFromPivot);
 		},
-		[this](float ZoomDistance, const FVector& PivotLocation)
+		[this, CameraDirectionFromPivot](float ZoomDistance, const FVector& PivotLocation)
 		{
-			return ClampZoomDistanceAgainstCelestialBodies(ZoomDistance, PivotLocation);
-		},
-		[this](float ZoomDistance)
-		{
-			ApplyZoomDrivenViewRotation(ZoomDistance);
+			return ClampZoomDistanceAgainstCelestialBodies(ZoomDistance, PivotLocation, CameraDirectionFromPivot);
 		});
 
-	SetActorLocation(NewLocation);
-	UpdateComponentTransforms();
-	if (SpringArm)
-	{
-		SpringArm->UpdateComponentToWorld();
-	}
-	if (Camera)
-	{
-		Camera->UpdateComponentToWorld();
-	}
+	ApplyCameraFrame(NewLocation, NewZoomDistance);
 	if (!bIsFocusSurfaceActive && FocusSurface.bPendingGridAutoAlignment)
 	{
 		FocusSurface.bPendingGridAutoAlignment = false;

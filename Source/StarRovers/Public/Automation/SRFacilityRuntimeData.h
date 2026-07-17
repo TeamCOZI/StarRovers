@@ -78,6 +78,9 @@ struct STARROVERS_API FSRFacilityInstance
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "OutputInventory"))
 	TArray<FSRResourceInstance> OutputInventory;
 
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility|Hub", meta = (DisplayName = "StarFuelMissileAutoLaunchInputPortIndices"))
+	TArray<int32> StarFuelMissileAutoLaunchInputPortIndices;
+
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "CellTemperatureAdjustments"))
 	TArray<FSRFacilityCellTemperatureAdjustment> CellTemperatureAdjustments;
 

@@ -2,6 +2,8 @@
 
 #include "Assembly/SRAssemblyComponent.h"
 #include "SRPlayerControllerLifecycle.h"
+#include "UI/SRFocusedHubShortcutWidget.h"
+#include "UI/SRGameOverWidget.h"
 
 ASRPlayerController::ASRPlayerController()
 {
@@ -24,6 +26,9 @@ ASRPlayerController::ASRPlayerController()
 	ConveyorWaypointAction = nullptr;
 	BulkDeleteConveyorModifierAction = nullptr;
 	AssemblyShiftModifierAction = nullptr;
+	FocusedHubShortcutWidgetClass = USRFocusedHubShortcutWidget::StaticClass();
+	FocusedHubShortcutRefreshInterval = 0.20f;
+	GameOverWidgetClass = USRGameOverWidget::StaticClass();
 
 	AssemblyComponent = CreateDefaultSubobject<USRAssemblyComponent>(TEXT("AssemblyComponent"));
 	AssemblyComponent->ConfigurePlacementPerformance(MaxStructurePlacementsPerFrame, MaxQueuedStructurePlacements);

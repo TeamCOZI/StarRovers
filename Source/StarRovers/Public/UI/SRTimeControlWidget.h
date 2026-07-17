@@ -106,9 +106,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Top Bar", meta = (DisplayName = "Fast Forward Time Scale", ClampMin = "0.0", UIMin = "0.0"))
 	float FastForwardTimeScale = 2.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Top Bar", meta = (DisplayName = "Preview Solar Fuel Supply Progress", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
-	float PreviewSolarFuelSupplyProgress = 0.75f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Top Bar", meta = (DisplayName = "Pause Button Icon"))
 	FSlateBrush PauseButtonIconBrush;
 
@@ -153,6 +150,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UProgressBar> FuelSupplyProgressBar;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FuelSupplyProgressTextBlock;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasPanel> CycleProgressContainer;
@@ -330,6 +330,9 @@ protected:
 
 	UPROPERTY(Transient)
 	FString LastFocusedBodyNameString;
+
+	UPROPERTY(Transient)
+	FString LastFuelSupplyTextString;
 
 	UPROPERTY(Transient)
 	float LastFuelSupplyProgressRatio = -1.0f;

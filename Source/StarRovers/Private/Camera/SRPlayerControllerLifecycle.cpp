@@ -32,6 +32,7 @@ void FSRPlayerControllerLifecycle::Tick(ASRPlayerController& PlayerController)
 		PlayerController.ApplyRuntimeAssemblyInputMapping();
 	}
 	PlayerController.UpdateAssemblyModeFromFocusedActorScreenSize();
+	PlayerController.RefreshFocusedHubShortcutWidget(false);
 }
 
 void FSRPlayerControllerLifecycle::ConfigureInputMode(ASRPlayerController& PlayerController)
@@ -56,4 +57,7 @@ void FSRPlayerControllerLifecycle::InitializeWidgets(ASRPlayerController& Player
 	PlayerController.RefreshStructureSelectionWidget();
 	PlayerController.CreateFacilityControlWidget();
 	PlayerController.RefreshFacilityControlWidget();
+	PlayerController.CreateFocusedHubShortcutWidget();
+	PlayerController.RefreshFocusedHubShortcutWidget(true);
+	PlayerController.CreateGameOverWidget();
 }

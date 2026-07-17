@@ -24,6 +24,7 @@ namespace StarRovers::Assembly
 			const FSRFocusedSurfaceStructureInfo& StructureInfo,
 			const FSRStructureData& StructureData,
 			int32 FootprintCellsX,
+			int32 FootprintCellsY,
 			int32 PlacementRotationSteps,
 			TArray<FSRFocusedFacilityPortInfo>& OutFacilityPorts);
 

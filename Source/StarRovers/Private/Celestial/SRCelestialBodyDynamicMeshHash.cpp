@@ -20,6 +20,15 @@ namespace
 		return Hash;
 	}
 
+	uint32 HashLinearColor(uint32 Hash, const FLinearColor& Color)
+	{
+		Hash = HashCombine(Hash, ::GetTypeHash(Color.R));
+		Hash = HashCombine(Hash, ::GetTypeHash(Color.G));
+		Hash = HashCombine(Hash, ::GetTypeHash(Color.B));
+		Hash = HashCombine(Hash, ::GetTypeHash(Color.A));
+		return Hash;
+	}
+
 	uint32 HashDynamicMeshGenerationSettings(uint32 Hash, const FSRDynamicMeshGeneration& DynamicMeshGeneration)
 	{
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.GenerationSeed));
@@ -42,6 +51,13 @@ namespace
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.NoisePersistence));
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.OceanThreshold));
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.AtmosphereThreshold));
+		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.bApplyTemperatureStateSurfaceColor ? 1 : 0));
+		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.TemperatureStateSurfaceColorBlendAlpha));
+		Hash = HashLinearColor(Hash, DynamicMeshGeneration.FrozenTemperatureStateSurfaceColor);
+		Hash = HashLinearColor(Hash, DynamicMeshGeneration.ColdTemperatureStateSurfaceColor);
+		Hash = HashLinearColor(Hash, DynamicMeshGeneration.NormalTemperatureStateSurfaceColor);
+		Hash = HashLinearColor(Hash, DynamicMeshGeneration.HotTemperatureStateSurfaceColor);
+		Hash = HashLinearColor(Hash, DynamicMeshGeneration.OverheatedTemperatureStateSurfaceColor);
 		return Hash;
 	}
 

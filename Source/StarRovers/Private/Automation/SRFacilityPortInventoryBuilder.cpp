@@ -57,6 +57,7 @@ void FSRFacilityPortInventoryBuilder::Initialize(FSRFacilityInstance& FacilityIn
 	FacilityInstance.OutputPortInventories.Reset();
 	FacilityInstance.InputInventory.Reset();
 	FacilityInstance.OutputInventory.Reset();
+	FacilityInstance.StarFuelMissileAutoLaunchInputPortIndices.Reset();
 	if (!IsValid(FacilityDataAsset))
 	{
 		return;

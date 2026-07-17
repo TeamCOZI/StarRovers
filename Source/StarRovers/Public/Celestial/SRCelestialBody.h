@@ -89,6 +89,7 @@ public:
 		const FLinearColor& OccupiedCellColor);
 	void ClearSurfaceCellHighlights();
 	bool HasSurfaceCellRenderData(const FSRPlanetSurfaceGridCellId& CellId) const;
+	bool ApplySurfaceTemperatureStateColor(const FSRPlanetSurfaceGridCellId& CellId, ESRFacilityTemperatureState TemperatureState);
 	bool GetCachedSurfaceGridCells(TArray<FSRPlanetSurfaceGridCell>& OutCells) const;
 	bool PrepareCelestialBodyDynamicMesh();
 	bool BuildPreparedCelestialBodyDynamicMesh(FSRCelestialBodyPreparedDynamicMesh& OutPreparedMesh);

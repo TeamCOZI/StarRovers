@@ -34,26 +34,12 @@ namespace
 		const FSRStructurePortSpec& PortSpec,
 		FSRPlanetSurfaceGridCellId& OutFootprintCellId)
 	{
-		OutFootprintCellId = FSRPlanetSurfaceGridCellId();
-
-		const int32 SafeFootprintCellsX = FMath::Max(1, FootprintCellsX);
-		const int32 SafeFootprintCellsY = FMath::Max(1, FootprintCellsY);
-		if (PortSpec.CellOffsetX < 0
-			|| PortSpec.CellOffsetY < 0
-			|| PortSpec.CellOffsetX >= SafeFootprintCellsX
-			|| PortSpec.CellOffsetY >= SafeFootprintCellsY)
-		{
-			return false;
-		}
-
-		const int32 FootprintIndex = PortSpec.CellOffsetY * SafeFootprintCellsX + PortSpec.CellOffsetX;
-		if (!FootprintCellIds.IsValidIndex(FootprintIndex))
-		{
-			return false;
-		}
-
-		OutFootprintCellId = FootprintCellIds[FootprintIndex];
-		return true;
+		return StarRovers::Structure::SurfacePorts::TryGetPortFootprintCellId(
+			FootprintCellIds,
+			FootprintCellsX,
+			FootprintCellsY,
+			PortSpec,
+			OutFootprintCellId);
 	}
 
 	void AppendGhostPortPreviewCell(

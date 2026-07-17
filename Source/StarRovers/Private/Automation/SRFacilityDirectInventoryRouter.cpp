@@ -81,14 +81,14 @@ bool FSRFacilityDirectInventoryRouter::TryAddInputResource(
 		return false;
 	}
 
-	TArray<FSRFacilityPortInventory> SimulatedInputPortInventories = FacilityInstance.InputPortInventories;
+	FSRFacilityPortInventory SimulatedInputPortInventory = *InputPortInventory;
 	const int32 RequiredStackCount = StarRovers::FacilityResources::GetResourceStackCount(ResourceInstance);
-	if (StarRovers::FacilityResources::TryAddResourceToInventorySlots(SimulatedInputPortInventories, ResourceInstance) != RequiredStackCount)
+	if (StarRovers::FacilityResources::TryAddResourceToInventorySlot(SimulatedInputPortInventory, ResourceInstance) != RequiredStackCount)
 	{
 		return false;
 	}
 
-	const int32 AddedStackCount = StarRovers::FacilityResources::TryAddResourceToInventorySlots(FacilityInstance.InputPortInventories, ResourceInstance);
+	const int32 AddedStackCount = StarRovers::FacilityResources::TryAddResourceToInventorySlot(*InputPortInventory, ResourceInstance);
 	if (AddedStackCount != RequiredStackCount)
 	{
 		return false;
@@ -98,6 +98,7 @@ bool FSRFacilityDirectInventoryRouter::TryAddInputResource(
 	if (OutTransferResult)
 	{
 		OutTransferResult->PortId = InputPortInventory->PortId;
+		OutTransferResult->PortIndex = InputPortInventory->PortIndex;
 		OutTransferResult->PortStackCount = StarRovers::FacilityResources::GetInventorySlotStackCount(*InputPortInventory);
 		OutTransferResult->AggregateStackCount = FacilityInstance.InputInventory.Num();
 	}
@@ -107,8 +108,11 @@ bool FSRFacilityDirectInventoryRouter::TryAddInputResource(
 bool FSRFacilityDirectInventoryRouter::TryAddInputResourceToPort(
 	FSRFacilityInstance& FacilityInstance,
 	int32 InputPortIndex,
-	const FSRResourceInstance& ResourceInstance)
+	const FSRResourceInstance& ResourceInstance,
+	FSRFacilityInventoryTransferResult* OutTransferResult)
 {
+	ResetTransferResult(OutTransferResult);
+
 	FSRFacilityPortInventory* InputPortInventory = FacilityInstance.InputPortInventories.IsValidIndex(InputPortIndex)
 		? &FacilityInstance.InputPortInventories[InputPortIndex]
 		: nullptr;
@@ -130,6 +134,13 @@ bool FSRFacilityDirectInventoryRouter::TryAddInputResourceToPort(
 	}
 
 	FSRFacilityPortInventoryBuilder::RefreshAggregateInventories(FacilityInstance);
+	if (OutTransferResult)
+	{
+		OutTransferResult->PortId = InputPortInventory->PortId;
+		OutTransferResult->PortIndex = InputPortInventory->PortIndex;
+		OutTransferResult->PortStackCount = StarRovers::FacilityResources::GetInventorySlotStackCount(*InputPortInventory);
+		OutTransferResult->AggregateStackCount = FacilityInstance.InputInventory.Num();
+	}
 	return true;
 }
 

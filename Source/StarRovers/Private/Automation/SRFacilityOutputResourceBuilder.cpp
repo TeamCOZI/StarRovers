@@ -339,17 +339,20 @@ namespace
 		return ResourceInstance.EnergyValue - EnergyValueBeforeEffect;
 	}
 
-	double ApplyTagEnergyMultiplier(
+	double ApplyTagEnergyHalfAmountDelta(
 		FSRResourceInstance& ResourceInstance,
-		double Multiplier,
 		FSRFacilityEffectContext& EffectContext)
 	{
+		const double EnergyValueBeforeEffect = ResourceInstance.EnergyValue;
 		const int32 ApplicationCount = GetTagEffectApplicationCount(EffectContext);
 		for (int32 ApplicationIndex = 0; ApplicationIndex < ApplicationCount; ++ApplicationIndex)
 		{
-			MultiplyEnergyValue(ResourceInstance, Multiplier, EffectContext);
+			AddEnergyDelta(
+				ResourceInstance,
+				ResolveDirectedTagEnergyDelta(ResourceInstance.EnergyValue * -0.5, EffectContext),
+				EffectContext);
 		}
-		return FMath::Pow(Multiplier, static_cast<double>(ApplicationCount));
+		return ResourceInstance.EnergyValue - EnergyValueBeforeEffect;
 	}
 
 	void RecordDirectEnergyChangeIfNeeded(
@@ -568,21 +571,18 @@ namespace
 		}
 
 		const double EnergyBeforeHalfLife = ResourceInstance.EnergyValue;
-		const double Multiplier = EffectContext.bInvertTagEffects ? 2.0 : 0.5;
-		const double AppliedMultiplier = ApplyTagEnergyMultiplier(ResourceInstance, Multiplier, EffectContext);
+		const double EnergyDelta = ApplyTagEnergyHalfAmountDelta(ResourceInstance, EffectContext);
 		const FString Label = BuildTagFormulaLabel(
 			ESRResourceProcessTag::HalfLife,
 			TagStack.StackCount,
 			AddTagEffectApplicationDetail(
-				FString::Printf(
-					TEXT("cycle reset multiplier %s"),
-					*FormatEnergyFormulaValue(Multiplier)),
+				TEXT("cycle reset half energy"),
 				EffectContext));
-		AppendEnergyMultiplyFormula(
+		AppendEnergyDeltaFormula(
 			EnergyFormulaText,
 			*Label,
 			EnergyBeforeHalfLife,
-			AppliedMultiplier,
+			EnergyDelta,
 			ResourceInstance.EnergyValue);
 		TagStack.RemainingCycles = StarRovers::FacilityResources::HalfLifeDefaultCycles;
 	}
@@ -1283,19 +1283,18 @@ namespace
 		case ESRResourceProcessTag::HalfLife:
 		{
 			const double EnergyBeforeHalfLife = ResourceInstance.EnergyValue;
-			const double Multiplier = EffectContext.bInvertTagEffects ? 2.0 : 0.5;
-			const double AppliedMultiplier = ApplyTagEnergyMultiplier(ResourceInstance, Multiplier, EffectContext);
+			const double EnergyDelta = ApplyTagEnergyHalfAmountDelta(ResourceInstance, EffectContext);
 			const FString Label = BuildTagFormulaLabel(
 				Tag,
 				SafeStackCount,
 				AddTagEffectApplicationDetail(
-					FString::Printf(TEXT("trigger multiplier %s"), *FormatEnergyFormulaValue(Multiplier)),
+					TEXT("trigger half energy"),
 					EffectContext));
-			AppendEnergyMultiplyFormula(
+			AppendEnergyDeltaFormula(
 				EnergyFormulaText,
 				*Label,
 				EnergyBeforeHalfLife,
-				AppliedMultiplier,
+				EnergyDelta,
 				ResourceInstance.EnergyValue);
 			ResetHalfLifeTagCycles(ResourceInstance);
 			break;
@@ -1369,13 +1368,13 @@ namespace
 		}
 	}
 
-	FSRResourceInstance BuildSynthesisProductResource(const TArray<FSRResourceInstance>& ProcessedResources)
+	FSRResourceInstance BuildSynthesisCombinedResource(const TArray<FSRResourceInstance>& ProcessedResources)
 	{
 		FSRResourceInstance OutputResource;
 		OutputResource.ResourceInstanceId = FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits));
 		OutputResource.ResourceId = CompoundResourceId;
 		OutputResource.ResourceDataAsset = nullptr;
-		OutputResource.EnergyValue = 1.0;
+		OutputResource.EnergyValue = 0.0;
 		OutputResource.RemainingProcessLimit = TNumericLimits<int32>::Max();
 		OutputResource.ProcessCount = 0;
 		OutputResource.StackCount = 1;
@@ -1394,7 +1393,7 @@ namespace
 				bAllInputsShareResourceId = false;
 			}
 
-			OutputResource.EnergyValue *= ProcessedResource.EnergyValue;
+			OutputResource.EnergyValue += ProcessedResource.EnergyValue;
 			OutputResource.RemainingProcessLimit = FMath::Min(OutputResource.RemainingProcessLimit, ProcessedResource.RemainingProcessLimit);
 			OutputResource.ProcessCount += ProcessedResource.ProcessCount;
 			MergeTagStacks(OutputResource.Tags, ProcessedResource.Tags);
@@ -1432,7 +1431,7 @@ namespace
 			}
 		}
 
-		FString ProductFormula;
+		FString SumFormula;
 		for (const FSRResourceInstance& ResourceInstance : SynthesisResources)
 		{
 			if (ResourceInstance.ResourceId.IsNone())
@@ -1440,20 +1439,20 @@ namespace
 				continue;
 			}
 
-			if (!ProductFormula.IsEmpty())
+			if (!SumFormula.IsEmpty())
 			{
-				ProductFormula += TEXT(" * ");
+				SumFormula += TEXT(" + ");
 			}
-			ProductFormula += FormatEnergyFormulaValue(ResourceInstance.EnergyValue);
+			SumFormula += FormatEnergyFormulaValue(ResourceInstance.EnergyValue);
 		}
 
-		if (!ProductFormula.IsEmpty())
+		if (!SumFormula.IsEmpty())
 		{
 			AppendEnergyFormulaLine(
 				&FormulaText,
 				FString::Printf(
 					TEXT("Synthesize: %s = %s"),
-					*ProductFormula,
+					*SumFormula,
 					*FormatEnergyFormulaValue(OutputResource.EnergyValue)));
 		}
 
@@ -1727,10 +1726,10 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 
 		FSRResourceInstance BaselineOutputResource = ResourcesBeforeTagEffects.IsEmpty()
 			? FSRResourceInstance()
-			: BuildSynthesisProductResource(ResourcesBeforeTagEffects);
+			: BuildSynthesisCombinedResource(ResourcesBeforeTagEffects);
 		FSRResourceInstance OutputResource = SynthesisResources.IsEmpty()
 			? FSRResourceInstance()
-			: BuildSynthesisProductResource(SynthesisResources);
+			: BuildSynthesisCombinedResource(SynthesisResources);
 		FString OutputEnergyFormulaText = BuildSynthesisEnergyFormulaText(
 			SynthesisResources,
 			SynthesisEnergyFormulaTexts,
@@ -2054,18 +2053,18 @@ FSRResourceInstance FSRFacilityOutputResourceBuilder::BuildBaseOutputResource(
 	if (OutConditionBaselineResource)
 	{
 		*OutConditionBaselineResource = ResourcesBeforeTagEffects.IsEmpty()
-			? BuildSynthesisProductResource(ProcessedResources)
-			: BuildSynthesisProductResource(ResourcesBeforeTagEffects);
+			? BuildSynthesisCombinedResource(ProcessedResources)
+			: BuildSynthesisCombinedResource(ResourcesBeforeTagEffects);
 	}
-	FSRResourceInstance SynthesisProductResource = BuildSynthesisProductResource(ProcessedResources);
+	FSRResourceInstance SynthesisCombinedResource = BuildSynthesisCombinedResource(ProcessedResources);
 	if (OutEnergyFormulaText)
 	{
 		*OutEnergyFormulaText = BuildSynthesisEnergyFormulaText(
 			ProcessedResources,
 			EnergyFormulaTexts,
-			SynthesisProductResource);
+			SynthesisCombinedResource);
 	}
-	return SynthesisProductResource;
+	return SynthesisCombinedResource;
 }
 
 void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
@@ -2228,7 +2227,9 @@ void FSRFacilityOutputResourceBuilder::ApplyFacilityEffects(
 							continue;
 						}
 
-						AddTagStack(ResourceInstance, TagStack.Tag, SafeStackCount);
+						FSRResourceTagStack DuplicatedTagStack = TagStack;
+						DuplicatedTagStack.StackCount = SafeStackCount;
+						ResourceInstance.Tags.Add(DuplicatedTagStack);
 						EffectContext.LastAttachedTag = TagStack.Tag;
 						EffectContext.bHasLastAttachedTag = true;
 					}

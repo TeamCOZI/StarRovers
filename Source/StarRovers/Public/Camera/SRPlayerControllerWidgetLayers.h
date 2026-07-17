@@ -11,7 +11,9 @@ enum class ESRPlayerUILayer : uint8
     TimeControl UMETA(DisplayName = "Time Control"),
     AugmentChoice UMETA(DisplayName = "Augment Choice"),
     StructureSelection UMETA(DisplayName = "Structure Selection"),
-    FacilityControl UMETA(DisplayName = "Facility Control")
+    HubShortcut UMETA(DisplayName = "Hub Shortcut"),
+    FacilityControl UMETA(DisplayName = "Facility Control"),
+    GameOver UMETA(DisplayName = "Game Over")
 };
 
 namespace StarRovers::PlayerControllerUI

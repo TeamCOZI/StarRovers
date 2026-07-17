@@ -208,6 +208,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 	const FVector& CellNormal,
 	float HeightOffset,
 	const FLinearColor& SurfaceColor,
+	const FLinearColor& TerrainBaseColor,
 	const FSRCelestialBodyDynamicMeshQuadRenderData& SurfaceRenderData,
 	int32 SurfaceFeatureMaskEdgeIndex,
 	int32 MaterialId,
@@ -248,6 +249,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 		{
 			++Stats.SideWallCount;
 			const FLinearColor WallColor = FLinearColor::LerpUsingHSV(ExistingEdge->SurfaceColor, SurfaceColor, 0.5f);
+			const FLinearColor WallTerrainBaseColor = FLinearColor::LerpUsingHSV(ExistingEdge->TerrainBaseColor, TerrainBaseColor, 0.5f);
 			const bool bExistingCellIsHigher = ExistingEdge->HeightOffset > HeightOffset + KINDA_SMALL_NUMBER;
 			const bool bCurrentCellIsHigher = HeightOffset > ExistingEdge->HeightOffset + KINDA_SMALL_NUMBER;
 			const FVector& HigherCellCenter = bCurrentCellIsHigher ? CellCenter : ExistingEdge->CellCenter;
@@ -286,7 +288,8 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 				false,
 				WallVertexKeys,
 				&WallNormalReferenceDirection,
-				true);
+				true,
+				&WallTerrainBaseColor);
 			if (bFeatureToonOutlineEnabled)
 			{
 				ApplyFeatureEdgeMask(ExistingEdge->SurfaceFeatureMaskRef, ExistingEdge->SurfaceFeatureMaskEdgeIndex);
@@ -397,6 +400,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 	NewEdge.SourceHashB = OrderedHashB;
 	NewEdge.HeightOffset = HeightOffset;
 	NewEdge.SurfaceColor = SurfaceColor;
+	NewEdge.TerrainBaseColor = TerrainBaseColor;
 	NewEdge.MaterialId = MaterialId;
 	NewEdge.CellId = CellId;
 	NewEdge.SurfaceFeatureMaskRef = SurfaceRenderData.FeatureMaskRef;
@@ -407,6 +411,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterEdge(
 void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 	const FSRCelestialBodyDynamicMeshSurfaceCellGeometry& CellGeometry,
 	const FSRPlanetTerrainSample& TerrainSample,
+	const FLinearColor& TerrainBaseColor,
 	const FSRCelestialBodyDynamicMeshQuadRenderData& SurfaceRenderData,
 	int32 MaterialId,
 	const FSRPlanetSurfaceGridCellId& CellId,
@@ -426,6 +431,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 		CellGeometry.CellNormal,
 		TerrainSample.HeightOffset,
 		TerrainSample.SurfaceColor,
+		TerrainBaseColor,
 		SurfaceRenderData,
 		0,
 		MaterialId,
@@ -439,6 +445,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 		CellGeometry.CellNormal,
 		TerrainSample.HeightOffset,
 		TerrainSample.SurfaceColor,
+		TerrainBaseColor,
 		SurfaceRenderData,
 		1,
 		MaterialId,
@@ -452,6 +459,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 		CellGeometry.CellNormal,
 		TerrainSample.HeightOffset,
 		TerrainSample.SurfaceColor,
+		TerrainBaseColor,
 		SurfaceRenderData,
 		2,
 		MaterialId,
@@ -465,6 +473,7 @@ void FSRCelestialBodyDynamicMeshTerrainEdgeAccumulator::RegisterCellEdges(
 		CellGeometry.CellNormal,
 		TerrainSample.HeightOffset,
 		TerrainSample.SurfaceColor,
+		TerrainBaseColor,
 		SurfaceRenderData,
 		3,
 		MaterialId,

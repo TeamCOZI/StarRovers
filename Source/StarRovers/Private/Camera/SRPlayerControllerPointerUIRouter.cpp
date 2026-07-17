@@ -5,6 +5,7 @@
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 #include "UI/SRCelestialBodyOverviewWidget.h"
 #include "UI/SRFacilityControlWidget.h"
+#include "UI/SRFocusedHubShortcutWidget.h"
 #include "UI/SRStructureSelectionWidget.h"
 #include "UI/SRTimeControlWidget.h"
 
@@ -14,6 +15,7 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 	float MouseY,
 	bool bHasMousePosition,
 	USRFacilityControlWidget* FacilityControlWidget,
+	USRFocusedHubShortcutWidget* FocusedHubShortcutWidget,
 	USRCelestialBodyFocusInfoWidget* FocusInfoWidget,
 	USRCelestialBodyOverviewWidget* OverviewWidget,
 	USRTimeControlWidget* TimeControlWidget,
@@ -21,12 +23,14 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 	USRStructureSelectionWidget* StructureSelectionWidget)
 {
 	const bool bOverFacilityControl = IsValid(FacilityControlWidget) && FacilityControlWidget->IsPointerOverControlPanel();
+	const bool bOverHubShortcut = IsValid(FocusedHubShortcutWidget) && FocusedHubShortcutWidget->IsPointerOverHubShortcutUI();
 	const bool bOverFocusInfo = IsValid(FocusInfoWidget) && FocusInfoWidget->IsPointerOverFocusInfoUI();
 	const bool bOverOverview = IsValid(OverviewWidget) && OverviewWidget->IsPointerOverOverviewUI();
 	const bool bOverTimeControl = IsValid(TimeControlWidget) && TimeControlWidget->IsPointerOverTimeControlPanel();
 	const bool bOverAugmentChoice = IsValid(AugmentChoiceWidget) && AugmentChoiceWidget->IsVisible();
 	const bool bOverStructureSelection = IsValid(StructureSelectionWidget) && StructureSelectionWidget->IsPointerOverStructureSelectionPanel();
 	const bool bOverBlockingUI = bOverFacilityControl
+		|| bOverHubShortcut
 		|| bOverFocusInfo
 		|| bOverOverview
 		|| bOverTimeControl
@@ -54,17 +58,19 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 		};
 
 	ConsiderBlockingUILayer(bOverFacilityControl, ESRPlayerUILayer::FacilityControl, TEXT("FacilityControl"));
+	ConsiderBlockingUILayer(bOverHubShortcut, ESRPlayerUILayer::HubShortcut, TEXT("HubShortcut"));
 	ConsiderBlockingUILayer(bOverFocusInfo, ESRPlayerUILayer::FocusInfo, TEXT("FocusInfo"));
 	ConsiderBlockingUILayer(bOverOverview, ESRPlayerUILayer::Overview, TEXT("Overview"));
 	ConsiderBlockingUILayer(bOverTimeControl, ESRPlayerUILayer::TimeControl, TEXT("TimeControl"));
 	ConsiderBlockingUILayer(bOverAugmentChoice, ESRPlayerUILayer::AugmentChoice, TEXT("AugmentChoice"));
 	ConsiderBlockingUILayer(bOverStructureSelection, ESRPlayerUILayer::StructureSelection, TEXT("StructureSelection"));
 
-	SR_LOG(Camera, LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick Mouse=(%.1f, %.1f) HasMouse=%s FacilityControl=%s FocusInfo=%s Overview=%s TimeControl=%s AugmentChoice=%s StructureSelection=%s TopBlockingUI=%s TopZOrder=%d"),
+	SR_LOG(Camera, LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick Mouse=(%.1f, %.1f) HasMouse=%s FacilityControl=%s HubShortcut=%s FocusInfo=%s Overview=%s TimeControl=%s AugmentChoice=%s StructureSelection=%s TopBlockingUI=%s TopZOrder=%d"),
 		MouseX,
 		MouseY,
 		bHasMousePosition ? TEXT("true") : TEXT("false"),
 		bOverFacilityControl ? TEXT("true") : TEXT("false"),
+		bOverHubShortcut ? TEXT("true") : TEXT("false"),
 		bOverFocusInfo ? TEXT("true") : TEXT("false"),
 		bOverOverview ? TEXT("true") : TEXT("false"),
 		bOverTimeControl ? TEXT("true") : TEXT("false"),
@@ -83,6 +89,14 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 		&& FacilityControlWidget->TryHandleFacilityControlPointerClick())
 	{
 		SR_LOG(Camera, LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick handled by top FacilityControl UI."));
+		return true;
+	}
+
+	if (TopBlockingUILayer == ESRPlayerUILayer::HubShortcut
+		&& FocusedHubShortcutWidget
+		&& FocusedHubShortcutWidget->TryHandleHubShortcutPointerClick())
+	{
+		SR_LOG(Camera, LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick handled by top HubShortcut UI."));
 		return true;
 	}
 

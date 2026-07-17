@@ -3,6 +3,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Camera/SRPlayerController.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Celestial/SRStar.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
@@ -17,6 +18,7 @@
 #include "Fonts/SlateFontInfo.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
+#include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Simulation/SRTimeControlSubsystem.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "Styling/SlateColor.h"
@@ -560,6 +562,42 @@ namespace
 			ProgressBarSlot->SetOffsets(FMargin(0.0f));
 		}
 	}
+
+	bool TryGetPrimaryStarFuelState(const UWorld* World, FSRStellarFuelState& OutFuelState)
+	{
+		if (!World)
+		{
+			return false;
+		}
+
+		const USRCelestialBodyRegistrySubsystem* RegistrySubsystem = World->GetSubsystem<USRCelestialBodyRegistrySubsystem>();
+		if (!IsValid(RegistrySubsystem))
+		{
+			return false;
+		}
+
+		const ASRStar* PrimaryStar = Cast<ASRStar>(RegistrySubsystem->GetPrimaryStarActor());
+		if (!IsValid(PrimaryStar))
+		{
+			return false;
+		}
+
+		OutFuelState = PrimaryStar->GetStellarFuelState();
+		return true;
+	}
+
+	FString FormatStarFuelAmount(double FuelAmount)
+	{
+		return FString::Printf(TEXT("%.0f"), FMath::Max(0.0, FuelAmount));
+	}
+
+	FString BuildStarFuelText(const FSRStellarFuelState& FuelState)
+	{
+		return FString::Printf(
+			TEXT("%s / %s"),
+			*FormatStarFuelAmount(FuelState.StoredFuel),
+			*FormatStarFuelAmount(FuelState.InitialStageFuel));
+	}
 }
 
 TSharedRef<SWidget> USRTimeControlWidget::RebuildWidget()
@@ -805,8 +843,35 @@ void USRTimeControlWidget::BuildTimeControlWidgetTree()
 	{
 		FuelSupplyProgressBar->SetVisibility(ESlateVisibility::HitTestInvisible);
 		FuelSupplyProgressBar->SetFillColorAndOpacity(FLinearColor(1.0f, 0.68f, 0.08f, 1.0f));
-		FuelSupplyProgressBar->SetPercent(FMath::Clamp(PreviewSolarFuelSupplyProgress, 0.0f, 1.0f));
+		FuelSupplyProgressBar->SetPercent(0.0f);
 		AddProgressBarToContainer(FuelSupplyProgressContainer, FuelSupplyProgressBar, ProgressBarHeightRatio);
+	}
+
+	FuelSupplyProgressTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("FuelSupplyProgressTextBlock"));
+	USizeBox* FuelSupplyProgressTextSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("FuelSupplyProgressTextSizeBox"));
+	if (FuelSupplyProgressTextSizeBox && FuelSupplyProgressTextBlock)
+	{
+		FSlateFontInfo FuelSupplyProgressFont = FuelSupplyProgressTextBlock->GetFont();
+		FuelSupplyProgressFont.Size = 13;
+		FuelSupplyProgressTextBlock->SetFont(FuelSupplyProgressFont);
+		FuelSupplyProgressTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
+		FuelSupplyProgressTextBlock->SetJustification(ETextJustify::Center);
+		FuelSupplyProgressTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::Black));
+		FuelSupplyProgressTextBlock->SetAutoWrapText(false);
+		FuelSupplyProgressTextBlock->SetText(FText::FromString(TEXT("0 / 0")));
+		FuelSupplyProgressTextSizeBox->AddChild(FuelSupplyProgressTextBlock);
+		if (USizeBoxSlot* FuelSupplyProgressTextBlockSlot = Cast<USizeBoxSlot>(FuelSupplyProgressTextBlock->Slot))
+		{
+			FuelSupplyProgressTextBlockSlot->SetHorizontalAlignment(HAlign_Center);
+			FuelSupplyProgressTextBlockSlot->SetVerticalAlignment(VAlign_Center);
+			FuelSupplyProgressTextBlockSlot->SetPadding(FMargin(0.0f));
+		}
+		if (UCanvasPanelSlot* FuelSupplyProgressTextSlot = FuelSupplyProgressContainer->AddChildToCanvas(FuelSupplyProgressTextSizeBox))
+		{
+			FuelSupplyProgressTextSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+			FuelSupplyProgressTextSlot->SetAlignment(FVector2D(0.0f, 0.0f));
+			FuelSupplyProgressTextSlot->SetOffsets(FMargin(0.0f));
+		}
 	}
 
 	CycleProgressContainer = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("CycleProgressContainer"));
@@ -1125,7 +1190,15 @@ void USRTimeControlWidget::RefreshProgressState()
 {
 	const USRTimeControlSubsystem* TimeControlSubsystem = GetTimeControlSubsystem();
 	const bool bHasTimeControlSubsystem = IsValid(TimeControlSubsystem);
-	const float FuelSupplyProgressRatio = FMath::Clamp(PreviewSolarFuelSupplyProgress, 0.0f, 1.0f);
+	FSRStellarFuelState PrimaryStarFuelState;
+	const bool bHasPrimaryStarFuelState = TryGetPrimaryStarFuelState(GetWorld(), PrimaryStarFuelState);
+	const double MaxStarFuel = bHasPrimaryStarFuelState ? FMath::Max(0.0, PrimaryStarFuelState.InitialStageFuel) : 0.0;
+	const float FuelSupplyProgressRatio = MaxStarFuel > UE_DOUBLE_SMALL_NUMBER
+		? FMath::Clamp(static_cast<float>(PrimaryStarFuelState.StoredFuel / MaxStarFuel), 0.0f, 1.0f)
+		: 0.0f;
+	const FString FuelSupplyTextString = bHasPrimaryStarFuelState
+		? BuildStarFuelText(PrimaryStarFuelState)
+		: FString(TEXT("0 / 0"));
 	const float CycleProgressRatio = bHasTimeControlSubsystem ? TimeControlSubsystem->GetCycleProgressRatio() : 0.0f;
 	const int32 CurrentCycleIndex = bHasTimeControlSubsystem ? TimeControlSubsystem->GetCurrentCycleIndex() : 0;
 
@@ -1133,6 +1206,12 @@ void USRTimeControlWidget::RefreshProgressState()
 	{
 		FuelSupplyProgressBar->SetPercent(FuelSupplyProgressRatio);
 		LastFuelSupplyProgressRatio = FuelSupplyProgressRatio;
+	}
+
+	if (FuelSupplyProgressTextBlock && LastFuelSupplyTextString != FuelSupplyTextString)
+	{
+		FuelSupplyProgressTextBlock->SetText(FText::FromString(FuelSupplyTextString));
+		LastFuelSupplyTextString = FuelSupplyTextString;
 	}
 
 	if (CycleProgressBar && !FMath::IsNearlyEqual(LastCycleProgressRatio, CycleProgressRatio, 0.0001f))

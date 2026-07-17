@@ -302,6 +302,72 @@ FSRDynamicMeshGeneration::FSRDynamicMeshGeneration()
 {
 }
 
+namespace
+{
+	template <typename SettingsType>
+	FLinearColor GetTemperatureStateSurfaceColorForSettings(const SettingsType& Settings, ESRFacilityTemperatureState TemperatureState)
+	{
+		switch (TemperatureState)
+		{
+		case ESRFacilityTemperatureState::Frozen:
+			return Settings.FrozenTemperatureStateSurfaceColor;
+		case ESRFacilityTemperatureState::Cold:
+			return Settings.ColdTemperatureStateSurfaceColor;
+		case ESRFacilityTemperatureState::Hot:
+			return Settings.HotTemperatureStateSurfaceColor;
+		case ESRFacilityTemperatureState::Overheated:
+			return Settings.OverheatedTemperatureStateSurfaceColor;
+		case ESRFacilityTemperatureState::Normal:
+		default:
+			return Settings.NormalTemperatureStateSurfaceColor;
+		}
+	}
+
+	template <typename SettingsType>
+	FLinearColor ApplyTemperatureStateSurfaceColorForSettings(
+		const SettingsType& Settings,
+		const FLinearColor& BaseColor,
+		ESRFacilityTemperatureState TemperatureState)
+	{
+		if (!Settings.bApplyTemperatureStateSurfaceColor)
+		{
+			return BaseColor;
+		}
+
+		const float BlendAlpha = FMath::Clamp(Settings.TemperatureStateSurfaceColorBlendAlpha, 0.0f, 1.0f);
+		FLinearColor Result = FLinearColor::LerpUsingHSV(
+			BaseColor,
+			GetTemperatureStateSurfaceColorForSettings(Settings, TemperatureState),
+			BlendAlpha);
+		Result.A = BaseColor.A;
+		return Result;
+	}
+}
+
+FLinearColor FSRDynamicMeshGenerationSnapshot::GetTemperatureStateSurfaceColor(ESRFacilityTemperatureState TemperatureState) const
+{
+	return GetTemperatureStateSurfaceColorForSettings(*this, TemperatureState);
+}
+
+FLinearColor FSRDynamicMeshGenerationSnapshot::ApplyTemperatureStateSurfaceColor(
+	const FLinearColor& BaseColor,
+	ESRFacilityTemperatureState TemperatureState) const
+{
+	return ApplyTemperatureStateSurfaceColorForSettings(*this, BaseColor, TemperatureState);
+}
+
+FLinearColor FSRDynamicMeshGeneration::GetTemperatureStateSurfaceColor(ESRFacilityTemperatureState TemperatureState) const
+{
+	return GetTemperatureStateSurfaceColorForSettings(*this, TemperatureState);
+}
+
+FLinearColor FSRDynamicMeshGeneration::ApplyTemperatureStateSurfaceColor(
+	const FLinearColor& BaseColor,
+	ESRFacilityTemperatureState TemperatureState) const
+{
+	return ApplyTemperatureStateSurfaceColorForSettings(*this, BaseColor, TemperatureState);
+}
+
 void FSRDynamicMeshGeneration::NormalizeBiomeMaterials(const TArray<TObjectPtr<USRPlanetBiomeDataAsset>>& AllowedBiomeDataAssets)
 {
 	BiomeDataAssets.Reset();
@@ -409,6 +475,13 @@ FSRDynamicMeshGenerationSnapshot FSRDynamicMeshGeneration::MakeThreadSafeSnapsho
 	Snapshot.RiverStrength = RiverStrength;
 	Snapshot.LakeStrength = LakeStrength;
 	Snapshot.TemperatureFrequency = TemperatureFrequency;
+	Snapshot.bApplyTemperatureStateSurfaceColor = bApplyTemperatureStateSurfaceColor;
+	Snapshot.TemperatureStateSurfaceColorBlendAlpha = TemperatureStateSurfaceColorBlendAlpha;
+	Snapshot.FrozenTemperatureStateSurfaceColor = FrozenTemperatureStateSurfaceColor;
+	Snapshot.ColdTemperatureStateSurfaceColor = ColdTemperatureStateSurfaceColor;
+	Snapshot.NormalTemperatureStateSurfaceColor = NormalTemperatureStateSurfaceColor;
+	Snapshot.HotTemperatureStateSurfaceColor = HotTemperatureStateSurfaceColor;
+	Snapshot.OverheatedTemperatureStateSurfaceColor = OverheatedTemperatureStateSurfaceColor;
 	Snapshot.MoistureFrequency = MoistureFrequency;
 	Snapshot.DetailFrequency = DetailFrequency;
 	Snapshot.DetailStrength = DetailStrength;

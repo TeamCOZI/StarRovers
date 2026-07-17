@@ -69,6 +69,7 @@ bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 		}
 		FSRFacilityPortInventoryBuilder::RefreshAggregateInventories(FacilityInstance);
 		SetComponentTickEnabled(bAutoProcessFacilities);
+		TryAutoLaunchStarFuelMissilesFromInputPort(FacilityInstance, InputPortInventory->PortIndex);
 		if (bLogFacilityNetworkEvents)
 		{
 			SR_LOG(FacilityNetwork, LogTemp,

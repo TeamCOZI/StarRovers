@@ -112,6 +112,14 @@ FVector ASRCameraPawn::ClampPivotLocationInsideSpace(const FVector& CandidateLoc
 
 float ASRCameraPawn::ClampZoomDistanceAgainstSpace(float ZoomDistance, const FVector& CandidatePawnLocation) const
 {
+	return ClampZoomDistanceAgainstSpace(ZoomDistance, CandidatePawnLocation, GetCameraDirectionFromPivot());
+}
+
+float ASRCameraPawn::ClampZoomDistanceAgainstSpace(
+	float ZoomDistance,
+	const FVector& CandidatePawnLocation,
+	const FVector& CameraDirection) const
+{
 	FVector SpaceCenter = FVector::ZeroVector;
 	float SpaceRadius = 0.0f;
 	if (!ResolveSpaceBoundary(SpaceCenter, SpaceRadius))
@@ -125,14 +133,14 @@ float ASRCameraPawn::ClampZoomDistanceAgainstSpace(float ZoomDistance, const FVe
 		return 0.0f;
 	}
 
-	const FVector CameraDirection = GetCameraDirectionFromPivot();
-	if (CameraDirection.SizeSquared() <= UE_SMALL_NUMBER)
+	const FVector SafeCameraDirection = CameraDirection.GetSafeNormal();
+	if (SafeCameraDirection.SizeSquared() <= UE_SMALL_NUMBER)
 	{
 		return ZoomDistance;
 	}
 
 	const FVector SpaceToPivot = CandidatePawnLocation - SpaceCenter;
-	const float B = FVector::DotProduct(SpaceToPivot, CameraDirection);
+	const float B = FVector::DotProduct(SpaceToPivot, SafeCameraDirection);
 	const float C = SpaceToPivot.SizeSquared() - FMath::Square(SafeSpaceRadius);
 	const float Discriminant = FMath::Square(B) - C;
 	if (Discriminant < 0.0f)
@@ -164,7 +172,25 @@ FVector ASRCameraPawn::GetCameraDirectionFromPivot() const
 	return FVector::ForwardVector;
 }
 
+FVector ASRCameraPawn::GetCameraDirectionFromPivot(const FQuat& SurfaceRotation) const
+{
+	if (ShouldAllowFocusSurface())
+	{
+		return (-SurfaceRotation.GetNormalized().RotateVector(FVector::ForwardVector)).GetSafeNormal();
+	}
+
+	return GetCameraDirectionFromPivot();
+}
+
 float ASRCameraPawn::ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance, const FVector& CandidatePawnLocation) const
+{
+	return ClampZoomDistanceAgainstCelestialBodies(ZoomDistance, CandidatePawnLocation, GetCameraDirectionFromPivot());
+}
+
+float ASRCameraPawn::ClampZoomDistanceAgainstCelestialBodies(
+	float ZoomDistance,
+	const FVector& CandidatePawnLocation,
+	const FVector& CameraDirection) const
 {
 	const USRCelestialBodyRegistrySubsystem* CelestialRegistry = FindCelestialRegistry();
 	if (!CelestialRegistry)
@@ -179,8 +205,8 @@ float ASRCameraPawn::ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance,
 		return ZoomDistance;
 	}
 
-	const FVector CameraDirection = GetCameraDirectionFromPivot();
-	if (CameraDirection.SizeSquared() <= UE_SMALL_NUMBER)
+	const FVector SafeCameraDirection = CameraDirection.GetSafeNormal();
+	if (SafeCameraDirection.SizeSquared() <= UE_SMALL_NUMBER)
 	{
 		return ZoomDistance;
 	}
@@ -188,7 +214,7 @@ float ASRCameraPawn::ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance,
 	return FSRCameraCelestialAvoidanceResolver::ClampZoomDistanceAgainstBodies(
 		ZoomDistance,
 		CandidatePawnLocation,
-		CameraDirection,
+		SafeCameraDirection,
 		CelestialBodies,
 		this,
 		CameraSurfacePadding);
@@ -305,4 +331,24 @@ void ASRCameraPawn::ApplyZoomDrivenViewRotation(float ZoomDistance)
 		SpringArm->SetRelativeRotation(FRotator::ZeroRotator);
 	}
 	Camera->SetRelativeRotation(BaseViewRotation);
+}
+
+void ASRCameraPawn::ApplyCameraFrame(const FVector& PivotLocation, float ZoomDistance)
+{
+	if (SpringArm)
+	{
+		SpringArm->TargetArmLength = ClampZoomDistance(ZoomDistance);
+	}
+
+	SetActorLocation(PivotLocation);
+	ApplyZoomDrivenViewRotation(SpringArm ? SpringArm->TargetArmLength : ZoomDistance);
+	UpdateComponentTransforms();
+	if (SpringArm)
+	{
+		SpringArm->UpdateComponentToWorld();
+	}
+	if (Camera)
+	{
+		Camera->UpdateComponentToWorld();
+	}
 }

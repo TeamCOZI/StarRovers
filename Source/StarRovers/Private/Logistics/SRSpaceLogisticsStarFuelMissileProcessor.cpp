@@ -99,6 +99,68 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::LaunchFromHub(
 	return true;
 }
 
+bool FSRSpaceLogisticsStarFuelMissileProcessor::LaunchFromHubInputPort(
+	USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+	const FSRSpaceLogisticsHubEndpoint& SourceHub,
+	int32 InputPortIndex,
+	FName& OutMissileId,
+	float InitialSpeedUnitsPerSecond,
+	float LaunchAccelerationUnitsPerSecondSquared,
+	TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
+	int32& NextStarFuelMissileSequence)
+{
+	OutMissileId = NAME_None;
+
+	FSRSpaceLogisticsHubEndpoint ResolvedSourceHub;
+	if (!SpaceLogisticsSubsystem.ResolveCurrentHubEndpoint(SourceHub, ResolvedSourceHub))
+	{
+		return false;
+	}
+
+	ASRStar* TargetStar = ResolvePrimaryStar(SpaceLogisticsSubsystem);
+	if (!IsValid(TargetStar))
+	{
+		return false;
+	}
+
+	FSRSpaceLogisticsStarFuelMissile Missile;
+	Missile.MissileId = MakeMissileId(ResolvedSourceHub, NextStarFuelMissileSequence);
+	Missile.SourceHub = ResolvedSourceHub;
+	Missile.TargetStarActor = TargetStar;
+	Missile.bEnabled = true;
+	ApplyMissileFlightSettings(SpaceLogisticsSubsystem, Missile, InitialSpeedUnitsPerSecond, LaunchAccelerationUnitsPerSecondSquared);
+	if (!StartMissileTravel(SpaceLogisticsSubsystem, Missile))
+	{
+		return false;
+	}
+
+	FSRResourceInstance Cargo;
+	if (!TryTakeFuelCargoFromHubInputPort(ResolvedSourceHub, InputPortIndex, Cargo))
+	{
+		return false;
+	}
+
+	Missile.Cargo = Cargo;
+	OutMissileId = Missile.MissileId;
+	StarFuelMissiles.Add(Missile);
+
+	const double FuelAmount = StarRovers::SpaceLogistics::StarFuelMissiles::CalculateMissileFuelValue(Cargo);
+	SR_LOG(SpaceLogistics,
+		LogTemp,
+		Display,
+		TEXT("[SpaceLogistics] Star fuel missile launched from input port: MissileId=%s Source=%s/%s InputPortIndex=%d TargetStar=%s ResourceId=%s StackCount=%d FuelValue=%.3f Duration=%.2f"),
+		*OutMissileId.ToString(),
+		*GetNameSafe(ResolvedSourceHub.BodyActor.Get()),
+		*ResolvedSourceHub.HubOccupantId.ToString(),
+		InputPortIndex,
+		*GetNameSafe(TargetStar),
+		*Cargo.ResourceId.ToString(),
+		Cargo.StackCount,
+		FuelAmount,
+		Missile.TravelDurationSeconds);
+	return true;
+}
+
 void FSRSpaceLogisticsStarFuelMissileProcessor::ProcessMissiles(
 	USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 	float DeltaTime,
@@ -179,6 +241,32 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::TryTakeFuelCargoFromHub(
 
 	return FacilityNetwork->TryTakeHubOutboundCargoMatching(
 		SourceHub.HubOccupantId,
+		1,
+		[](const FSRResourceInstance& CandidateCargo)
+		{
+			return StarRovers::SpaceLogistics::StarFuelMissiles::CanUseAsMissileFuelCargo(CandidateCargo);
+		},
+		OutCargo);
+}
+
+bool FSRSpaceLogisticsStarFuelMissileProcessor::TryTakeFuelCargoFromHubInputPort(
+	const FSRSpaceLogisticsHubEndpoint& SourceHub,
+	int32 InputPortIndex,
+	FSRResourceInstance& OutCargo)
+{
+	OutCargo = FSRResourceInstance();
+	AActor* BodyActor = SourceHub.BodyActor.Get();
+	USRFacilityNetworkComponent* FacilityNetwork = IsValid(BodyActor)
+		? BodyActor->FindComponentByClass<USRFacilityNetworkComponent>()
+		: nullptr;
+	if (!IsValid(FacilityNetwork))
+	{
+		return false;
+	}
+
+	return FacilityNetwork->TryTakeHubOutboundCargoMatchingFromInputPort(
+		SourceHub.HubOccupantId,
+		InputPortIndex,
 		1,
 		[](const FSRResourceInstance& CandidateCargo)
 		{

@@ -58,6 +58,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
     bool RotateFocusSurfaceViewBySteps(int32 StepDelta);
 
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Surface")
+    bool CenterFocusedSurfaceLocation(const FVector& WorldLocation, bool bSnapImmediately = true);
+
+    bool CenterFocusedSurfaceActorLocalDirection(const FVector& ActorLocalDirection, float SurfaceRadius, bool bSnapImmediately = true);
+
     FSRFocusedActorChangedSignature& OnFocusedActorChanged();
 
 protected:
@@ -230,19 +235,26 @@ private:
     bool ResolveSpaceBoundary(FVector& OutCenter, float& OutRadius) const;
     FVector ClampPivotLocationInsideSpace(const FVector& CandidateLocation) const;
     float ClampZoomDistanceAgainstSpace(float ZoomDistance, const FVector& CandidatePawnLocation) const;
+    float ClampZoomDistanceAgainstSpace(float ZoomDistance, const FVector& CandidatePawnLocation, const FVector& CameraDirection) const;
     FVector GetCameraDirectionFromPivot() const;
+    FVector GetCameraDirectionFromPivot(const FQuat& SurfaceRotation) const;
     float ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance, const FVector& CandidatePawnLocation) const;
+    float ClampZoomDistanceAgainstCelestialBodies(float ZoomDistance, const FVector& CandidatePawnLocation, const FVector& CameraDirection) const;
     bool ResolveFocusedObliqueViewZoomRange(float& OutNearZoomDistance, float& OutFarZoomDistance) const;
     float GetFocusedObliqueViewBlendAlpha(float ZoomDistance) const;
     float GetObliqueViewBlendAlpha(float ZoomDistance) const;
     FRotator GetViewRotationForZoom(float ZoomDistance) const;
     void ApplyZoomDrivenViewRotation(float ZoomDistance);
+    void ApplyCameraFrame(const FVector& PivotLocation, float ZoomDistance);
     bool ShouldAllowFocusSurface() const;
-    bool TryComputeFocusSurfaceGridAlignmentDelta(const FQuat& ViewQuat, float ZoomDistance, FVector& OutAxis, float& OutAngleRadians) const;
+    bool TryComputeFocusSurfaceGridAlignmentDelta(const FVector& PivotLocation, const FQuat& SurfaceRotation, float ZoomDistance, FVector& OutAxis, float& OutAngleRadians) const;
     bool TryStartFocusSurfaceGridAlignment();
     void UpdateFocusSurface(float DeltaSeconds);
-    void UpdateFocusSurfaceRotation(float DeltaSeconds);
+    void UpdateFocusSurfaceRotation(float DeltaSeconds, const FVector& PivotLocation, float ZoomDistance);
     void RefreshScreenSpaceThicknessReferenceView();
+    bool ResolveFocusSurfaceCenterTargetRotation(const FQuat& ReferenceRotation, const FVector& PivotLocation, float ZoomDistance, FQuat& OutTargetRotation) const;
+    bool UpdateFocusSurfaceCenterTargetRotation(float DeltaSeconds, const FVector& PivotLocation, float ZoomDistance, bool& bOutActive);
+    void ClearFocusSurfaceCenterTarget();
     void UpdateDynamicMeshVisibility();
     void ConfigureDirectionalLight(AActor* LightingTarget);
     ADirectionalLight* FindDirectionalLightActor() const;
@@ -264,5 +276,9 @@ private:
     FVector DragStartFocusDragOffset;
     FVector DragStartTargetLocation;
     FSRCameraFocusSurfaceRuntimeState FocusSurface;
+    bool bHasFocusSurfaceCenterTarget;
+    FVector FocusSurfaceCenterTargetActorLocalDirection;
+    FQuat FocusSurfaceCenterTargetRotationOffset;
+    float FocusSurfaceCenterTargetRadius;
     FSRCameraDynamicMeshVisibilityState DynamicMeshVisibility;
 };

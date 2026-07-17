@@ -9,7 +9,9 @@ namespace
         ESRPlayerUILayer::TimeControl,
         ESRPlayerUILayer::AugmentChoice,
         ESRPlayerUILayer::StructureSelection,
-        ESRPlayerUILayer::FacilityControl
+        ESRPlayerUILayer::HubShortcut,
+        ESRPlayerUILayer::FacilityControl,
+        ESRPlayerUILayer::GameOver
     };
 
     void AddUniqueWidgetLayer(TArray<ESRPlayerUILayer>& OutLayers, ESRPlayerUILayer WidgetLayer)

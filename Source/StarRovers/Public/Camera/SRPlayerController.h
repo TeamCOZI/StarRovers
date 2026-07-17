@@ -6,6 +6,7 @@
 #include "Camera/SRPlayerControllerWidgetLayers.h"
 #include "Simulation/SRAugmentSubsystem.h"
 #include "UI/SRCelestialBodyFocusInfo.h"
+#include "UI/SRFocusedHubShortcutWidget.h"
 #include "SRPlayerController.generated.h"
 
 class UInputAction;
@@ -15,9 +16,11 @@ class USRAugmentChoiceWidget;
 class USRCelestialBodyFocusInfoWidget;
 class USRCelestialBodyOverviewWidget;
 class USRFacilityControlWidget;
+class USRGameOverWidget;
 class USRStructureSelectionWidget;
 class USRStructureDataAsset;
 class USRTimeControlWidget;
+class ASRStar;
 class ASRCameraPawn;
 class USRCelestialBodyRegistrySubsystem;
 class FSRPlayerControllerInputBinder;
@@ -114,6 +117,12 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     USRFacilityControlWidget* GetFacilityControlWidget() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
+    USRFocusedHubShortcutWidget* GetFocusedHubShortcutWidget() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
+    USRGameOverWidget* GetGameOverWidget() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     bool IsPointerOverFacilityControlWidget() const;
@@ -266,6 +275,21 @@ protected:
     UPROPERTY()
     TObjectPtr<USRFacilityControlWidget> FacilityControlWidget;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "FocusedHubShortcutWidgetClass"))
+    TSubclassOf<USRFocusedHubShortcutWidget> FocusedHubShortcutWidgetClass;
+
+    UPROPERTY()
+    TObjectPtr<USRFocusedHubShortcutWidget> FocusedHubShortcutWidget;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Hub Shortcut", meta = (DisplayName = "FocusedHubShortcutRefreshInterval", ClampMin = "0.0"))
+    float FocusedHubShortcutRefreshInterval;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "GameOverWidgetClass"))
+    TSubclassOf<USRGameOverWidget> GameOverWidgetClass;
+
+    UPROPERTY()
+    TObjectPtr<USRGameOverWidget> GameOverWidget;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "WidgetLayerOrder", ToolTip = "Index 0 is the bottom UI layer. Later entries are drawn and hit-tested above earlier entries."))
     TArray<ESRPlayerUILayer> WidgetLayerOrder;
 
@@ -295,6 +319,9 @@ protected:
 
     UPROPERTY(Transient)
     TObjectPtr<USRCelestialBodyRegistrySubsystem> BoundCelestialBodyRegistry;
+
+    UPROPERTY(Transient)
+    TObjectPtr<ASRStar> BoundGameOverStar;
 
     UPROPERTY(Transient)
     TObjectPtr<UInputMappingContext> RuntimeAssemblyInputMappingContext;
@@ -334,6 +361,15 @@ private:
     void RefreshStructureSelectionWidget();
     void CreateFacilityControlWidget();
     void RefreshFacilityControlWidget();
+    void CreateFocusedHubShortcutWidget();
+    void RefreshFocusedHubShortcutWidget(bool bForceRefresh = false);
+    void BuildFocusedHubShortcutInfos(TArray<FSRFocusedHubShortcutInfo>& OutHubInfos) const;
+    void HandleFocusedHubShortcutRequested(const FSRFocusedHubShortcutInfo& HubInfo);
+    void CreateGameOverWidget();
+    void BindPrimaryStarGameOver(AActor* PrimaryStarActor);
+    void ShowGameOverScreen(ASRStar* Star);
+    UFUNCTION()
+    void HandlePrimaryStarGameOver(ASRStar* Star);
     int32 ResolveWidgetLayerZOrder(ESRPlayerUILayer WidgetLayer) const;
     void HandleStructureBuildOptionSelected(FName StructureId, USRStructureDataAsset* StructureDataAsset);
     void GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const;
@@ -379,4 +415,5 @@ private:
     void UpdateSelection(AActor* NewSelectedActor);
 
     FSRPlayerControllerRuntimeState RuntimeState;
+    double NextFocusedHubShortcutRefreshTime = 0.0;
 };

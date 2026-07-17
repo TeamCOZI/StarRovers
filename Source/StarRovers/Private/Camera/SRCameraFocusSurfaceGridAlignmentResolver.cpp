@@ -1,7 +1,6 @@
 #include "SRCameraFocusSurfaceGridAlignmentResolver.h"
 
 #include "Utility/SRLog.h"
-#include "Camera/CameraComponent.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "GameFramework/Actor.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
@@ -23,11 +22,10 @@ namespace
 
 bool FSRCameraFocusSurfaceGridAlignmentResolver::Resolve(
 	AActor* FocusedActor,
-	const UCameraComponent* Camera,
-	const FVector& PawnLocation,
+	const FVector& RayOrigin,
+	const FVector& RayDirection,
 	const FVector& FocusLocation,
 	const FQuat& ViewQuat,
-	float ZoomDistance,
 	FVector& OutAxis,
 	float& OutAngleRadians)
 {
@@ -58,17 +56,15 @@ bool FSRCameraFocusSurfaceGridAlignmentResolver::Resolve(
 		return false;
 	}
 
-	const float SafeZoomDistance = FMath::Max(1.0f, ZoomDistance);
-	FVector RayOrigin = Camera ? Camera->GetComponentLocation() : PawnLocation - (ViewForward * SafeZoomDistance);
-	FVector RayDirection = Camera ? Camera->GetForwardVector().GetSafeNormal() : ViewForward;
-	if (RayDirection.IsNearlyZero())
+	const FVector SafeRayDirection = RayDirection.GetSafeNormal();
+	if (SafeRayDirection.IsNearlyZero())
 	{
-		RayDirection = ViewForward;
+		return false;
 	}
 
 	FSRPlanetSurfaceGridCell HitCell;
 	FVector HitLocation = FVector::ZeroVector;
-	if (!SurfaceGrid->RaycastCell(RayOrigin, RayDirection, HitCell, HitLocation))
+	if (!SurfaceGrid->RaycastCell(RayOrigin, SafeRayDirection, HitCell, HitLocation))
 	{
 		return false;
 	}
@@ -205,7 +201,7 @@ bool FSRCameraFocusSurfaceGridAlignmentResolver::Resolve(
 		HitCell.CellId.Face,
 		HitCell.CellId.CellX,
 		HitCell.CellId.CellY,
-		Camera ? TEXT("CameraComponentCenter") : TEXT("ViewForwardFallback"),
+		TEXT("VirtualCameraCenter"),
 		*HitLocation.ToCompactString(),
 		*AlignmentAxis.ToCompactString(),
 		FMath::RadiansToDegrees(BestAngleRadians),

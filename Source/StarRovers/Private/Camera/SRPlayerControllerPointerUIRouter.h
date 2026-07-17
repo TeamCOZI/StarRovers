@@ -7,6 +7,7 @@ class USRAugmentChoiceWidget;
 class USRCelestialBodyFocusInfoWidget;
 class USRCelestialBodyOverviewWidget;
 class USRFacilityControlWidget;
+class USRFocusedHubShortcutWidget;
 class USRStructureSelectionWidget;
 class USRTimeControlWidget;
 
@@ -19,6 +20,7 @@ public:
 		float MouseY,
 		bool bHasMousePosition,
 		USRFacilityControlWidget* FacilityControlWidget,
+		USRFocusedHubShortcutWidget* FocusedHubShortcutWidget,
 		USRCelestialBodyFocusInfoWidget* FocusInfoWidget,
 		USRCelestialBodyOverviewWidget* OverviewWidget,
 		USRTimeControlWidget* TimeControlWidget,

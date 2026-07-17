@@ -6,6 +6,7 @@
 class AActor;
 struct FSRPlanetSurfaceGridCell;
 struct FSRPlanetSurfaceGridCellId;
+enum class ESRFacilityTemperatureState : uint8;
 
 namespace StarRovers::SurfaceGridOwnerBody
 {
@@ -23,4 +24,8 @@ namespace StarRovers::SurfaceGridOwnerBody
 		const FLinearColor& SelectedCellColor,
 		const FLinearColor& OccupiedCellColor);
 	void ClearSurfaceCellHighlights(AActor* Owner);
+	bool ApplySurfaceTemperatureStateColor(
+		AActor* Owner,
+		const FSRPlanetSurfaceGridCellId& CellId,
+		ESRFacilityTemperatureState TemperatureState);
 }

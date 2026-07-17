@@ -83,7 +83,7 @@ FSRCameraFocusSurfaceRotationResetUpdate FSRCameraFocusSurfaceRotationResetContr
 		return UpdateResult;
 	}
 
-	FocusSurface.Rotation = SmoothDampQuat(
+	FocusSurface.Rotation = StarRovers::Camera::SmoothDampCameraQuat(
 		FocusSurface.Rotation,
 		FocusSurface.TargetRotation,
 		FocusSurface.RotationSmoothVelocity,
@@ -103,50 +103,4 @@ FSRCameraFocusSurfaceRotationResetUpdate FSRCameraFocusSurfaceRotationResetContr
 
 	UpdateResult.bIsActive = true;
 	return UpdateResult;
-}
-
-FQuat FSRCameraFocusSurfaceRotationResetController::SmoothDampQuat(
-	const FQuat& Current,
-	const FQuat& Target,
-	FVector& CurrentAngularVelocity,
-	float SmoothTime,
-	float DeltaTime)
-{
-	if (DeltaTime <= UE_SMALL_NUMBER)
-	{
-		return Current.GetNormalized();
-	}
-
-	const FQuat NormalizedTarget = Target.GetNormalized();
-	const FQuat NormalizedCurrent = Current.GetNormalized();
-	FQuat RemainingRotation = (NormalizedTarget * NormalizedCurrent.Inverse()).GetNormalized();
-	if (RemainingRotation.W < 0.0f)
-	{
-		RemainingRotation.X *= -1.0f;
-		RemainingRotation.Y *= -1.0f;
-		RemainingRotation.Z *= -1.0f;
-		RemainingRotation.W *= -1.0f;
-	}
-
-	const FRotator RemainingRotator = RemainingRotation.Rotator().GetNormalized();
-	const FVector RemainingDeltaDegrees(RemainingRotator.Pitch, RemainingRotator.Yaw, RemainingRotator.Roll);
-	const FVector NewRemainingDeltaDegrees = StarRovers::Camera::SmoothDampCameraVector(
-		RemainingDeltaDegrees,
-		FVector::ZeroVector,
-		CurrentAngularVelocity,
-		SmoothTime,
-		DeltaTime);
-
-	if (NewRemainingDeltaDegrees.SizeSquared() <= KINDA_SMALL_NUMBER
-		&& CurrentAngularVelocity.SizeSquared() <= KINDA_SMALL_NUMBER)
-	{
-		CurrentAngularVelocity = FVector::ZeroVector;
-		return NormalizedTarget;
-	}
-
-	const FQuat NewRemainingRotation = FRotator(
-		NewRemainingDeltaDegrees.X,
-		NewRemainingDeltaDegrees.Y,
-		NewRemainingDeltaDegrees.Z).Quaternion().GetNormalized();
-	return (NewRemainingRotation.Inverse() * NormalizedTarget).GetNormalized();
 }

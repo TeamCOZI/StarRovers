@@ -131,6 +131,7 @@ void ASRPlayerController::HandleLeftClick()
 		MouseY,
 		bHasMousePosition,
 		FacilityControlWidget,
+		FocusedHubShortcutWidget,
 		FocusInfoWidget,
 		OverviewWidget,
 		TimeControlWidget,

@@ -10,6 +10,7 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendDynamicMeshSurfaceCellQuad(
 	const FSRPlanetSurfaceGridCellId& CellId,
 	const FSRCelestialBodyDynamicMeshSurfaceCellGeometry& CellGeometry,
 	const FSRPlanetTerrainSample& TerrainSample,
+	const FLinearColor& TerrainBaseColor,
 	int32 MaterialId,
 	bool bProfileBuildBreakdown,
 	double& SurfaceAppendMs)
@@ -26,7 +27,10 @@ FSRCelestialBodyDynamicMeshQuadRenderData AppendDynamicMeshSurfaceCellQuad(
 		TerrainSample.SurfaceColor,
 		MaterialId,
 		false,
-		CellGeometry.SurfaceVertexKeys);
+		CellGeometry.SurfaceVertexKeys,
+		nullptr,
+		false,
+		&TerrainBaseColor);
 	if (bProfileBuildBreakdown)
 	{
 		SurfaceAppendMs += GetDynamicMeshTimingElapsedMilliseconds(InnerStart);
@@ -167,6 +171,12 @@ FSRCelestialBodyDynamicMeshSurfaceCellBuildMetrics BuildPreparedDynamicMeshSurfa
 				OceanLevelClamp.OceanLevelClampHeightOffset);
 		}
 
+		const FLinearColor TerrainBaseColor = TerrainSample.SurfaceColor;
+		const ESRFacilityTemperatureState TerrainTemperatureState = USRPlanetSurfaceGrid::ResolveTemperatureStateFromSurfaceTemperature(
+			TerrainSample.Temperature);
+		TerrainSample.SurfaceColor = DynamicMeshGeneration.ApplyTemperatureStateSurfaceColor(
+			TerrainBaseColor,
+			TerrainTemperatureState);
 		const FSRCelestialBodyDynamicMeshSurfaceCellGeometry CellGeometry = BuildDynamicMeshSurfaceCellGeometry(
 			BaseCell,
 			TerrainSample,
@@ -183,6 +193,7 @@ FSRCelestialBodyDynamicMeshSurfaceCellBuildMetrics BuildPreparedDynamicMeshSurfa
 			CellId,
 			CellGeometry,
 			TerrainSample,
+			TerrainBaseColor,
 			MaterialId,
 			bProfileBuildBreakdown,
 			SurfaceCellBuildMetrics.SurfaceAppendMs);
@@ -205,6 +216,7 @@ FSRCelestialBodyDynamicMeshSurfaceCellBuildMetrics BuildPreparedDynamicMeshSurfa
 		TerrainEdgeAccumulator.RegisterCellEdges(
 			CellGeometry,
 			TerrainSample,
+			TerrainBaseColor,
 			SurfaceRenderData,
 			MaterialId,
 			CellId,

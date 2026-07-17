@@ -121,6 +121,70 @@ bool FSRFacilityHubCargoRouter::TryTakeOutboundCargoMatching(
 	return false;
 }
 
+bool FSRFacilityHubCargoRouter::TryTakeOutboundCargoMatchingFromInputPort(
+	FSRFacilityInstance& FacilityInstance,
+	int32 InputPortIndex,
+	int32 MaxStackCount,
+	TFunctionRef<bool(const FSRResourceInstance&)> CargoPredicate,
+	FSRResourceInstance& OutCargo,
+	FSRFacilityHubCargoTransferResult* OutTransferResult)
+{
+	OutCargo = FSRResourceInstance();
+	if (OutTransferResult)
+	{
+		*OutTransferResult = FSRFacilityHubCargoTransferResult();
+	}
+
+	const int32 SafeMaxStackCount = FMath::Max(0, MaxStackCount);
+	if (!IsHubFacility(FacilityInstance)
+		|| SafeMaxStackCount <= 0
+		|| !FacilityInstance.InputPortInventories.IsValidIndex(InputPortIndex))
+	{
+		return false;
+	}
+
+	FSRFacilityPortInventory& InputPortInventory = FacilityInstance.InputPortInventories[InputPortIndex];
+	for (int32 ResourceIndex = 0; ResourceIndex < InputPortInventory.Inventory.Num(); ++ResourceIndex)
+	{
+		FSRResourceInstance& StoredResource = InputPortInventory.Inventory[ResourceIndex];
+		const int32 StoredStackCount = StarRovers::FacilityResources::GetResourceStackCount(StoredResource);
+		if (StoredResource.ResourceId.IsNone() || StoredStackCount <= 0)
+		{
+			continue;
+		}
+
+		FSRResourceInstance CandidateCargo = StoredResource;
+		CandidateCargo.StackCount = FMath::Min(StoredStackCount, SafeMaxStackCount);
+		if (!CargoPredicate(CandidateCargo))
+		{
+			continue;
+		}
+
+		const int32 TakenStackCount = CandidateCargo.StackCount;
+		OutCargo = CandidateCargo;
+		StoredResource.StackCount = StoredStackCount - TakenStackCount;
+		if (StoredResource.StackCount <= 0)
+		{
+			InputPortInventory.Inventory.RemoveAt(ResourceIndex);
+		}
+
+		if (OutTransferResult)
+		{
+			OutTransferResult->PortId = InputPortInventory.PortId;
+			OutTransferResult->RemainingPortStackCount =
+				StarRovers::FacilityResources::GetInventorySlotStackCount(InputPortInventory);
+		}
+		FSRFacilityPortInventoryBuilder::RefreshAggregateInventories(FacilityInstance);
+		return true;
+	}
+
+	InputPortInventory.Inventory.RemoveAll([](const FSRResourceInstance& ResourceInstance)
+	{
+		return ResourceInstance.StackCount <= 0 || ResourceInstance.ResourceId.IsNone();
+	});
+	return false;
+}
+
 void FSRFacilityHubCargoRouter::GetOutboundCargoResourceIds(
 	const FSRFacilityInstance& FacilityInstance,
 	TArray<FName>& OutResourceIds)

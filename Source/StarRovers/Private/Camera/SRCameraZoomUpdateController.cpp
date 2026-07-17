@@ -1,31 +1,22 @@
 #include "SRCameraZoomUpdateController.h"
 
-#include "GameFramework/SpringArmComponent.h"
-
 namespace
 {
 	constexpr float DefaultZoomInterpSpeed = 8.0f;
 }
 
-void FSRCameraZoomUpdateController::Update(
-	USpringArmComponent* SpringArm,
+float FSRCameraZoomUpdateController::Update(
+	float CurrentZoomDistance,
 	float& ZoomDistanceTarget,
 	const FVector& PivotLocation,
 	float DeltaSeconds,
 	bool bApplyImmediateZoom,
 	TFunctionRef<float(float)> ClampZoomDistance,
 	TFunctionRef<float(float, const FVector&)> ClampZoomDistanceAgainstSpace,
-	TFunctionRef<float(float, const FVector&)> ClampZoomDistanceAgainstCelestialBodies,
-	TFunctionRef<void(float)> ApplyZoomDrivenViewRotation)
+	TFunctionRef<float(float, const FVector&)> ClampZoomDistanceAgainstCelestialBodies)
 {
-	if (!SpringArm)
-	{
-		return;
-	}
-
 	ZoomDistanceTarget = ClampZoomDistance(ZoomDistanceTarget);
-	SpringArm->TargetArmLength = ClampZoomDistance(SpringArm->TargetArmLength);
-	ApplyZoomDrivenViewRotation(ZoomDistanceTarget);
+	CurrentZoomDistance = ClampZoomDistance(CurrentZoomDistance);
 
 	auto ApplySpatialConstraints = [
 		&ClampZoomDistanceAgainstSpace,
@@ -41,12 +32,9 @@ void FSRCameraZoomUpdateController::Update(
 
 	if (bApplyImmediateZoom)
 	{
-		SpringArm->TargetArmLength = ZoomDistanceTarget;
-		ApplyZoomDrivenViewRotation(SpringArm->TargetArmLength);
-		return;
+		return ZoomDistanceTarget;
 	}
 
-	const float InterpolatedZoom = FMath::FInterpTo(SpringArm->TargetArmLength, ZoomDistanceTarget, DeltaSeconds, DefaultZoomInterpSpeed);
-	SpringArm->TargetArmLength = ApplySpatialConstraints(ClampZoomDistance(InterpolatedZoom));
-	ApplyZoomDrivenViewRotation(SpringArm->TargetArmLength);
+	const float InterpolatedZoom = FMath::FInterpTo(CurrentZoomDistance, ZoomDistanceTarget, DeltaSeconds, DefaultZoomInterpSpeed);
+	return ApplySpatialConstraints(ClampZoomDistance(InterpolatedZoom));
 }
