@@ -1,5 +1,6 @@
 #include "UI/SRCelestialBodyFocusInfoWidget.h"
 
+#include "UI/SRCelestialBodyFocusUIInternal.h"
 #include "Utility/SRLog.h"
 #include "Blueprint/WidgetTree.h"
 #include "Celestial/SRStar.h"
@@ -19,11 +20,6 @@
 
 namespace
 {
-	int32 GetCubeSphereFaceNumber(const ESRCubeSphereFace Face)
-	{
-		return static_cast<int32>(Face) + 1;
-	}
-
 	FIntPoint GetSurfaceGridDisplayCellCoord(const FSRPlanetSurfaceGridCellId& CellId, int32 FaceResolution)
 	{
 		FIntPoint DisplayCoord(CellId.CellX, CellId.CellY);
@@ -657,7 +653,7 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 				}
 				CellText += FString::Printf(
 					TEXT("Face: %d\nCell: %d,%d\nDisplay: %d,%d\nLatitude: %.1f deg\nTemperature: %s"),
-					GetCubeSphereFaceNumber(CellInfo.CellId.Face),
+					StarRovers::UI::CelestialBodyFocus::GetCubeSphereFaceNumber(CellInfo.CellId.Face),
 					CellInfo.CellId.CellX,
 					CellInfo.CellId.CellY,
 					CellInfo.DisplayCellX,
@@ -672,7 +668,7 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 					CellText += (CellIndex % 5 == 0) ? TEXT("\n") : TEXT(" ");
 					CellText += FString::Printf(
 						TEXT("F%d(%d,%d)"),
-						GetCubeSphereFaceNumber(PatchCellId.Face),
+						StarRovers::UI::CelestialBodyFocus::GetCubeSphereFaceNumber(PatchCellId.Face),
 						PatchDisplayCoord.X,
 						PatchDisplayCoord.Y);
 				}
@@ -694,10 +690,10 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 					*StructureInfo.StructureId.ToString(),
 					*StructureInfo.OccupantId.ToString(),
 					GetStructureBuildKindLabel(StructureInfo.BuildKind),
-					GetCubeSphereFaceNumber(StructureInfo.OriginCellId.Face),
+					StarRovers::UI::CelestialBodyFocus::GetCubeSphereFaceNumber(StructureInfo.OriginCellId.Face),
 					StructureInfo.OriginCellId.CellX,
 					StructureInfo.OriginCellId.CellY,
-					GetCubeSphereFaceNumber(ClickedCellInfo.CellId.Face),
+					StarRovers::UI::CelestialBodyFocus::GetCubeSphereFaceNumber(ClickedCellInfo.CellId.Face),
 					ClickedCellInfo.CellId.CellX,
 					ClickedCellInfo.CellId.CellY,
 					GetFocusedFacilityTemperatureLabel(ClickedCellInfo.TemperatureState),

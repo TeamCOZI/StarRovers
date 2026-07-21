@@ -1,5 +1,6 @@
 #include "UI/SRFocusedHubShortcutWidget.h"
 
+#include "UI/SRCelestialBodyFocusUIInternal.h"
 #include "Utility/SRLog.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -20,11 +21,6 @@ namespace
 	constexpr float HubShortcutPanelWidth = 190.0f;
 	constexpr float HubShortcutButtonHeight = 50.0f;
 
-	int32 GetCubeSphereFaceNumber(ESRCubeSphereFace Face)
-	{
-		return static_cast<int32>(Face) + 1;
-	}
-
 	FString BuildHubShortcutButtonLabel(const FSRFocusedHubShortcutInfo& HubInfo)
 	{
 		const FString DisplayName = HubInfo.DisplayName.IsEmpty()
@@ -33,7 +29,7 @@ namespace
 		return FString::Printf(
 			TEXT("%s\nF%d (%d,%d)"),
 			*DisplayName,
-			GetCubeSphereFaceNumber(HubInfo.OriginCellId.Face),
+			StarRovers::UI::CelestialBodyFocus::GetCubeSphereFaceNumber(HubInfo.OriginCellId.Face),
 			HubInfo.OriginCellId.CellX,
 			HubInfo.OriginCellId.CellY);
 	}

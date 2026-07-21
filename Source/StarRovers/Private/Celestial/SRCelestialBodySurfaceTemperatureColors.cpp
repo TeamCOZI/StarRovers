@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "Celestial/SRCelestialBodySurfaceColorInternal.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/DynamicMeshComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -9,17 +10,6 @@
 
 namespace
 {
-	uint64 BuildDynamicMeshColorElementKey(int32 MeshComponentIndex, int32 ElementId)
-	{
-		return (static_cast<uint64>(static_cast<uint32>(MeshComponentIndex)) << 32)
-			| static_cast<uint64>(static_cast<uint32>(ElementId));
-	}
-
-	FVector4f ToDynamicMeshVectorColor(const FLinearColor& Color)
-	{
-		return FVector4f(Color.R, Color.G, Color.B, Color.A);
-	}
-
 	int32 GetFlatCellIndex(const FSRPlanetSurfaceGridCellId& CellId, int32 FaceResolution)
 	{
 		return ((static_cast<int32>(CellId.Face) * FaceResolution) + CellId.CellY) * FaceResolution + CellId.CellX;
@@ -47,7 +37,9 @@ namespace
 			Element.BaseColor = NewBaseColor;
 			OutTargetColorsByMesh.FindOrAdd(Element.MeshComponentIndex).Add(Element.ElementId, NewBaseColor);
 
-			const uint64 ElementKey = BuildDynamicMeshColorElementKey(Element.MeshComponentIndex, Element.ElementId);
+			const uint64 ElementKey = StarRovers::Celestial::SurfaceColors::BuildDynamicMeshColorElementKey(
+				Element.MeshComponentIndex,
+				Element.ElementId);
 			if (HighlightedColorElements.Contains(ElementKey))
 			{
 				HighlightedBaseColorByElement.Add(ElementKey, NewBaseColor);
@@ -72,7 +64,9 @@ namespace
 
 		for (const TPair<int32, FLinearColor>& TargetColorPair : TargetColors)
 		{
-			ColorOverlay->SetElement(TargetColorPair.Key, ToDynamicMeshVectorColor(TargetColorPair.Value));
+			ColorOverlay->SetElement(
+				TargetColorPair.Key,
+				StarRovers::Celestial::SurfaceColors::ToDynamicMeshVectorColor(TargetColorPair.Value));
 		}
 	}
 }

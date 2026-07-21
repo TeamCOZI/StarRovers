@@ -1,5 +1,6 @@
 #include "Celestial/SRCelestialBody.h"
 
+#include "Celestial/SRCelestialBodySurfaceColorInternal.h"
 #include "Celestial/SRDynamicMeshBaseDataAsset.h"
 #include "Components/DynamicMeshComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -9,17 +10,6 @@
 
 namespace
 {
-	uint64 BuildDynamicMeshColorElementKey(int32 MeshComponentIndex, int32 ElementId)
-	{
-		return (static_cast<uint64>(static_cast<uint32>(MeshComponentIndex)) << 32)
-			| static_cast<uint64>(static_cast<uint32>(ElementId));
-	}
-
-	FVector4f ToDynamicMeshVectorColor(const FLinearColor& Color)
-	{
-		return FVector4f(Color.R, Color.G, Color.B, Color.A);
-	}
-
 	FLinearColor BlendSurfaceHighlightColor(const FLinearColor& BaseColor, const FLinearColor& HighlightColor)
 	{
 		constexpr float HighlightIntensity = 0.45f;
@@ -53,7 +43,9 @@ namespace
 				continue;
 			}
 
-			const uint64 ElementKey = BuildDynamicMeshColorElementKey(Element.MeshComponentIndex, Element.ElementId);
+			const uint64 ElementKey = StarRovers::Celestial::SurfaceColors::BuildDynamicMeshColorElementKey(
+				Element.MeshComponentIndex,
+				Element.ElementId);
 			Targets.TargetColorsByElement.Add(ElementKey, BlendSurfaceHighlightColor(Element.BaseColor, HighlightColor));
 			Targets.BaseColorByElement.Add(ElementKey, Element.BaseColor);
 		}
@@ -172,7 +164,9 @@ namespace
 
 			if (const FLinearColor* BaseColor = PreviousBaseColorByElement.Find(PreviousElementKey))
 			{
-				ColorOverlay->SetElement(PreviousElementId, ToDynamicMeshVectorColor(*BaseColor));
+				ColorOverlay->SetElement(
+					PreviousElementId,
+					StarRovers::Celestial::SurfaceColors::ToDynamicMeshVectorColor(*BaseColor));
 			}
 		}
 
@@ -180,7 +174,9 @@ namespace
 		{
 			for (const TPair<int32, FLinearColor>& TargetColorPair : *MeshTargetColors)
 			{
-				ColorOverlay->SetElement(TargetColorPair.Key, ToDynamicMeshVectorColor(TargetColorPair.Value));
+				ColorOverlay->SetElement(
+					TargetColorPair.Key,
+					StarRovers::Celestial::SurfaceColors::ToDynamicMeshVectorColor(TargetColorPair.Value));
 			}
 		}
 	}
@@ -216,7 +212,9 @@ namespace
 			const int32 ElementId = static_cast<int32>(ElementKey & 0xffffffff);
 			if (const FLinearColor* BaseColor = BaseColorByElement.Find(ElementKey))
 			{
-				ColorOverlay->SetElement(ElementId, ToDynamicMeshVectorColor(*BaseColor));
+				ColorOverlay->SetElement(
+					ElementId,
+					StarRovers::Celestial::SurfaceColors::ToDynamicMeshVectorColor(*BaseColor));
 			}
 		}
 	}
