@@ -4,6 +4,28 @@
 #include "SRFacilityResourceOperations.h"
 #include "SRFacilityPortInventoryBuilder.h"
 
+namespace
+{
+	int32 ResolveRequiredInputCount(const FSRFacilityInstance& FacilityInstance)
+	{
+		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		if (!IsValid(FacilityDataAsset))
+		{
+			return 0;
+		}
+
+		if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Process)
+		{
+			return FacilityInstance.InputPortInventories.IsEmpty() ? 0 : 1;
+		}
+		if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Synthesize)
+		{
+			return FacilityInstance.InputPortInventories.Num();
+		}
+		return 0;
+	}
+}
+
 bool FSRFacilityProcessingInventoryRouter::GatherPendingInputResources(
 	const FSRFacilityInstance& FacilityInstance,
 	TArray<FSRResourceInstance>& OutInputResources)
@@ -15,7 +37,7 @@ bool FSRFacilityProcessingInventoryRouter::GatherPendingInputResources(
 		return false;
 	}
 
-	const int32 InputCount = FacilityInstance.InputPortInventories.Num();
+	const int32 InputCount = ResolveRequiredInputCount(FacilityInstance);
 	if (InputCount <= 0)
 	{
 		return false;
@@ -75,7 +97,13 @@ void FSRFacilityProcessingInventoryRouter::StoreOutputResources(
 
 bool FSRFacilityProcessingInventoryRouter::TryMoveInputsToProcessingInventory(FSRFacilityInstance& FacilityInstance)
 {
-	const int32 InputCount = FacilityInstance.InputPortInventories.Num();
+	TArray<FSRResourceInstance> PendingInputResources;
+	if (!GatherPendingInputResources(FacilityInstance, PendingInputResources))
+	{
+		return false;
+	}
+
+	const int32 InputCount = ResolveRequiredInputCount(FacilityInstance);
 	if (InputCount <= 0)
 	{
 		return false;

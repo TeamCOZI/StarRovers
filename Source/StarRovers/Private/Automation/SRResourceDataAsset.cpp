@@ -17,6 +17,7 @@ FSRResourceInstance USRResourceDataAsset::BuildDefaultInstance() const
 	Result.EnergyValue = BaseEnergyValue;
 	Result.RemainingProcessLimit = FMath::Max(0, BaseProcessLimit);
 	Result.ProcessCount = 0;
+	Result.EnergyChangeCount = 0;
 	Result.Tags = DefaultTags;
 	Result.StackCount = 1;
 	return Result;

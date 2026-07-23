@@ -105,7 +105,7 @@ namespace
 		switch (EffectKind)
 		{
 		case ESRFacilityEffectKind::AdjustEnergy:
-			return TEXT("Adjust Energy");
+			return TEXT("Adjust Catalyst");
 		case ESRFacilityEffectKind::AdjustProcessLimit:
 			return TEXT("Adjust Limit");
 		case ESRFacilityEffectKind::RemoveResource:
@@ -119,9 +119,9 @@ namespace
 		case ESRFacilityEffectKind::InvertHeat:
 			return TEXT("Invert Heat");
 		case ESRFacilityEffectKind::InvertTagEffects:
-			return TEXT("Invert Tag Effects");
+			return TEXT("Invert Catalyst");
 		case ESRFacilityEffectKind::DoubleTagEffects:
-			return TEXT("Double Tag Effects");
+			return TEXT("Double Catalyst");
 		case ESRFacilityEffectKind::DuplicateInputResource:
 			return TEXT("Duplicate Input");
 		case ESRFacilityEffectKind::OverrideProcessTemperature:
@@ -193,7 +193,7 @@ namespace
 		case ESRFacilityEnergyAdjustmentValueSource::EnergyChangeCount:
 			return TEXT("Energy Changes");
 		case ESRFacilityEnergyAdjustmentValueSource::TagEffectEnergyChangeAmount:
-			return TEXT("Tag Energy Change");
+			return TEXT("Energy (B)");
 		case ESRFacilityEnergyAdjustmentValueSource::ProcessCount:
 			return TEXT("Process Count");
 		case ESRFacilityEnergyAdjustmentValueSource::TagKindCount:
@@ -644,12 +644,11 @@ namespace
 		}
 
 		FString Summary = FString::Printf(
-			TEXT("%s x%d\nEnergy Total: %s\nLimit: %d\nUsed: %d"),
+			TEXT("%s x%d\nEnergy Total: %s\nLimit: %d"),
 			*BuildResourceDisplayName(ResourceInstance),
 			FMath::Max(0, ResourceInstance.StackCount),
 			*FormatFacilityEnergyDisplayValue(ResourceInstance.EnergyValue),
-			ResourceInstance.RemainingProcessLimit,
-			ResourceInstance.ProcessCount);
+			ResourceInstance.RemainingProcessLimit);
 
 		if (!ResourceInstance.Tags.IsEmpty())
 		{
@@ -758,11 +757,12 @@ namespace
 		for (const FSRResourceInstance& ResourceInstance : PortInventory.Inventory)
 		{
 			Signature += FString::Printf(
-				TEXT("|%s:%.3f:%d:%d:%d"),
+				TEXT("|%s:%.3f:%d:%d:%d:%d"),
 				*ResourceInstance.ResourceId.ToString(),
 				ResourceInstance.EnergyValue,
 				ResourceInstance.RemainingProcessLimit,
 				ResourceInstance.ProcessCount,
+				ResourceInstance.EnergyChangeCount,
 				ResourceInstance.StackCount);
 			for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
 			{
@@ -806,8 +806,14 @@ namespace
 			return;
 		}
 
-		for (const FSRFacilityPortInventory& PortInventory : FacilityInstance.InputPortInventories)
+		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		const int32 RequiredInputCount = IsValid(FacilityDataAsset)
+			&& FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Process
+			? FMath::Min(1, FacilityInstance.InputPortInventories.Num())
+			: FacilityInstance.InputPortInventories.Num();
+		for (int32 InputIndex = 0; InputIndex < RequiredInputCount; ++InputIndex)
 		{
+			const FSRFacilityPortInventory& PortInventory = FacilityInstance.InputPortInventories[InputIndex];
 			FSRResourceInstance PreviewResource = StarRovers::FacilityResources::PeekSingleResourceFromInventorySlot(PortInventory);
 			if (!PreviewResource.ResourceId.IsNone() && PreviewResource.StackCount > 0)
 			{
@@ -2153,6 +2159,7 @@ namespace
 		ResourceInstance.EnergyValue = EnergyValue;
 		ResourceInstance.RemainingProcessLimit = FMath::Max(0, RemainingProcessLimit);
 		ResourceInstance.ProcessCount = 0;
+		ResourceInstance.EnergyChangeCount = 0;
 		ResourceInstance.StackCount = 1;
 		return ResourceInstance;
 	}

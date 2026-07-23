@@ -10,10 +10,8 @@ namespace StarRovers::FacilityProcessing
 		ESRFacilityTemperatureState PhysicalTemperatureState = ESRFacilityTemperatureState::Normal;
 		ESRFacilityTemperatureState EffectiveTemperatureState = ESRFacilityTemperatureState::Normal;
 		bool bInvertHeat = false;
-		bool bInvertTagEffects = false;
 		bool bHasProcessTemperatureOverride = false;
 		ESRFacilityTemperatureState ProcessTemperatureOverride = ESRFacilityTemperatureState::Normal;
-		int32 TagEffectApplicationCount = 1;
 	};
 
 	inline ESRFacilityTemperatureState InvertTemperatureState(ESRFacilityTemperatureState TemperatureState)
@@ -72,6 +70,12 @@ namespace StarRovers::FacilityProcessing
 		const FSRResourceInstance* ConditionBaselineResource = BaselineResource ? BaselineResource : ConditionResource;
 		for (const FSRFacilityEffectSpec& EffectSpec : FacilityDataAsset->Effects)
 		{
+			if (EffectSpec.EffectKind != ESRFacilityEffectKind::InvertHeat
+				&& EffectSpec.EffectKind != ESRFacilityEffectKind::OverrideProcessTemperature)
+			{
+				continue;
+			}
+
 			const StarRovers::FacilityEffects::FSRFacilityEffectConditionContext ConditionContext =
 			{
 				ConditionResource,
@@ -93,15 +97,6 @@ namespace StarRovers::FacilityProcessing
 				ProcessContext.bHasProcessTemperatureOverride = true;
 				ProcessContext.ProcessTemperatureOverride = EffectSpec.ProcessTemperatureState;
 			}
-			else if (EffectSpec.EffectKind == ESRFacilityEffectKind::InvertTagEffects)
-			{
-				ProcessContext.bInvertTagEffects = !ProcessContext.bInvertTagEffects;
-			}
-			else if (EffectSpec.EffectKind == ESRFacilityEffectKind::DoubleTagEffects)
-			{
-				ProcessContext.TagEffectApplicationCount = FMath::Max(1, ProcessContext.TagEffectApplicationCount) * 2;
-			}
-
 			ProcessContext.EffectiveTemperatureState = ResolveEffectiveTemperatureState(ProcessContext);
 		}
 

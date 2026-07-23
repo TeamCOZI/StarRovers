@@ -80,6 +80,7 @@ bool USRFacilityNetworkComponent::DebugAddRawEnergyInputResource(
 	ResourceInstance.EnergyValue = EnergyValue;
 	ResourceInstance.RemainingProcessLimit = FMath::Max(0, RemainingProcessLimit);
 	ResourceInstance.ProcessCount = 0;
+	ResourceInstance.EnergyChangeCount = 0;
 	ResourceInstance.StackCount = FMath::Max(1, StackCount);
 
 	const bool bAdded = AddInputResource(OccupantId, ResourceInstance);

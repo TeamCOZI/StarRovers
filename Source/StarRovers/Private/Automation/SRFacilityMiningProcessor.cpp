@@ -40,6 +40,10 @@ bool FSRFacilityMiningProcessor::TryStartMining(
 
 	FacilityInstance.MiningTargetDepositOccupantId = ResourceDeposit.OccupantId;
 	FacilityInstance.ProcessingInventory.Reset();
+	if (IsValid(ResourceDeposit.ResourceDataAsset.Get()))
+	{
+		FacilityInstance.ProcessingInventory.Add(ResourceDeposit.ResourceDataAsset->BuildDefaultInstance());
+	}
 	FacilityInstance.bProcessing = true;
 	FacilityInstance.ProcessProgressSeconds = 0.0f;
 	if (OutStartResult)

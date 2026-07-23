@@ -55,6 +55,10 @@ struct STARROVERS_API FSRResourceInstance
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource", meta = (DisplayName = "ProcessCount", ClampMin = "0"))
 	int32 ProcessCount = 0;
 
+	// Internal stack used by facility effects. This is intentionally not exposed to Blueprint/UI.
+	UPROPERTY()
+	int32 EnergyChangeCount = 0;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Resource", meta = (DisplayName = "Tags"))
 	TArray<FSRResourceTagStack> Tags;
 

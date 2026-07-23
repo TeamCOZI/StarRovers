@@ -50,15 +50,16 @@ enum class ESRFacilityPortKind : uint8
 UENUM(BlueprintType)
 enum class ESRFacilityEffectKind : uint8
 {
-	AdjustEnergy UMETA(DisplayName = "AdjustEnergy"),
+	// The C++ identifier is retained for existing serialized Data Assets. Runtime semantics are AdjustCatalyst.
+	AdjustEnergy UMETA(DisplayName = "AdjustCatalyst"),
 	AdjustProcessLimit UMETA(DisplayName = "AdjustProcessLimit"),
 	RemoveResource UMETA(DisplayName = "RemoveResource"),
 	AttachTag UMETA(DisplayName = "AttachTag"),
 	ProduceWaste UMETA(DisplayName = "ProduceWaste"),
 	AdjustCellTemperature UMETA(DisplayName = "AdjustCellTemperature"),
 	InvertHeat UMETA(DisplayName = "InvertHeat"),
-	InvertTagEffects UMETA(DisplayName = "InvertTagEffects"),
-	DoubleTagEffects UMETA(DisplayName = "DoubleTagEffects"),
+	InvertTagEffects UMETA(DisplayName = "InvertCatalyst"),
+	DoubleTagEffects UMETA(DisplayName = "DoubleCatalyst"),
 	DuplicateInputResource UMETA(DisplayName = "DuplicateInputResource"),
 	OverrideProcessTemperature UMETA(DisplayName = "OverrideProcessTemperature"),
 	TriggerTagEffect UMETA(DisplayName = "TriggerTagEffect"),
@@ -326,19 +327,19 @@ struct STARROVERS_API FSRFacilityEffectSpec
 	ESRFacilityRemoveTagAmountMode RemoveTagAmountMode = ESRFacilityRemoveTagAmountMode::All;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
-		DisplayName = "EnergyValueSource",
+		DisplayName = "CatalystValueSource",
 		EditCondition = "EffectKind == ESRFacilityEffectKind::AdjustEnergy",
 		EditConditionHides))
 	ESRFacilityEnergyAdjustmentValueSource EnergyValueSource = ESRFacilityEnergyAdjustmentValueSource::FixedValue;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
-		DisplayName = "EnergyValueMultiplier",
+		DisplayName = "CatalystValueMultiplier",
 		EditCondition = "EffectKind == ESRFacilityEffectKind::AdjustEnergy && (EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::RemainingProcessLimit || EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagStackCount || EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::EnergyChangeCount || EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagEffectEnergyChangeAmount || EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::ProcessCount || EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagKindCount)",
 		EditConditionHides))
 	double EnergyValueMultiplier = 1.0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (
-		DisplayName = "EnergyAdjustmentMode",
+		DisplayName = "CatalystAdjustmentMode",
 		EditCondition = "EffectKind == ESRFacilityEffectKind::AdjustEnergy",
 		EditConditionHides))
 	ESRFacilityEnergyAdjustmentMode EnergyAdjustmentMode = ESRFacilityEnergyAdjustmentMode::Add;
