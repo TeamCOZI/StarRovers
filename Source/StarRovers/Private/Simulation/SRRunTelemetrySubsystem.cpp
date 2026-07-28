@@ -17,7 +17,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogSRRunBalance, Log, All);
 
 namespace
 {
-	double SanitizeNonNegative(double Value)
+	double SanitizeTelemetryNonNegative(double Value)
 	{
 		return FMath::IsFinite(Value) ? FMath::Max(0.0, Value) : 0.0;
 	}
@@ -785,8 +785,8 @@ void USRRunTelemetrySubsystem::HandleResourceProduced(
 		ProducedStellarFuelItemCount += static_cast<int64>(ItemCount);
 	}
 	const double UnitEnergy = ResourceInstance.ResourceClass != ESRResourceClass::Unknown
-		? SanitizeNonNegative(ResourceInstance.CurrentEnergy)
-		: SanitizeNonNegative(ResourceInstance.EnergyValue);
+		? SanitizeTelemetryNonNegative(ResourceInstance.CurrentEnergy)
+		: SanitizeTelemetryNonNegative(ResourceInstance.EnergyValue);
 	ProducedResourceEnergy += UnitEnergy * static_cast<double>(ItemCount);
 }
 

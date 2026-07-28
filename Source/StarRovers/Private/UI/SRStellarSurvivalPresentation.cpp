@@ -7,7 +7,7 @@
 
 namespace
 {
-	FString FormatCompactNumber(double Value)
+	FString FormatSurvivalCompactNumber(double Value)
 	{
 		const double AbsoluteValue = FMath::Abs(Value);
 		if (AbsoluteValue >= 1000000.0)
@@ -21,7 +21,7 @@ namespace
 		return FString::Printf(TEXT("%lld"), FMath::RoundToInt64(Value));
 	}
 
-	FString FormatDuration(double Seconds)
+	FString FormatSurvivalDuration(double Seconds)
 	{
 		const int32 RoundedSeconds = FMath::Max(0, FMath::CeilToInt(Seconds));
 		const int32 Hours = RoundedSeconds / 3600;
@@ -84,32 +84,32 @@ namespace
 		case ESRStellarRunPhase::EmergencyIgnition:
 			return FText::FromString(FString::Printf(
 				TEXT("점화 %s/%s"),
-				*FormatCompactNumber(Progress.TotalDeliveredFuel),
-				*FormatCompactNumber(Progress.CurrentDeliveryTarget)));
+				*FormatSurvivalCompactNumber(Progress.TotalDeliveredFuel),
+				*FormatSurvivalCompactNumber(Progress.CurrentDeliveryTarget)));
 		case ESRStellarRunPhase::SustainedSupply:
 			return FText::FromString(FString::Printf(
 				TEXT("공급 %s/%s"),
-				*FormatCompactNumber(Progress.TotalDeliveredFuel),
-				*FormatCompactNumber(Progress.CurrentDeliveryTarget)));
+				*FormatSurvivalCompactNumber(Progress.TotalDeliveredFuel),
+				*FormatSurvivalCompactNumber(Progress.CurrentDeliveryTarget)));
 		case ESRStellarRunPhase::FinalStabilization:
 			if (!Progress.bDeliveryTargetMet)
 			{
 				return FText::FromString(FString::Printf(
 					TEXT("안정화 %s/%s"),
-					*FormatCompactNumber(Progress.TotalDeliveredFuel),
-					*FormatCompactNumber(Progress.CurrentDeliveryTarget)));
+					*FormatSurvivalCompactNumber(Progress.TotalDeliveredFuel),
+					*FormatSurvivalCompactNumber(Progress.CurrentDeliveryTarget)));
 			}
 			if (!Progress.bIncomeRequirementMet)
 			{
 				return FText::FromString(FString::Printf(
 					TEXT("유입 %s/%s/s"),
-					*FormatCompactNumber(Progress.RecentIncomePerSecond),
-					*FormatCompactNumber(Progress.RequiredIncomePerSecond)));
+					*FormatSurvivalCompactNumber(Progress.RecentIncomePerSecond),
+					*FormatSurvivalCompactNumber(Progress.RequiredIncomePerSecond)));
 			}
 			return FText::FromString(FString::Printf(
 				TEXT("유지 %s/%s"),
-				*FormatDuration(Progress.SustainedIncomeProgressSeconds),
-				*FormatDuration(Progress.RequiredSustainSeconds)));
+				*FormatSurvivalDuration(Progress.SustainedIncomeProgressSeconds),
+				*FormatSurvivalDuration(Progress.RequiredSustainSeconds)));
 		case ESRStellarRunPhase::Complete:
 			return NSLOCTEXT("StarRoversSurvivalRail", "CompleteObjective", "목표 완료");
 		default:
@@ -350,7 +350,7 @@ FSRStellarSurvivalPresentation FSRStellarSurvivalPresentationBuilder::BuildPrese
 	}
 	else
 	{
-		const FString RunwayText = FormatDuration(Snapshot.SecuredFuelRunwaySeconds);
+		const FString RunwayText = FormatSurvivalDuration(Snapshot.SecuredFuelRunwaySeconds);
 		Presentation.SurvivalText = FText::FromString(
 			Snapshot.bSimulationPaused
 				? FString::Printf(TEXT("별 %s · 정지"), *RunwayText)
@@ -359,20 +359,20 @@ FSRStellarSurvivalPresentation FSRStellarSurvivalPresentationBuilder::BuildPrese
 
 	Presentation.IncomeText = FText::FromString(FString::Printf(
 		TEXT("유입 +%s/s"),
-		*FormatCompactNumber(Snapshot.RecentIncomePerSecond)));
+		*FormatSurvivalCompactNumber(Snapshot.RecentIncomePerSecond)));
 	Presentation.IncomeVisualState = Snapshot.RecentIncomePerSecond > UE_DOUBLE_SMALL_NUMBER
 		? ESRUIVisualState::Positive
 		: ESRUIVisualState::Neutral;
 
 	Presentation.ConsumptionText = FText::FromString(FString::Printf(
 		TEXT("소비 %s/s"),
-		*FormatCompactNumber(Snapshot.ConsumptionPerSecond)));
+		*FormatSurvivalCompactNumber(Snapshot.ConsumptionPerSecond)));
 	Presentation.ConsumptionVisualState = ESRUIVisualState::Warning;
 
 	Presentation.NetText = FText::FromString(FString::Printf(
 		TEXT("수지 %s%s/s"),
 		Snapshot.NetFuelPerSecond >= 0.0 ? TEXT("+") : TEXT(""),
-		*FormatCompactNumber(Snapshot.NetFuelPerSecond)));
+		*FormatSurvivalCompactNumber(Snapshot.NetFuelPerSecond)));
 	Presentation.NetVisualState = Snapshot.NetFuelPerSecond >= -UE_DOUBLE_SMALL_NUMBER
 		? ESRUIVisualState::Positive
 		: Presentation.SurvivalVisualState == ESRUIVisualState::Danger
@@ -383,8 +383,8 @@ FSRStellarSurvivalPresentation FSRStellarSurvivalPresentationBuilder::BuildPrese
 	{
 		Presentation.InboundText = FText::FromString(FString::Printf(
 			TEXT("도착 +%s · %s"),
-			*FormatCompactNumber(Snapshot.NextInboundFuel),
-			*FormatDuration(Snapshot.NextInboundSeconds)));
+			*FormatSurvivalCompactNumber(Snapshot.NextInboundFuel),
+			*FormatSurvivalDuration(Snapshot.NextInboundSeconds)));
 		Presentation.InboundVisualState = Snapshot.bNextInboundArrivesBeforeDepletion
 			? ESRUIVisualState::Positive
 			: ESRUIVisualState::Danger;
@@ -398,38 +398,38 @@ FSRStellarSurvivalPresentation FSRStellarSurvivalPresentationBuilder::BuildPrese
 	Presentation.CycleText = FText::FromString(FString::Printf(
 		TEXT("주기 %d · %s 후 소비 %s/s"),
 		Snapshot.CurrentCycleIndex,
-		*FormatDuration(Snapshot.SecondsUntilNextCycle),
-		*FormatCompactNumber(Snapshot.NextCycleConsumptionPerSecond)));
+		*FormatSurvivalDuration(Snapshot.SecondsUntilNextCycle),
+		*FormatSurvivalCompactNumber(Snapshot.NextCycleConsumptionPerSecond)));
 	Presentation.CycleVisualState = Snapshot.bNextCycleCreatesDeficit
 		? ESRUIVisualState::Warning
 		: ESRUIVisualState::Positive;
 
 	const FString CurrentRunwayText = Snapshot.bHasFiniteRunway
-		? FormatDuration(Snapshot.CurrentFuelRunwaySeconds)
+		? FormatSurvivalDuration(Snapshot.CurrentFuelRunwaySeconds)
 		: FString(TEXT("안정"));
 	const FString SecuredRunwayText = Snapshot.bHasFiniteRunway
-		? FormatDuration(Snapshot.SecuredFuelRunwaySeconds)
+		? FormatSurvivalDuration(Snapshot.SecuredFuelRunwaySeconds)
 		: FString(TEXT("안정"));
 	Presentation.DetailToolTipText = FText::FromString(FString::Printf(
 		TEXT("Run 목표: %s\n누적 전달 %s / %s · 요구 유입 %s/s · 유지 %s / %s\n항성 연료 %s / %s\n현재 보유분 생존 %s · 확정 도착 포함 %s\n최근 %.0f초 실제 유입 +%s/s · 현재 소비 %s/s · 순수지 %s%s/s\n다음 주기까지 %s · 예상 소비 %s/s\n비행 중 연료 Missile %d기 · 총 +%s"),
 		*Presentation.ObjectiveText.ToString(),
-		*FormatCompactNumber(Snapshot.RunProgress.TotalDeliveredFuel),
-		*FormatCompactNumber(Snapshot.RunProgress.VictoryDeliveryTarget),
-		*FormatCompactNumber(Snapshot.RunProgress.RequiredIncomePerSecond),
-		*FormatDuration(Snapshot.RunProgress.SustainedIncomeProgressSeconds),
-		*FormatDuration(Snapshot.RunProgress.RequiredSustainSeconds),
-		*FormatCompactNumber(Snapshot.StoredFuel),
-		*FormatCompactNumber(Snapshot.ReferenceFuelCapacity),
+		*FormatSurvivalCompactNumber(Snapshot.RunProgress.TotalDeliveredFuel),
+		*FormatSurvivalCompactNumber(Snapshot.RunProgress.VictoryDeliveryTarget),
+		*FormatSurvivalCompactNumber(Snapshot.RunProgress.RequiredIncomePerSecond),
+		*FormatSurvivalDuration(Snapshot.RunProgress.SustainedIncomeProgressSeconds),
+		*FormatSurvivalDuration(Snapshot.RunProgress.RequiredSustainSeconds),
+		*FormatSurvivalCompactNumber(Snapshot.StoredFuel),
+		*FormatSurvivalCompactNumber(Snapshot.ReferenceFuelCapacity),
 		*CurrentRunwayText,
 		*SecuredRunwayText,
 		Snapshot.IncomeWindowSeconds,
-		*FormatCompactNumber(Snapshot.RecentIncomePerSecond),
-		*FormatCompactNumber(Snapshot.ConsumptionPerSecond),
+		*FormatSurvivalCompactNumber(Snapshot.RecentIncomePerSecond),
+		*FormatSurvivalCompactNumber(Snapshot.ConsumptionPerSecond),
 		Snapshot.NetFuelPerSecond >= 0.0 ? TEXT("+") : TEXT(""),
-		*FormatCompactNumber(Snapshot.NetFuelPerSecond),
-		*FormatDuration(Snapshot.SecondsUntilNextCycle),
-		*FormatCompactNumber(Snapshot.NextCycleConsumptionPerSecond),
+		*FormatSurvivalCompactNumber(Snapshot.NetFuelPerSecond),
+		*FormatSurvivalDuration(Snapshot.SecondsUntilNextCycle),
+		*FormatSurvivalCompactNumber(Snapshot.NextCycleConsumptionPerSecond),
 		Snapshot.InboundMissileCount,
-		*FormatCompactNumber(Snapshot.TotalInboundFuel)));
+		*FormatSurvivalCompactNumber(Snapshot.TotalInboundFuel)));
 	return Presentation;
 }

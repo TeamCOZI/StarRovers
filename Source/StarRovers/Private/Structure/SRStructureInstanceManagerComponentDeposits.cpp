@@ -36,7 +36,7 @@ namespace
 		OutNeighborCellIds.Add(Neighbors.PositiveV);
 	}
 
-	bool AreOccupantIdSetsEqual(const TSet<FName>& Left, const TSet<FName>& Right)
+	bool AreDepositOccupantIdSetsEqual(const TSet<FName>& Left, const TSet<FName>& Right)
 	{
 		if (Left.Num() != Right.Num())
 		{
@@ -53,7 +53,7 @@ namespace
 		return true;
 	}
 
-	void AppendOccupantIds(TSet<FName>& OutOccupantIds, const TSet<FName>& OccupantIds)
+	void AppendDepositOccupantIds(TSet<FName>& OutOccupantIds, const TSet<FName>& OccupantIds)
 	{
 		for (const FName OccupantId : OccupantIds)
 		{
@@ -188,15 +188,15 @@ void USRStructureInstanceManagerComponent::SetMiningResourceDepositHighlights(
 		NewTargetDepositOccupantId = AdjacentDeposit.OccupantId;
 	}
 
-	if (AreOccupantIdSetsEqual(MiningHighlightedResourceDepositOccupantIds, NewHighlightedDepositOccupantIds)
+	if (AreDepositOccupantIdSetsEqual(MiningHighlightedResourceDepositOccupantIds, NewHighlightedDepositOccupantIds)
 		&& MiningTargetResourceDepositOccupantId == NewTargetDepositOccupantId)
 	{
 		return;
 	}
 
 	TSet<FName> AffectedOccupantIds;
-	AppendOccupantIds(AffectedOccupantIds, MiningHighlightedResourceDepositOccupantIds);
-	AppendOccupantIds(AffectedOccupantIds, NewHighlightedDepositOccupantIds);
+	AppendDepositOccupantIds(AffectedOccupantIds, MiningHighlightedResourceDepositOccupantIds);
+	AppendDepositOccupantIds(AffectedOccupantIds, NewHighlightedDepositOccupantIds);
 	MiningHighlightedResourceDepositOccupantIds = MoveTemp(NewHighlightedDepositOccupantIds);
 	MiningTargetResourceDepositOccupantId = NewTargetDepositOccupantId;
 	RefreshVisualInstancesForOccupants(AffectedOccupantIds);

@@ -46,7 +46,7 @@ namespace
 		return true;
 	}
 
-	int32 BuildCardKey(ESRResourceSpectrum Spectrum, int32 Grade)
+	int32 BuildFabricatorCardKey(ESRResourceSpectrum Spectrum, int32 Grade)
 	{
 		return (static_cast<int32>(Spectrum) << 8) | (Grade & 0xFF);
 	}
@@ -372,7 +372,7 @@ FSRStellarFuelFabricationResultV2 FSRStellarFuelFabricator::EvaluateCards(
 		Contribution.Grade = Card.Grade;
 		Contribution.CurrentEnergy = Card.CurrentEnergy;
 		Contribution.FuelImprintId = Card.FuelImprintSlot.ImprintId;
-		const int32 CardKey = BuildCardKey(Card.Spectrum, Card.Grade);
+		const int32 CardKey = BuildFabricatorCardKey(Card.Spectrum, Card.Grade);
 		TArray<int32>& CardKeyInputIndices = InputIndicesPerCardKey.FindOrAdd(CardKey);
 		Contribution.bUniqueCardKey = CardKeyInputIndices.IsEmpty();
 		if (Contribution.bUniqueCardKey)

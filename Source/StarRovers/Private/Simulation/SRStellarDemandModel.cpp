@@ -4,7 +4,7 @@ namespace
 {
 	constexpr double MaximumStellarBalanceValue = 1.0e15;
 
-	double SanitizeNonNegative(double Value)
+	double SanitizeDemandNonNegative(double Value)
 	{
 		return FMath::IsFinite(Value)
 			? FMath::Clamp(Value, 0.0, MaximumStellarBalanceValue)
@@ -16,12 +16,12 @@ FSRStellarDemandCurveV2 FSRStellarDemandModel::SanitizeCurveV2(
 	const FSRStellarDemandCurveV2& Curve)
 {
 	FSRStellarDemandCurveV2 Result = Curve;
-	Result.InitialDemandPerSecond = SanitizeNonNegative(Curve.InitialDemandPerSecond);
+	Result.InitialDemandPerSecond = SanitizeDemandNonNegative(Curve.InitialDemandPerSecond);
 	Result.GraceCycleCount = FMath::Max(0, Curve.GraceCycleCount);
-	Result.DemandIncreasePerCycle = SanitizeNonNegative(Curve.DemandIncreasePerCycle);
+	Result.DemandIncreasePerCycle = SanitizeDemandNonNegative(Curve.DemandIncreasePerCycle);
 	Result.MaximumDemandPerSecond = FMath::Max(
 		Result.InitialDemandPerSecond,
-		SanitizeNonNegative(Curve.MaximumDemandPerSecond));
+		SanitizeDemandNonNegative(Curve.MaximumDemandPerSecond));
 	return Result;
 }
 
@@ -30,7 +30,7 @@ FSRStellarPressureRulesV2 FSRStellarDemandModel::SanitizePressureRulesV2(
 {
 	FSRStellarPressureRulesV2 Result = Rules;
 	Result.FuelReserveCapacity = FMath::Clamp(
-		SanitizeNonNegative(Rules.FuelReserveCapacity),
+		SanitizeDemandNonNegative(Rules.FuelReserveCapacity),
 		1.0,
 		MaximumStellarBalanceValue);
 	Result.RedGiantEmergencyReserveRatio = FMath::Clamp(
@@ -96,7 +96,7 @@ double FSRStellarDemandModel::ClampFuelReserveV2(
 {
 	const FSRStellarPressureRulesV2 SafeRules = SanitizePressureRulesV2(Rules);
 	return FMath::Clamp(
-		SanitizeNonNegative(StoredFuel),
+		SanitizeDemandNonNegative(StoredFuel),
 		0.0,
 		SafeRules.FuelReserveCapacity);
 }

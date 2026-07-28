@@ -32,14 +32,14 @@ namespace
 		TEXT("/Game/StarRovers/Structure/DataAssets/Artificial/Expert/Expert_Synthesizer/DA_Structure_ES1.DA_Structure_ES1"),
 	};
 
-	FString MakeObjectPath(const FString& PackageName)
+	FString MakeResourceV2ObjectPath(const FString& PackageName)
 	{
 		const FString AssetName = FPackageName::GetLongPackageAssetName(PackageName);
 		return FString::Printf(TEXT("%s.%s"), *PackageName, *AssetName);
 	}
 
 	template <typename TObjectType>
-	TObjectType* LoadOrCreateAsset(const FString& PackageName, bool& bOutCreated)
+	TObjectType* LoadOrCreateResourceV2Asset(const FString& PackageName, bool& bOutCreated)
 	{
 		bOutCreated = false;
 		if (PackageName.IsEmpty())
@@ -49,7 +49,7 @@ namespace
 
 		if (FPackageName::DoesPackageExist(PackageName))
 		{
-			if (TObjectType* Existing = LoadObject<TObjectType>(nullptr, *MakeObjectPath(PackageName)))
+			if (TObjectType* Existing = LoadObject<TObjectType>(nullptr, *MakeResourceV2ObjectPath(PackageName)))
 			{
 				return Existing;
 			}
@@ -73,7 +73,7 @@ namespace
 		return Asset;
 	}
 
-	bool SaveAsset(UObject* Asset)
+	bool SaveResourceV2Asset(UObject* Asset)
 	{
 		if (!IsValid(Asset))
 		{
@@ -269,12 +269,12 @@ int32 USRGenerateResourceV2ContentCommandlet::Main(const FString& Params)
 	for (const ESRResourceContentPresetV2 Preset : ResourcePresets)
 	{
 		bool bCreated = false;
-		USRResourceDataAsset* Resource = LoadOrCreateAsset<USRResourceDataAsset>(
+		USRResourceDataAsset* Resource = LoadOrCreateResourceV2Asset<USRResourceDataAsset>(
 			FSRResourceV2AuthoredContent::GetResourcePackageName(Preset),
 			bCreated);
 		if (!IsValid(Resource)
 			|| !FSRResourceSystemContent::ApplyResourcePreset(*Resource, Preset)
-			|| !SaveAsset(Resource))
+			|| !SaveResourceV2Asset(Resource))
 		{
 			SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("Failed to author Resource V2 preset %d."), static_cast<int32>(Preset));
 			return 1;
@@ -288,12 +288,12 @@ int32 USRGenerateResourceV2ContentCommandlet::Main(const FString& Params)
 	for (const FSRFacilityContentDefinitionV2& Definition : FacilityDefinitions)
 	{
 		bool bCreated = false;
-		USRFacilityDataAsset* Facility = LoadOrCreateAsset<USRFacilityDataAsset>(
+		USRFacilityDataAsset* Facility = LoadOrCreateResourceV2Asset<USRFacilityDataAsset>(
 			FSRResourceV2AuthoredContent::GetFacilityPackageName(Definition.Preset),
 			bCreated);
 		if (!IsValid(Facility)
 			|| !FSRResourceSystemContent::ApplyFacilityPreset(*Facility, Definition.Preset)
-			|| !SaveAsset(Facility))
+			|| !SaveResourceV2Asset(Facility))
 		{
 			SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("Failed to author Facility V2 %s."), *Definition.ContentId.ToString());
 			return 1;
@@ -313,7 +313,7 @@ int32 USRGenerateResourceV2ContentCommandlet::Main(const FString& Params)
 			nullptr,
 			*TemplatePaths[DefinitionIndex % TemplatePaths.Num()]);
 		bool bCreated = false;
-		USRStructureDataAsset* Structure = LoadOrCreateAsset<USRStructureDataAsset>(
+		USRStructureDataAsset* Structure = LoadOrCreateResourceV2Asset<USRStructureDataAsset>(
 			FSRResourceV2AuthoredContent::GetFacilityStructurePackageName(Definition.Preset),
 			bCreated);
 		if (!IsValid(Facility) || !IsValid(Template) || !IsValid(Structure))
@@ -336,7 +336,7 @@ int32 USRGenerateResourceV2ContentCommandlet::Main(const FString& Params)
 		Structure->DepositResourceDataAsset = nullptr;
 		Structure->DepositTotalAmount = 0;
 		ConfigureFacilityFootprintAndPorts(*Facility, *Structure);
-		if (!SaveAsset(Structure))
+		if (!SaveResourceV2Asset(Structure))
 		{
 			SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("Failed to save the authored Structure for %s."), *Definition.ContentId.ToString());
 			return 1;
@@ -360,7 +360,7 @@ int32 USRGenerateResourceV2ContentCommandlet::Main(const FString& Params)
 			*FSRResourceV2AuthoredContent::GetResourceObjectPath(Preset));
 		USRStructureDataAsset* Template = LoadObject<USRStructureDataAsset>(nullptr, *GetDepositTemplatePath(Preset));
 		bool bCreated = false;
-		USRStructureDataAsset* Deposit = LoadOrCreateAsset<USRStructureDataAsset>(
+		USRStructureDataAsset* Deposit = LoadOrCreateResourceV2Asset<USRStructureDataAsset>(
 			FSRResourceV2AuthoredContent::GetDepositPackageName(Preset),
 			bCreated);
 		if (!IsValid(Resource) || !IsValid(Template) || !IsValid(Deposit))
@@ -390,7 +390,7 @@ int32 USRGenerateResourceV2ContentCommandlet::Main(const FString& Params)
 		Deposit->DepositTotalAmount = DepositTotalAmount;
 		Deposit->InputPorts.Reset();
 		Deposit->OutputPorts.Reset();
-		if (!SaveAsset(Deposit))
+		if (!SaveResourceV2Asset(Deposit))
 		{
 			SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("Failed to save the authored Deposit for %s."), *Resource->ResourceId.ToString());
 			return 1;
@@ -435,7 +435,7 @@ int32 USRGenerateResourceV2ContentCommandlet::Main(const FString& Params)
 		Rule->MinimumGuaranteedCount = 1;
 		Rule->MinCellSpacing = 6;
 	}
-	if (!SaveAsset(TerrainProfile))
+	if (!SaveResourceV2Asset(TerrainProfile))
 	{
 		SR_LOG(EditorCommandlet, LogTemp, Error, TEXT("Failed to save Resource V2 deposit rules into the Earth terrain profile."));
 		return 1;

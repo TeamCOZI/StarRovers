@@ -2,7 +2,7 @@
 
 namespace
 {
-	double SanitizeNonNegative(double Value)
+	double SanitizeRunContractNonNegative(double Value)
 	{
 		return FMath::IsFinite(Value) ? FMath::Max(0.0, Value) : 0.0;
 	}
@@ -36,18 +36,18 @@ FSRStellarRunContract FSRStellarRunContractModel::Sanitize(
 	const FSRStellarRunContract& Contract)
 {
 	FSRStellarRunContract Result = Contract;
-	Result.EmergencyDeliveryTarget = SanitizeNonNegative(Contract.EmergencyDeliveryTarget);
+	Result.EmergencyDeliveryTarget = SanitizeRunContractNonNegative(Contract.EmergencyDeliveryTarget);
 	Result.SustainedSupplyDeliveryTarget = FMath::Max(
 		Result.EmergencyDeliveryTarget,
-		SanitizeNonNegative(Contract.SustainedSupplyDeliveryTarget));
+		SanitizeRunContractNonNegative(Contract.SustainedSupplyDeliveryTarget));
 	Result.VictoryDeliveryTarget = FMath::Max(
 		Result.SustainedSupplyDeliveryTarget,
-		SanitizeNonNegative(Contract.VictoryDeliveryTarget));
-	Result.VictoryRequiredIncomePerSecond = SanitizeNonNegative(
+		SanitizeRunContractNonNegative(Contract.VictoryDeliveryTarget));
+	Result.VictoryRequiredIncomePerSecond = SanitizeRunContractNonNegative(
 		Contract.VictoryRequiredIncomePerSecond);
-	Result.VictoryRequiredSustainSeconds = SanitizeNonNegative(
+	Result.VictoryRequiredSustainSeconds = SanitizeRunContractNonNegative(
 		Contract.VictoryRequiredSustainSeconds);
-	Result.TargetRunDurationSeconds = SanitizeNonNegative(Contract.TargetRunDurationSeconds);
+	Result.TargetRunDurationSeconds = SanitizeRunContractNonNegative(Contract.TargetRunDurationSeconds);
 	return Result;
 }
 
@@ -81,12 +81,12 @@ FSRStellarRunProgress FSRStellarRunContractModel::Advance(
 
 	FSRStellarRunProgress Result = PreviousProgress;
 	Result.bFiniteVictoryEnabled = SafeContract.bFiniteVictoryEnabled;
-	Result.TotalDeliveredFuel = SanitizeNonNegative(TotalDeliveredFuel);
-	Result.RecentIncomePerSecond = SanitizeNonNegative(RecentIncomePerSecond);
+	Result.TotalDeliveredFuel = SanitizeRunContractNonNegative(TotalDeliveredFuel);
+	Result.RecentIncomePerSecond = SanitizeRunContractNonNegative(RecentIncomePerSecond);
 	Result.RequiredIncomePerSecond = SafeContract.VictoryRequiredIncomePerSecond;
 	Result.RequiredSustainSeconds = SafeContract.VictoryRequiredSustainSeconds;
 	Result.VictoryDeliveryTarget = SafeContract.VictoryDeliveryTarget;
-	Result.ElapsedSimulationSeconds = SanitizeNonNegative(ElapsedSimulationSeconds);
+	Result.ElapsedSimulationSeconds = SanitizeRunContractNonNegative(ElapsedSimulationSeconds);
 	Result.TargetRunDurationSeconds = SafeContract.TargetRunDurationSeconds;
 
 	if (bDefeatTriggered)
@@ -110,8 +110,8 @@ FSRStellarRunProgress FSRStellarRunContractModel::Advance(
 	{
 		Result.SustainedIncomeProgressSeconds = FMath::Min(
 			SafeContract.VictoryRequiredSustainSeconds,
-			SanitizeNonNegative(PreviousProgress.SustainedIncomeProgressSeconds)
-				+ SanitizeNonNegative(DeltaSimulationSeconds));
+			SanitizeRunContractNonNegative(PreviousProgress.SustainedIncomeProgressSeconds)
+				+ SanitizeRunContractNonNegative(DeltaSimulationSeconds));
 	}
 	else
 	{

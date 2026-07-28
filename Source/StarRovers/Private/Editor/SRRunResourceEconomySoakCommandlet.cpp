@@ -12,7 +12,7 @@
 
 namespace
 {
-	constexpr TCHAR GeneratorBlueprintPath[] =
+	constexpr TCHAR ResourceEconomyGeneratorBlueprintPath[] =
 		TEXT("/Game/StarRovers/Generation/Blueprints/BP_SolarSystemGenerator.BP_SolarSystemGenerator");
 }
 
@@ -27,7 +27,7 @@ USRRunResourceEconomySoakCommandlet::USRRunResourceEconomySoakCommandlet()
 
 int32 USRRunResourceEconomySoakCommandlet::Main(const FString& Params)
 {
-	UBlueprint* GeneratorBlueprint = LoadObject<UBlueprint>(nullptr, GeneratorBlueprintPath);
+	UBlueprint* GeneratorBlueprint = LoadObject<UBlueprint>(nullptr, ResourceEconomyGeneratorBlueprintPath);
 	const ASRSolarSystemGenerator* GeneratorCDO = IsValid(GeneratorBlueprint)
 		&& IsValid(GeneratorBlueprint->GeneratedClass)
 		? Cast<ASRSolarSystemGenerator>(GeneratorBlueprint->GeneratedClass->GetDefaultObject())
