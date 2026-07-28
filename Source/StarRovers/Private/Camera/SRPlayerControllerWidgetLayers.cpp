@@ -7,12 +7,18 @@ namespace
         ESRPlayerUILayer::FocusInfo,
         ESRPlayerUILayer::Overview,
         ESRPlayerUILayer::TimeControl,
-        ESRPlayerUILayer::AugmentChoice,
         ESRPlayerUILayer::StructureSelection,
         ESRPlayerUILayer::HubShortcut,
         ESRPlayerUILayer::FacilityControl,
+        ESRPlayerUILayer::AugmentChoice,
         ESRPlayerUILayer::GameOver
     };
+
+	bool IsFixedModalLayer(ESRPlayerUILayer WidgetLayer)
+	{
+		return WidgetLayer == ESRPlayerUILayer::AugmentChoice
+			|| WidgetLayer == ESRPlayerUILayer::GameOver;
+	}
 
     void AddUniqueWidgetLayer(TArray<ESRPlayerUILayer>& OutLayers, ESRPlayerUILayer WidgetLayer)
     {
@@ -43,13 +49,25 @@ int32 StarRovers::PlayerControllerUI::ResolveWidgetLayerZOrder(const TArray<ESRP
 
     for (const ESRPlayerUILayer ConfiguredLayer : ConfiguredLayerOrder)
     {
-        AddUniqueWidgetLayer(ResolvedLayerOrder, ConfiguredLayer);
+		if (!IsFixedModalLayer(ConfiguredLayer))
+		{
+			AddUniqueWidgetLayer(ResolvedLayerOrder, ConfiguredLayer);
+		}
     }
 
     for (const ESRPlayerUILayer DefaultLayer : DefaultWidgetLayerOrder)
     {
-        AddUniqueWidgetLayer(ResolvedLayerOrder, DefaultLayer);
+		if (!IsFixedModalLayer(DefaultLayer))
+		{
+			AddUniqueWidgetLayer(ResolvedLayerOrder, DefaultLayer);
+		}
     }
+
+	// These are behavioral modals, not merely visual customization layers.
+	// Keep choices above every gameplay panel and defeat above everything,
+	// including Blueprint defaults saved with an older layer order.
+	AddUniqueWidgetLayer(ResolvedLayerOrder, ESRPlayerUILayer::AugmentChoice);
+	AddUniqueWidgetLayer(ResolvedLayerOrder, ESRPlayerUILayer::GameOver);
 
     const int32 LayerIndex = ResolvedLayerOrder.IndexOfByKey(WidgetLayer);
     return LayerIndex != INDEX_NONE ? LayerIndex : ResolvedLayerOrder.Num();

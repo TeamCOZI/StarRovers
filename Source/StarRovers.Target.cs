@@ -6,7 +6,7 @@ public class StarRoversTarget : TargetRules
     public StarRoversTarget(TargetInfo Target) : base(Target)
     {
         Type = TargetType.Game;
-        DefaultBuildSettings = BuildSettingsVersion.V6;
+        DefaultBuildSettings = BuildSettingsVersion.V7;
         IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
         bOverrideBuildEnvironment = true;
         // UE 5.7 engine SharedPCH headers emit deprecation warnings with VS 2026.

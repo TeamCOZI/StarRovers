@@ -10,6 +10,7 @@
 #include "Assembly/SRAssemblyPlacementQueue.h"
 #include "Assembly/SRAssemblyPreviewState.h"
 #include "Assembly/SRAssemblySurfaceState.h"
+#include "Assembly/SRAssemblyStructurePlacementPreview.h"
 #include "Conveyor/SRConveyorTypes.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "SRAssemblyComponent.generated.h"
@@ -78,6 +79,9 @@ public:
 	bool TryAddConveyorPlacementDragWaypoint();
 	int32 GetStructurePlacementRotationSteps() const;
 	float GetStructurePlacementAdditionalYawDegrees() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly|Placement Preview")
+	FSRStructurePlacementPreview GetSelectedStructurePlacementPreview() const;
 
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "HoveredSurfaceGrid"))

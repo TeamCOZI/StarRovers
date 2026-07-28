@@ -12,11 +12,15 @@ class UButton;
 class UCheckBox;
 class UHorizontalBox;
 class UProgressBar;
+class UScaleBox;
+class USizeBox;
 class UTextBlock;
 class UVerticalBox;
 class UWidget;
 class USRFacilityNetworkComponent;
 class USRFacilityControlWidget;
+class USRInfoCardWidget;
+class USRStatusBadgeWidget;
 class USRSpaceLogisticsSubsystem;
 struct FSRFacilityInstance;
 
@@ -186,6 +190,8 @@ public:
 	void InitializeMaxCargoStackCount(USRFacilityControlWidget* InOwnerWidget, FName InRouteId, int32 InMaxCargoStackCount, UButton* InButton);
 	void InitializeReturnEmptyWhenNoCargo(USRFacilityControlWidget* InOwnerWidget, FName InRouteId, bool bInReturnEmptyWhenNoCargo, UButton* InButton);
 	void InitializeCargoResourceId(USRFacilityControlWidget* InOwnerWidget, FName InRouteId, FName InCargoResourceId, UButton* InButton);
+	void InitializeRouteProfile(USRFacilityControlWidget* InOwnerWidget, FName InRouteId, ESRSpaceLogisticsRouteProfileV2 InRouteProfile, UButton* InButton);
+	void InitializeConditionedTransitModule(USRFacilityControlWidget* InOwnerWidget, FName InRouteId, ESRConditionedTransitModuleV2 InModule, UButton* InButton);
 
 	UFUNCTION()
 	void HandleClicked();
@@ -200,9 +206,13 @@ private:
 	int32 MaxCargoStackCount = 1;
 	bool bReturnEmptyWhenNoCargo = true;
 	FName CargoResourceId = NAME_None;
+	ESRSpaceLogisticsRouteProfileV2 RouteProfile = ESRSpaceLogisticsRouteProfileV2::NeutralShuttle;
+	ESRConditionedTransitModuleV2 ConditionedTransitModule = ESRConditionedTransitModuleV2::None;
 	bool bSetMaxCargoStackCount = false;
 	bool bSetReturnEmptyWhenNoCargo = false;
 	bool bSetCargoResourceId = false;
+	bool bSetRouteProfile = false;
+	bool bSetConditionedTransitModule = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> Button;
@@ -268,6 +278,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
 	bool SetHubRouteCargoResourceId(FName RouteId, FName CargoResourceId);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool SetHubRouteProfile(FName RouteId, ESRSpaceLogisticsRouteProfileV2 RouteProfile);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Hub")
+	bool SetHubRouteConditionedTransitModule(FName RouteId, ESRConditionedTransitModuleV2 ConditionedTransitModule);
+
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "FocusedActor"))
 	TWeakObjectPtr<AActor> FocusedActor;
@@ -279,10 +295,19 @@ protected:
 	bool bHasFocusedFacility = false;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UScaleBox> PanelScaleBox;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USizeBox> PanelDesignSizeBox;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBorder> PanelBorder;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> TitleTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> FacilityStatusBadge;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> CloseButton;
@@ -294,13 +319,37 @@ protected:
 	TObjectPtr<UTextBlock> ProcessStatusTextBlock;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UButton> OperationalPriorityButton;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> OperationalPriorityTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> ResourceV2RecipeButton;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ResourceV2RecipeTextBlock;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> InputResourceTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> InputStageBadge;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UHorizontalBox> InputResourceSlotBox;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> EffectsTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> ProcessStageBadge;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> EnergyTransitionTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StateTransitionTextBlock;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UProgressBar> ProcessProgressBar;
@@ -310,6 +359,15 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> OutputPreviewTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> OutputStageBadge;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> InputToProcessArrowTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ProcessToOutputArrowTextBlock;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UHorizontalBox> OutputResourceSlotBox;
@@ -348,6 +406,24 @@ protected:
 	TObjectPtr<UTextBlock> HubRouteTextBlock;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UBorder> HubRoutePanelBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> HubNetworkStatusBadge;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRInfoCardWidget> HubFleetInfoCard;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRInfoCardWidget> HubQueueInfoCard;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRInfoCardWidget> HubMissileInfoCard;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UHorizontalBox> HubUtilityButtonBox;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UHorizontalBox> HubDestinationButtonBox;
 
 	UPROPERTY(Transient)
@@ -383,6 +459,12 @@ private:
 
 	UFUNCTION()
 	void HandleProcessCheckStateChanged(bool bIsChecked);
+
+	UFUNCTION()
+	void HandleCycleResourceV2RecipeClicked();
+
+	UFUNCTION()
+	void HandleCycleOperationalPriorityClicked();
 
 	UFUNCTION()
 	void HandleDeliverCheckStateChanged(bool bIsChecked);

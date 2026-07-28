@@ -97,6 +97,13 @@ void FSRFacilityProcessingInventoryRouter::StoreOutputResources(
 
 bool FSRFacilityProcessingInventoryRouter::TryMoveInputsToProcessingInventory(FSRFacilityInstance& FacilityInstance)
 {
+	// A running or otherwise-reserved batch owns its processing inputs until
+	// completion. Never overwrite it with a second reservation attempt.
+	if (!FacilityInstance.ProcessingInventory.IsEmpty())
+	{
+		return false;
+	}
+
 	TArray<FSRResourceInstance> PendingInputResources;
 	if (!GatherPendingInputResources(FacilityInstance, PendingInputResources))
 	{
@@ -109,37 +116,37 @@ bool FSRFacilityProcessingInventoryRouter::TryMoveInputsToProcessingInventory(FS
 		return false;
 	}
 
-	FacilityInstance.ProcessingInventory.Reset();
-	FacilityInstance.ProcessingInventory.Reserve(InputCount);
+	// Reserve against a copy first. The live input ports are committed only once
+	// all required lanes succeed, making multi-input synthesis transactional.
+	TArray<FSRFacilityPortInventory> SimulatedInputPortInventories =
+		FacilityInstance.InputPortInventories;
+	TArray<FSRResourceInstance> ReservedInputResources;
+	ReservedInputResources.Reserve(InputCount);
 	for (int32 InputIndex = 0; InputIndex < InputCount; ++InputIndex)
 	{
-		if (!FacilityInstance.InputPortInventories.IsValidIndex(InputIndex)
-			|| StarRovers::FacilityResources::GetInventorySlotStackCount(FacilityInstance.InputPortInventories[InputIndex]) <= 0)
+		if (!SimulatedInputPortInventories.IsValidIndex(InputIndex)
+			|| StarRovers::FacilityResources::GetInventorySlotStackCount(SimulatedInputPortInventories[InputIndex]) <= 0)
 		{
-			FacilityInstance.ProcessingInventory.Reset();
-			FacilityInstance.bProcessing = false;
-			FacilityInstance.ProcessProgressSeconds = 0.0f;
 			return false;
 		}
 
 		FSRResourceInstance ResourceInstance;
-		if (!StarRovers::FacilityResources::TryTakeSingleResourceFromInventorySlot(FacilityInstance.InputPortInventories[InputIndex], ResourceInstance))
+		if (!StarRovers::FacilityResources::TryTakeSingleResourceFromInventorySlot(
+			SimulatedInputPortInventories[InputIndex],
+			ResourceInstance))
 		{
-			FacilityInstance.ProcessingInventory.Reset();
-			FacilityInstance.bProcessing = false;
-			FacilityInstance.ProcessProgressSeconds = 0.0f;
 			return false;
 		}
-		FacilityInstance.ProcessingInventory.Add(ResourceInstance);
+		ReservedInputResources.Add(ResourceInstance);
 	}
-	FSRFacilityPortInventoryBuilder::RefreshAggregateInventories(FacilityInstance);
 
-	if (FacilityInstance.ProcessingInventory.IsEmpty())
+	if (ReservedInputResources.Num() != InputCount)
 	{
-		FacilityInstance.bProcessing = false;
-		FacilityInstance.ProcessProgressSeconds = 0.0f;
 		return false;
 	}
 
-	return true;
+	FacilityInstance.InputPortInventories = MoveTemp(SimulatedInputPortInventories);
+	FacilityInstance.ProcessingInventory = MoveTemp(ReservedInputResources);
+	FSRFacilityPortInventoryBuilder::RefreshAggregateInventories(FacilityInstance);
+	return !FacilityInstance.ProcessingInventory.IsEmpty();
 }

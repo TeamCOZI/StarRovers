@@ -4,6 +4,8 @@
 #include "Automation/SRFacilityRuntimeData.h"
 
 class USRFacilityDataAsset;
+struct FSRResourceProcessResult;
+struct FSRStellarFuelFabricationResultV2;
 
 class FSRFacilityOutputResourceBuilder
 {
@@ -24,7 +26,10 @@ public:
 		TArray<FSRResourceInstance>& OutOutputResources,
 		int32* OutPrimaryOutputCount = nullptr,
 		FSRResourceInstance* OutBaselinePrimaryResource = nullptr,
-		TArray<FString>* OutEnergyFormulaTexts = nullptr);
+		TArray<FString>* OutEnergyFormulaTexts = nullptr,
+		FSRResourceProcessResult* OutResourceV2ProcessResult = nullptr,
+		FSRStellarFuelFabricationResultV2* OutStellarFuelFabricationResult = nullptr,
+		FName ProcessingBodyId = NAME_None);
 
 	static void BuildOutputResourcesFromPrimaryResource(
 		const FSRFacilityInstance& FacilityInstance,
@@ -33,5 +38,7 @@ public:
 		TArray<FSRResourceInstance>& OutOutputResources,
 		int32* OutPrimaryOutputCount = nullptr,
 		FSRResourceInstance* OutBaselinePrimaryResource = nullptr,
-		TArray<FString>* OutEnergyFormulaTexts = nullptr);
+		TArray<FString>* OutEnergyFormulaTexts = nullptr,
+		FSRResourceProcessResult* OutResourceV2ProcessResult = nullptr,
+		FName ProcessingBodyId = NAME_None);
 };

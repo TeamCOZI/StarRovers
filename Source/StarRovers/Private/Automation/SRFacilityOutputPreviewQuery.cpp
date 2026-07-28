@@ -2,6 +2,7 @@
 
 #include "Automation/SRFacilityDataAsset.h"
 #include "Automation/SRFacilityNetworkRuntimeState.h"
+#include "Automation/SRResourceInstanceOperations.h"
 #include "SRFacilityMiningTargetResolver.h"
 #include "SRFacilityOutputResourceBuilder.h"
 #include "SRFacilityProcessingInventoryRouter.h"
@@ -86,18 +87,24 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 	TArray<FSRResourceInstance> PreviewOutputs;
 	TArray<FString> PreviewEnergyFormulaTexts;
 	int32 PrimaryOutputCount = 0;
+	const FName PreviewBodyId = StarRovers::Resources::ResolveCelestialBodyResourceId(
+		IsValid(OwnerComponent) ? OwnerComponent->GetOwner() : nullptr);
 	FSRFacilityOutputResourceBuilder::BuildOutputResources(
 		*FacilityInstance,
 		PreviewInputs,
 		PreviewOutputs,
 		&PrimaryOutputCount,
 		nullptr,
-		&PreviewEnergyFormulaTexts);
+		&PreviewEnergyFormulaTexts,
+		nullptr,
+		nullptr,
+		PreviewBodyId);
 	if (PreviewOutputs.IsEmpty())
 	{
 		if (FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(*FacilityInstance))
 		{
 			OutOutputCount = 0;
+			OutEnergyFormulaTexts = MoveTemp(PreviewEnergyFormulaTexts);
 			return true;
 		}
 		return false;

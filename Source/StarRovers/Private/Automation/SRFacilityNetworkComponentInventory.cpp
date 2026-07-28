@@ -28,6 +28,7 @@ bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRRe
 
 	SetComponentTickEnabled(bAutoProcessFacilities);
 	TryAutoLaunchStarFuelMissilesFromInputPort(*FacilityInstance, TransferResult.PortIndex);
+	RefreshOperationalCapacity();
 	if (bLogFacilityNetworkEvents)
 	{
 		SR_LOG(FacilityNetwork,
@@ -55,6 +56,7 @@ bool USRFacilityNetworkComponent::AddInputResourceToPort(FName OccupantId, int32
 	}
 	SetComponentTickEnabled(bAutoProcessFacilities);
 	TryAutoLaunchStarFuelMissilesFromInputPort(*FacilityInstance, TransferResult.PortIndex);
+	RefreshOperationalCapacity();
 	return true;
 }
 

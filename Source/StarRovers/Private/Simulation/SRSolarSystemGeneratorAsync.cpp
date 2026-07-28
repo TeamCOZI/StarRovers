@@ -61,6 +61,7 @@ void ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear()
 	AsyncRuntimeGenerationSeed = bRandomizeGenerationSeedEachRun
 		? CreateRuntimeRandomGenerationSeed()
 		: GenerationSeed;
+	LastRuntimeGenerationSeed = AsyncRuntimeGenerationSeed;
 	FSRTimingLog::AddLine(FString::Printf(
 		TEXT("GenerateRuntimeSystem.Seed Configured=%d Runtime=%d Randomized=%s"),
 		GenerationSeed,

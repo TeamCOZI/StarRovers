@@ -8,6 +8,7 @@ class USRCelestialBodyFocusInfoWidget;
 class USRCelestialBodyOverviewWidget;
 class USRFacilityControlWidget;
 class USRFocusedHubShortcutWidget;
+class USRGameOverWidget;
 class USRStructureSelectionWidget;
 class USRTimeControlWidget;
 
@@ -25,5 +26,6 @@ public:
 		USRCelestialBodyOverviewWidget* OverviewWidget,
 		USRTimeControlWidget* TimeControlWidget,
 		USRAugmentChoiceWidget* AugmentChoiceWidget,
-		USRStructureSelectionWidget* StructureSelectionWidget);
+		USRStructureSelectionWidget* StructureSelectionWidget,
+		USRGameOverWidget* GameOverWidget);
 };

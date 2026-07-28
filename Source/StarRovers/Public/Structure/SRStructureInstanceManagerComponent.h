@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
+#include "Structure/SRStructureInstanceSaveData.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "SRStructureInstanceManagerComponent.generated.h"
@@ -69,6 +70,16 @@ struct STARROVERS_API FSRResourceDepositInstance
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "RemainingAmount"))
 	int32 RemainingAmount = 0;
+};
+
+/** Pure finite/infinite amount rules shared by runtime deposits and tests. */
+class STARROVERS_API FSRResourceDepositAmountModel final
+{
+public:
+	static int32 ResolveInitialAmount(int32 AuthoredTotalAmount);
+	static bool IsInfinite(int32 Amount);
+	static bool CanHarvest(int32 RemainingAmount);
+	static bool TryConsumeOne(int32 TotalAmount, int32& InOutRemainingAmount);
 };
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
@@ -145,11 +156,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Resource Deposit")
 	bool GetResourceDepositInstance(FName OccupantId, FSRResourceDepositInstance& OutResourceDeposit) const;
 
+	/** Read-only snapshot used by Operations UI, telemetry, and save migration. */
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Resource Deposit")
+	void GetResourceDepositInstances(TArray<FSRResourceDepositInstance>& OutResourceDeposits) const;
+
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Resource Deposit")
 	bool FindAdjacentResourceDeposit(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const TArray<FSRPlanetSurfaceGridCellId>& SourceFootprintCellIds,
 		FSRResourceDepositInstance& OutResourceDeposit) const;
+
+	/** Highlights every mineable deposit and promotes the deposit adjacent to the selected Miner as its target. */
+	void SetMiningResourceDepositHighlights(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const TArray<FSRPlanetSurfaceGridCellId>& MinerFootprintCellIds);
+	void ClearMiningResourceDepositHighlights(USRPlanetSurfaceGrid* SurfaceGrid = nullptr);
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Resource Deposit")
+	bool IsMiningResourceDepositHighlighted(FName OccupantId) const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Resource Deposit")
+	bool IsMiningResourceDepositTarget(FName OccupantId) const;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Resource Deposit")
 	bool TryHarvestResourceDeposit(
@@ -157,6 +184,28 @@ public:
 		FName DepositOccupantId,
 		FSRResourceInstance& OutResourceInstance,
 		FSRResourceDepositInstance& OutUpdatedResourceDeposit);
+
+	/** Used by bounded Run recovery and deterministic tests; values are clamped to a valid finite contract. */
+	bool TryConfigureResourceDepositAmount(
+		FName DepositOccupantId,
+		int32 TotalAmount,
+		int32 RemainingAmount,
+		FSRResourceDepositInstance& OutUpdatedResourceDeposit);
+
+	/** Deterministic, versioned snapshot used by the Resource V2 Run save. */
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Structure|Save")
+	void ExportSaveData(FSRStructureInstanceManagerSaveData& OutSaveData) const;
+
+	/**
+	 * Rebuilds placement, visuals, occupancy, Facility registration, and deposit
+	 * amounts as one transaction.  A rejected import leaves the previous state.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Structure|Save")
+	bool ImportSaveData(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRStructureInstanceManagerSaveData& SaveData,
+		FSRStructureSaveImportReport& OutReport,
+		FString& OutFailureReason);
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Structure|Name Label", meta = (DisplayName = "bShowStructureNameLabels"))
@@ -189,12 +238,23 @@ private:
 		None,
 		Ghost,
 		Delete,
+		MiningDeposit,
+		MiningTarget,
 	};
 
 	static FName MakeVisualKey(USRStructureDataAsset* StructureDataAsset, bool bUseStaticMeshMaterials);
 	static FName MakeVisualKey(USRStructureDataAsset* StructureDataAsset, bool bUseStaticMeshMaterials, ESRStructureVisualOverride VisualOverride);
 	static FName MakeOccupantId(const FSRPlanetSurfaceGridCellId& CellId, FName StructureId, int32 SequenceNumber);
 	static FTransform BuildInstanceWorldTransform(const FTransform& PlacementTransform, const FSRStructureData& StructureData);
+	bool TryPlaceStructureOnSurfaceGridWithOccupantId(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& TargetCellId,
+		USRStructureDataAsset* StructureDataAsset,
+		FName RequestedOccupantId,
+		FName& OutOccupantId,
+		bool bNaturalStructure,
+		bool bUseStaticMeshMaterials,
+		int32 PlacementRotationSteps);
 
 	FSRStructureVisualGroup& FindOrCreateVisualGroup(USRStructureDataAsset* StructureDataAsset, FName VisualKey, bool bUseStaticMeshMaterials, ESRStructureVisualOverride VisualOverride = ESRStructureVisualOverride::None);
 	bool IsDeletePreviewTarget(FName OccupantId) const;
@@ -212,6 +272,7 @@ private:
 	void RefreshAllStructureNameLabels(USRPlanetSurfaceGrid* SurfaceGrid);
 	void DestroyStructureNameLabel(FName OccupantId);
 	void DestroyAllStructureNameLabels();
+	bool ShouldShowStructureNameLabel(const FSRPlacedStructureInstance& PlacedStructure) const;
 	void UpdateStructureNameLabelTransforms(USRPlanetSurfaceGrid* SurfaceGrid);
 	bool ResolveStructureNameLabelLocation(
 		USRPlanetSurfaceGrid* SurfaceGrid,
@@ -234,5 +295,7 @@ private:
 	TSet<FName> GhostedStructureOccupantIds;
 	TSet<FName> DeletePreviewedStructureOccupantIds;
 	TSet<FName> ConstructionReplacementPreviewedStructureOccupantIds;
+	TSet<FName> MiningHighlightedResourceDepositOccupantIds;
+	FName MiningTargetResourceDepositOccupantId = NAME_None;
 	int32 NextStructureInstanceSequence;
 };

@@ -71,6 +71,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Route")
 	bool SetHubRouteCargoResourceId(FName RouteId, FName CargoResourceId);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Fleet Capacity")
+	bool SetHubRouteProfile(FName RouteId, ESRSpaceLogisticsRouteProfileV2 RouteProfile);
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Space Logistics|Fleet Capacity")
+	bool IsHubRouteProfileUnlocked(ESRSpaceLogisticsRouteProfileV2 RouteProfile) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Conditioned Transit")
+	bool SetHubRouteConditionedTransitModule(
+		FName RouteId,
+		ESRConditionedTransitModuleV2 ConditionedTransitModule);
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Space Logistics|Fleet Capacity")
+	FSRFleetCapacityReportV2 GetHubFleetCapacityReport(
+		const FSRSpaceLogisticsHubEndpoint& HubEndpoint) const;
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Missile")
 	bool LaunchStarFuelMissileFromHub(
 		const FSRSpaceLogisticsHubEndpoint& SourceHub,
@@ -120,6 +135,8 @@ private:
 	bool ResolveHubEndpointSurfaceWorldLocation(const FSRSpaceLogisticsHubEndpoint& HubEndpoint, FVector& OutWorldLocation) const;
 	float ResolveSimulationDeltaSeconds(float DeltaTime) const;
 	bool ResolveHubEndpointWorldVelocity(const FSRSpaceLogisticsHubEndpoint& HubEndpoint, FVector& OutWorldVelocity) const;
+	bool IsFleetCapacityRulesActive() const;
+	int32 ResolveActiveFleetBerthCountForHub(const FSRSpaceLogisticsHubEndpoint& HubEndpoint) const;
 
 	UPROPERTY(Transient)
 	mutable TArray<FSRSpaceLogisticsHubEndpoint> CachedHubEndpoints;
@@ -132,6 +149,9 @@ private:
 
 	UPROPERTY(Transient)
 	int32 NextHubRouteSequence = 1;
+
+	UPROPERTY(Transient)
+	int64 NextFleetDepartureQueueSequence = 1;
 
 	UPROPERTY(Transient)
 	int32 NextStarFuelMissileSequence = 1;

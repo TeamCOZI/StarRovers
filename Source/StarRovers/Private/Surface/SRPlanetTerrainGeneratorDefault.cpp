@@ -81,8 +81,18 @@ namespace StarRovers::Terrain
 
 		const float LatitudeTemperature = 1.0f - FMath::Abs(Direction.Z);
 		const float HeightTemperaturePenalty = FMath::Max(0.0f, Sample.HeightOffset * InvSafeDynamicMeshHeight) * 0.28f;
-		Sample.Temperature = FMath::Clamp((LatitudeTemperature * 0.78f) + (TemperatureNoise * 0.18f) + 0.11f - HeightTemperaturePenalty, 0.0f, 1.0f);
-		Sample.Moisture = FMath::Clamp((HumidityNoise + 1.0f) * 0.5f, 0.0f, 1.0f);
+		Sample.Temperature = FMath::Clamp(
+			(LatitudeTemperature * 0.78f)
+				+ (TemperatureNoise * 0.18f)
+				+ 0.11f
+				- HeightTemperaturePenalty
+				+ Settings.TemperatureBias,
+			0.0f,
+			1.0f);
+		Sample.Moisture = FMath::Clamp(
+			((HumidityNoise + 1.0f) * 0.5f) + Settings.MoistureBias,
+			0.0f,
+			1.0f);
 
 		const float HeightAlpha = FMath::Clamp(Sample.HeightOffset * InvSafeDynamicMeshHeight, -1.0f, 1.0f);
 		const float AbsLatitudeSin = static_cast<float>(FMath::Clamp(FMath::Abs(Direction.Z), 0.0, 1.0));

@@ -4,6 +4,7 @@
 #include "Conveyor/SRConveyorNetworkComponent.h"
 #include "GameFramework/Actor.h"
 #include "SRFacilityConveyorPortConnector.h"
+#include "SRFacilityInputAcceptancePolicy.h"
 #include "SRFacilityPortInventoryBuilder.h"
 #include "SRFacilityResourceOperations.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
@@ -27,8 +28,9 @@ namespace
 		const FSRFacilityInstance& FacilityInstance,
 		const FSRResourceInstance& ResourceInstance)
 	{
-		return !HasActiveResourceTag(ResourceInstance, ESRResourceProcessTag::Supercooled)
-			|| FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Cold;
+		return FSRFacilityInputAcceptancePolicy::CanAcceptResource(FacilityInstance, ResourceInstance)
+			&& (!HasActiveResourceTag(ResourceInstance, ESRResourceProcessTag::Supercooled)
+				|| FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Cold);
 	}
 }
 

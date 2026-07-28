@@ -40,6 +40,7 @@ public class StarRovers : ModuleRules
             PrivateDependencyModuleNames.AddRange(
                 new[]
                 {
+                    "AssetRegistry",
                     "NiagaraEditor",
                     "UnrealEd",
                 }

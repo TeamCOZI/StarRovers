@@ -6,6 +6,12 @@
 #include "GameFramework/PlayerController.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
+namespace
+{
+	const FLinearColor MiningDepositLabelColor(0.18f, 0.88f, 1.0f, 1.0f);
+	const FLinearColor MiningTargetLabelColor(0.3f, 1.0f, 0.42f, 1.0f);
+}
+
 void USRStructureInstanceManagerComponent::TickComponent(
 	float DeltaTime,
 	ELevelTick TickType,
@@ -23,14 +29,29 @@ void USRStructureInstanceManagerComponent::TickComponent(
 	UpdateNameLabelTickEnabled();
 }
 
+bool USRStructureInstanceManagerComponent::ShouldShowStructureNameLabel(
+	const FSRPlacedStructureInstance& PlacedStructure) const
+{
+	if (PlacedStructure.OccupantId.IsNone())
+	{
+		return false;
+	}
+
+	if (IsMiningResourceDepositHighlighted(PlacedStructure.OccupantId)
+		|| IsMiningResourceDepositTarget(PlacedStructure.OccupantId))
+	{
+		return true;
+	}
+
+	return bShowStructureNameLabels
+		&& (!PlacedStructure.bNaturalStructure || bShowNaturalStructureNameLabels);
+}
+
 void USRStructureInstanceManagerComponent::RefreshStructureNameLabel(
 	USRPlanetSurfaceGrid* SurfaceGrid,
 	const FSRPlacedStructureInstance& PlacedStructure)
 {
-	if (PlacedStructure.OccupantId.IsNone()
-		|| !bShowStructureNameLabels
-		|| (PlacedStructure.bNaturalStructure && !bShowNaturalStructureNameLabels)
-		|| !IsValid(SurfaceGrid))
+	if (!ShouldShowStructureNameLabel(PlacedStructure) || !IsValid(SurfaceGrid))
 	{
 		DestroyStructureNameLabel(PlacedStructure.OccupantId);
 		UpdateNameLabelTickEnabled();
@@ -84,9 +105,15 @@ void USRStructureInstanceManagerComponent::RefreshStructureNameLabel(
 		StructureNameLabelsByOccupantId.Add(PlacedStructure.OccupantId, LabelComponent);
 	}
 
+	const bool bMiningTarget = IsMiningResourceDepositTarget(PlacedStructure.OccupantId);
+	const bool bMiningDeposit = IsMiningResourceDepositHighlighted(PlacedStructure.OccupantId);
+	const FLinearColor LabelColor = bMiningTarget
+		? MiningTargetLabelColor
+		: (bMiningDeposit ? MiningDepositLabelColor : StructureNameLabelColor);
+	const float LabelSizeScale = bMiningTarget ? 1.2f : (bMiningDeposit ? 1.05f : 1.0f);
 	LabelComponent->SetText(BuildStructureNameLabelText(PlacedStructure));
-	LabelComponent->SetTextRenderColor(StructureNameLabelColor.ToFColor(true));
-	LabelComponent->SetWorldSize(FMath::Max(1.0f, StructureNameLabelWorldSize));
+	LabelComponent->SetTextRenderColor(LabelColor.ToFColor(true));
+	LabelComponent->SetWorldSize(FMath::Max(1.0f, StructureNameLabelWorldSize * LabelSizeScale));
 	LabelComponent->SetWorldLocation(LabelLocation);
 	LabelComponent->SetVisibility(true);
 	LabelComponent->SetHiddenInGame(false);
@@ -95,7 +122,7 @@ void USRStructureInstanceManagerComponent::RefreshStructureNameLabel(
 
 void USRStructureInstanceManagerComponent::RefreshAllStructureNameLabels(USRPlanetSurfaceGrid* SurfaceGrid)
 {
-	if (!bShowStructureNameLabels)
+	if (!bShowStructureNameLabels && MiningHighlightedResourceDepositOccupantIds.IsEmpty())
 	{
 		DestroyAllStructureNameLabels();
 		UpdateNameLabelTickEnabled();
@@ -137,7 +164,8 @@ void USRStructureInstanceManagerComponent::DestroyAllStructureNameLabels()
 
 void USRStructureInstanceManagerComponent::UpdateStructureNameLabelTransforms(USRPlanetSurfaceGrid* SurfaceGrid)
 {
-	if (!bShowStructureNameLabels || !IsValid(SurfaceGrid))
+	if ((!bShowStructureNameLabels && MiningHighlightedResourceDepositOccupantIds.IsEmpty())
+		|| !IsValid(SurfaceGrid))
 	{
 		DestroyAllStructureNameLabels();
 		return;
@@ -186,7 +214,7 @@ void USRStructureInstanceManagerComponent::UpdateStructureNameLabelTransforms(US
 			continue;
 		}
 
-		if (PlacedStructure->bNaturalStructure && !bShowNaturalStructureNameLabels)
+		if (!ShouldShowStructureNameLabel(*PlacedStructure))
 		{
 			LabelComponent->DestroyComponent();
 			LabelIterator.RemoveCurrent();
@@ -288,23 +316,41 @@ bool USRStructureInstanceManagerComponent::ResolveStructureNameLabelLocation(
 
 FText USRStructureInstanceManagerComponent::BuildStructureNameLabelText(const FSRPlacedStructureInstance& PlacedStructure) const
 {
+	FText BaseLabel;
 	if (const USRStructureDataAsset* StructureDataAsset = PlacedStructure.StructureDataAsset.Get())
 	{
 		const FSRStructureData StructureData = StructureDataAsset->BuildData();
 		if (!StructureData.DisplayName.IsEmpty())
 		{
-			return StructureData.DisplayName;
+			BaseLabel = StructureData.DisplayName;
 		}
 	}
 
-	if (!PlacedStructure.StructureId.IsNone())
+	if (BaseLabel.IsEmpty() && !PlacedStructure.StructureId.IsNone())
 	{
-		return FText::FromName(PlacedStructure.StructureId);
+		BaseLabel = FText::FromName(PlacedStructure.StructureId);
 	}
-	return FText::FromName(PlacedStructure.OccupantId);
+	if (BaseLabel.IsEmpty())
+	{
+		BaseLabel = FText::FromName(PlacedStructure.OccupantId);
+	}
+
+	if (IsMiningResourceDepositTarget(PlacedStructure.OccupantId))
+	{
+		return FText::Format(
+			NSLOCTEXT("StarRoversStructureLabels", "MiningTargetLabel", "TARGET  ·  {0}"),
+			BaseLabel);
+	}
+	if (IsMiningResourceDepositHighlighted(PlacedStructure.OccupantId))
+	{
+		return FText::Format(
+			NSLOCTEXT("StarRoversStructureLabels", "MiningDepositLabel", "RESOURCE  ·  {0}"),
+			BaseLabel);
+	}
+	return BaseLabel;
 }
 
 void USRStructureInstanceManagerComponent::UpdateNameLabelTickEnabled()
 {
-	SetComponentTickEnabled(bShowStructureNameLabels && !StructureNameLabelsByOccupantId.IsEmpty());
+	SetComponentTickEnabled(!StructureNameLabelsByOccupantId.IsEmpty());
 }

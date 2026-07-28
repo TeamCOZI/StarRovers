@@ -127,6 +127,24 @@ Hard Limit 대신 다음 압력이 Line 길이를 제어한다.
 - 서로 호환되는 자원 Line 5개를 동시에 운영해야 한다는 요구
 - 항성 연료 Cycle의 시간 제한
 
+### 5.1 Refinement Resistance
+
+가공 횟수를 막지 않으면서 같은 자원을 직렬 설비에 끝없이 통과시키는 정답을 약화하기 위해 `Refinement Resistance`를 사용한다.
+
+~~~text
+Refinement = max(0, Current Energy - Seed Energy)
+Effective Cycle Seconds = Base Cycle Seconds * (1 + Refinement / 40)
+~~~
+
+- 일반 Resource V2 Family 가공 중 Facility Energy 변화량이 0이 아닌 작업에만 적용한다.
+- 채굴, Tag/Fuel Imprint 적용과 제거, Metal Anneal 같은 0 Energy 회복 작업, Industrial Supply 계열, 항성 연료 제작기는 제외한다.
+- Energy 계산은 여전히 전부 합연산이다. Resistance는 결과 Energy를 깎거나 가공을 거부하지 않고 그 자원을 다음 단계에서 처리하는 시간만 늘린다.
+- 저항은 자원 Instance의 Current Energy와 원형 Resource의 Seed Energy로부터 계산한다. 별도의 누적 저항 Counter를 저장하지 않는다.
+- 처리 중에는 `ProcessingInventory`에 예약된 입력, 대기 중 Preview에는 다음 Input Slot 자원을 사용하므로 Runtime과 UI가 같은 계산을 사용한다. 다만 지표면 Facility Runtime 자체의 Save/Load는 아직 구현되지 않았으므로 진행 중 작업의 실제 저장 복원은 후속 과제다.
+- `40`은 구현 Prototype 기준값이며 `USRSimulationSettings`에서 조정할 수 있다.
+
+Star Iron의 Seed Energy가 5이고 기본 Cycle이 4초라면 Energy 5, 9, 17, 21에서 다음 가공 시간은 각각 4.0, 4.4, 5.2, 5.6초다. 병렬 Line 복제는 여전히 유효하지만, 같은 카드 한 장에 설비만 계속 직렬로 붙이는 효율은 점차 낮아진다.
+
 512 x 512 크기 Face 6개로 이루어진 Cube Sphere에는 설치 불가 지형을 제외하기 전 1,572,864개의 Cell이 있다. 절반 정도를 사용할 수 없더라도 전체 면적만으로 Line 길이를 제어하기에는 너무 넓다. 희귀 광맥, 온도대, 해안선, Hub 주변의 국소 면적은 여전히 중요하지만, 별도의 확장형 운영 압력도 필요하다.
 
 어떤 Family도 하나의 Facility 묶음이 동시에 자기 상태를 자동 초기화하고, 영구적으로 긍정 상태를 유지하며, 의미 있는 운영·시간·처리량·운송 비용까지 없는 구조가 되어서는 안 된다. 그렇지 않으면 넓은 지표면 전체에 같은 Module을 반복하는 것이 항상 최적해가 된다.
@@ -155,7 +173,7 @@ Family 구성원 모두가 언제나 같은 Spectrum을 가진다면 Spectrum은
 
 Line 정체성:
 
-> Hot과 Cold 가공을 번갈아 사용하되, 피로를 피할 수 있도록 Process Archetype도 충분히 바꾼다.
+> Hot과 Cold 가공으로 Tempered를 만들고, 두 번의 생산 가공 뒤 명시적인 Anneal 회복을 배치한다.
 
 #### Tempered — 긍정
 
@@ -166,12 +184,13 @@ Line 정체성:
 
 #### Fatigued — 부정
 
-- 같은 Process Archetype을 세 번째 연속 사용할 때 활성화된다.
-- 세 번째 가공부터 합연산 Penalty를 적용한다.
-- 다른 Process Archetype으로 가공하면 해제된다.
-- `Process Archetype`은 Forge, Press, Separator 같은 Gameplay 분류를 뜻한다. 배치된 Actor Instance나 Basic/Advanced Tier를 뜻하지 않는다.
+- Anneal 이후 세 번째 Metal Family 가공에서 활성화된다. Forge와 Press처럼 Process Archetype이 달라도 누적 Work Strain은 이어진다.
+- 세 번째 가공부터 합연산 `-8` Penalty를 적용하고, Fatigued인 동안 새 Tempered 활성화를 막는다.
+- 다른 Process Archetype이나 일반 운송으로는 해제되지 않는다.
+- `Annealing Chamber`의 명시적인 0 Energy `Anneal` Action이 Tempered와 Fatigued를 끄고 Work Strain을 0으로 되돌린다.
+- Tag/Fuel Imprint 적용과 제거는 Family 가공이 아니므로 Work Strain을 올리지 않는다.
 
-Tempered와 Fatigued는 조건이 맞으면 동시에 활성화될 수 있다. 올바른 온도 순서를 지켰다고 같은 가공 방식의 반복까지 면제되는 것은 아니다.
+Prototype의 안정 주기는 `Forge -> Cryo Press -> Anneal`이다. Anneal은 Energy를 주지 않고 기본 6초와 Operational Load 2를 사용하므로 회복 설비의 배치·처리량 비용이 분명하다.
 
 ### 7.2 Crystal
 
@@ -271,16 +290,17 @@ Line 정체성:
 2. 가능한 State 목록은 Family에 한 번 정의되며, 해당 Family의 모든 자원이 공유한다.
 3. 활성 State는 서로 독립적인 Runtime Flag다. Trigger 조건이 허용하면 긍정·부정 State가 동시에 켜질 수 있다.
 4. State 전이는 결정적이어야 하며 플레이어가 통제할 수 있는 가공 Context로 발생해야 한다. 숨겨진 확률을 사용하지 않는다.
-5. 현재 작업에서 Trigger가 충족되면 그 작업부터 효과가 적용된다. 예를 들어 Metal의 세 번째 동일 가공은 즉시 Fatigued Penalty를 받는다.
-6. 회복 조건도 현재 작업부터 적용한다. Fatigued 상태로 도착했더라도 다른 Metal Process Archetype을 사용한 현재 작업에는 이전 Fatigued Penalty를 적용하지 않는다.
+5. 현재 작업에서 Trigger가 충족되면 그 작업부터 효과가 적용된다. 예를 들어 Metal의 세 번째 생산 가공은 Archetype과 무관하게 즉시 Fatigued Penalty를 받는다.
+6. 회복 조건도 현재 작업부터 적용한다. Metal은 Anneal 작업에서 Fatigued를 해제하고 해당 Anneal에는 이전 Penalty를 적용하지 않는다.
 7. 최종 연료 단계 이전의 Family State 효과는 합연산이다. 기본적으로 최종 `C`를 바꾸지 않는다.
 8. 일상적인 부정 State는 주로 현재 작업의 이득을 낮춰야 한다. Line 전체에서 쌓은 Energy의 큰 비율을 한 번에 삭제해서는 안 된다.
 9. 항성 연료 제작기는 일반 Family State 전이를 발생시키지 않는다. 이전 State 효과는 이미 Current Energy에 반영되어 있다.
 10. 모든 Facility Preview는 배치를 확정하기 전에 State 활성화·해제와 최종 Energy 변화량을 보여줘야 한다.
 11. 취소되거나 막힌 작업은 Processing History와 Family State를 바꾸지 않는다.
 12. 각 Family는 서로 다른 한 문장의 Line 건설 규칙으로 설명할 수 있어야 한다. 두 Family의 설명 문장이 거의 같다면 핵심 Trigger 중 하나를 바꿔야 한다.
+13. Family가 없는 공용 가공 설비는 `Universal Bridge`다. 부정 State 압력은 계속 진행하지만 긍정 State를 활성화하거나 소비해서 보너스를 얻을 수 없다.
 
-초기 Balance Prototype에서는 모든 긍정 State에 같은 임시 합연산 보너스, 모든 부정 State에 그보다 큰 같은 임시 Penalty를 사용할 수 있다. Family별 정확한 수치 조정보다 각 Routing Pattern 자체가 재미있는지를 먼저 검증할 수 있다.
+현재 Facility 역할, Energy·Cycle·Load 기준값과 결정론적 Family Cycle 비교는 [FamilyFacilityBalanceImplementation.md](FamilyFacilityBalanceImplementation.md)에 정리한다. 이후 수치 조정에서도 Family별 Routing 문법과 Bridge 경계는 유지한다.
 
 ## 9. Spectrum과 Rank 족보 제약
 
@@ -394,6 +414,8 @@ Preview 예시:
 12. 일반 천체 간 운송에서 자원 상태를 보존한다.
 13. Route 전용 변화는 수동적인 이동 부가 효과가 아니라 명시적인 가공 Event로 다룬다.
 14. 전체 지표면 면적을 Line 길이의 주된 제약으로 사용하지 않는다.
+15. 일반 Energy 변화 가공에는 `1 + max(0, Current - Seed) / 40`의 Refinement Resistance Cycle 배율을 사용한다.
+16. Metal은 세 번째 생산 가공부터 Fatigued가 유지되며 Annealing Chamber로만 회복한다.
 
 ## 15. 미결정 사항
 
@@ -403,8 +425,23 @@ Preview 예시:
 2. Custom 족보와 Rank 1-5를 유지할지, Poker에 가까운 족보를 위해 1-7로 확장할지
 3. Family와 Spectrum을 독립적으로 유지할지, Family가 Spectrum을 직접 대체할지
 4. Current Energy를 0에서 Clamp할지
-5. 각 Family State의 정확한 활성 보상과 Penalty
+5. 구현 Prototype의 Family State 수치와 Refinement Resistance Scale 40을 실제 Run에서 어떻게 재조정할지
 6. 정확한 족보 목록과 각 족보의 `B`, `C` 보너스
 7. 어떤 Tag 효과를 일반 가공에 적용하고 어떤 효과를 최종 연료 합성에만 적용할지
-8. Prototype 이후 Operational Capacity, Service Core, Industrial Supply의 정확한 수치
+8. 구현 Baseline인 Operational Capacity 30, Service Core +18, Industrial Supply 1개/30초의 실제 Run Balance 재조정 여부
 9. 승인된 Tag와 Augment가 필요로 하는 최소 물류 이력 필드
+
+## 16. 현재 Project 적용 상태
+
+- 활성 기본 Ruleset은 `ResourceV2`다. `Legacy`는 기존 Save 이관과 회귀 테스트용으로 유지한다.
+- Resource Instance는 Schema Version 3이며 생성 시 불변 Seed Energy Snapshot을 가진다.
+- 일반 Energy 변화 가공의 유효 Cycle은 작업 시작 시 Snapshot된다.
+- 일반 가공은 끝까지 합연산이며, 곱연산은 5장 Stellar Fuel Fabricator에서 정확히 한 번만 수행한다.
+- 실제 Data Asset은 Card 5종, Utility 3종, Facility 21종, 건설 Structure 21종, 채굴 Deposit 7종으로 authoring되어 있다.
+- 채굴 Deposit이 가진 `USRResourceDataAsset::BuildDefaultInstance()`가 Family, Seed Energy, Spectrum, Rank와 Seed Snapshot을 포함한 V2 Instance를 만든다.
+- 실제 authored Vertical Slice는 Helios Iron의 Hot Forge/Cold Press Tempered 처리와 5장 Full House 연료 제작까지 통과한다.
+- 자동화 검증 기준은 Resource System `61/61`, UI `28/28`, SolarSystem PIE `Checks=26 / Failures=0`, Buildable V2 Facility 21종, 실제 생성 Deposit 56개/7종이다.
+
+실제 에셋 경로와 재생성 절차, Facility Save, Conditioned Transit 체류, 건설 카탈로그 규칙은 [AutomationLineProgressionDesign.md](AutomationLineProgressionDesign.md)의 27장을 따른다.
+
+Resource V2 정보를 플레이 흐름으로 연결하는 화면 구조, 모달·입력·해상도 계약과 PIE 승인 절차는 [UIOverhaulImplementation.md](UIOverhaulImplementation.md)를 따른다.

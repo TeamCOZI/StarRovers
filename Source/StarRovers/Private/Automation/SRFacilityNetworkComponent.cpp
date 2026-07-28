@@ -19,6 +19,7 @@ void USRFacilityNetworkComponent::BeginPlay()
 	Super::BeginPlay();
 
 	BindToTimeControlSubsystem();
+	RefreshOperationalCapacity();
 }
 
 void USRFacilityNetworkComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -84,6 +85,7 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 	}
 
 	FSRFacilityInstance& FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.FindOrAdd(OccupantId);
+	RuntimeState.bFacilitySchedulerOrderDirty = true;
 	FacilityInstance.OccupantId = OccupantId;
 	FacilityInstance.StructureDataAsset = StructureDataAsset;
 	FacilityInstance.FacilityDataAsset = StructureData.FacilityDataAsset;
@@ -92,12 +94,34 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 	FacilityInstance.PlacementRotationSteps = StarRovers::Structure::NormalizePlacementRotationSteps(PlacementRotationSteps);
 	FacilityInstance.TemperatureState = ESRFacilityTemperatureState::Normal;
 	FacilityInstance.ProcessProgressSeconds = 0.0f;
+	FacilityInstance.ResolvedProcessSeconds = 0.0f;
+	FacilityInstance.bHasResolvedProcessSeconds = false;
 	FacilityInstance.bProcessing = false;
 	FacilityInstance.bProcessEnabled = StructureData.bProcessReady;
 	FacilityInstance.bDeliverEnabled = StructureData.bDeliveryReady;
+	FacilityInstance.OperationalPriority = StructureData.FacilityDataAsset->DefaultOperationalPriority;
+	FacilityInstance.OperationalSpeedFactor = 1.0f;
 	FacilityInstance.MiningTargetDepositOccupantId = NAME_None;
 	FacilityInstance.ProcessingInventory.Reset();
+	FacilityInstance.SelectedProcessTagRecipeId = NAME_None;
+	FacilityInstance.SelectedFuelImprintRecipeId = NAME_None;
 	FSRFacilityPortInventoryBuilder::Initialize(FacilityInstance);
+
+	// A package-gated authored default must not make the guaranteed Technology
+	// recipe undiscoverable. Select the first available fallback on placement.
+	FName InitialRecipeId;
+	TArray<FName> AvailableRecipeIds;
+	FString RecipeFailure;
+	if (GetFacilityResourceV2RecipeState(
+			OccupantId,
+			InitialRecipeId,
+			AvailableRecipeIds,
+			RecipeFailure)
+		&& !AvailableRecipeIds.IsEmpty()
+		&& !AvailableRecipeIds.Contains(InitialRecipeId))
+	{
+		SetFacilityResourceV2Recipe(OccupantId, AvailableRecipeIds[0]);
+	}
 	RefreshFacilityTemperatureFromSurface(OccupantId);
 	const int32 AppliedCellTemperatureEffects = FSRFacilityCellTemperatureEffectApplier::ApplyInstallationEffects(
 		this,
@@ -106,6 +130,7 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 	{
 		RefreshFacilityTemperaturesFromSurface();
 	}
+	RefreshOperationalCapacity();
 
 	SetComponentTickEnabled(bAutoProcessFacilities);
 	if (bLogFacilityNetworkEvents)
@@ -129,6 +154,10 @@ bool USRFacilityNetworkComponent::UnregisterFacility(FName OccupantId)
 	const bool bRemoved = RuntimeState.FacilityInstancesByOccupantId.RemoveAndCopyValue(
 		OccupantId,
 		RemovedFacilityInstance);
+	if (bRemoved)
+	{
+		RuntimeState.bFacilitySchedulerOrderDirty = true;
+	}
 	const int32 RemovedCellTemperatureEffects = bRemoved
 		? FSRFacilityCellTemperatureEffectApplier::RemoveInstallationEffects(this, RemovedFacilityInstance)
 		: 0;
@@ -140,6 +169,7 @@ bool USRFacilityNetworkComponent::UnregisterFacility(FName OccupantId)
 	{
 		RefreshFacilityTemperaturesFromSurface();
 	}
+	RefreshOperationalCapacity();
 	if (bRemoved && bLogFacilityNetworkEvents)
 	{
 		SR_LOG(FacilityNetwork, LogTemp,
@@ -155,7 +185,15 @@ bool USRFacilityNetworkComponent::UnregisterFacility(FName OccupantId)
 void USRFacilityNetworkComponent::ClearFacilities()
 {
 	const int32 RemovedFacilityCount = RuntimeState.FacilityInstancesByOccupantId.Num();
+	for (TPair<FName, FSRFacilityInstance>& FacilityPair : RuntimeState.FacilityInstancesByOccupantId)
+	{
+		FSRFacilityCellTemperatureEffectApplier::RemoveInstallationEffects(this, FacilityPair.Value);
+	}
 	RuntimeState.FacilityInstancesByOccupantId.Reset();
+	RuntimeState.OperationalCapacityReport = FSROperationalCapacityReportV2();
+	RuntimeState.FacilitySchedulerOrder.Reset();
+	RuntimeState.NextFacilitySchedulerOccupantId = NAME_None;
+	RuntimeState.bFacilitySchedulerOrderDirty = false;
 	SetComponentTickEnabled(false);
 	if (bLogFacilityNetworkEvents)
 	{
@@ -182,6 +220,11 @@ bool USRFacilityNetworkComponent::GetFacilityInstance(FName OccupantId, FSRFacil
 
 	OutFacilityInstance = FSRFacilityInstance();
 	return false;
+}
+
+FSRFacilityResourceProducedSignature& USRFacilityNetworkComponent::OnResourceProduced()
+{
+	return ResourceProducedEvent;
 }
 
 bool USRFacilityNetworkComponent::RefreshFacilityTemperatureFromSurface(FName OccupantId)

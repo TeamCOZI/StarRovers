@@ -7,6 +7,13 @@ class ASRSpaceshipActor;
 class ASRStar;
 class USRSpaceLogisticsSubsystem;
 
+namespace StarRovers::SpaceLogistics::StarFuelMissiles
+{
+	bool HasValidMissileCargo(const FSRResourceInstance& Cargo);
+	double CalculateMissileFuelValue(const FSRResourceInstance& Cargo);
+	bool CanUseAsMissileFuelCargo(const FSRResourceInstance& Cargo);
+}
+
 class FSRSpaceLogisticsStarFuelMissileProcessor
 {
 public:

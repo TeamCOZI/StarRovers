@@ -1,22 +1,88 @@
 #include "SRSpaceLogisticsSaveAdapter.h"
 
+#include "Automation/SRResourceInstanceOperations.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Logistics/SRFleetCapacityV2.h"
+#include "Logistics/SRConditionedTransitV2.h"
 #include "SRSpaceLogisticsRoutePathResolver.h"
 #include "SRSpaceLogisticsRouteRegistry.h"
 #include "SRSpaceLogisticsRouteVisualController.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Utility/SRLog.h"
 
+namespace
+{
+	bool IsConditioningRoutePhase(ESRSpaceLogisticsHubRoutePhase Phase)
+	{
+		return Phase == ESRSpaceLogisticsHubRoutePhase::ConditioningAtDestination
+			|| Phase == ESRSpaceLogisticsHubRoutePhase::ConditioningAtSource;
+	}
+
+	bool IsKnownRoutePhase(ESRSpaceLogisticsHubRoutePhase Phase)
+	{
+		switch (Phase)
+		{
+		case ESRSpaceLogisticsHubRoutePhase::Idle:
+		case ESRSpaceLogisticsHubRoutePhase::WaitingForCargo:
+		case ESRSpaceLogisticsHubRoutePhase::TravelingToDestination:
+		case ESRSpaceLogisticsHubRoutePhase::UnloadingAtDestination:
+		case ESRSpaceLogisticsHubRoutePhase::TravelingToSource:
+		case ESRSpaceLogisticsHubRoutePhase::UnloadingAtSource:
+		case ESRSpaceLogisticsHubRoutePhase::Blocked:
+		case ESRSpaceLogisticsHubRoutePhase::WaitingForFleetCapacity:
+		case ESRSpaceLogisticsHubRoutePhase::ConditioningAtDestination:
+		case ESRSpaceLogisticsHubRoutePhase::ConditioningAtSource:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	bool IsValidConditioningSavePayload(
+		const FSRSpaceLogisticsHubRouteSaveData& RouteSaveData,
+		int32 SourceSaveVersion)
+	{
+		if (!IsKnownRoutePhase(RouteSaveData.Phase))
+		{
+			return false;
+		}
+		if (!IsConditioningRoutePhase(RouteSaveData.Phase))
+		{
+			return true;
+		}
+		if (SourceSaveVersion < FSRSpaceLogisticsSaveData::ConditioningDwellVersion
+			|| RouteSaveData.RouteProfile != ESRSpaceLogisticsRouteProfileV2::ConditionedHold
+			|| !FSRConditionedTransitV2::GetModuleRules(RouteSaveData.ConditionedTransitModule).IsConditionedModule()
+			|| RouteSaveData.Cargo.ResourceId.IsNone()
+			|| RouteSaveData.Cargo.StackCount <= 0
+			|| !FSRConditionedTransitV2::IsCargoCompatible(RouteSaveData.ConditionedTransitModule, RouteSaveData.Cargo)
+			|| !FMath::IsFinite(RouteSaveData.ConditioningDurationSeconds)
+			|| !FMath::IsFinite(RouteSaveData.ConditioningProgressSeconds)
+			|| RouteSaveData.ConditioningDurationSeconds <= 0.0f
+			|| RouteSaveData.ConditioningProgressSeconds < 0.0f
+			|| RouteSaveData.ConditioningProgressSeconds > RouteSaveData.ConditioningDurationSeconds)
+		{
+			return false;
+		}
+		return (RouteSaveData.Phase == ESRSpaceLogisticsHubRoutePhase::ConditioningAtDestination
+				&& RouteSaveData.CurrentDockSide == ESRSpaceLogisticsHubRouteDockSide::Destination)
+			|| (RouteSaveData.Phase == ESRSpaceLogisticsHubRoutePhase::ConditioningAtSource
+				&& RouteSaveData.CurrentDockSide == ESRSpaceLogisticsHubRouteDockSide::Source);
+	}
+}
+
 void FSRSpaceLogisticsSaveAdapter::ExportSaveData(
 	const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 	const TArray<FSRSpaceLogisticsHubRoute>& HubRoutes,
 	int32 NextHubRouteSequence,
+	int64 NextFleetDepartureQueueSequence,
 	const TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
 	int32 NextStarFuelMissileSequence,
 	FSRSpaceLogisticsSaveData& OutSaveData)
 {
 	OutSaveData = FSRSpaceLogisticsSaveData();
 	OutSaveData.NextHubRouteSequence = FMath::Max(1, NextHubRouteSequence);
+	OutSaveData.NextFleetDepartureQueueSequence = FMath::Max<int64>(1, NextFleetDepartureQueueSequence);
 	OutSaveData.NextStarFuelMissileSequence = FMath::Max(1, NextStarFuelMissileSequence);
 	OutSaveData.HubRoutes.Reserve(HubRoutes.Num());
 	OutSaveData.StarFuelMissiles.Reserve(StarFuelMissiles.Num());
@@ -45,33 +111,55 @@ bool FSRSpaceLogisticsSaveAdapter::ImportSaveData(
 	const FSRSpaceLogisticsSaveData& SaveData,
 	TArray<FSRSpaceLogisticsHubRoute>& HubRoutes,
 	int32& NextHubRouteSequence,
+	int64& NextFleetDepartureQueueSequence,
 	TMap<FName, TObjectPtr<ASRSpaceshipActor>>& SpaceshipActorsByRouteId,
 	TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles,
 	int32& NextStarFuelMissileSequence,
 	TMap<FName, TObjectPtr<ASRSpaceshipActor>>& StarFuelMissileActorsByMissileId,
 	TMap<FString, FSRSpaceLogisticsHubEndpointMotionSample>& HubEndpointMotionSamples)
 {
+	if (!SaveData.IsSupportedVersion())
+	{
+		SR_LOG(SpaceLogistics,
+			LogTemp,
+			Warning,
+			TEXT("[SpaceLogistics] Save data import rejected: UnsupportedVersion=%d SupportedRange=%d-%d"),
+			SaveData.Version,
+			FSRSpaceLogisticsSaveData::InitialVersion,
+			FSRSpaceLogisticsSaveData::CurrentVersion);
+		return false;
+	}
+
 	FSRSpaceLogisticsRouteVisualController::Clear(SpaceshipActorsByRouteId);
 	FSRSpaceLogisticsRouteVisualController::Clear(StarFuelMissileActorsByMissileId);
 	HubRoutes.Reset();
 	StarFuelMissiles.Reset();
 	HubEndpointMotionSamples.Reset();
 	NextHubRouteSequence = FMath::Max(1, SaveData.NextHubRouteSequence);
+	NextFleetDepartureQueueSequence = SaveData.Version >= FSRSpaceLogisticsSaveData::FleetCapacityVersion
+		? FMath::Max<int64>(1, SaveData.NextFleetDepartureQueueSequence)
+		: 1;
 	NextStarFuelMissileSequence = FMath::Max(1, SaveData.NextStarFuelMissileSequence);
 
 	int32 ImportedRouteCount = 0;
 	for (const FSRSpaceLogisticsHubRouteSaveData& RouteSaveData : SaveData.HubRoutes)
 	{
-		if (ImportRoute(SpaceLogisticsSubsystem, RouteSaveData, HubRoutes))
+		if (ImportRoute(SpaceLogisticsSubsystem, RouteSaveData, SaveData.Version, HubRoutes))
 		{
 			++ImportedRouteCount;
 		}
+	}
+	for (const FSRSpaceLogisticsHubRoute& HubRoute : HubRoutes)
+	{
+		NextFleetDepartureQueueSequence = FMath::Max(
+			NextFleetDepartureQueueSequence,
+			HubRoute.FleetDepartureQueueSequence + 1);
 	}
 
 	int32 ImportedMissileCount = 0;
 	for (const FSRSpaceLogisticsStarFuelMissileSaveData& MissileSaveData : SaveData.StarFuelMissiles)
 	{
-		if (ImportMissile(SpaceLogisticsSubsystem, MissileSaveData, StarFuelMissiles))
+		if (ImportMissile(SpaceLogisticsSubsystem, MissileSaveData, SaveData.Version, StarFuelMissiles))
 		{
 			++ImportedMissileCount;
 		}
@@ -80,12 +168,14 @@ bool FSRSpaceLogisticsSaveAdapter::ImportSaveData(
 	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
-		TEXT("[SpaceLogistics] Save data imported: ImportedRoutes=%d SavedRoutes=%d ImportedMissiles=%d SavedMissiles=%d NextRouteSequence=%d NextMissileSequence=%d"),
+		TEXT("[SpaceLogistics] Save data imported: Version=%d ImportedRoutes=%d SavedRoutes=%d ImportedMissiles=%d SavedMissiles=%d NextRouteSequence=%d NextFleetQueueSequence=%lld NextMissileSequence=%d"),
+		SaveData.Version,
 		ImportedRouteCount,
 		SaveData.HubRoutes.Num(),
 		ImportedMissileCount,
 		SaveData.StarFuelMissiles.Num(),
 		NextHubRouteSequence,
+		NextFleetDepartureQueueSequence,
 		NextStarFuelMissileSequence);
 	FSRSpaceLogisticsRouteVisualController::Refresh(
 		SpaceLogisticsSubsystem,
@@ -118,6 +208,12 @@ bool FSRSpaceLogisticsSaveAdapter::BuildRouteSaveData(
 	OutRouteSaveData.bReturnEmptyWhenNoCargo = HubRoute.bReturnEmptyWhenNoCargo;
 	OutRouteSaveData.MaxCargoStackCount = HubRoute.MaxCargoStackCount;
 	OutRouteSaveData.CargoResourceId = HubRoute.CargoResourceId;
+	OutRouteSaveData.RouteProfile = HubRoute.RouteProfile;
+	OutRouteSaveData.ConditionedTransitModule = HubRoute.RouteProfile
+		== ESRSpaceLogisticsRouteProfileV2::ConditionedHold
+		? FSRConditionedTransitV2::GetModuleRules(HubRoute.ConditionedTransitModule).Module
+		: ESRConditionedTransitModuleV2::None;
+	OutRouteSaveData.FleetDepartureQueueSequence = HubRoute.FleetDepartureQueueSequence;
 	OutRouteSaveData.bDebugLocalOrbit = HubRoute.bDebugLocalOrbit;
 	OutRouteSaveData.Phase = HubRoute.Phase;
 	OutRouteSaveData.CurrentDockSide = HubRoute.CurrentDockSide;
@@ -126,20 +222,29 @@ bool FSRSpaceLogisticsSaveAdapter::BuildRouteSaveData(
 	OutRouteSaveData.LaunchAccelerationUnitsPerSecondSquared = HubRoute.LaunchAccelerationUnitsPerSecondSquared;
 	OutRouteSaveData.TravelProgressSeconds = HubRoute.TravelProgressSeconds;
 	OutRouteSaveData.TravelProgressRatio = HubRoute.TravelProgressRatio;
+	OutRouteSaveData.ConditioningDurationSeconds = IsConditioningRoutePhase(HubRoute.Phase)
+		? HubRoute.ConditioningDurationSeconds
+		: 0.0f;
+	OutRouteSaveData.ConditioningProgressSeconds = IsConditioningRoutePhase(HubRoute.Phase)
+		? HubRoute.ConditioningProgressSeconds
+		: 0.0f;
 	OutRouteSaveData.TravelStartWorldLocation = HubRoute.TravelStartWorldLocation;
 	OutRouteSaveData.bHasTravelStartWorldLocation = HubRoute.bHasTravelStartWorldLocation;
 	OutRouteSaveData.LaunchWorldVelocity = HubRoute.LaunchWorldVelocity;
 	OutRouteSaveData.bHasLaunchWorldVelocity = HubRoute.bHasLaunchWorldVelocity;
 	OutRouteSaveData.Cargo = HubRoute.Cargo;
+	StarRovers::Resources::PrepareResourceInstanceForSave(OutRouteSaveData.Cargo);
 	return true;
 }
 
 bool FSRSpaceLogisticsSaveAdapter::ImportRoute(
 	USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 	const FSRSpaceLogisticsHubRouteSaveData& RouteSaveData,
+	int32 SourceSaveVersion,
 	TArray<FSRSpaceLogisticsHubRoute>& HubRoutes)
 {
-	if (!RouteSaveData.IsValid())
+	if (!RouteSaveData.IsValid()
+		|| !IsValidConditioningSavePayload(RouteSaveData, SourceSaveVersion))
 	{
 		return false;
 	}
@@ -160,8 +265,24 @@ bool FSRSpaceLogisticsSaveAdapter::ImportRoute(
 	HubRoute.DestinationHub = RouteSaveData.bDebugLocalOrbit ? SourceHub : DestinationHub;
 	HubRoute.bEnabled = RouteSaveData.bEnabled;
 	HubRoute.bReturnEmptyWhenNoCargo = RouteSaveData.bReturnEmptyWhenNoCargo;
-	HubRoute.MaxCargoStackCount = FMath::Max(1, RouteSaveData.MaxCargoStackCount);
+	HubRoute.RouteProfile = SourceSaveVersion >= FSRSpaceLogisticsSaveData::FleetCapacityVersion
+		? FSRFleetCapacityV2::GetRouteProfileRules(RouteSaveData.RouteProfile).Profile
+		: ESRSpaceLogisticsRouteProfileV2::NeutralShuttle;
+	HubRoute.ConditionedTransitModule = SourceSaveVersion >= FSRSpaceLogisticsSaveData::ConditionedTransitVersion
+		&& HubRoute.RouteProfile == ESRSpaceLogisticsRouteProfileV2::ConditionedHold
+		? FSRConditionedTransitV2::GetModuleRules(RouteSaveData.ConditionedTransitModule).Module
+		: ESRConditionedTransitModuleV2::None;
+	HubRoute.MaxCargoStackCount = SourceSaveVersion >= FSRSpaceLogisticsSaveData::FleetCapacityVersion
+		? FMath::Min(
+			FMath::Max(1, RouteSaveData.MaxCargoStackCount),
+			FSRFleetCapacityV2::GetRouteProfileRules(HubRoute.RouteProfile).CargoCapacity)
+		: FMath::Max(1, RouteSaveData.MaxCargoStackCount);
 	HubRoute.CargoResourceId = RouteSaveData.CargoResourceId;
+	HubRoute.FleetDepartureQueueSequence = SourceSaveVersion >= FSRSpaceLogisticsSaveData::FleetCapacityVersion
+		&& RouteSaveData.Phase == ESRSpaceLogisticsHubRoutePhase::WaitingForFleetCapacity
+		? FMath::Max<int64>(0, RouteSaveData.FleetDepartureQueueSequence)
+		: 0;
+	HubRoute.FleetQueuePosition = 0;
 	HubRoute.bDebugLocalOrbit = RouteSaveData.bDebugLocalOrbit;
 	HubRoute.Phase = RouteSaveData.Phase;
 	HubRoute.CurrentDockSide = RouteSaveData.CurrentDockSide;
@@ -172,11 +293,22 @@ bool FSRSpaceLogisticsSaveAdapter::ImportRoute(
 		FSRSpaceLogisticsRoutePathResolver::ClampLaunchAcceleration(RouteSaveData.LaunchAccelerationUnitsPerSecondSquared);
 	HubRoute.TravelProgressSeconds = FMath::Max(0.0f, RouteSaveData.TravelProgressSeconds);
 	HubRoute.TravelProgressRatio = FMath::Clamp(RouteSaveData.TravelProgressRatio, 0.0f, 1.0f);
+	HubRoute.ConditioningDurationSeconds = SourceSaveVersion >= FSRSpaceLogisticsSaveData::ConditioningDwellVersion
+		&& IsConditioningRoutePhase(HubRoute.Phase)
+		? RouteSaveData.ConditioningDurationSeconds
+		: 0.0f;
+	HubRoute.ConditioningProgressSeconds = SourceSaveVersion >= FSRSpaceLogisticsSaveData::ConditioningDwellVersion
+		&& IsConditioningRoutePhase(HubRoute.Phase)
+		? RouteSaveData.ConditioningProgressSeconds
+		: 0.0f;
 	HubRoute.TravelStartWorldLocation = RouteSaveData.TravelStartWorldLocation;
 	HubRoute.bHasTravelStartWorldLocation = RouteSaveData.bHasTravelStartWorldLocation;
 	HubRoute.LaunchWorldVelocity = RouteSaveData.LaunchWorldVelocity;
 	HubRoute.bHasLaunchWorldVelocity = RouteSaveData.bHasLaunchWorldVelocity;
 	HubRoute.Cargo = RouteSaveData.Cargo;
+	StarRovers::Resources::UpgradeResourceInstanceToCurrentSchema(
+		HubRoute.Cargo,
+		SourceSaveVersion <= FSRSpaceLogisticsSaveData::InitialVersion);
 	return true;
 }
 
@@ -211,12 +343,14 @@ bool FSRSpaceLogisticsSaveAdapter::BuildMissileSaveData(
 	OutMissileSaveData.LaunchWorldVelocity = Missile.LaunchWorldVelocity;
 	OutMissileSaveData.bHasLaunchWorldVelocity = Missile.bHasLaunchWorldVelocity;
 	OutMissileSaveData.Cargo = Missile.Cargo;
+	StarRovers::Resources::PrepareResourceInstanceForSave(OutMissileSaveData.Cargo);
 	return OutMissileSaveData.IsValid();
 }
 
 bool FSRSpaceLogisticsSaveAdapter::ImportMissile(
 	USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
 	const FSRSpaceLogisticsStarFuelMissileSaveData& MissileSaveData,
+	int32 SourceSaveVersion,
 	TArray<FSRSpaceLogisticsStarFuelMissile>& StarFuelMissiles)
 {
 	if (!MissileSaveData.IsValid())
@@ -255,6 +389,9 @@ bool FSRSpaceLogisticsSaveAdapter::ImportMissile(
 	Missile.LaunchWorldVelocity = MissileSaveData.LaunchWorldVelocity;
 	Missile.bHasLaunchWorldVelocity = MissileSaveData.bHasLaunchWorldVelocity;
 	Missile.Cargo = MissileSaveData.Cargo;
+	StarRovers::Resources::UpgradeResourceInstanceToCurrentSchema(
+		Missile.Cargo,
+		SourceSaveVersion <= FSRSpaceLogisticsSaveData::InitialVersion);
 	return true;
 }
 

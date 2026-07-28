@@ -14,6 +14,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/SlateColor.h"
+#include "UI/SRUITheme.h"
 
 namespace
 {
@@ -98,6 +99,27 @@ namespace
 		OutRadius = BestRadius;
 		return true;
 	}
+
+	int32 GetStrategicRoutePaintRank(ESRUIVisualState VisualState)
+	{
+		switch (VisualState)
+		{
+		case ESRUIVisualState::Danger:
+			return 4;
+		case ESRUIVisualState::Warning:
+			return 3;
+		case ESRUIVisualState::Positive:
+		case ESRUIVisualState::Info:
+		case ESRUIVisualState::Selected:
+			return 2;
+		case ESRUIVisualState::Neutral:
+			return 1;
+		case ESRUIVisualState::Disabled:
+		case ESRUIVisualState::Locked:
+		default:
+			return 0;
+		}
+	}
 } // namespace
 
 int32 USRCelestialBodyOverviewWidget::NativePaint(
@@ -106,39 +128,95 @@ int32 USRCelestialBodyOverviewWidget::NativePaint(
 	int32 LayerId, const FWidgetStyle& InWidgetStyle,
 	bool bParentEnabled) const
 {
-	if (!bShowNameplateButtons)
+	int32 PaintLayerId = LayerId;
+	if (bShowStrategyOverlay)
 	{
-		return Super::NativePaint(Args, AllottedGeometry, MyCullingRect,
-								  OutDrawElements, LayerId, InWidgetStyle,
-								  bParentEnabled);
+		for (const FSRStrategicRouteLineLayout& Layout : StrategicRouteLineLayouts)
+		{
+			if (!Layout.bIsVisible)
+			{
+				continue;
+			}
+			FLinearColor RouteColor = USRUIThemeLibrary::ResolveStatePalette(
+				Layout.VisualState).AccentColor;
+			if (!Layout.bEnabled)
+			{
+				RouteColor.A *= 0.45f;
+			}
+			const float Thickness = Layout.VisualState == ESRUIVisualState::Danger
+				? 4.0f
+				: Layout.VisualState == ESRUIVisualState::Warning
+					? 3.0f
+					: 1.5f;
+			TArray<FVector2D> RoutePoints = {Layout.Start, Layout.End};
+			FSlateDrawElement::MakeLines(
+				OutDrawElements,
+				PaintLayerId,
+				AllottedGeometry.ToPaintGeometry(),
+				RoutePoints,
+				ESlateDrawEffect::None,
+				RouteColor,
+				true,
+				Thickness);
+
+			const FVector2D Direction = (Layout.End - Layout.Start).GetSafeNormal();
+			const FVector2D Perpendicular(-Direction.Y, Direction.X);
+			const FVector2D ArrowTip = Layout.Start
+				+ (Layout.End - Layout.Start) * 0.62f;
+			const FVector2D ArrowBase = ArrowTip - Direction * 10.0f;
+			TArray<FVector2D> ArrowPoints = {
+				ArrowBase + Perpendicular * 5.0f,
+				ArrowTip,
+				ArrowBase - Perpendicular * 5.0f};
+			FSlateDrawElement::MakeLines(
+				OutDrawElements,
+				PaintLayerId,
+				AllottedGeometry.ToPaintGeometry(),
+				ArrowPoints,
+				ESlateDrawEffect::None,
+				RouteColor,
+				true,
+				Thickness);
+		}
+		++PaintLayerId;
 	}
 
-	const int32 NameplateButtonLayerId = LayerId;
-	for (const FSRNameplateButtonLayout& Layout : NameplateButtonLayouts)
+	if (bShowNameplateButtons)
 	{
-		if (!Layout.bIsVisible)
+		for (const FSRNameplateButtonLayout& Layout : NameplateButtonLayouts)
 		{
-			continue;
+			if (!Layout.bIsVisible)
+			{
+				continue;
+			}
+
+			const FSRStrategicBodyPresentation* StrategyBody =
+				StrategicPresentation.FindBody(Layout.CelestialBodyActor.Get());
+			const FLinearColor NameplateOutlineColor =
+				Layout.CelestialBodyActor.Get() == RecommendedSystemScanBody
+				? RecommendedSystemScanColor
+				: Layout.CelestialBodyActor.Get() == SelectedActor
+					? FLinearColor(0.9f, 1.0f, 1.0f, 0.95f)
+					: bShowStrategyOverlay && StrategyBody && StrategyBody->bHasBottleneck
+						? USRUIThemeLibrary::ResolveStatePalette(
+							StrategyBody->VisualState).AccentColor
+						: FLinearColor(0.72f, 0.86f, 0.9f, 0.9f);
+
+			TArray<FVector2D> NameplateLeaderPoints;
+			NameplateLeaderPoints.Add(Layout.LeaderStart);
+			NameplateLeaderPoints.Add(Layout.LeaderEnd);
+			NameplateLeaderPoints.Add(Layout.LabelPosition);
+			FSlateDrawElement::MakeLines(OutDrawElements, PaintLayerId,
+										 AllottedGeometry.ToPaintGeometry(),
+										 NameplateLeaderPoints, ESlateDrawEffect::None,
+										 NameplateOutlineColor, true,
+										 NameplateOutlineLineThickness);
 		}
-
-		const FLinearColor NameplateOutlineColor =
-			Layout.CelestialBodyActor.Get() == SelectedActor
-				? FLinearColor(0.9f, 1.0f, 1.0f, 0.95f)
-				: FLinearColor(0.72f, 0.86f, 0.9f, 0.9f);
-
-		TArray<FVector2D> NameplateLeaderPoints;
-		NameplateLeaderPoints.Add(Layout.LeaderStart);
-		NameplateLeaderPoints.Add(Layout.LeaderEnd);
-		NameplateLeaderPoints.Add(Layout.LabelPosition);
-		FSlateDrawElement::MakeLines(OutDrawElements, NameplateButtonLayerId,
-									 AllottedGeometry.ToPaintGeometry(),
-									 NameplateLeaderPoints, ESlateDrawEffect::None,
-									 NameplateOutlineColor, true,
-									 NameplateOutlineLineThickness);
+		++PaintLayerId;
 	}
 
 	return Super::NativePaint(Args, AllottedGeometry, MyCullingRect,
-							  OutDrawElements, NameplateButtonLayerId + 1,
+							  OutDrawElements, PaintLayerId,
 							  InWidgetStyle, bParentEnabled);
 }
 
@@ -149,13 +227,25 @@ void USRCelestialBodyOverviewWidget::HandleNameplateToggleClicked()
 	{
 		NameplateToggleButtonTextBlock->SetText(
 			bShowNameplateButtons
-				? NSLOCTEXT("StarRoversOverview", "NameplateButtonsOn",
-							"Nameplates: On")
-				: NSLOCTEXT("StarRoversOverview", "NameplateButtonsOff",
-							"Nameplates: Off"));
+				? NSLOCTEXT("StarRoversOverview", "NameplateButtonsOnCompact", "NAMES ON")
+				: NSLOCTEXT("StarRoversOverview", "NameplateButtonsOffCompact", "NAMES OFF"));
 	}
 
 	RebuildNameplateButtons();
+}
+
+void USRCelestialBodyOverviewWidget::HandleStrategyOverlayToggleClicked()
+{
+	bShowStrategyOverlay = !bShowStrategyOverlay;
+	RefreshStrategicHeader();
+	RefreshNameplateStrategicVisuals();
+	RefreshNameplateButtonLayout();
+	InvalidateLayoutAndVolatility();
+}
+
+void USRCelestialBodyOverviewWidget::HandleStrategicFocusClicked()
+{
+	FocusRecommendedStrategicBody();
 }
 
 void USRCelestialBodyOverviewWidget::RebuildNameplateButtons()
@@ -174,33 +264,31 @@ void USRCelestialBodyOverviewWidget::RebuildNameplateButtons()
 	}
 	NameplateButtons.Reset();
 	NameplateActors.Reset();
+	NameplateTextBlocks.Reset();
 	NameplateButtonLayouts.Reset();
 
 	if (!bShowNameplateButtons)
 	{
+		RefreshStrategicRouteLineLayouts();
 		return;
 	}
 
-	for (AActor* CelestialBodyActor : CelestialBodies)
+	for (int32 BodyIndex = 0; BodyIndex < CelestialBodies.Num(); ++BodyIndex)
 	{
+		AActor* CelestialBodyActor = CelestialBodies[BodyIndex];
 		if (!IsValid(CelestialBodyActor))
 		{
 			continue;
 		}
 
-		UButton* NameplateButton =
-			WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
-		NameplateButton->SetBackgroundColor(CelestialBodyActor == SelectedActor
-												? SelectedNameplateButtonColor
-												: NameplateButtonColor);
+		UButton* NameplateButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(),
+			FName(*FString::Printf(TEXT("CelestialNameplateButton%d"), BodyIndex + 1)));
 
-		UTextBlock* NameplateTextBlock =
-			WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-		NameplateTextBlock->SetText(FText::Format(
-			FTextFormat(NSLOCTEXT("StarRoversOverview", "NameplateButtonTextFormat",
-								  "{0} {1}")),
-			GetStarSystemNameplatePrefixText(CelestialBodyActor),
-			GetStarSystemNameplateText(CelestialBodyActor)));
+		UTextBlock* NameplateTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("CelestialNameplateTextBlock%d"), BodyIndex + 1)));
+		NameplateTextBlock->SetText(GetWorldNameplateText(CelestialBodyActor));
 		NameplateTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 		NameplateTextBlock->SetJustification(ETextJustify::Center);
 		NameplateButton->AddChild(NameplateTextBlock);
@@ -221,13 +309,16 @@ void USRCelestialBodyOverviewWidget::RebuildNameplateButtons()
 
 		NameplateActors.Add(CelestialBodyActor);
 		NameplateButtons.Add(NameplateButton);
+		NameplateTextBlocks.Add(NameplateTextBlock);
 	}
 
+	RefreshNameplateStrategicVisuals();
 	RefreshNameplateButtonLayout();
 }
 
 void USRCelestialBodyOverviewWidget::RefreshNameplateButtonLayout()
 {
+	RefreshStrategicRouteLineLayouts();
 	NameplateButtonLayouts.Reset();
 	NameplateButtonLayouts.Reserve(NameplateActors.Num());
 
@@ -271,6 +362,85 @@ void USRCelestialBodyOverviewWidget::RefreshNameplateButtonLayout()
 			}
 		}
 	}
+}
+
+void USRCelestialBodyOverviewWidget::RefreshStrategicRouteLineLayouts()
+{
+	StrategicRouteLineLayouts.Reset();
+	if (!bShowStrategyOverlay)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = GetOwningPlayer();
+	if (!IsValid(PlayerController) || !IsValid(PlayerController->PlayerCameraManager))
+	{
+		return;
+	}
+	const FVector CameraLocation = PlayerController->PlayerCameraManager->GetCameraLocation();
+	const FVector CameraForward = PlayerController->PlayerCameraManager->GetCameraRotation()
+		.Vector().GetSafeNormal();
+
+	StrategicRouteLineLayouts.Reserve(StrategicPresentation.Routes.Num());
+	for (const FSRStrategicRoutePresentation& Route : StrategicPresentation.Routes)
+	{
+		AActor* SourceBody = Route.SourceBodyActor.Get();
+		AActor* DestinationBody = Route.DestinationBodyActor.Get();
+		if (!IsValid(SourceBody) || !IsValid(DestinationBody)
+			|| SourceBody == DestinationBody)
+		{
+			continue;
+		}
+
+		const FVector SourceLocation = SourceBody->GetActorLocation();
+		const FVector DestinationLocation = DestinationBody->GetActorLocation();
+		if (FVector::DotProduct(SourceLocation - CameraLocation, CameraForward)
+				<= KINDA_SMALL_NUMBER
+			|| FVector::DotProduct(DestinationLocation - CameraLocation, CameraForward)
+				<= KINDA_SMALL_NUMBER)
+		{
+			continue;
+		}
+
+		FVector2D Start;
+		FVector2D End;
+		if (!UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
+				PlayerController, SourceLocation, Start, true)
+			|| !UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
+				PlayerController, DestinationLocation, End, true))
+		{
+			continue;
+		}
+		const FVector2D Direction = (End - Start).GetSafeNormal();
+		const float ScreenLength = FVector2D::Distance(Start, End);
+		if (ScreenLength <= 8.0f)
+		{
+			continue;
+		}
+		const float EndpointInset = FMath::Min(18.0f, ScreenLength * 0.18f);
+
+		FSRStrategicRouteLineLayout& Layout =
+			StrategicRouteLineLayouts.AddDefaulted_GetRef();
+		Layout.RouteId = Route.RouteId;
+		Layout.SourceBodyActor = SourceBody;
+		Layout.DestinationBodyActor = DestinationBody;
+		Layout.Start = Start + Direction * EndpointInset;
+		Layout.End = End - Direction * EndpointInset;
+		Layout.VisualState = Route.VisualState;
+		Layout.bEnabled = Route.bEnabled;
+		Layout.bIsVisible = true;
+	}
+
+	StrategicRouteLineLayouts.StableSort([](
+		const FSRStrategicRouteLineLayout& Left,
+		const FSRStrategicRouteLineLayout& Right)
+	{
+		const int32 LeftRank = GetStrategicRoutePaintRank(Left.VisualState);
+		const int32 RightRank = GetStrategicRoutePaintRank(Right.VisualState);
+		return LeftRank != RightRank
+			? LeftRank < RightRank
+			: Left.RouteId.LexicalLess(Right.RouteId);
+	});
 }
 
 bool USRCelestialBodyOverviewWidget::BuildNameplateButtonLayoutForActor(
@@ -361,7 +531,7 @@ bool USRCelestialBodyOverviewWidget::BuildNameplateButtonLayoutForActor(
 		LabelDirection.Y > 0.0f ? FVector2D(0.5f, 0.0f) : FVector2D(0.5f, 1.0f);
 
 	const bool bOverlapsOverviewPanel =
-		LabelPosition.X < 350.0f && LabelPosition.Y > 72.0f;
+		LabelPosition.X < 380.0f && LabelPosition.Y > 72.0f;
 	OutLayout.Center = CenterScreenPosition;
 	OutLayout.OutlineRadius = OutlineRadius;
 	OutLayout.LeaderStart = LeaderStart;

@@ -35,6 +35,7 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 	const int32 RuntimeGenerationSeed = bRandomizeGenerationSeedEachRun
 		? CreateRuntimeRandomGenerationSeed()
 		: GenerationSeed;
+	LastRuntimeGenerationSeed = RuntimeGenerationSeed;
 	FSRTimingLog::AddLine(FString::Printf(
 		TEXT("GenerateRuntimeSystem.Seed Configured=%d Runtime=%d Randomized=%s"),
 		GenerationSeed,
@@ -82,6 +83,23 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 	LogMemoryDiagnosticsSnapshot(TEXT("GenerateRuntimeSystem.AfterComplete"));
 
 	return RuntimeStarBody;
+}
+
+ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystemForSeed(int32 RuntimeGenerationSeed)
+{
+	if (bRuntimeGenerationInProgress)
+	{
+		return nullptr;
+	}
+
+	const int32 PreviousGenerationSeed = GenerationSeed;
+	const bool bPreviousRandomizeGenerationSeedEachRun = bRandomizeGenerationSeedEachRun;
+	GenerationSeed = FMath::Max(1, RuntimeGenerationSeed);
+	bRandomizeGenerationSeedEachRun = false;
+	ASRCelestialBody* GeneratedStar = GenerateRuntimeSystem();
+	GenerationSeed = PreviousGenerationSeed;
+	bRandomizeGenerationSeedEachRun = bPreviousRandomizeGenerationSeedEachRun;
+	return GeneratedStar;
 }
 
 void ASRSolarSystemGenerator::ClearRuntimeGeneratedBodies()

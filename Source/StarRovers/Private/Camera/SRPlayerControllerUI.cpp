@@ -2,6 +2,8 @@
 
 #include "Utility/SRLog.h"
 #include "Assembly/SRAssemblyComponent.h"
+#include "Assembly/SRStructureBuildCatalog.h"
+#include "Automation/SRResourceV2AuthoredContent.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "SRPlayerControllerStructureBuildSelectionState.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
@@ -12,8 +14,10 @@
 #include "UI/SRFacilityControlWidget.h"
 #include "UI/SRFocusedHubShortcutWidget.h"
 #include "UI/SRGameOverWidget.h"
+#include "UI/SRPlayerGuidanceWidget.h"
 #include "UI/SRStructureSelectionWidget.h"
 #include "UI/SRTimeControlWidget.h"
+#include "Framework/Application/SlateApplication.h"
 
 namespace
 {
@@ -51,6 +55,26 @@ namespace
 		AppendStructureDataAssets(SourceCategories.Expert, OutStructureDataAssets);
 		AppendStructureDataAssets(SourceCategories.Innovation, OutStructureDataAssets);
 	}
+
+	void AppendStructureDataAssets(
+		const TArray<TSoftObjectPtr<USRStructureDataAsset>>& SourceAssets,
+		TArray<USRStructureDataAsset*>& OutStructureDataAssets)
+	{
+		for (const TSoftObjectPtr<USRStructureDataAsset>& SoftAsset : SourceAssets)
+		{
+			if (USRStructureDataAsset* StructureDataAsset = SoftAsset.LoadSynchronous())
+			{
+				OutStructureDataAssets.AddUnique(StructureDataAsset);
+			}
+		}
+	}
+
+	bool IsResourceV2RulesetActive()
+	{
+		const USRSimulationSettings* Settings = GetDefault<USRSimulationSettings>();
+		return IsValid(Settings)
+			&& Settings->ResourceRulesetVersion == ESRResourceRulesetVersion::ResourceV2;
+	}
 }
 
 USRCelestialBodyFocusInfoWidget* ASRPlayerController::GetFocusInfoWidget() const
@@ -66,6 +90,11 @@ USRCelestialBodyOverviewWidget* ASRPlayerController::GetOverviewWidget() const
 USRTimeControlWidget* ASRPlayerController::GetTimeControlWidget() const
 {
 	return TimeControlWidget;
+}
+
+USRPlayerGuidanceWidget* ASRPlayerController::GetPlayerGuidanceWidget() const
+{
+	return PlayerGuidanceWidget;
 }
 
 USRStructureSelectionWidget* ASRPlayerController::GetStructureSelectionWidget() const
@@ -93,6 +122,12 @@ USRGameOverWidget* ASRPlayerController::GetGameOverWidget() const
 	return GameOverWidget;
 }
 
+void ASRPlayerController::GetBuildableStructureDataAssets(
+	TArray<USRStructureDataAsset*>& OutStructureDataAssets) const
+{
+	GetAvailableStructureDataAssets(OutStructureDataAssets);
+}
+
 bool ASRPlayerController::IsPointerOverFacilityControlWidget() const
 {
 	return IsValid(FacilityControlWidget) && FacilityControlWidget->IsPointerOverControlPanel();
@@ -106,6 +141,7 @@ bool ASRPlayerController::IsPointerOverBlockingUI() const
 		|| (IsValid(OverviewWidget) && OverviewWidget->IsPointerOverOverviewUI())
 		|| (IsValid(TimeControlWidget) && TimeControlWidget->IsPointerOverTimeControlPanel())
 		|| (IsValid(AugmentChoiceWidget) && AugmentChoiceWidget->IsVisible())
+		|| (IsValid(PlayerGuidanceWidget) && PlayerGuidanceWidget->IsPointerOverGuidanceUI())
 		|| (IsValid(StructureSelectionWidget) && StructureSelectionWidget->IsPointerOverStructureSelectionPanel())
 		|| (IsValid(GameOverWidget) && GameOverWidget->IsVisible());
 }
@@ -247,6 +283,32 @@ void ASRPlayerController::CreateTimeControlWidget()
 	TimeControlWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
 
+void ASRPlayerController::CreatePlayerGuidanceWidget()
+{
+	if (!IsLocalController() || PlayerGuidanceWidget)
+	{
+		return;
+	}
+
+	TSubclassOf<USRPlayerGuidanceWidget> WidgetClass = PlayerGuidanceWidgetClass;
+	if (!WidgetClass)
+	{
+		WidgetClass = USRPlayerGuidanceWidget::StaticClass();
+	}
+	PlayerGuidanceWidget = CreateWidget<USRPlayerGuidanceWidget>(this, WidgetClass);
+	if (!PlayerGuidanceWidget)
+	{
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController failed to create PlayerGuidanceWidget from '%s'."), *GetNameSafe(WidgetClass));
+		return;
+	}
+
+	// Guidance shares the Time Control tier and is created later. Modal choices,
+	// Build Dock, Facility Inspector, and Game Over remain above it.
+	PlayerGuidanceWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::TimeControl));
+	PlayerGuidanceWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	PlayerGuidanceWidget->EvaluateCurrentContext();
+}
+
 void ASRPlayerController::CreateAugmentChoiceWidget()
 {
 	if (!IsLocalController() || AugmentChoiceWidget)
@@ -296,7 +358,7 @@ void ASRPlayerController::RegisterAvailableStructuresForAugments()
 	}
 
 	TArray<USRStructureDataAsset*> StructureDataAssets;
-	AppendStructureDataAssets(AvailableStructureDataAssets, StructureDataAssets);
+	GetConfiguredStructureDataAssets(StructureDataAssets);
 
 	AugmentSubsystem->RegisterStructureDataAssets(StructureDataAssets);
 }
@@ -329,6 +391,7 @@ void ASRPlayerController::HandleAugmentChoicesReady(const TArray<FSRAugmentChoic
 	SR_LOG(Camera, LogTemp, Log, TEXT("ASRPlayerController showing %d augment choices for cycle %d."), ResolvedChoices.Num(), ResolvedCycleIndex);
 	AugmentChoiceWidget->SetAugmentChoices(ResolvedChoices, ResolvedCycleIndex);
 	AugmentChoiceWidget->SetVisibility(ESlateVisibility::Visible);
+	AugmentChoiceWidget->FocusDefaultChoice();
 }
 
 void ASRPlayerController::HandleAugmentChoiceSelected(const FSRAugmentChoice& Choice)
@@ -337,6 +400,32 @@ void ASRPlayerController::HandleAugmentChoiceSelected(const FSRAugmentChoice& Ch
 	{
 		AugmentChoiceWidget->ClearAugmentChoices();
 		AugmentChoiceWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().SetAllUserFocusToGameViewport();
+	}
+	if (PlayerGuidanceWidget)
+	{
+		const FText ChoiceName = Choice.DisplayName.IsEmpty()
+			? FText::FromName(Choice.ChoiceKind == ESRAugmentChoiceKind::ResourceV2Package
+				? Choice.PackageId
+				: Choice.StructureId)
+			: Choice.DisplayName;
+		PlayerGuidanceWidget->PushTransientNotification(
+			FName(TEXT("AugmentInstalled")),
+			FText::Format(
+				NSLOCTEXT("StarRoversGuidance", "AugmentInstalledTitle", "Augment installed: {0}"),
+				ChoiceName),
+			Choice.GrantSummary.IsEmpty()
+				? NSLOCTEXT("StarRoversGuidance", "LegacyUnlockApplied", "The construction catalog has been updated.")
+				: Choice.GrantSummary,
+			NSLOCTEXT(
+				"StarRoversGuidance",
+				"AugmentInstalledAction",
+				"Build Dock and Recipe controls now use the new unlock state."),
+			ESRUIVisualState::Positive,
+			6.0f);
 	}
 
 	RefreshStructureSelectionWidget();
@@ -369,9 +458,9 @@ void ASRPlayerController::CreateStructureSelectionWidget()
 
 	StructureSelectionWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::StructureSelection));
 	StructureSelectionWidget->OnBuildOptionSelected().AddUObject(this, &ASRPlayerController::HandleStructureBuildOptionSelected);
-	TArray<USRStructureDataAsset*> StructureDataAssets;
-	GetAvailableStructureDataAssets(StructureDataAssets);
-	StructureSelectionWidget->SetBuildOptionsFromDataAssets(StructureDataAssets);
+	FSRStructureBuildCatalog BuildCatalog;
+	BuildStructureBuildCatalog(BuildCatalog);
+	StructureSelectionWidget->SetBuildCatalog(BuildCatalog);
 	StructureSelectionWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
 
@@ -383,9 +472,9 @@ void ASRPlayerController::RefreshStructureSelectionWidget()
 	}
 
 	const bool bShowStructureSelection = IsAssemblyModeActive();
-	TArray<USRStructureDataAsset*> StructureDataAssets;
-	GetAvailableStructureDataAssets(StructureDataAssets);
-	StructureSelectionWidget->SetBuildOptionsFromDataAssets(StructureDataAssets);
+	FSRStructureBuildCatalog BuildCatalog;
+	BuildStructureBuildCatalog(BuildCatalog);
+	StructureSelectionWidget->SetBuildCatalog(BuildCatalog);
 	if (bHasSelectedStructureBuildId && !StructureSelectionWidget->HasSelectedStructureId())
 	{
 		FSRPlayerControllerStructureBuildSelectionState::ResetSelection(
@@ -525,20 +614,59 @@ void ASRPlayerController::ShowGameOverScreen(ASRStar* Star)
 	bShowMouseCursor = true;
 }
 
+void ASRPlayerController::GetConfiguredStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const
+{
+	OutStructureDataAssets.Reset();
+	AppendStructureDataAssets(AvailableStructureDataAssets, OutStructureDataAssets);
+	if (IsResourceV2RulesetActive())
+	{
+		OutStructureDataAssets.RemoveAll(
+			[](const USRStructureDataAsset* StructureDataAsset)
+			{
+				return FSRResourceV2AuthoredContent::IsLegacyProcessingStructure(StructureDataAsset);
+			});
+		AppendStructureDataAssets(AuthoredResourceV2StructureDataAssets, OutStructureDataAssets);
+	}
+
+	TSet<FName> SeenStructureIds;
+	OutStructureDataAssets.RemoveAll([&SeenStructureIds](const USRStructureDataAsset* StructureDataAsset)
+	{
+		if (!IsValid(StructureDataAsset))
+		{
+			return true;
+		}
+		const FName StructureId = StructureDataAsset->BuildData().StructureId;
+		if (StructureId.IsNone() || SeenStructureIds.Contains(StructureId))
+		{
+			return true;
+		}
+		SeenStructureIds.Add(StructureId);
+		return false;
+	});
+}
+
+void ASRPlayerController::BuildStructureBuildCatalog(FSRStructureBuildCatalog& OutBuildCatalog) const
+{
+	TArray<USRStructureDataAsset*> ConfiguredStructureDataAssets;
+	GetConfiguredStructureDataAssets(ConfiguredStructureDataAssets);
+	const USRAugmentSubsystem* AugmentSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRAugmentSubsystem>() : nullptr;
+	FSRStructureBuildCatalogBuilder::BuildCatalog(
+		ConfiguredStructureDataAssets,
+		AugmentSubsystem,
+		OutBuildCatalog);
+}
+
 void ASRPlayerController::GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const
 {
 	OutStructureDataAssets.Reset();
-	TArray<USRStructureDataAsset*> ConfiguredStructureDataAssets;
-	AppendStructureDataAssets(AvailableStructureDataAssets, ConfiguredStructureDataAssets);
-
-	OutStructureDataAssets.Reserve(ConfiguredStructureDataAssets.Num());
-	const USRAugmentSubsystem* AugmentSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRAugmentSubsystem>() : nullptr;
-	for (USRStructureDataAsset* StructureDataAsset : ConfiguredStructureDataAssets)
+	FSRStructureBuildCatalog BuildCatalog;
+	BuildStructureBuildCatalog(BuildCatalog);
+	OutStructureDataAssets.Reserve(BuildCatalog.BuildOptions.Num());
+	for (const FSRStructureBuildOption& BuildOption : BuildCatalog.BuildOptions)
 	{
-		if (IsValid(StructureDataAsset)
-			&& (!AugmentSubsystem || AugmentSubsystem->IsStructureUnlocked(StructureDataAsset)))
+		if (BuildOption.IsSelectable())
 		{
-			OutStructureDataAssets.Add(StructureDataAsset);
+			OutStructureDataAssets.Add(BuildOption.StructureDataAsset.Get());
 		}
 	}
 }

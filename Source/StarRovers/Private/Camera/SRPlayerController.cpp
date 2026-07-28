@@ -1,9 +1,11 @@
 #include "Camera/SRPlayerController.h"
 
 #include "Assembly/SRAssemblyComponent.h"
+#include "Automation/SRResourceV2AuthoredContent.h"
 #include "SRPlayerControllerLifecycle.h"
 #include "UI/SRFocusedHubShortcutWidget.h"
 #include "UI/SRGameOverWidget.h"
+#include "UI/SRPlayerGuidanceWidget.h"
 
 ASRPlayerController::ASRPlayerController()
 {
@@ -28,7 +30,16 @@ ASRPlayerController::ASRPlayerController()
 	AssemblyShiftModifierAction = nullptr;
 	FocusedHubShortcutWidgetClass = USRFocusedHubShortcutWidget::StaticClass();
 	FocusedHubShortcutRefreshInterval = 0.20f;
+	PlayerGuidanceWidgetClass = USRPlayerGuidanceWidget::StaticClass();
 	GameOverWidgetClass = USRGameOverWidget::StaticClass();
+
+	TArray<FSoftObjectPath> ResourceV2StructurePaths;
+	FSRResourceV2AuthoredContent::GetFacilityStructureObjectPaths(ResourceV2StructurePaths);
+	AuthoredResourceV2StructureDataAssets.Reserve(ResourceV2StructurePaths.Num());
+	for (const FSoftObjectPath& StructurePath : ResourceV2StructurePaths)
+	{
+		AuthoredResourceV2StructureDataAssets.Emplace(StructurePath);
+	}
 
 	AssemblyComponent = CreateDefaultSubobject<USRAssemblyComponent>(TEXT("AssemblyComponent"));
 	AssemblyComponent->ConfigurePlacementPerformance(MaxStructurePlacementsPerFrame, MaxQueuedStructurePlacements);

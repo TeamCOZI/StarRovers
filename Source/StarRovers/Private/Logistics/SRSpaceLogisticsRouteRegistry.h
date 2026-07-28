@@ -57,6 +57,16 @@ public:
 		FName CargoResourceId,
 		TArray<FSRSpaceLogisticsHubRoute>& HubRoutes);
 
+	static bool SetHubRouteProfile(
+		FName RouteId,
+		ESRSpaceLogisticsRouteProfileV2 RouteProfile,
+		TArray<FSRSpaceLogisticsHubRoute>& HubRoutes);
+
+	static bool SetHubRouteConditionedTransitModule(
+		FName RouteId,
+		ESRConditionedTransitModuleV2 ConditionedTransitModule,
+		TArray<FSRSpaceLogisticsHubRoute>& HubRoutes);
+
 	static void ClearHubRoutes(
 		TArray<FSRSpaceLogisticsHubRoute>& HubRoutes,
 		TMap<FName, TObjectPtr<ASRSpaceshipActor>>& SpaceshipActorsByRouteId);

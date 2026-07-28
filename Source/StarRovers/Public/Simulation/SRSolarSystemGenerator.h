@@ -50,8 +50,74 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Generation")
 	ASRCelestialBody* GenerateRuntimeSystem();
 
+	/**
+	 * Rebuilds the complete runtime system from an explicit root seed.
+	 * The configured randomize flag and editor seed are restored afterwards.
+	 * Intended for deterministic replay, balance soak tests, and future run bootstrap.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Generation")
+	ASRCelestialBody* GenerateRuntimeSystemForSeed(int32 RuntimeGenerationSeed);
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Generation")
 	void ClearRuntimeGeneratedBodies();
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Generation")
+	bool IsRuntimeSystemGenerationInProgress() const
+	{
+		return bRuntimeGenerationInProgress;
+	}
+
+	const TArray<TObjectPtr<USRPlanetDataAsset>>& GetPlanetEnvironmentCatalog() const
+	{
+		return PlanetDataAssets;
+	}
+
+	int32 GetMinimumUniquePlanetTypes() const
+	{
+		return MinimumUniquePlanetTypes;
+	}
+
+	int32 GetMinimumPlanetCount() const
+	{
+		return FMath::Max(0, MinPlanet);
+	}
+
+	int32 GetMaximumPlanetCount() const
+	{
+		return FMath::Max(GetMinimumPlanetCount(), MaxPlanet);
+	}
+
+	int32 GetMinimumMoonCount() const
+	{
+		return FMath::Max(0, MinMoon);
+	}
+
+	int32 GetMaximumMoonCount() const
+	{
+		return FMath::Max(GetMinimumMoonCount(), MaxMoon);
+	}
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Generation")
+	int32 GetLastRuntimeGenerationSeed() const
+	{
+		return LastRuntimeGenerationSeed;
+	}
+
+	const TArray<FName>& GetRequiredSystemResourceRuleIds() const
+	{
+		return RequiredSystemResourceRuleIds;
+	}
+
+#if WITH_EDITOR
+	void ConfigurePlanetEnvironmentCatalogForEditor(
+		const TArray<USRPlanetDataAsset*>& InPlanetDataAssets,
+		int32 InMinimumUniquePlanetTypes,
+		int32 InMinPlanet,
+		int32 InMaxPlanet,
+		int32 InMinMoon,
+		int32 InMaxMoon,
+		const TArray<FName>& InRequiredSystemResourceRuleIds);
+#endif
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SceneRoot"))
@@ -74,6 +140,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|CelestialBodyDataAssets", meta = (DisplayName = "PlanetDataAssets"))
 	TArray<TObjectPtr<USRPlanetDataAsset>> PlanetDataAssets;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|CelestialBodyDataAssets", meta = (DisplayName = "MinimumUniquePlanetTypes", ClampMin = "0", ToolTip = "한 Run에서 먼저 중복 없이 선택할 최소 행성 환경 수입니다. 사용 가능한 후보나 실제 행성 수보다 크면 가능한 범위로 자동 제한됩니다."))
+	int32 MinimumUniquePlanetTypes;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "RequiredSystemResourceRuleIds", ToolTip = "Every generated Solar System must collectively expose each listed effective resource rule. Empty disables portfolio coverage selection."))
+	TArray<FName> RequiredSystemResourceRuleIds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|CelestialBodyDataAssets", meta = (DisplayName = "MoonDataAssets"))
 	TArray<TObjectPtr<USRMoonDataAsset>> MoonDataAssets;
@@ -195,6 +267,10 @@ private:
 	FRandomStream AsyncGenerationRandomStream;
 	FRandomStream AsyncNaturalStructureRandomStream;
 	int32 AsyncRuntimeGenerationSeed = 0;
+
+	UPROPERTY(Transient)
+	int32 LastRuntimeGenerationSeed = 0;
+
 	const USRStarDataAsset* AsyncSelectedStarDataAsset = nullptr;
 	int32 AsyncPrepareBodyIndex = 0;
 	int32 AsyncPreparePlanetCount = 0;

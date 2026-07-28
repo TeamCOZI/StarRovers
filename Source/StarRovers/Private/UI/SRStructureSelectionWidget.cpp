@@ -1,5 +1,13 @@
 #include "UI/SRStructureSelectionWidget.h"
 
+#include "Assembly/SRAssemblyStructurePlacementPreview.h"
+#include "Camera/SRPlayerController.h"
+#include "Simulation/SRRunMilestoneSubsystem.h"
+#include "UI/SRStructureBuildPresentation.h"
+#include "UI/SRResourceGlyph.h"
+#include "UI/SRUIComponents.h"
+#include "UI/SRUILayoutPolicy.h"
+#include "UI/SRUITheme.h"
 #include "Utility/SRLog.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -25,18 +33,38 @@
 
 namespace
 {
-	constexpr int32 StructureCategoryButtonCount = 4;
+	constexpr int32 StructureCategoryButtonCount = 7;
 	constexpr int32 FacilityButtonCount = 5;
-	constexpr int32 DefaultStructureTabIndicatorCapacity = 4;
 	constexpr int32 StructureCategoryIconTextureSize = 64;
 	constexpr float DefaultCategoryButtonLength = 48.0f;
-	constexpr float DefaultFacilityButtonLength = 72.0f;
+	constexpr float DefaultFacilityButtonLength = 108.0f;
+	constexpr float MinimumFamilyCategoryBarWidthRatio = 0.62f;
+	constexpr float MinimumFamilyCategoryBarHeightRatio = 0.06f;
+	constexpr float MinimumFamilyFacilityBarWidthRatio = 0.72f;
+	constexpr float MinimumFamilyFacilityBarHeightRatio = 0.12f;
+	constexpr float MinimumDetailPanelWidthRatio = 0.72f;
+	constexpr float MinimumDetailPanelHeightRatio = 0.21f;
+	constexpr float MinimumStructureTabBarWidthRatio = 0.20f;
+	constexpr float MaximumStructureTabBarWidthRatio = 0.34f;
+	constexpr float BuildRecommendationRefreshIntervalSeconds = 0.50f;
 
 	FText GetBuildOptionDisplayName(const FSRStructureBuildOption& BuildOption)
 	{
 		return BuildOption.DisplayName.IsEmpty()
 			? FText::FromName(BuildOption.StructureId)
 			: BuildOption.DisplayName;
+	}
+
+	FText GetBuildOptionButtonLabel(const FSRStructureBuildOption& BuildOption)
+	{
+		if (BuildOption.Availability != ESRStructureBuildAvailability::Available)
+		{
+			return FText::Format(
+				NSLOCTEXT("StarRoversStructureSelection", "UnavailableBuildOptionFormat", "{0} | {1}"),
+				USRUIThemeLibrary::ResolveBuildAvailabilityLabel(BuildOption.Availability),
+				GetBuildOptionDisplayName(BuildOption));
+		}
+		return GetBuildOptionDisplayName(BuildOption);
 	}
 
 	FText MakeSelectedStructureText(const FSRStructureBuildOption* SelectedBuildOption)
@@ -81,6 +109,18 @@ namespace
 					&& NormalizedX <= 0.76f - (0.38f - FMath::Min(NormalizedY, 0.60f)) * 0.25f
 					&& (NormalizedX <= 0.31f || NormalizedX >= 0.69f || NormalizedY >= 0.70f))
 				|| (NormalizedX >= 0.36f && NormalizedX <= 0.64f && NormalizedY >= 0.13f && NormalizedY <= 0.20f);
+		case 4:
+			return (FMath::Abs(CenterX) <= 0.055f && NormalizedY >= 0.16f && NormalizedY <= 0.84f)
+				|| (FMath::Abs(CenterY) <= 0.055f && NormalizedX >= 0.16f && NormalizedX <= 0.84f)
+				|| FMath::Abs(CenterX + CenterY) <= 0.045f && DistanceFromCenter <= 0.34f;
+		case 5:
+			return FMath::Abs(DistanceFromCenter - 0.28f) <= 0.045f
+				|| (FMath::Abs(CenterX) <= 0.035f && DistanceFromCenter <= 0.18f)
+				|| (FMath::Abs(CenterY) <= 0.035f && DistanceFromCenter <= 0.18f);
+		case 6:
+			return (FMath::Abs(CenterX) <= 0.045f && NormalizedY >= 0.18f && NormalizedY <= 0.82f)
+				|| (FMath::Abs(CenterY) <= 0.045f && NormalizedX >= 0.18f && NormalizedX <= 0.82f)
+				|| FMath::Abs(DistanceFromCenter - 0.34f) <= 0.025f;
 		default:
 			return DistanceFromCenter <= 0.36f && DistanceFromCenter >= 0.26f;
 		}
@@ -223,6 +263,7 @@ TSharedRef<SWidget> USRStructureSelectionWidget::RebuildWidget()
 		WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"));
 	}
 
+	ApplySharedUITheme();
 	BuildStructureSelectionWidgetTree();
 	return Super::RebuildWidget();
 }
@@ -231,13 +272,17 @@ void USRStructureSelectionWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	ApplySharedUITheme();
 	BuildStructureSelectionWidgetTree();
+	ApplySharedUITheme();
 	EnsureDefaultCategoryIconTextures();
 	EnsureDefaultStructureTabIndicatorTexture();
 	ApplyCategoryButtonIconBrushes();
 	RefreshStructureTabIndicatorBrushes();
 	RebuildBuildOptionIndex();
 	RebuildCategorizedBuildOptions();
+	RefreshBuildRecommendation(true);
+	RefreshCategoryButtonLabels();
 	RefreshFacilityButtonLabels();
 	RefreshCategoryButtonStyles();
 	SyncCategoryBarLayout();
@@ -248,19 +293,25 @@ void USRStructureSelectionWidget::NativeConstruct()
 	RefreshStructureTabIndicatorStyles();
 	RebuildBuildOptions();
 	RefreshSelectedStructureText();
+	SyncDetailPanelLayout();
+	RefreshBuildOptionDetail();
 }
 
 void USRStructureSelectionWidget::NativePreConstruct()
 {
 	Super::NativePreConstruct();
 
+	ApplySharedUITheme();
 	BuildStructureSelectionWidgetTree();
+	ApplySharedUITheme();
 	EnsureDefaultCategoryIconTextures();
 	EnsureDefaultStructureTabIndicatorTexture();
 	ApplyCategoryButtonIconBrushes();
 	RefreshStructureTabIndicatorBrushes();
 	RebuildBuildOptionIndex();
 	RebuildCategorizedBuildOptions();
+	RefreshBuildRecommendation(true);
+	RefreshCategoryButtonLabels();
 	RefreshFacilityButtonLabels();
 	RefreshCategoryButtonStyles();
 	SyncCategoryBarLayout();
@@ -271,6 +322,8 @@ void USRStructureSelectionWidget::NativePreConstruct()
 	RefreshStructureTabIndicatorStyles();
 	RebuildBuildOptions();
 	RefreshSelectedStructureText();
+	SyncDetailPanelLayout();
+	RefreshBuildOptionDetail();
 }
 
 void USRStructureSelectionWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -285,7 +338,15 @@ void USRStructureSelectionWidget::NativeTick(const FGeometry& MyGeometry, float 
 	SyncCategoryBarLayout();
 	SyncFacilityButtonBarLayout();
 	SyncStructureTabBarLayout();
+	SyncDetailPanelLayout();
+	BuildRecommendationRefreshAccumulator += FMath::Max(0.0f, InDeltaTime);
+	if (BuildRecommendationRefreshAccumulator >= BuildRecommendationRefreshIntervalSeconds)
+	{
+		BuildRecommendationRefreshAccumulator = 0.0f;
+		RefreshBuildRecommendation(true);
+	}
 	RefreshPointerHoverState();
+	RefreshBuildOptionDetail();
 }
 
 FReply USRStructureSelectionWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -334,48 +395,33 @@ void USRStructureSelectionWidget::SetBuildOptions(const TArray<FSRStructureBuild
 {
 	BuildOptions = NewBuildOptions;
 	RebuildBuildOptionIndex();
-	if (bHasSelectedStructureId && !FindBuildOption(SelectedStructureId))
+	if (bHasSelectedStructureId && !IsBuildOptionSelectable(SelectedStructureId))
 	{
 		ClearSelectedStructureId();
 	}
 
 	RebuildCategorizedBuildOptions();
 	RebuildBuildOptions();
+	RefreshBuildRecommendation(true);
+	RefreshCategoryButtonLabels();
 	RefreshCategoryButtonStyles();
 	RefreshFacilityButtonBarVisibility();
 	RefreshFacilityButtonLabels();
 	RefreshFacilityButtonStyles();
 	RefreshSelectedStructureText();
+	RefreshBuildOptionDetail();
+}
+
+void USRStructureSelectionWidget::SetBuildCatalog(const FSRStructureBuildCatalog& NewBuildCatalog)
+{
+	SetBuildOptions(NewBuildCatalog.BuildOptions);
 }
 
 void USRStructureSelectionWidget::SetBuildOptionsFromDataAssets(const TArray<USRStructureDataAsset*>& StructureDataAssets)
 {
-	TArray<FSRStructureBuildOption> NewBuildOptions;
-	NewBuildOptions.Reserve(StructureDataAssets.Num());
-
-	for (USRStructureDataAsset* StructureDataAsset : StructureDataAssets)
-	{
-		if (!IsValid(StructureDataAsset))
-		{
-			continue;
-		}
-
-		const FSRStructureData StructureData = StructureDataAsset->BuildData();
-		if (StructureData.StructureId.IsNone())
-		{
-			continue;
-		}
-
-		FSRStructureBuildOption BuildOption;
-		BuildOption.StructureId = StructureData.StructureId;
-		BuildOption.DisplayName = StructureData.DisplayName;
-		BuildOption.Description = StructureData.Description;
-		BuildOption.StructureDataAsset = StructureDataAsset;
-		BuildOption.bEnabled = StructureData.bAvailableForConstruction;
-		NewBuildOptions.Add(BuildOption);
-	}
-
-	SetBuildOptions(NewBuildOptions);
+	FSRStructureBuildCatalog BuildCatalog;
+	FSRStructureBuildCatalogBuilder::BuildCatalog(StructureDataAssets, nullptr, BuildCatalog);
+	SetBuildCatalog(BuildCatalog);
 }
 
 TArray<FSRStructureBuildOption> USRStructureSelectionWidget::GetBuildOptions() const
@@ -386,17 +432,19 @@ TArray<FSRStructureBuildOption> USRStructureSelectionWidget::GetBuildOptions() c
 void USRStructureSelectionWidget::SetSelectedStructureId(FName NewSelectedStructureId)
 {
 	const FSRStructureBuildOption* BuildOption = FindBuildOption(NewSelectedStructureId);
-	if (!BuildOption || !BuildOption->bEnabled)
+	if (!BuildOption || !BuildOption->IsSelectable())
 	{
 		return;
 	}
 
 	SelectedStructureId = NewSelectedStructureId;
 	bHasSelectedStructureId = !SelectedStructureId.IsNone();
+	RevealBuildOptionInDock(SelectedStructureId);
 	RebuildBuildOptions();
 	RefreshCategoryButtonStyles();
 	RefreshFacilityButtonStyles();
 	RefreshSelectedStructureText();
+	RefreshBuildOptionDetail();
 	OnSelectedStructureChanged(SelectedStructureId, bHasSelectedStructureId);
 }
 
@@ -412,6 +460,7 @@ void USRStructureSelectionWidget::ClearSelectedStructureId()
 	RebuildBuildOptions();
 	RefreshFacilityButtonStyles();
 	RefreshSelectedStructureText();
+	RefreshBuildOptionDetail();
 	OnSelectedStructureChanged(SelectedStructureId, bHasSelectedStructureId);
 }
 
@@ -457,6 +506,15 @@ void USRStructureSelectionWidget::SetStructureCategoryButtonIconBrush(int32 Cate
 	case 3:
 		Category4IconBrush = IconBrush;
 		break;
+	case 4:
+		Category5IconBrush = IconBrush;
+		break;
+	case 5:
+		Category6IconBrush = IconBrush;
+		break;
+	case 6:
+		Category7IconBrush = IconBrush;
+		break;
 	default:
 		return;
 	}
@@ -499,7 +557,7 @@ bool USRStructureSelectionWidget::TryHandleStructureSelectionPointerClick()
 
 bool USRStructureSelectionWidget::AdvanceStructureSelectionTab()
 {
-	if (!IsVisible() || SelectedCategoryIndex != 2 && SelectedCategoryIndex != 3)
+	if (!IsVisible() || !IsStructureCategoryAvailable(SelectedCategoryIndex))
 	{
 		return false;
 	}
@@ -512,6 +570,41 @@ bool USRStructureSelectionWidget::AdvanceStructureSelectionTab()
 
 	SetStructureSelectionTabIndex((SelectedStructureTabIndex + 1) % PageCount);
 	return true;
+}
+
+bool USRStructureSelectionWidget::RetreatStructureSelectionTab()
+{
+	if (!IsVisible() || !IsStructureCategoryAvailable(SelectedCategoryIndex))
+	{
+		return false;
+	}
+
+	const int32 PageCount = GetSelectedFacilityPageCount();
+	if (PageCount <= 0)
+	{
+		return false;
+	}
+
+	SetStructureSelectionTabIndex((SelectedStructureTabIndex - 1 + PageCount) % PageCount);
+	return true;
+}
+
+int32 USRStructureSelectionWidget::GetBuildDockPageCount() const
+{
+	return GetSelectedFacilityPageCount();
+}
+
+int32 USRStructureSelectionWidget::GetBuildDockPageIndex() const
+{
+	const int32 PageCount = GetSelectedFacilityPageCount();
+	return PageCount > 0
+		? FMath::Clamp(SelectedStructureTabIndex, 0, PageCount - 1)
+		: 0;
+}
+
+int32 USRStructureSelectionWidget::GetVisibleBuildDockPageIndicatorCount() const
+{
+	return StructureTabIndicatorImages.Num();
 }
 
 bool USRStructureSelectionWidget::SelectStructureCategoryByShortcut(int32 CategoryIndex)
@@ -530,16 +623,102 @@ bool USRStructureSelectionWidget::SelectStructureCategoryByShortcut(int32 Catego
 	return true;
 }
 
+bool USRStructureSelectionWidget::SelectBuildDockFamily(ESRStructureBuildFamilyFilter FamilyFilter)
+{
+	const int32 FamilyTabIndex = FamilyTabs.IndexOfByPredicate(
+		[FamilyFilter](const FSRStructureBuildFamilyTab& Tab)
+		{
+			return Tab.Filter == FamilyFilter;
+		});
+	if (FamilyTabIndex == INDEX_NONE || !IsStructureCategoryAvailable(FamilyTabIndex))
+	{
+		return false;
+	}
+
+	SelectStructureCategory(FamilyTabIndex);
+	return SelectedCategoryIndex == FamilyTabIndex;
+}
+
+ESRStructureBuildFamilyFilter USRStructureSelectionWidget::GetSelectedBuildDockFamily() const
+{
+	return SelectedFamilyFilter;
+}
+
+TArray<FSRStructureBuildOption> USRStructureSelectionWidget::GetVisibleBuildOptions() const
+{
+	TArray<FSRStructureBuildOption> VisibleBuildOptions;
+	VisibleBuildOptions.Reserve(VisibleBuildOptionIds.Num());
+	for (const FName StructureId : VisibleBuildOptionIds)
+	{
+		if (const FSRStructureBuildOption* BuildOption = FindBuildOption(StructureId))
+		{
+			VisibleBuildOptions.Add(*BuildOption);
+		}
+	}
+	return VisibleBuildOptions;
+}
+
+TArray<FSRStructureBuildFamilyTab> USRStructureSelectionWidget::GetBuildDockFamilyTabs() const
+{
+	return FamilyTabs;
+}
+
+FName USRStructureSelectionWidget::GetRecommendedBuildOptionId() const
+{
+	return BuildRecommendationContext.bActive
+		? BuildRecommendationContext.RecommendedStructureId
+		: NAME_None;
+}
+
+bool USRStructureSelectionWidget::SelectRecommendedBuildOption(
+	ESRStructureBuildRole Role,
+	ESRResourceFamily PreferredFamily,
+	bool bDispatchSelection)
+{
+	RefreshBuildRecommendation(true);
+	const FName CandidateId = FSRStructureBuildDockModel::FindRecommendedOptionId(
+		BuildOptions,
+		Role,
+		PreferredFamily);
+	const FSRStructureBuildOption* Candidate = FindBuildOption(CandidateId);
+
+	if (!Candidate)
+	{
+		return false;
+	}
+
+	const ESRStructureBuildFamilyFilter PreferredFilter =
+		FSRStructureBuildDockModel::ResolvePreferredFilter(*Candidate);
+	if (!SelectBuildDockFamily(PreferredFilter))
+	{
+		SelectBuildDockFamily(ESRStructureBuildFamilyFilter::All);
+	}
+
+	if (bDispatchSelection)
+	{
+		DispatchBuildOptionSelected(Candidate->StructureId);
+	}
+	else
+	{
+		SetSelectedStructureId(Candidate->StructureId);
+	}
+	return HasSelectedStructureId() && GetSelectedStructureId() == Candidate->StructureId;
+}
+
 void USRStructureSelectionWidget::DispatchBuildOptionSelected(FName StructureId)
 {
 	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection DispatchBuildOptionSelected StructureId=%s"),
 		*StructureId.ToString());
 
 	const FSRStructureBuildOption* RequestedBuildOption = FindBuildOption(StructureId);
-	if (!RequestedBuildOption || !RequestedBuildOption->bEnabled)
+	if (!RequestedBuildOption || !RequestedBuildOption->IsSelectable())
 	{
-		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection DispatchBuildOptionSelected ignored StructureId=%s"),
-			*StructureId.ToString());
+		SR_LOG(UIClickTrace, LogTemp, Log,
+			TEXT("SR UI Click Trace: StructureSelection DispatchBuildOptionSelected ignored StructureId=%s BlockReason=%s"),
+			*StructureId.ToString(),
+			RequestedBuildOption
+				? *StaticEnum<ESRStructureBuildBlockReason>()->GetNameStringByValue(static_cast<int64>(RequestedBuildOption->BlockReason))
+				: TEXT("Missing"));
 		return;
 	}
 
@@ -553,6 +732,61 @@ void USRStructureSelectionWidget::DispatchBuildOptionSelected(FName StructureId)
 FSRStarRoversStructureBuildOptionSelectedSignature& USRStructureSelectionWidget::OnBuildOptionSelected()
 {
 	return BuildOptionSelectedEvent;
+}
+
+void USRStructureSelectionWidget::ApplySharedUITheme()
+{
+	if (!bUseSharedUITheme)
+	{
+		return;
+	}
+
+	const USRUIThemeSettings* Theme = USRUIThemeLibrary::GetThemeSettings();
+	if (!IsValid(Theme))
+	{
+		return;
+	}
+
+	const FSRUIStatePalette Neutral = USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Neutral);
+	const FSRUIStatePalette Hovered = USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Hovered);
+	const FSRUIStatePalette Selected = USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Selected);
+	const FSRUIStatePalette Disabled = USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Disabled);
+
+	PanelColor = Theme->PanelColor;
+	ButtonColor = Neutral.SurfaceColor;
+	SelectedButtonColor = Selected.SurfaceColor;
+	DisabledButtonColor = Disabled.SurfaceColor;
+	CategoryBarColor = Theme->PanelColor;
+	CategoryButtonColor = Neutral.SurfaceColor;
+	SelectedCategoryButtonColor = Selected.SurfaceColor;
+	HoveredCategoryButtonColor = Hovered.SurfaceColor;
+	FacilityButtonBarColor = Theme->PanelColor;
+	FacilityButtonColor = Neutral.SurfaceColor;
+	SelectedFacilityButtonColor = Selected.SurfaceColor;
+	HoveredFacilityButtonColor = Hovered.SurfaceColor;
+	StructureTabBarColor = Theme->PanelColor;
+	SelectedStructureTabIndicatorColor = Selected.AccentColor;
+	InactiveStructureTabIndicatorColor = Neutral.SecondaryTextColor.CopyWithNewOpacity(0.45f);
+
+	if (CategoryBarBorder)
+	{
+		CategoryBarBorder->SetBrushColor(CategoryBarColor);
+	}
+	if (FacilityButtonBarBorder)
+	{
+		FacilityButtonBarBorder->SetBrushColor(FacilityButtonBarColor);
+	}
+	if (StructureTabBarBorder)
+	{
+		StructureTabBarBorder->SetBrushColor(StructureTabBarColor);
+	}
+	if (StructureDetailBorder)
+	{
+		USRUIThemeLibrary::ApplyCardStyle(
+			StructureDetailBorder,
+			ESRUIVisualState::Neutral,
+			FMargin(14.0f, 10.0f));
+	}
 }
 
 void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
@@ -571,6 +805,28 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 		FacilityButtonRowBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("StructureFacilityButtonRowBox"))));
 		StructureTabBarBorder = Cast<UBorder>(WidgetTree->FindWidget(FName(TEXT("StructureTabBarBorder"))));
 		StructureTabIndicatorRowBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("StructureTabIndicatorRowBox"))));
+		StructurePageTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("StructurePageTextBlock"))));
+		StructureDetailBorder = Cast<UBorder>(WidgetTree->FindWidget(FName(TEXT("StructureDetailBorder"))));
+		DetailTitleTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("StructureDetailTitle"))));
+		DetailClassificationTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("StructureDetailClassification"))));
+		DetailSpecificationTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("StructureDetailSpecification"))));
+		DetailDescriptionTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("StructureDetailDescription"))));
+		DetailAvailabilityBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("StructureDetailAvailabilityBadge"))));
+		DetailFamilyGlyph = Cast<USRResourceGlyphWidget>(WidgetTree->FindWidget(FName(TEXT("StructureDetailFamilyGlyph"))));
+		DetailRecommendationRow = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("StructureDetailRecommendationRow"))));
+		DetailRecommendationBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("StructureDetailRecommendationBadge"))));
+		DetailRecommendationTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("StructureDetailRecommendationText"))));
+		DetailFlowPanel = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("StructureBuildFlowPanel"))));
+		DetailFlowInputBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("StructureBuildFlowInput"))));
+		DetailFlowProcessBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("StructureBuildFlowProcess"))));
+		DetailFlowOutputBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("StructureBuildFlowOutput"))));
+		DetailFlowEffectTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("StructureBuildFlowEffect"))));
+		DetailPlacementMetricRow = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("StructurePlacementMetricRow"))));
+		DetailPlacementTargetBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("StructurePlacementTargetBadge"))));
+		DetailPlacementFootprintBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("StructurePlacementFootprintBadge"))));
+		DetailPlacementCapacityBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("StructurePlacementCapacityBadge"))));
+		DetailPlacementStatusTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("StructureDetailPlacementStatus"))));
+		DetailPlacementTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("StructureDetailPlacement"))));
 
 		StructureSelectionVerticalBox = nullptr;
 		TitleTextBlock = nullptr;
@@ -588,8 +844,13 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 		FacilityButtonGapSizeBoxes.Reset();
 		FacilityButtons.Reset();
 		FacilityButtonTextBlocks.Reset();
+		FacilityButtonRoleTextBlocks.Reset();
+		FacilityButtonMetadataTextBlocks.Reset();
+		FacilityButtonStatusBadges.Reset();
+		FacilityButtonFamilyGlyphs.Reset();
 		StructureTabIndicatorSizeBoxes.Reset();
 		StructureTabIndicatorImages.Reset();
+		StructureTabIndicatorFirstPageIndex = 0;
 
 		for (int32 ButtonIndex = 0; ButtonIndex < StructureCategoryButtonCount; ++ButtonIndex)
 		{
@@ -612,6 +873,10 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 			FacilityButtonSizeBoxes.Add(Cast<USizeBox>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("StructureFacilityButtonSizeBox%d"), DisplayIndex)))));
 			FacilityButtons.Add(Cast<UButton>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("StructureFacilityButton%d"), DisplayIndex)))));
 			FacilityButtonTextBlocks.Add(Cast<UTextBlock>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("StructureFacilityButtonLabel%d"), DisplayIndex)))));
+			FacilityButtonRoleTextBlocks.Add(Cast<UTextBlock>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("StructureFacilityButtonRole%d"), DisplayIndex)))));
+			FacilityButtonMetadataTextBlocks.Add(Cast<UTextBlock>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("StructureFacilityButtonMetadata%d"), DisplayIndex)))));
+			FacilityButtonStatusBadges.Add(Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("StructureFacilityButtonStatus%d"), DisplayIndex)))));
+			FacilityButtonFamilyGlyphs.Add(Cast<USRResourceGlyphWidget>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("StructureFacilityButtonFamilyGlyph%d"), DisplayIndex)))));
 			if (ButtonIndex > 0)
 			{
 				FacilityButtonGapSizeBoxes.Add(Cast<USizeBox>(WidgetTree->FindWidget(FName(*FString::Printf(TEXT("StructureFacilityButtonGapSizeBox%d"), ButtonIndex)))));
@@ -640,7 +905,15 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 			bHasRequiredFacilityButtons = bHasRequiredFacilityButtons
 				&& IsValid(FacilityButtons[ButtonIndex])
 				&& FacilityButtonTextBlocks.IsValidIndex(ButtonIndex)
-				&& IsValid(FacilityButtonTextBlocks[ButtonIndex]);
+				&& IsValid(FacilityButtonTextBlocks[ButtonIndex])
+				&& FacilityButtonRoleTextBlocks.IsValidIndex(ButtonIndex)
+				&& IsValid(FacilityButtonRoleTextBlocks[ButtonIndex])
+				&& FacilityButtonMetadataTextBlocks.IsValidIndex(ButtonIndex)
+				&& IsValid(FacilityButtonMetadataTextBlocks[ButtonIndex])
+				&& FacilityButtonStatusBadges.IsValidIndex(ButtonIndex)
+				&& IsValid(FacilityButtonStatusBadges[ButtonIndex])
+				&& FacilityButtonFamilyGlyphs.IsValidIndex(ButtonIndex)
+				&& IsValid(FacilityButtonFamilyGlyphs[ButtonIndex]);
 		}
 		for (USizeBox* FacilityButtonGapSizeBox : FacilityButtonGapSizeBoxes)
 		{
@@ -648,8 +921,32 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 		}
 
 		const bool bHasRequiredTabIndicatorHost = StructureTabBarBorder && StructureTabIndicatorRowBox;
+		const bool bHasRequiredDetailPanel = StructureDetailBorder
+			&& DetailTitleTextBlock
+			&& DetailClassificationTextBlock
+			&& DetailSpecificationTextBlock
+			&& DetailDescriptionTextBlock
+			&& DetailAvailabilityBadge
+			&& DetailFamilyGlyph
+			&& DetailRecommendationRow
+			&& DetailRecommendationBadge
+			&& DetailRecommendationTextBlock
+			&& DetailFlowPanel
+			&& DetailFlowInputBadge
+			&& DetailFlowProcessBadge
+			&& DetailFlowOutputBadge
+			&& DetailFlowEffectTextBlock
+			&& DetailPlacementMetricRow
+			&& DetailPlacementTargetBadge
+			&& DetailPlacementFootprintBadge
+			&& DetailPlacementCapacityBadge
+			&& DetailPlacementStatusTextBlock
+			&& DetailPlacementTextBlock;
 
-		if (bHasRequiredCategoryButtons && bHasRequiredFacilityButtons && bHasRequiredTabIndicatorHost)
+		if (bHasRequiredCategoryButtons
+			&& bHasRequiredFacilityButtons
+			&& bHasRequiredTabIndicatorHost
+			&& bHasRequiredDetailPanel)
 		{
 			RebuildStructureTabIndicators();
 
@@ -683,6 +980,21 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 				{
 					CategoryButton->OnClicked.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory4Clicked);
 					CategoryButton->OnHovered.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory4Hovered);
+				}
+				else if (ButtonIndex == 4)
+				{
+					CategoryButton->OnClicked.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory5Clicked);
+					CategoryButton->OnHovered.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory5Hovered);
+				}
+				else if (ButtonIndex == 5)
+				{
+					CategoryButton->OnClicked.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory6Clicked);
+					CategoryButton->OnHovered.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory6Hovered);
+				}
+				else if (ButtonIndex == 6)
+				{
+					CategoryButton->OnClicked.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory7Clicked);
+					CategoryButton->OnHovered.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory7Hovered);
 				}
 				CategoryButton->OnUnhovered.AddDynamic(this, &USRStructureSelectionWidget::HandleCategoryUnhovered);
 			}
@@ -737,6 +1049,28 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 		FacilityButtonRowBox = nullptr;
 		StructureTabBarBorder = nullptr;
 		StructureTabIndicatorRowBox = nullptr;
+		StructurePageTextBlock = nullptr;
+		StructureDetailBorder = nullptr;
+		DetailTitleTextBlock = nullptr;
+		DetailClassificationTextBlock = nullptr;
+		DetailSpecificationTextBlock = nullptr;
+		DetailDescriptionTextBlock = nullptr;
+		DetailAvailabilityBadge = nullptr;
+		DetailFamilyGlyph = nullptr;
+		DetailRecommendationRow = nullptr;
+		DetailRecommendationBadge = nullptr;
+		DetailRecommendationTextBlock = nullptr;
+		DetailFlowPanel = nullptr;
+		DetailFlowInputBadge = nullptr;
+		DetailFlowProcessBadge = nullptr;
+		DetailFlowOutputBadge = nullptr;
+		DetailFlowEffectTextBlock = nullptr;
+		DetailPlacementMetricRow = nullptr;
+		DetailPlacementTargetBadge = nullptr;
+		DetailPlacementFootprintBadge = nullptr;
+		DetailPlacementCapacityBadge = nullptr;
+		DetailPlacementStatusTextBlock = nullptr;
+		DetailPlacementTextBlock = nullptr;
 		CategoryButtonSizeBoxes.Reset();
 		CategoryButtonGapSizeBoxes.Reset();
 		CategoryButtons.Reset();
@@ -748,8 +1082,13 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 		FacilityButtonGapSizeBoxes.Reset();
 		FacilityButtons.Reset();
 		FacilityButtonTextBlocks.Reset();
+		FacilityButtonRoleTextBlocks.Reset();
+		FacilityButtonMetadataTextBlocks.Reset();
+		FacilityButtonStatusBadges.Reset();
+		FacilityButtonFamilyGlyphs.Reset();
 		StructureTabIndicatorSizeBoxes.Reset();
 		StructureTabIndicatorImages.Reset();
+		StructureTabIndicatorFirstPageIndex = 0;
 	}
 
 	UCanvasPanel* StructureSelectionCanvasPanel = WidgetTree->ConstructWidget<UCanvasPanel>(
@@ -757,6 +1096,199 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 		TEXT("StructureSelectionCanvasPanel"));
 	WidgetTree->RootWidget = StructureSelectionCanvasPanel;
 	StructureSelectionCanvasPanel->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+
+	StructureDetailBorder = WidgetTree->ConstructWidget<UBorder>(
+		UBorder::StaticClass(),
+		TEXT("StructureDetailBorder"));
+	StructureDetailBorder->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	USRUIThemeLibrary::ApplyCardStyle(
+		StructureDetailBorder,
+		ESRUIVisualState::Neutral,
+		FMargin(14.0f, 10.0f));
+	StructureSelectionCanvasPanel->AddChildToCanvas(StructureDetailBorder);
+
+	UVerticalBox* DetailVerticalBox = WidgetTree->ConstructWidget<UVerticalBox>(
+		UVerticalBox::StaticClass(),
+		TEXT("StructureDetailVerticalBox"));
+	StructureDetailBorder->SetContent(DetailVerticalBox);
+
+	UHorizontalBox* DetailHeader = WidgetTree->ConstructWidget<UHorizontalBox>(
+		UHorizontalBox::StaticClass(),
+		TEXT("StructureDetailHeader"));
+	if (UVerticalBoxSlot* HeaderSlot = DetailVerticalBox->AddChildToVerticalBox(DetailHeader))
+	{
+		HeaderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		HeaderSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+	}
+
+	DetailTitleTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(),
+		TEXT("StructureDetailTitle"));
+	DetailTitleTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
+	USRUIThemeLibrary::ApplyTextStyle(DetailTitleTextBlock, ESRUITextStyle::Heading);
+	if (UHorizontalBoxSlot* TitleSlot = DetailHeader->AddChildToHorizontalBox(DetailTitleTextBlock))
+	{
+		TitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		TitleSlot->SetVerticalAlignment(VAlign_Center);
+	}
+
+	DetailFamilyGlyph = WidgetTree->ConstructWidget<USRResourceGlyphWidget>(
+		USRResourceGlyphWidget::StaticClass(),
+		TEXT("StructureDetailFamilyGlyph"));
+	DetailFamilyGlyph->SetGlyphMode(ESRResourceGlyphMode::FamilyOnly);
+	DetailFamilyGlyph->SetVisibility(ESlateVisibility::Collapsed);
+	if (UHorizontalBoxSlot* GlyphSlot = DetailHeader->AddChildToHorizontalBox(DetailFamilyGlyph))
+	{
+		GlyphSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		GlyphSlot->SetPadding(FMargin(4.0f, 0.0f, 5.0f, 0.0f));
+		GlyphSlot->SetVerticalAlignment(VAlign_Center);
+	}
+
+	DetailAvailabilityBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+		USRStatusBadgeWidget::StaticClass(),
+		TEXT("StructureDetailAvailabilityBadge"));
+	DetailAvailabilityBadge->SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (UHorizontalBoxSlot* BadgeSlot = DetailHeader->AddChildToHorizontalBox(DetailAvailabilityBadge))
+	{
+		BadgeSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		BadgeSlot->SetVerticalAlignment(VAlign_Center);
+	}
+
+	auto AddDetailText = [this, DetailVerticalBox](
+		const TCHAR* WidgetName,
+		ESRUITextStyle TextStyle,
+		TObjectPtr<UTextBlock>& OutTextBlock,
+		bool bAccent,
+		float BottomPadding)
+	{
+		OutTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), WidgetName);
+		OutTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
+		OutTextBlock->SetAutoWrapText(true);
+		USRUIThemeLibrary::ApplyTextStyle(OutTextBlock, TextStyle, ESRUIVisualState::Neutral, bAccent);
+		if (UVerticalBoxSlot* TextSlot = DetailVerticalBox->AddChildToVerticalBox(OutTextBlock))
+		{
+			TextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, BottomPadding));
+		}
+	};
+
+	AddDetailText(TEXT("StructureDetailClassification"), ESRUITextStyle::Caption, DetailClassificationTextBlock, true, 2.0f);
+	AddDetailText(TEXT("StructureDetailSpecification"), ESRUITextStyle::Caption, DetailSpecificationTextBlock, false, 3.0f);
+	AddDetailText(TEXT("StructureDetailDescription"), ESRUITextStyle::Body, DetailDescriptionTextBlock, false, 3.0f);
+
+	DetailRecommendationRow = WidgetTree->ConstructWidget<UHorizontalBox>(
+		UHorizontalBox::StaticClass(),
+		TEXT("StructureDetailRecommendationRow"));
+	DetailRecommendationRow->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* RecommendationSlot = DetailVerticalBox->AddChildToVerticalBox(DetailRecommendationRow))
+	{
+		RecommendationSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		RecommendationSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+	}
+	DetailRecommendationBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+		USRStatusBadgeWidget::StaticClass(),
+		TEXT("StructureDetailRecommendationBadge"));
+	if (UHorizontalBoxSlot* RecommendationBadgeSlot =
+		DetailRecommendationRow->AddChildToHorizontalBox(DetailRecommendationBadge))
+	{
+		RecommendationBadgeSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		RecommendationBadgeSlot->SetVerticalAlignment(VAlign_Center);
+	}
+	DetailRecommendationTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(),
+		TEXT("StructureDetailRecommendationText"));
+	DetailRecommendationTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
+	DetailRecommendationTextBlock->SetAutoWrapText(false);
+	USRUIThemeLibrary::ApplyTextStyle(
+		DetailRecommendationTextBlock,
+		ESRUITextStyle::Caption,
+		ESRUIVisualState::Warning,
+		true);
+	if (UHorizontalBoxSlot* RecommendationTextSlot =
+		DetailRecommendationRow->AddChildToHorizontalBox(DetailRecommendationTextBlock))
+	{
+		RecommendationTextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		RecommendationTextSlot->SetVerticalAlignment(VAlign_Center);
+		RecommendationTextSlot->SetPadding(FMargin(7.0f, 0.0f, 0.0f, 0.0f));
+	}
+
+	DetailFlowPanel = WidgetTree->ConstructWidget<UHorizontalBox>(
+		UHorizontalBox::StaticClass(),
+		TEXT("StructureBuildFlowPanel"));
+	DetailFlowPanel->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* FlowSlot = DetailVerticalBox->AddChildToVerticalBox(DetailFlowPanel))
+	{
+		FlowSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		FlowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 2.0f));
+	}
+
+	auto AddFlowBadge = [this](
+		const TCHAR* WidgetName,
+		ESRUIVisualState VisualState,
+		TObjectPtr<USRStatusBadgeWidget>& OutBadge)
+	{
+		OutBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+			USRStatusBadgeWidget::StaticClass(),
+			WidgetName);
+		OutBadge->SetBadge(FText::GetEmpty(), VisualState);
+		if (UHorizontalBoxSlot* BadgeSlot = DetailFlowPanel->AddChildToHorizontalBox(OutBadge))
+		{
+			BadgeSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			BadgeSlot->SetVerticalAlignment(VAlign_Center);
+		}
+	};
+	auto AddFlowArrow = [this](const TCHAR* WidgetName)
+	{
+		UTextBlock* Arrow = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), WidgetName);
+		Arrow->SetText(NSLOCTEXT("StarRoversBuildDock", "FlowArrow", ">"));
+		Arrow->SetVisibility(ESlateVisibility::HitTestInvisible);
+		USRUIThemeLibrary::ApplyTextStyle(Arrow, ESRUITextStyle::Caption, ESRUIVisualState::Info, true);
+		if (UHorizontalBoxSlot* ArrowSlot = DetailFlowPanel->AddChildToHorizontalBox(Arrow))
+		{
+			ArrowSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			ArrowSlot->SetVerticalAlignment(VAlign_Center);
+			ArrowSlot->SetPadding(FMargin(7.0f, 0.0f));
+		}
+	};
+	AddFlowBadge(TEXT("StructureBuildFlowInput"), ESRUIVisualState::Neutral, DetailFlowInputBadge);
+	AddFlowArrow(TEXT("StructureBuildFlowArrow1"));
+	AddFlowBadge(TEXT("StructureBuildFlowProcess"), ESRUIVisualState::Info, DetailFlowProcessBadge);
+	AddFlowArrow(TEXT("StructureBuildFlowArrow2"));
+	AddFlowBadge(TEXT("StructureBuildFlowOutput"), ESRUIVisualState::Positive, DetailFlowOutputBadge);
+	AddDetailText(TEXT("StructureBuildFlowEffect"), ESRUITextStyle::Caption, DetailFlowEffectTextBlock, true, 3.0f);
+	DetailFlowEffectTextBlock->SetVisibility(ESlateVisibility::Collapsed);
+
+	DetailPlacementMetricRow = WidgetTree->ConstructWidget<UHorizontalBox>(
+		UHorizontalBox::StaticClass(),
+		TEXT("StructurePlacementMetricRow"));
+	DetailPlacementMetricRow->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* MetricSlot = DetailVerticalBox->AddChildToVerticalBox(DetailPlacementMetricRow))
+	{
+		MetricSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		MetricSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 2.0f));
+	}
+	auto AddPlacementMetric = [this](
+		const TCHAR* WidgetName,
+		TObjectPtr<USRStatusBadgeWidget>& OutBadge,
+		float RightPadding)
+	{
+		OutBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+			USRStatusBadgeWidget::StaticClass(),
+			WidgetName);
+		if (UHorizontalBoxSlot* MetricBadgeSlot =
+			DetailPlacementMetricRow->AddChildToHorizontalBox(OutBadge))
+		{
+			MetricBadgeSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			MetricBadgeSlot->SetVerticalAlignment(VAlign_Center);
+			MetricBadgeSlot->SetPadding(FMargin(0.0f, 0.0f, RightPadding, 0.0f));
+		}
+	};
+	AddPlacementMetric(TEXT("StructurePlacementTargetBadge"), DetailPlacementTargetBadge, 6.0f);
+	AddPlacementMetric(TEXT("StructurePlacementFootprintBadge"), DetailPlacementFootprintBadge, 6.0f);
+	AddPlacementMetric(TEXT("StructurePlacementCapacityBadge"), DetailPlacementCapacityBadge, 0.0f);
+	AddDetailText(TEXT("StructureDetailPlacementStatus"), ESRUITextStyle::Caption, DetailPlacementStatusTextBlock, true, 2.0f);
+	AddDetailText(TEXT("StructureDetailPlacement"), ESRUITextStyle::Caption, DetailPlacementTextBlock, false, 0.0f);
+	SyncDetailPanelLayout();
 
 	StructureTabBarBorder = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(),
@@ -768,8 +1300,8 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 	if (UCanvasPanelSlot* CanvasSlot = StructureSelectionCanvasPanel->AddChildToCanvas(StructureTabBarBorder))
 	{
 		const float ClampedWidthRatio = FMath::Clamp(StructureTabBarWidthViewportRatio, 0.0f, 1.0f);
-		const float ClampedCategoryHeightRatio = FMath::Clamp(CategoryBarHeightViewportRatio, 0.0f, 1.0f);
-		const float ClampedFacilityHeightRatio = FMath::Clamp(FacilityButtonBarHeightViewportRatio, 0.0f, 1.0f);
+		const float ClampedCategoryHeightRatio = FMath::Clamp(FMath::Max(CategoryBarHeightViewportRatio, MinimumFamilyCategoryBarHeightRatio), 0.0f, 1.0f);
+		const float ClampedFacilityHeightRatio = FMath::Clamp(FMath::Max(FacilityButtonBarHeightViewportRatio, MinimumFamilyFacilityBarHeightRatio), 0.0f, 1.0f);
 		const float ClampedTabHeightRatio = FMath::Clamp(StructureTabBarHeightViewportRatio, 0.0f, 1.0f);
 		const float LeftAnchor = (1.0f - ClampedWidthRatio) * 0.5f;
 		const float RightAnchor = 1.0f - LeftAnchor;
@@ -798,9 +1330,9 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 
 	if (UCanvasPanelSlot* CanvasSlot = StructureSelectionCanvasPanel->AddChildToCanvas(FacilityButtonBarBorder))
 	{
-		const float ClampedWidthRatio = FMath::Clamp(FacilityButtonBarWidthViewportRatio, 0.0f, 1.0f);
-		const float ClampedCategoryHeightRatio = FMath::Clamp(CategoryBarHeightViewportRatio, 0.0f, 1.0f);
-		const float ClampedHeightRatio = FMath::Clamp(FacilityButtonBarHeightViewportRatio, 0.0f, 1.0f);
+		const float ClampedWidthRatio = FMath::Clamp(FMath::Max(FacilityButtonBarWidthViewportRatio, MinimumFamilyFacilityBarWidthRatio), 0.0f, 1.0f);
+		const float ClampedCategoryHeightRatio = FMath::Clamp(FMath::Max(CategoryBarHeightViewportRatio, MinimumFamilyCategoryBarHeightRatio), 0.0f, 1.0f);
+		const float ClampedHeightRatio = FMath::Clamp(FMath::Max(FacilityButtonBarHeightViewportRatio, MinimumFamilyFacilityBarHeightRatio), 0.0f, 1.0f);
 		const float LeftAnchor = (1.0f - ClampedWidthRatio) * 0.5f;
 		const float RightAnchor = 1.0f - LeftAnchor;
 		const float BottomAnchor = 1.0f - ClampedCategoryHeightRatio;
@@ -857,6 +1389,10 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 	FacilityButtonGapSizeBoxes.Reset();
 	FacilityButtons.Reset();
 	FacilityButtonTextBlocks.Reset();
+	FacilityButtonRoleTextBlocks.Reset();
+	FacilityButtonMetadataTextBlocks.Reset();
+	FacilityButtonStatusBadges.Reset();
+	FacilityButtonFamilyGlyphs.Reset();
 
 	AddFacilityFillSpacer(TEXT("StructureFacilityLeadingSpacer"));
 	for (int32 ButtonIndex = 0; ButtonIndex < FacilityButtonCount; ++ButtonIndex)
@@ -880,22 +1416,93 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 		FacilityButtons.Add(FacilityButton);
 		FacilityButtonSizeBox->AddChild(FacilityButton);
 
+		UVerticalBox* FacilityCard = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(),
+			FName(*FString::Printf(TEXT("StructureFacilityCard%d"), DisplayIndex)));
+		FacilityCard->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+		UHorizontalBox* FacilityCardHeader = WidgetTree->ConstructWidget<UHorizontalBox>(
+			UHorizontalBox::StaticClass(),
+			FName(*FString::Printf(TEXT("StructureFacilityCardHeader%d"), DisplayIndex)));
+		if (UVerticalBoxSlot* HeaderSlot = FacilityCard->AddChildToVerticalBox(FacilityCardHeader))
+		{
+			HeaderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			HeaderSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		}
+
+		UTextBlock* FacilityButtonRoleTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("StructureFacilityButtonRole%d"), DisplayIndex)));
+		FacilityButtonRoleTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
+		USRUIThemeLibrary::ApplyTextStyle(
+			FacilityButtonRoleTextBlock,
+			ESRUITextStyle::Caption,
+			ESRUIVisualState::Neutral,
+			true);
+		FacilityButtonRoleTextBlocks.Add(FacilityButtonRoleTextBlock);
+		if (UHorizontalBoxSlot* RoleSlot = FacilityCardHeader->AddChildToHorizontalBox(FacilityButtonRoleTextBlock))
+		{
+			RoleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			RoleSlot->SetVerticalAlignment(VAlign_Center);
+		}
+
+		USRResourceGlyphWidget* FacilityFamilyGlyph = WidgetTree->ConstructWidget<USRResourceGlyphWidget>(
+			USRResourceGlyphWidget::StaticClass(),
+			FName(*FString::Printf(TEXT("StructureFacilityButtonFamilyGlyph%d"), DisplayIndex)));
+		FacilityFamilyGlyph->SetGlyphMode(ESRResourceGlyphMode::FamilyOnly);
+		FacilityFamilyGlyph->SetVisibility(ESlateVisibility::HitTestInvisible);
+		FacilityButtonFamilyGlyphs.Add(FacilityFamilyGlyph);
+		if (UHorizontalBoxSlot* GlyphSlot = FacilityCardHeader->AddChildToHorizontalBox(FacilityFamilyGlyph))
+		{
+			GlyphSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			GlyphSlot->SetPadding(FMargin(3.0f, 0.0f, 4.0f, 0.0f));
+			GlyphSlot->SetVerticalAlignment(VAlign_Center);
+		}
+
+		USRStatusBadgeWidget* FacilityStatusBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+			USRStatusBadgeWidget::StaticClass(),
+			FName(*FString::Printf(TEXT("StructureFacilityButtonStatus%d"), DisplayIndex)));
+		FacilityStatusBadge->SetVisibility(ESlateVisibility::HitTestInvisible);
+		FacilityButtonStatusBadges.Add(FacilityStatusBadge);
+		if (UHorizontalBoxSlot* StatusSlot = FacilityCardHeader->AddChildToHorizontalBox(FacilityStatusBadge))
+		{
+			StatusSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			StatusSlot->SetVerticalAlignment(VAlign_Center);
+		}
+
 		UTextBlock* FacilityButtonTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("StructureFacilityButtonLabel%d"), DisplayIndex)));
 		FacilityButtonTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
-		FacilityButtonTextBlock->SetJustification(ETextJustify::Center);
+		FacilityButtonTextBlock->SetJustification(ETextJustify::Left);
 		FacilityButtonTextBlock->SetAutoWrapText(true);
-		FacilityButtonTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::White));
-		FSlateFontInfo FacilityButtonFont = FacilityButtonTextBlock->GetFont();
-		FacilityButtonFont.Size = 9;
-		FacilityButtonTextBlock->SetFont(FacilityButtonFont);
+		USRUIThemeLibrary::ApplyTextStyle(FacilityButtonTextBlock, ESRUITextStyle::Heading);
 		FacilityButtonTextBlocks.Add(FacilityButtonTextBlock);
-		if (UButtonSlot* ButtonSlot = Cast<UButtonSlot>(FacilityButton->AddChild(FacilityButtonTextBlock)))
+		if (UVerticalBoxSlot* LabelSlot = FacilityCard->AddChildToVerticalBox(FacilityButtonTextBlock))
 		{
-			ButtonSlot->SetPadding(FMargin(2.0f));
-			ButtonSlot->SetHorizontalAlignment(HAlign_Center);
-			ButtonSlot->SetVerticalAlignment(VAlign_Center);
+			LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			LabelSlot->SetVerticalAlignment(VAlign_Center);
+		}
+
+		UTextBlock* FacilityButtonMetadataTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("StructureFacilityButtonMetadata%d"), DisplayIndex)));
+		FacilityButtonMetadataTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
+		FacilityButtonMetadataTextBlock->SetJustification(ETextJustify::Left);
+		FacilityButtonMetadataTextBlock->SetAutoWrapText(true);
+		USRUIThemeLibrary::ApplyTextStyle(FacilityButtonMetadataTextBlock, ESRUITextStyle::Caption);
+		FacilityButtonMetadataTextBlocks.Add(FacilityButtonMetadataTextBlock);
+		if (UVerticalBoxSlot* MetadataSlot = FacilityCard->AddChildToVerticalBox(FacilityButtonMetadataTextBlock))
+		{
+			MetadataSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			MetadataSlot->SetPadding(FMargin(0.0f, 3.0f, 0.0f, 0.0f));
+		}
+
+		if (UButtonSlot* ButtonSlot = Cast<UButtonSlot>(FacilityButton->AddChild(FacilityCard)))
+		{
+			ButtonSlot->SetPadding(FMargin(9.0f, 7.0f));
+			ButtonSlot->SetHorizontalAlignment(HAlign_Fill);
+			ButtonSlot->SetVerticalAlignment(VAlign_Fill);
 		}
 
 		if (ButtonIndex == 0)
@@ -942,8 +1549,8 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 
 	if (UCanvasPanelSlot* CanvasSlot = StructureSelectionCanvasPanel->AddChildToCanvas(CategoryBarBorder))
 	{
-		const float ClampedWidthRatio = FMath::Clamp(CategoryBarWidthViewportRatio, 0.0f, 1.0f);
-		const float ClampedHeightRatio = FMath::Clamp(CategoryBarHeightViewportRatio, 0.0f, 1.0f);
+		const float ClampedWidthRatio = FMath::Clamp(FMath::Max(CategoryBarWidthViewportRatio, MinimumFamilyCategoryBarWidthRatio), 0.0f, 1.0f);
+		const float ClampedHeightRatio = FMath::Clamp(FMath::Max(CategoryBarHeightViewportRatio, MinimumFamilyCategoryBarHeightRatio), 0.0f, 1.0f);
 		const float LeftAnchor = (1.0f - ClampedWidthRatio) * 0.5f;
 		const float RightAnchor = 1.0f - LeftAnchor;
 		CanvasSlot->SetAnchors(FAnchors(LeftAnchor, 1.0f - ClampedHeightRatio, RightAnchor, 1.0f));
@@ -1044,6 +1651,21 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 			CategoryButton->OnClicked.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory4Clicked);
 			CategoryButton->OnHovered.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory4Hovered);
 		}
+		else if (ButtonIndex == 4)
+		{
+			CategoryButton->OnClicked.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory5Clicked);
+			CategoryButton->OnHovered.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory5Hovered);
+		}
+		else if (ButtonIndex == 5)
+		{
+			CategoryButton->OnClicked.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory6Clicked);
+			CategoryButton->OnHovered.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory6Hovered);
+		}
+		else if (ButtonIndex == 6)
+		{
+			CategoryButton->OnClicked.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory7Clicked);
+			CategoryButton->OnHovered.AddDynamic(this, &USRStructureSelectionWidget::HandleCategory7Hovered);
+		}
 		CategoryButton->OnUnhovered.AddDynamic(this, &USRStructureSelectionWidget::HandleCategoryUnhovered);
 
 		UVerticalBox* ButtonContentBox = WidgetTree->ConstructWidget<UVerticalBox>(
@@ -1085,12 +1707,14 @@ void USRStructureSelectionWidget::BuildStructureSelectionWidgetTree()
 			UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("StructureCategoryButtonLabel%d"), DisplayIndex)));
 		LabelTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
-		LabelTextBlock->SetText(FText::AsNumber(DisplayIndex));
+		LabelTextBlock->SetText(FText::GetEmpty());
 		LabelTextBlock->SetJustification(ETextJustify::Center);
-		LabelTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		LabelTextBlock->SetAutoWrapText(false);
 		FSlateFontInfo LabelFont = LabelTextBlock->GetFont();
-		LabelFont.Size = 11;
+		LabelFont.Size = USRUIThemeLibrary::ResolveFontSize(ESRUITextStyle::Caption);
 		LabelTextBlock->SetFont(LabelFont);
+		LabelTextBlock->SetColorAndOpacity(FSlateColor(
+			USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Neutral).PrimaryTextColor));
 		LabelSizeBox->AddChild(LabelTextBlock);
 		if (UVerticalBoxSlot* LabelSlot = ButtonContentBox->AddChildToVerticalBox(LabelSizeBox))
 		{
@@ -1116,30 +1740,38 @@ void USRStructureSelectionWidget::RebuildBuildOptions()
 
 	BuildOptionsScrollBox->ClearChildren();
 	EntryActions.Reset();
-	EntryActions.Reserve(BuildOptions.Num());
+	EntryActions.Reserve(VisibleBuildOptionIds.Num());
 
-	for (const FSRStructureBuildOption& BuildOption : BuildOptions)
+	for (const FName StructureId : VisibleBuildOptionIds)
 	{
-		if (BuildOption.StructureId.IsNone())
+		const FSRStructureBuildOption* BuildOptionPtr = FindBuildOption(StructureId);
+		if (!BuildOptionPtr)
 		{
 			continue;
 		}
+		const FSRStructureBuildOption& BuildOption = *BuildOptionPtr;
 
 		UButton* BuildOptionButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
-		BuildOptionButton->SetIsEnabled(BuildOption.bEnabled);
+		const bool bSelectable = BuildOption.IsSelectable();
+		BuildOptionButton->SetIsEnabled(bSelectable);
 		BuildOptionButton->SetBackgroundColor(
-			BuildOption.bEnabled
+			bSelectable
 				? (bHasSelectedStructureId && SelectedStructureId == BuildOption.StructureId ? SelectedButtonColor : ButtonColor)
 				: DisabledButtonColor);
+		BuildOptionButton->SetToolTipText(FSRStructureBuildCatalogBuilder::BuildToolTipText(BuildOption));
 
 		UVerticalBox* BuildOptionVerticalBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 		BuildOptionButton->AddChild(BuildOptionVerticalBox);
 
 		UTextBlock* NameTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-		NameTextBlock->SetText(GetBuildOptionDisplayName(BuildOption));
-		NameTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		NameTextBlock->SetText(GetBuildOptionButtonLabel(BuildOption));
+		const FSRUIStatePalette OptionPalette = USRUIThemeLibrary::ResolveStatePalette(
+			bSelectable
+				? ESRUIVisualState::Neutral
+				: USRUIThemeLibrary::ResolveBuildAvailabilityVisualState(BuildOption.Availability));
+		NameTextBlock->SetColorAndOpacity(FSlateColor(OptionPalette.PrimaryTextColor));
 		FSlateFontInfo NameFont = NameTextBlock->GetFont();
-		NameFont.Size = 14;
+		NameFont.Size = USRUIThemeLibrary::ResolveFontSize(ESRUITextStyle::Heading);
 		NameTextBlock->SetFont(NameFont);
 		NameTextBlock->SetAutoWrapText(false);
 		if (UVerticalBoxSlot* NameSlot = BuildOptionVerticalBox->AddChildToVerticalBox(NameTextBlock))
@@ -1151,14 +1783,30 @@ void USRStructureSelectionWidget::RebuildBuildOptions()
 		{
 			UTextBlock* DescriptionTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
 			DescriptionTextBlock->SetText(BuildOption.Description);
-			DescriptionTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor(0.72f, 0.78f, 0.82f, 1.0f)));
+			DescriptionTextBlock->SetColorAndOpacity(FSlateColor(OptionPalette.SecondaryTextColor));
 			FSlateFontInfo DescriptionFont = DescriptionTextBlock->GetFont();
-			DescriptionFont.Size = 11;
+			DescriptionFont.Size = USRUIThemeLibrary::ResolveFontSize(ESRUITextStyle::Body);
 			DescriptionTextBlock->SetFont(DescriptionFont);
 			DescriptionTextBlock->SetAutoWrapText(true);
 			if (UVerticalBoxSlot* DescriptionSlot = BuildOptionVerticalBox->AddChildToVerticalBox(DescriptionTextBlock))
 			{
 				DescriptionSlot->SetPadding(FMargin(8.0f, 0.0f, 8.0f, 7.0f));
+			}
+		}
+
+		const FText StatusText = FSRStructureBuildCatalogBuilder::BuildStatusText(BuildOption);
+		if (!StatusText.IsEmpty())
+		{
+			UTextBlock* StatusTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+			StatusTextBlock->SetText(StatusText);
+			StatusTextBlock->SetColorAndOpacity(FSlateColor(OptionPalette.AccentColor));
+			FSlateFontInfo StatusFont = StatusTextBlock->GetFont();
+			StatusFont.Size = USRUIThemeLibrary::ResolveFontSize(ESRUITextStyle::Caption);
+			StatusTextBlock->SetFont(StatusFont);
+			StatusTextBlock->SetAutoWrapText(true);
+			if (UVerticalBoxSlot* StatusSlot = BuildOptionVerticalBox->AddChildToVerticalBox(StatusTextBlock))
+			{
+				StatusSlot->SetPadding(FMargin(8.0f, 0.0f, 8.0f, 7.0f));
 			}
 		}
 
@@ -1176,76 +1824,47 @@ void USRStructureSelectionWidget::RebuildBuildOptions()
 
 void USRStructureSelectionWidget::RebuildCategorizedBuildOptions()
 {
-	ConveyorBuildOptionId = NAME_None;
-	MinerBuildOptionId = NAME_None;
-	ProcessingBuildOptionIds.Reset();
-	SynthesisBuildOptionIds.Reset();
-	ProcessingBuildOptionIds.Reserve(BuildOptions.Num());
-	SynthesisBuildOptionIds.Reserve(BuildOptions.Num());
+	FSRStructureBuildDockModel::BuildFamilyTabs(
+		BuildOptions,
+		FamilyTabs);
 
-	for (const FSRStructureBuildOption& BuildOption : BuildOptions)
+	const int32 FilterTabIndex = FamilyTabs.IndexOfByPredicate(
+		[this](const FSRStructureBuildFamilyTab& Tab)
+		{
+			return Tab.Filter == SelectedFamilyFilter;
+		});
+	if (!FamilyTabs.IsValidIndex(SelectedCategoryIndex)
+		|| FamilyTabs[SelectedCategoryIndex].Filter != SelectedFamilyFilter)
 	{
-		if (BuildOption.StructureId.IsNone() || !IsValid(BuildOption.StructureDataAsset))
-		{
-			continue;
-		}
+		SelectedCategoryIndex = FilterTabIndex;
+	}
 
-		const FSRStructureData StructureData = BuildOption.StructureDataAsset->BuildData();
-		if (StructureData.bIsResourceDeposit)
-		{
-			continue;
-		}
-
-		if (StructureData.BuildKind == ESRStructureBuildKind::Conveyor)
-		{
-			if (ConveyorBuildOptionId.IsNone())
+	if (!IsStructureCategoryAvailable(SelectedCategoryIndex))
+	{
+		SelectedCategoryIndex = FamilyTabs.IndexOfByPredicate(
+			[](const FSRStructureBuildFamilyTab& Tab)
 			{
-				ConveyorBuildOptionId = BuildOption.StructureId;
-			}
-			continue;
-		}
-
-		const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset;
-		if (!IsValid(FacilityDataAsset))
-		{
-			continue;
-		}
-
-		switch (FacilityDataAsset->OperationKind)
-		{
-		case ESRFacilityOperationKind::Mine:
-			if (MinerBuildOptionId.IsNone())
-			{
-				MinerBuildOptionId = BuildOption.StructureId;
-			}
-			break;
-		case ESRFacilityOperationKind::Process:
-			ProcessingBuildOptionIds.Add(BuildOption.StructureId);
-			break;
-		case ESRFacilityOperationKind::Synthesize:
-			SynthesisBuildOptionIds.Add(BuildOption.StructureId);
-			break;
-		default:
-			break;
-		}
+				return Tab.HasOptions();
+			});
 	}
 
-	if (SelectedCategoryIndex != INDEX_NONE && !IsStructureCategoryAvailable(SelectedCategoryIndex))
+	VisibleBuildOptionIds.Reset();
+	if (FamilyTabs.IsValidIndex(SelectedCategoryIndex))
 	{
-		SelectedCategoryIndex = INDEX_NONE;
-		SelectedFacilityButtonIndex = INDEX_NONE;
-		HoveredFacilityButtonIndex = INDEX_NONE;
+		SelectedFamilyFilter = FamilyTabs[SelectedCategoryIndex].Filter;
+		FSRStructureBuildDockModel::QueryOptions(
+			BuildOptions,
+			SelectedFamilyFilter,
+			bIncludeSharedWorkflowOptionsInFamilyTabs,
+			VisibleBuildOptionIds);
 	}
-	else if (SelectedCategoryIndex != 2 && SelectedCategoryIndex != 3)
-	{
-		SelectedFacilityButtonIndex = INDEX_NONE;
-		SelectedStructureTabIndex = 0;
-	}
-	else if (SelectedFacilityButtonIndex != INDEX_NONE
+
+	if (SelectedFacilityButtonIndex != INDEX_NONE
 		&& !IsBuildOptionSelectable(GetFacilityButtonStructureId(SelectedFacilityButtonIndex)))
 	{
 		SelectedFacilityButtonIndex = INDEX_NONE;
 	}
+	HoveredFacilityButtonIndex = INDEX_NONE;
 
 	const int32 PageCount = GetSelectedFacilityPageCount();
 	SelectedStructureTabIndex = PageCount > 0
@@ -1283,9 +1902,10 @@ void USRStructureSelectionWidget::SyncCategoryBarLayout()
 		? BarLocalSize.Y
 		: DefaultCategoryButtonLength / FMath::Max(ButtonHeightRatio, UE_SMALL_NUMBER);
 	const float ButtonLength = FMath::Max(1.0f, BarHeight * ButtonHeightRatio);
+	const float ButtonWidth = FMath::Max(FamilyTabMinimumWidth, ButtonLength * 1.45f);
 	const float ButtonGapLength = FMath::Max(0.0f, BarHeight * (1.0f - ButtonHeightRatio) * 0.5f);
-	const float IconLength = FMath::Max(1.0f, ButtonLength * FMath::Clamp(CategoryButtonIconRatio, 0.0f, 1.0f));
-	const float LabelLength = FMath::Max(1.0f, ButtonLength * FMath::Clamp(CategoryButtonLabelRatio, 0.0f, 1.0f));
+	const float IconLength = FMath::Max(1.0f, ButtonLength * FMath::Clamp(CategoryButtonIconRatio, 0.0f, 0.38f));
+	const float LabelLength = FMath::Max(1.0f, ButtonLength * FMath::Clamp(FMath::Max(CategoryButtonLabelRatio, 0.32f), 0.0f, 1.0f));
 
 	for (USizeBox* CategoryButtonSizeBox : CategoryButtonSizeBoxes)
 	{
@@ -1294,7 +1914,7 @@ void USRStructureSelectionWidget::SyncCategoryBarLayout()
 			continue;
 		}
 
-		CategoryButtonSizeBox->SetWidthOverride(ButtonLength);
+		CategoryButtonSizeBox->SetWidthOverride(ButtonWidth);
 		CategoryButtonSizeBox->SetHeightOverride(ButtonLength);
 	}
 
@@ -1344,8 +1964,14 @@ void USRStructureSelectionWidget::SyncFacilityButtonBarLayout()
 	const float BarHeight = BarLocalSize.Y > UE_SMALL_NUMBER
 		? BarLocalSize.Y
 		: DefaultFacilityButtonLength / FMath::Max(ButtonHeightRatio, UE_SMALL_NUMBER);
-	const float ButtonLength = FMath::Max(1.0f, BarHeight * ButtonHeightRatio);
-	const float ButtonGapLength = FMath::Max(0.0f, BarHeight * (1.0f - ButtonHeightRatio) * 0.5f);
+	const float ButtonHeight = FMath::Max(FacilityCardMinimumHeight, BarHeight * ButtonHeightRatio);
+	const float ButtonGapLength = FMath::Max(6.0f, BarHeight * (1.0f - ButtonHeightRatio) * 0.5f);
+	const float AvailableWidth = BarLocalSize.X > UE_SMALL_NUMBER
+		? FMath::Max(0.0f, BarLocalSize.X - ButtonGapLength * static_cast<float>(FacilityButtonCount - 1))
+		: FacilityCardMinimumWidth * static_cast<float>(FacilityButtonCount);
+	const float ButtonWidth = FMath::Max(
+		FacilityCardMinimumWidth,
+		AvailableWidth / static_cast<float>(FacilityButtonCount));
 
 	for (USizeBox* FacilityButtonSizeBox : FacilityButtonSizeBoxes)
 	{
@@ -1354,8 +1980,8 @@ void USRStructureSelectionWidget::SyncFacilityButtonBarLayout()
 			continue;
 		}
 
-		FacilityButtonSizeBox->SetWidthOverride(ButtonLength);
-		FacilityButtonSizeBox->SetHeightOverride(ButtonLength);
+		FacilityButtonSizeBox->SetWidthOverride(ButtonWidth);
+		FacilityButtonSizeBox->SetHeightOverride(ButtonHeight);
 	}
 
 	for (USizeBox* FacilityButtonGapSizeBox : FacilityButtonGapSizeBoxes)
@@ -1366,7 +1992,41 @@ void USRStructureSelectionWidget::SyncFacilityButtonBarLayout()
 		}
 
 		FacilityButtonGapSizeBox->SetWidthOverride(ButtonGapLength);
-		FacilityButtonGapSizeBox->SetHeightOverride(ButtonLength);
+		FacilityButtonGapSizeBox->SetHeightOverride(ButtonHeight);
+	}
+}
+
+void USRStructureSelectionWidget::SyncDetailPanelLayout()
+{
+	if (!StructureDetailBorder)
+	{
+		return;
+	}
+
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(StructureDetailBorder->Slot))
+	{
+		const float WidthRatio = FMath::Clamp(
+			FMath::Max(DetailPanelWidthViewportRatio, MinimumDetailPanelWidthRatio),
+			0.0f,
+			1.0f);
+		const float DetailHeight = FMath::Clamp(
+			FMath::Max(DetailPanelHeightViewportRatio, MinimumDetailPanelHeightRatio),
+			0.0f,
+			1.0f);
+		const float CategoryHeight = FMath::Clamp(
+			FMath::Max(CategoryBarHeightViewportRatio, MinimumFamilyCategoryBarHeightRatio),
+			0.0f,
+			1.0f);
+		const float FacilityHeight = FMath::Clamp(
+			FMath::Max(FacilityButtonBarHeightViewportRatio, MinimumFamilyFacilityBarHeightRatio),
+			0.0f,
+			1.0f);
+		const float TabHeight = FMath::Clamp(StructureTabBarHeightViewportRatio, 0.0f, 1.0f);
+		const float Left = (1.0f - WidthRatio) * 0.5f;
+		const float Bottom = FMath::Clamp(1.0f - CategoryHeight - FacilityHeight - TabHeight, 0.0f, 1.0f);
+		const float Top = FMath::Clamp(Bottom - DetailHeight, 0.0f, 1.0f);
+		CanvasSlot->SetAnchors(FAnchors(Left, Top, 1.0f - Left, Bottom));
+		CanvasSlot->SetOffsets(FMargin(0.0f));
 	}
 }
 
@@ -1379,13 +2039,14 @@ void USRStructureSelectionWidget::SyncStructureTabBarLayout()
 
 	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(StructureTabBarBorder->Slot))
 	{
-		const int32 PageCount = GetSelectedFacilityPageCount();
-		const float PageScale = PageCount > 0
-			? FMath::Max(1.0f, static_cast<float>(PageCount) / static_cast<float>(DefaultStructureTabIndicatorCapacity))
-			: 1.0f;
-		const float ClampedWidthRatio = FMath::Clamp(StructureTabBarWidthViewportRatio * PageScale, 0.0f, 1.0f);
-		const float ClampedCategoryHeightRatio = FMath::Clamp(CategoryBarHeightViewportRatio, 0.0f, 1.0f);
-		const float ClampedFacilityHeightRatio = FMath::Clamp(FacilityButtonBarHeightViewportRatio, 0.0f, 1.0f);
+		const int32 VisibleIndicatorCount = FMath::Max(1, StructureTabIndicatorImages.Num());
+		const float IndicatorScale = FMath::Max(1.0f, static_cast<float>(VisibleIndicatorCount) / 4.0f);
+		const float ClampedWidthRatio = FMath::Clamp(
+			FMath::Max(StructureTabBarWidthViewportRatio * IndicatorScale, MinimumStructureTabBarWidthRatio),
+			MinimumStructureTabBarWidthRatio,
+			MaximumStructureTabBarWidthRatio);
+		const float ClampedCategoryHeightRatio = FMath::Clamp(FMath::Max(CategoryBarHeightViewportRatio, MinimumFamilyCategoryBarHeightRatio), 0.0f, 1.0f);
+		const float ClampedFacilityHeightRatio = FMath::Clamp(FMath::Max(FacilityButtonBarHeightViewportRatio, MinimumFamilyFacilityBarHeightRatio), 0.0f, 1.0f);
 		const float ClampedTabHeightRatio = FMath::Clamp(StructureTabBarHeightViewportRatio, 0.0f, 1.0f);
 		const float LeftAnchor = (1.0f - ClampedWidthRatio) * 0.5f;
 		const float RightAnchor = 1.0f - LeftAnchor;
@@ -1424,6 +2085,8 @@ void USRStructureSelectionWidget::RebuildStructureTabIndicators()
 	StructureTabIndicatorRowBox->ClearChildren();
 	StructureTabIndicatorSizeBoxes.Reset();
 	StructureTabIndicatorImages.Reset();
+	StructurePageTextBlock = nullptr;
+	StructureTabIndicatorFirstPageIndex = 0;
 
 	const int32 PageCount = GetSelectedFacilityPageCount();
 	if (PageCount <= 0)
@@ -1431,6 +2094,12 @@ void USRStructureSelectionWidget::RebuildStructureTabIndicators()
 		SelectedStructureTabIndex = 0;
 		return;
 	}
+	SelectedStructureTabIndex = FMath::Clamp(SelectedStructureTabIndex, 0, PageCount - 1);
+	const FSRUIPageWindow PageWindow = FSRUILayoutPolicy::ResolvePageWindow(
+		PageCount,
+		SelectedStructureTabIndex,
+		FMath::Max(1, MaximumVisiblePageIndicators));
+	StructureTabIndicatorFirstPageIndex = PageWindow.FirstPageIndex;
 
 	auto AddTabEqualSpacer = [this]()
 	{
@@ -1447,13 +2116,17 @@ void USRStructureSelectionWidget::RebuildStructureTabIndicators()
 	};
 
 	AddTabEqualSpacer();
-	for (int32 TabIndex = 0; TabIndex < PageCount; ++TabIndex)
+	for (int32 LocalTabIndex = 0; LocalTabIndex < PageWindow.IndicatorCount; ++LocalTabIndex)
 	{
-		USizeBox* TabIndicatorSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		USizeBox* TabIndicatorSizeBox = WidgetTree->ConstructWidget<USizeBox>(
+			USizeBox::StaticClass(),
+			FName(*FString::Printf(TEXT("StructurePageIndicatorSizeBox%d"), LocalTabIndex + 1)));
 		TabIndicatorSizeBox->SetVisibility(ESlateVisibility::HitTestInvisible);
 		StructureTabIndicatorSizeBoxes.Add(TabIndicatorSizeBox);
 
-		UImage* TabIndicatorImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+		UImage* TabIndicatorImage = WidgetTree->ConstructWidget<UImage>(
+			UImage::StaticClass(),
+			FName(*FString::Printf(TEXT("StructurePageIndicatorImage%d"), LocalTabIndex + 1)));
 		TabIndicatorImage->SetVisibility(ESlateVisibility::HitTestInvisible);
 		StructureTabIndicatorImages.Add(TabIndicatorImage);
 		TabIndicatorSizeBox->AddChild(TabIndicatorImage);
@@ -1467,6 +2140,25 @@ void USRStructureSelectionWidget::RebuildStructureTabIndicators()
 		AddTabEqualSpacer();
 	}
 
+	StructurePageTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(),
+		TEXT("StructurePageTextBlock"));
+	StructurePageTextBlock->SetText(FText::FromString(PageWindow.PageLabel));
+	StructurePageTextBlock->SetJustification(ETextJustify::Center);
+	StructurePageTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
+	USRUIThemeLibrary::ApplyTextStyle(
+		StructurePageTextBlock,
+		ESRUITextStyle::Caption,
+		ESRUIVisualState::Info,
+		true);
+	if (UHorizontalBoxSlot* PageTextSlot = StructureTabIndicatorRowBox->AddChildToHorizontalBox(StructurePageTextBlock))
+	{
+		PageTextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		PageTextSlot->SetVerticalAlignment(VAlign_Center);
+		PageTextSlot->SetPadding(FMargin(10.0f, 0.0f));
+	}
+	AddTabEqualSpacer();
+
 	RefreshStructureTabIndicatorBrushes();
 	RefreshStructureTabIndicatorStyles();
 	SyncStructureTabBarLayout();
@@ -1479,8 +2171,9 @@ void USRStructureSelectionWidget::RefreshFacilityButtonBarVisibility()
 		return;
 	}
 
-	const bool bShouldShowFacilityButtons = SelectedCategoryIndex == 2 || SelectedCategoryIndex == 3;
 	const int32 PageCount = GetSelectedFacilityPageCount();
+	const bool bShouldShowFacilityButtons = IsStructureCategoryAvailable(SelectedCategoryIndex)
+		&& PageCount > 0;
 	if (bShouldShowFacilityButtons && PageCount > 0)
 	{
 		SelectedStructureTabIndex = FMath::Clamp(SelectedStructureTabIndex, 0, PageCount - 1);
@@ -1494,7 +2187,7 @@ void USRStructureSelectionWidget::RefreshFacilityButtonBarVisibility()
 	FacilityButtonBarBorder->SetVisibility(bShouldShowFacilityButtons ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	if (StructureTabBarBorder)
 	{
-		StructureTabBarBorder->SetVisibility(bShouldShowFacilityButtons && PageCount > 0
+		StructureTabBarBorder->SetVisibility(bShouldShowFacilityButtons && PageCount > 1
 			? ESlateVisibility::HitTestInvisible
 			: ESlateVisibility::Collapsed);
 	}
@@ -1506,6 +2199,7 @@ void USRStructureSelectionWidget::RefreshFacilityButtonBarVisibility()
 
 	RefreshFacilityButtonLabels();
 	RefreshFacilityButtonStyles();
+	RefreshBuildOptionDetail();
 }
 
 void USRStructureSelectionWidget::RefreshFacilityButtonLabels()
@@ -1514,18 +2208,62 @@ void USRStructureSelectionWidget::RefreshFacilityButtonLabels()
 	{
 		const FName StructureId = GetFacilityButtonStructureId(ButtonIndex);
 		const FSRStructureBuildOption* BuildOption = FindBuildOption(StructureId);
-		const FText ButtonText = BuildOption ? GetBuildOptionDisplayName(*BuildOption) : FText::GetEmpty();
+		const FSRStructureBuildCardPresentation Presentation = BuildOption
+			? FSRStructureBuildPresentationBuilder::BuildCard(*BuildOption)
+			: FSRStructureBuildCardPresentation();
+		const FSRStructureBuildRecommendationPresentation Recommendation = BuildOption
+			? FSRStructureBuildPresentationBuilder::BuildRecommendation(
+				*BuildOption,
+				BuildRecommendationContext)
+			: FSRStructureBuildRecommendationPresentation();
 
 		if (UTextBlock* FacilityButtonTextBlock = FacilityButtonTextBlocks[ButtonIndex])
 		{
-			FacilityButtonTextBlock->SetText(ButtonText);
+			FacilityButtonTextBlock->SetText(Presentation.DisplayName);
+		}
+		if (FacilityButtonRoleTextBlocks.IsValidIndex(ButtonIndex)
+			&& FacilityButtonRoleTextBlocks[ButtonIndex])
+		{
+			FacilityButtonRoleTextBlocks[ButtonIndex]->SetText(Presentation.RoleText);
+		}
+		if (FacilityButtonMetadataTextBlocks.IsValidIndex(ButtonIndex)
+			&& FacilityButtonMetadataTextBlocks[ButtonIndex])
+		{
+			FacilityButtonMetadataTextBlocks[ButtonIndex]->SetText(Presentation.MetadataText);
+		}
+		if (FacilityButtonStatusBadges.IsValidIndex(ButtonIndex)
+			&& FacilityButtonStatusBadges[ButtonIndex])
+		{
+			FacilityButtonStatusBadges[ButtonIndex]->SetBadge(
+				Recommendation.bVisible ? Recommendation.BadgeText : Presentation.AvailabilityText,
+				Recommendation.bVisible
+					? Recommendation.VisualState
+					: BuildOption
+					? USRUIThemeLibrary::ResolveBuildAvailabilityVisualState(Presentation.Availability)
+					: ESRUIVisualState::Disabled);
+		}
+		if (FacilityButtonFamilyGlyphs.IsValidIndex(ButtonIndex)
+			&& FacilityButtonFamilyGlyphs[ButtonIndex])
+		{
+			FacilityButtonFamilyGlyphs[ButtonIndex]->SetFamily(
+				BuildOption ? BuildOption->ResourceFamily : ESRResourceFamily::None);
+			FacilityButtonFamilyGlyphs[ButtonIndex]->SetVisibility(
+				BuildOption ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		}
+		if (FacilityButtonSizeBoxes.IsValidIndex(ButtonIndex)
+			&& FacilityButtonSizeBoxes[ButtonIndex])
+		{
+			FacilityButtonSizeBoxes[ButtonIndex]->SetVisibility(
+				BuildOption ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 		}
 
 		if (FacilityButtons.IsValidIndex(ButtonIndex))
 		{
 			if (UButton* FacilityButton = FacilityButtons[ButtonIndex])
 			{
-				FacilityButton->SetToolTipText(ButtonText);
+				FacilityButton->SetToolTipText(BuildOption
+					? FSRStructureBuildCatalogBuilder::BuildToolTipText(*BuildOption)
+					: FText::GetEmpty());
 			}
 		}
 	}
@@ -1538,27 +2276,380 @@ void USRStructureSelectionWidget::RefreshFacilityButtonStyles()
 		if (UButton* FacilityButton = FacilityButtons[ButtonIndex])
 		{
 			const FName StructureId = GetFacilityButtonStructureId(ButtonIndex);
+			const FSRStructureBuildOption* BuildOption = FindBuildOption(StructureId);
 			const bool bEnabled = IsBuildOptionSelectable(StructureId);
 			const bool bSelected = bEnabled
-				&& (ButtonIndex == SelectedFacilityButtonIndex
-					|| (bHasSelectedStructureId && SelectedStructureId == StructureId));
-			const bool bHovered = bEnabled && ButtonIndex == HoveredFacilityButtonIndex;
+				&& bHasSelectedStructureId
+				&& SelectedStructureId == StructureId;
+			const bool bHovered = BuildOption && ButtonIndex == HoveredFacilityButtonIndex;
+			const bool bRecommended = BuildOption
+				&& FSRStructureBuildPresentationBuilder::BuildRecommendation(
+					*BuildOption,
+					BuildRecommendationContext).bVisible;
+			const ESRUIVisualState AvailabilityState = BuildOption
+				? USRUIThemeLibrary::ResolveBuildAvailabilityVisualState(BuildOption->Availability)
+				: ESRUIVisualState::Disabled;
+			const ESRUIVisualState CardState = bSelected
+				? ESRUIVisualState::Selected
+				: bHovered
+					? (bEnabled ? ESRUIVisualState::Hovered : AvailabilityState)
+					: bRecommended
+						? ESRUIVisualState::Warning
+						: (bEnabled ? ESRUIVisualState::Neutral : AvailabilityState);
+			const FLinearColor FamilyAccent = BuildOption
+				? USRUIThemeLibrary::ResolveFamilyAccentColor(BuildOption->ResourceFamily)
+				: USRUIThemeLibrary::ResolveFamilyAccentColor(ESRResourceFamily::None);
+			const FSRUIStatePalette CardPalette = USRUIThemeLibrary::ResolveStatePalette(CardState);
 			FacilityButton->SetIsEnabled(bEnabled);
-			FacilityButton->SetBackgroundColor(bEnabled
-				? (bSelected ? SelectedFacilityButtonColor : (bHovered ? HoveredFacilityButtonColor : FacilityButtonColor))
-				: DisabledButtonColor);
+			FacilityButton->SetBackgroundColor(FLinearColor::LerpUsingHSV(
+				CardPalette.SurfaceColor,
+				FamilyAccent,
+				bSelected ? 0.34f : bHovered ? 0.22f : 0.10f));
 
 			if (FacilityButtonTextBlocks.IsValidIndex(ButtonIndex))
 			{
 				if (UTextBlock* FacilityButtonTextBlock = FacilityButtonTextBlocks[ButtonIndex])
 				{
-					FacilityButtonTextBlock->SetColorAndOpacity(FSlateColor(bEnabled
-						? FLinearColor::White
-						: FLinearColor(1.0f, 1.0f, 1.0f, 0.35f)));
+					FacilityButtonTextBlock->SetColorAndOpacity(FSlateColor(
+						CardPalette.PrimaryTextColor));
+				}
+			}
+			if (FacilityButtonRoleTextBlocks.IsValidIndex(ButtonIndex)
+				&& FacilityButtonRoleTextBlocks[ButtonIndex])
+			{
+				FacilityButtonRoleTextBlocks[ButtonIndex]->SetColorAndOpacity(FSlateColor(
+					bEnabled ? FamilyAccent : CardPalette.SecondaryTextColor));
+			}
+			if (FacilityButtonMetadataTextBlocks.IsValidIndex(ButtonIndex)
+				&& FacilityButtonMetadataTextBlocks[ButtonIndex])
+			{
+				FacilityButtonMetadataTextBlocks[ButtonIndex]->SetColorAndOpacity(FSlateColor(
+					CardPalette.SecondaryTextColor));
+			}
+			if (FacilityButtonStatusBadges.IsValidIndex(ButtonIndex)
+				&& FacilityButtonStatusBadges[ButtonIndex])
+			{
+				if (bSelected)
+				{
+					FacilityButtonStatusBadges[ButtonIndex]->SetBadge(
+						NSLOCTEXT("StarRoversBuildDock", "SelectedCardBadge", "SELECTED"),
+						ESRUIVisualState::Selected);
+				}
+				else if (BuildOption)
+				{
+					const FSRStructureBuildRecommendationPresentation Recommendation =
+						FSRStructureBuildPresentationBuilder::BuildRecommendation(
+							*BuildOption,
+							BuildRecommendationContext);
+					FacilityButtonStatusBadges[ButtonIndex]->SetBadge(
+						Recommendation.bVisible
+							? Recommendation.BadgeText
+							: FSRStructureBuildPresentationBuilder::GetAvailabilityLabel(BuildOption->Availability),
+						Recommendation.bVisible ? Recommendation.VisualState : AvailabilityState);
 				}
 			}
 		}
 	}
+}
+
+void USRStructureSelectionWidget::RefreshBuildRecommendation(bool bRefreshWorldState)
+{
+	FSRStructureBuildRecommendationContext NewContext;
+	if (UWorld* World = GetWorld())
+	{
+		if (USRRunMilestoneSubsystem* MilestoneSubsystem =
+			World->GetSubsystem<USRRunMilestoneSubsystem>())
+		{
+			if (bRefreshWorldState)
+			{
+				MilestoneSubsystem->RefreshFromWorld();
+			}
+
+			const FSRFirstFuelMilestoneSnapshot Snapshot =
+				MilestoneSubsystem->GetFirstFuelMilestoneSnapshot();
+			ESRStructureBuildRole RecommendedRole = ESRStructureBuildRole::General;
+			ESRResourceFamily PreferredFamily = ESRResourceFamily::None;
+			bool bHasBuildObjective = Snapshot.bIsTracking;
+			switch (Snapshot.CurrentMilestone)
+			{
+			case ESRFirstFuelMilestone::PlaceExtractor:
+				RecommendedRole = ESRStructureBuildRole::Extraction;
+				NewContext.ObjectiveText = NSLOCTEXT(
+					"StarRoversBuildDock",
+					"RecommendExtractor",
+					"PLACE ON THE RECOMMENDED DEPOSIT");
+				break;
+			case ESRFirstFuelMilestone::PlaceFamilyProcessor:
+				RecommendedRole = ESRStructureBuildRole::FamilyProcessing;
+				PreferredFamily = Snapshot.FirstResourceFamily;
+				bHasBuildObjective = PreferredFamily != ESRResourceFamily::None;
+				NewContext.ObjectiveText = FText::Format(
+					NSLOCTEXT("StarRoversBuildDock", "RecommendFamilyProcessor", "PROCESS THE FIRST {0} CARD"),
+					FSRStructureBuildPresentationBuilder::GetFamilyLabel(PreferredFamily));
+				break;
+			case ESRFirstFuelMilestone::PlaceStellarFuelFabricator:
+				RecommendedRole = ESRStructureBuildRole::StellarFuelFabrication;
+				NewContext.ObjectiveText = NSLOCTEXT(
+					"StarRoversBuildDock",
+					"RecommendFuelFabricator",
+					"COMBINE THE FIRST FIVE-CARD HAND");
+				break;
+			case ESRFirstFuelMilestone::PlaceHub:
+				RecommendedRole = ESRStructureBuildRole::Hub;
+				NewContext.ObjectiveText = NSLOCTEXT(
+					"StarRoversBuildDock",
+					"RecommendHub",
+					"ROUTE STELLAR FUEL OFF-WORLD");
+				break;
+			case ESRFirstFuelMilestone::ExtractFirstCard:
+			case ESRFirstFuelMilestone::ProcessFirstCard:
+			case ESRFirstFuelMilestone::FabricateFirstStellarFuel:
+			case ESRFirstFuelMilestone::LaunchFirstStellarFuel:
+			case ESRFirstFuelMilestone::DeliverFirstStellarFuel:
+			case ESRFirstFuelMilestone::Complete:
+			default:
+				bHasBuildObjective = false;
+				break;
+			}
+
+			if (bHasBuildObjective)
+			{
+				NewContext.RecommendedStructureId =
+					FSRStructureBuildDockModel::FindRecommendedOptionId(
+						BuildOptions,
+						RecommendedRole,
+						PreferredFamily);
+				NewContext.bActive = !NewContext.RecommendedStructureId.IsNone();
+				NewContext.CurrentStep = FMath::Clamp(
+					Snapshot.CompletedMilestoneCount + 1,
+					1,
+					FMath::Max(1, Snapshot.TotalMilestoneCount));
+				NewContext.TotalSteps = Snapshot.TotalMilestoneCount;
+			}
+		}
+	}
+
+	const bool bChanged = BuildRecommendationContext.bActive != NewContext.bActive
+		|| BuildRecommendationContext.RecommendedStructureId != NewContext.RecommendedStructureId
+		|| BuildRecommendationContext.CurrentStep != NewContext.CurrentStep
+		|| BuildRecommendationContext.TotalSteps != NewContext.TotalSteps
+		|| !BuildRecommendationContext.ObjectiveText.EqualTo(NewContext.ObjectiveText);
+	BuildRecommendationContext = MoveTemp(NewContext);
+	if (bChanged)
+	{
+		RefreshFacilityButtonLabels();
+		RefreshFacilityButtonStyles();
+		RefreshBuildOptionDetail();
+	}
+}
+
+void USRStructureSelectionWidget::RefreshBuildOptionDetail()
+{
+	if (!StructureDetailBorder
+		|| !DetailTitleTextBlock
+		|| !DetailClassificationTextBlock
+		|| !DetailSpecificationTextBlock
+		|| !DetailDescriptionTextBlock
+		|| !DetailAvailabilityBadge
+		|| !DetailFamilyGlyph
+		|| !DetailRecommendationRow
+		|| !DetailRecommendationBadge
+		|| !DetailRecommendationTextBlock
+		|| !DetailFlowPanel
+		|| !DetailFlowInputBadge
+		|| !DetailFlowProcessBadge
+		|| !DetailFlowOutputBadge
+		|| !DetailFlowEffectTextBlock
+		|| !DetailPlacementMetricRow
+		|| !DetailPlacementTargetBadge
+		|| !DetailPlacementFootprintBadge
+		|| !DetailPlacementCapacityBadge
+		|| !DetailPlacementStatusTextBlock
+		|| !DetailPlacementTextBlock)
+	{
+		return;
+	}
+
+	auto HideDecisionRows = [this]()
+	{
+		DetailRecommendationRow->SetVisibility(ESlateVisibility::Collapsed);
+		DetailFlowPanel->SetVisibility(ESlateVisibility::Collapsed);
+		DetailFlowEffectTextBlock->SetVisibility(ESlateVisibility::Collapsed);
+		DetailPlacementMetricRow->SetVisibility(ESlateVisibility::Collapsed);
+		DetailPlacementStatusTextBlock->SetVisibility(ESlateVisibility::Collapsed);
+		DetailPlacementTextBlock->SetVisibility(ESlateVisibility::Collapsed);
+		DetailPlacementStatusTextBlock->SetText(FText::GetEmpty());
+		DetailPlacementTextBlock->SetText(FText::GetEmpty());
+	};
+
+	StructureDetailBorder->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	const FSRStructureBuildOption* BuildOption = GetDetailBuildOption();
+	int32 SelectableVisibleOptionCount = 0;
+	for (const FName StructureId : VisibleBuildOptionIds)
+	{
+		const FSRStructureBuildOption* VisibleOption = FindBuildOption(StructureId);
+		SelectableVisibleOptionCount += VisibleOption && VisibleOption->IsSelectable() ? 1 : 0;
+	}
+	const FSRStructureBuildEmptyStatePresentation EmptyState =
+		FSRStructureBuildPresentationBuilder::BuildEmptyState(
+			BuildOptions.Num(),
+			VisibleBuildOptionIds.Num(),
+			SelectableVisibleOptionCount);
+	if (!BuildOption && EmptyState.bVisible)
+	{
+		HideDecisionRows();
+		DetailDescriptionTextBlock->SetAutoWrapText(true);
+		DetailFamilyGlyph->SetVisibility(ESlateVisibility::Collapsed);
+		DetailTitleTextBlock->SetText(EmptyState.Title);
+		DetailClassificationTextBlock->SetText(EmptyState.ClassificationText);
+		DetailSpecificationTextBlock->SetText(EmptyState.DetailText);
+		DetailDescriptionTextBlock->SetText(EmptyState.ActionText);
+		DetailAvailabilityBadge->SetBadge(EmptyState.BadgeText, EmptyState.VisualState);
+		StructureDetailBorder->SetToolTipText(EmptyState.DetailText);
+		USRUIThemeLibrary::ApplyCardStyle(
+			StructureDetailBorder,
+			EmptyState.VisualState,
+			FMargin(14.0f, 10.0f));
+		DetailClassificationTextBlock->SetColorAndOpacity(FSlateColor(
+			USRUIThemeLibrary::ResolveStatePalette(EmptyState.VisualState).AccentColor));
+		return;
+	}
+	if (!BuildOption)
+	{
+		HideDecisionRows();
+		DetailDescriptionTextBlock->SetAutoWrapText(true);
+		DetailFamilyGlyph->SetVisibility(ESlateVisibility::Collapsed);
+		DetailTitleTextBlock->SetText(NSLOCTEXT("StarRoversBuildDock", "DetailPromptTitle", "Build Dock"));
+		DetailClassificationTextBlock->SetText(NSLOCTEXT("StarRoversBuildDock", "DetailPromptClass", "FAMILY WORKSPACE"));
+		DetailSpecificationTextBlock->SetText(FText::GetEmpty());
+		DetailDescriptionTextBlock->SetText(
+			NSLOCTEXT("StarRoversBuildDock", "DetailPrompt", "Hover a structure card for specifications, or select one to inspect live placement."));
+		DetailAvailabilityBadge->SetBadge(
+			NSLOCTEXT("StarRoversBuildDock", "DetailBrowseBadge", "BROWSE"),
+			ESRUIVisualState::Info);
+		StructureDetailBorder->SetToolTipText(FText::GetEmpty());
+		USRUIThemeLibrary::ApplyCardStyle(
+			StructureDetailBorder,
+			ESRUIVisualState::Neutral,
+			FMargin(14.0f, 10.0f));
+		return;
+	}
+
+	const FSRStructureBuildDetailPresentation Presentation =
+		FSRStructureBuildPresentationBuilder::BuildDetail(*BuildOption);
+	DetailFamilyGlyph->SetFamily(BuildOption->ResourceFamily);
+	DetailFamilyGlyph->SetVisibility(ESlateVisibility::HitTestInvisible);
+	DetailTitleTextBlock->SetText(Presentation.Title);
+	DetailClassificationTextBlock->SetText(Presentation.ClassificationText);
+	DetailSpecificationTextBlock->SetText(Presentation.SpecificationText);
+	DetailDescriptionTextBlock->SetAutoWrapText(false);
+	DetailDescriptionTextBlock->SetText(Presentation.Description.IsEmpty()
+		? NSLOCTEXT("StarRoversBuildDock", "NoDescription", "No authored description.")
+		: Presentation.Description);
+	DetailAvailabilityBadge->SetBadge(
+		Presentation.AvailabilityText,
+		USRUIThemeLibrary::ResolveBuildAvailabilityVisualState(Presentation.Availability));
+
+	const FSRStructureBuildRecommendationPresentation Recommendation =
+		FSRStructureBuildPresentationBuilder::BuildRecommendation(
+			*BuildOption,
+			BuildRecommendationContext);
+	DetailRecommendationRow->SetVisibility(Recommendation.bVisible
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
+	if (Recommendation.bVisible)
+	{
+		DetailRecommendationBadge->SetBadge(Recommendation.BadgeText, Recommendation.VisualState);
+		DetailRecommendationTextBlock->SetText(Recommendation.ReasonText);
+		DetailRecommendationRow->SetToolTipText(Recommendation.ReasonText);
+	}
+
+	const FSRStructureBuildFlowPresentation Flow =
+		FSRStructureBuildPresentationBuilder::BuildFlow(*BuildOption);
+	DetailFlowPanel->SetVisibility(Flow.bVisible
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
+	DetailFlowEffectTextBlock->SetVisibility(Flow.bVisible && !Flow.EffectText.IsEmpty()
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
+	if (Flow.bVisible)
+	{
+		DetailFlowInputBadge->SetBadge(Flow.InputText, ESRUIVisualState::Neutral);
+		DetailFlowProcessBadge->SetBadge(Flow.ProcessText, ESRUIVisualState::Info);
+		DetailFlowOutputBadge->SetBadge(Flow.OutputText, ESRUIVisualState::Positive);
+		DetailFlowEffectTextBlock->SetText(Flow.EffectText);
+		DetailFlowPanel->SetToolTipText(Flow.ToolTipText);
+		DetailFlowInputBadge->SetToolTipText(Flow.ToolTipText);
+		DetailFlowProcessBadge->SetToolTipText(Flow.ToolTipText);
+		DetailFlowOutputBadge->SetToolTipText(Flow.ToolTipText);
+	}
+	TArray<FText> DetailToolTipLines;
+	DetailToolTipLines.Add(Presentation.Title);
+	if (!Presentation.Description.IsEmpty())
+	{
+		DetailToolTipLines.Add(Presentation.Description);
+	}
+	if (!Flow.ToolTipText.IsEmpty())
+	{
+		DetailToolTipLines.Add(Flow.ToolTipText);
+	}
+	StructureDetailBorder->SetToolTipText(FText::Join(
+		NSLOCTEXT("StarRoversBuildDock", "DetailTooltipSeparator", "\n"),
+		DetailToolTipLines));
+
+	const bool bShowingSelectedPlacement = bHasSelectedStructureId
+		&& SelectedStructureId == BuildOption->StructureId;
+	FSRStructurePlacementPreview LivePreview;
+	const FSRStructurePlacementPreview* LivePreviewPtr = nullptr;
+	if (bShowingSelectedPlacement)
+	{
+		const ASRPlayerController* PlayerController = Cast<ASRPlayerController>(GetOwningPlayer());
+		LivePreview = IsValid(PlayerController)
+			? PlayerController->GetSelectedStructurePlacementPreview()
+			: FSRStructurePlacementPreview();
+		LivePreviewPtr = &LivePreview;
+	}
+	const FSRStructureBuildPlacementPresentation Placement =
+		FSRStructureBuildPresentationBuilder::BuildPlacement(*BuildOption, LivePreviewPtr);
+	DetailPlacementMetricRow->SetVisibility(ESlateVisibility::HitTestInvisible);
+	DetailPlacementTargetBadge->SetBadge(Placement.TargetText, Placement.TargetVisualState);
+	DetailPlacementFootprintBadge->SetBadge(Placement.FootprintText, Placement.FootprintVisualState);
+	DetailPlacementCapacityBadge->SetBadge(Placement.CapacityText, Placement.CapacityVisualState);
+	DetailPlacementStatusTextBlock->SetVisibility(ESlateVisibility::Collapsed);
+	DetailPlacementTextBlock->SetVisibility(Placement.DetailText.IsEmpty()
+		? ESlateVisibility::Collapsed
+		: ESlateVisibility::HitTestInvisible);
+	DetailPlacementStatusTextBlock->SetText(bShowingSelectedPlacement
+		? NSLOCTEXT("StarRoversBuildDock", "LivePlacementLabel", "LIVE PLACEMENT")
+		: NSLOCTEXT("StarRoversBuildDock", "SelectPlacementLabel", "SELECT TO PREVIEW"));
+	DetailPlacementTextBlock->SetText(Placement.DetailText);
+	DetailPlacementMetricRow->SetToolTipText(Placement.DetailText);
+	DetailPlacementTargetBadge->SetToolTipText(Placement.DetailText);
+	DetailPlacementFootprintBadge->SetToolTipText(Placement.DetailText);
+	DetailPlacementCapacityBadge->SetToolTipText(Placement.DetailText);
+
+	ESRUIVisualState DetailState = USRUIThemeLibrary::ResolveBuildAvailabilityVisualState(
+		BuildOption->Availability);
+	if (bShowingSelectedPlacement)
+	{
+		DetailState = Placement.CapacityVisualState == ESRUIVisualState::Warning
+			? ESRUIVisualState::Warning
+			: Placement.TargetVisualState;
+	}
+	else if (Recommendation.bVisible)
+	{
+		DetailState = Recommendation.VisualState;
+	}
+
+	USRUIThemeLibrary::ApplyCardStyle(
+		StructureDetailBorder,
+		DetailState,
+		FMargin(14.0f, 10.0f));
+	const FLinearColor FamilyAccent = USRUIThemeLibrary::ResolveFamilyAccentColor(BuildOption->ResourceFamily);
+	DetailClassificationTextBlock->SetColorAndOpacity(FSlateColor(FamilyAccent));
+	DetailFlowEffectTextBlock->SetColorAndOpacity(FSlateColor(FamilyAccent));
+	DetailPlacementStatusTextBlock->SetColorAndOpacity(FSlateColor(
+		USRUIThemeLibrary::ResolveStatePalette(DetailState).AccentColor));
 }
 
 void USRStructureSelectionWidget::RefreshPointerHoverState()
@@ -1624,15 +2715,24 @@ void USRStructureSelectionWidget::RefreshStructureTabIndicatorStyles()
 
 	SelectedStructureTabIndex = FMath::Clamp(SelectedStructureTabIndex, 0, PageCount - 1);
 
-	for (int32 TabIndex = 0; TabIndex < StructureTabIndicatorImages.Num(); ++TabIndex)
+	for (int32 LocalTabIndex = 0; LocalTabIndex < StructureTabIndicatorImages.Num(); ++LocalTabIndex)
 	{
-		if (UImage* IndicatorImage = StructureTabIndicatorImages[TabIndex])
+		if (UImage* IndicatorImage = StructureTabIndicatorImages[LocalTabIndex])
 		{
-			IndicatorImage->SetVisibility(TabIndex < PageCount ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-			IndicatorImage->SetColorAndOpacity(TabIndex == SelectedStructureTabIndex
+			const int32 PageIndex = StructureTabIndicatorFirstPageIndex + LocalTabIndex;
+			IndicatorImage->SetVisibility(PageIndex < PageCount ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			IndicatorImage->SetColorAndOpacity(PageIndex == SelectedStructureTabIndex
 				? SelectedStructureTabIndicatorColor
 				: InactiveStructureTabIndicatorColor);
 		}
+	}
+	if (StructurePageTextBlock)
+	{
+		StructurePageTextBlock->SetText(FText::FromString(
+			FSRUILayoutPolicy::ResolvePageWindow(
+				PageCount,
+				SelectedStructureTabIndex,
+				FMath::Max(1, MaximumVisiblePageIndicators)).PageLabel));
 	}
 }
 
@@ -1646,11 +2746,27 @@ void USRStructureSelectionWidget::SetStructureSelectionTabIndex(int32 NewTabInde
 	}
 
 	SelectedStructureTabIndex = (NewTabIndex % PageCount + PageCount) % PageCount;
-	if (StructureTabIndicatorImages.Num() != PageCount)
+	const int32 SelectedVisibleOptionIndex = bHasSelectedStructureId
+		? VisibleBuildOptionIds.IndexOfByKey(SelectedStructureId)
+		: INDEX_NONE;
+	SelectedFacilityButtonIndex = SelectedVisibleOptionIndex != INDEX_NONE
+		&& SelectedVisibleOptionIndex / FacilityButtonCount == SelectedStructureTabIndex
+			? SelectedVisibleOptionIndex % FacilityButtonCount
+			: INDEX_NONE;
+	const FSRUIPageWindow PageWindow = FSRUILayoutPolicy::ResolvePageWindow(
+		PageCount,
+		SelectedStructureTabIndex,
+		FMath::Max(1, MaximumVisiblePageIndicators));
+	if (StructureTabIndicatorImages.Num() != PageWindow.IndicatorCount
+		|| StructureTabIndicatorFirstPageIndex != PageWindow.FirstPageIndex
+		|| !StructurePageTextBlock)
 	{
 		RebuildStructureTabIndicators();
 	}
-	RefreshStructureTabIndicatorStyles();
+	else
+	{
+		RefreshStructureTabIndicatorStyles();
+	}
 	RefreshFacilityButtonLabels();
 	RefreshFacilityButtonStyles();
 }
@@ -1692,6 +2808,15 @@ void USRStructureSelectionWidget::ApplyCategoryButtonIconBrushes()
 		case 3:
 			ConfiguredBrush = &Category4IconBrush;
 			break;
+		case 4:
+			ConfiguredBrush = &Category5IconBrush;
+			break;
+		case 5:
+			ConfiguredBrush = &Category6IconBrush;
+			break;
+		case 6:
+			ConfiguredBrush = &Category7IconBrush;
+			break;
 		default:
 			break;
 		}
@@ -1700,6 +2825,31 @@ void USRStructureSelectionWidget::ApplyCategoryButtonIconBrushes()
 			CategoryButtonImages[ButtonIndex],
 			ConfiguredBrush ? *ConfiguredBrush : FSlateBrush(),
 			DefaultCategoryIconTextures.IsValidIndex(ButtonIndex) ? DefaultCategoryIconTextures[ButtonIndex] : nullptr);
+	}
+}
+
+void USRStructureSelectionWidget::RefreshCategoryButtonLabels()
+{
+	for (int32 ButtonIndex = 0; ButtonIndex < CategoryButtonLabelTextBlocks.Num(); ++ButtonIndex)
+	{
+		UTextBlock* LabelTextBlock = CategoryButtonLabelTextBlocks[ButtonIndex];
+		if (!LabelTextBlock)
+		{
+			continue;
+		}
+
+		if (!FamilyTabs.IsValidIndex(ButtonIndex))
+		{
+			LabelTextBlock->SetText(FText::GetEmpty());
+			continue;
+		}
+
+		const FSRStructureBuildFamilyTab& Tab = FamilyTabs[ButtonIndex];
+		LabelTextBlock->SetText(FText::Format(
+			NSLOCTEXT("StarRoversBuildDock", "FamilyTabLabelFormat", "{0}\n{1}/{2}"),
+			Tab.Label,
+			FText::AsNumber(Tab.SelectableOptionCount),
+			FText::AsNumber(Tab.TotalOptionCount)));
 	}
 }
 
@@ -1712,10 +2862,48 @@ void USRStructureSelectionWidget::RefreshCategoryButtonStyles()
 			const bool bEnabled = IsStructureCategoryAvailable(ButtonIndex);
 			const bool bSelected = bEnabled && ButtonIndex == SelectedCategoryIndex;
 			const bool bHovered = bEnabled && ButtonIndex == HoveredCategoryIndex;
+			const ESRResourceFamily ResourceFamily = FamilyTabs.IsValidIndex(ButtonIndex)
+				? FamilyTabs[ButtonIndex].ResourceFamily
+				: ESRResourceFamily::None;
+			FLinearColor FamilyAccent = USRUIThemeLibrary::ResolveFamilyAccentColor(ResourceFamily);
+			if (FamilyTabs.IsValidIndex(ButtonIndex)
+				&& FamilyTabs[ButtonIndex].Filter == ESRStructureBuildFamilyFilter::All)
+			{
+				FamilyAccent = USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Info).AccentColor;
+			}
+
 			CategoryButton->SetIsEnabled(bEnabled);
+			const FLinearColor BaseColor = bSelected
+				? SelectedCategoryButtonColor
+				: bHovered
+					? HoveredCategoryButtonColor
+					: CategoryButtonColor;
 			CategoryButton->SetBackgroundColor(bEnabled
-				? (bSelected ? SelectedCategoryButtonColor : (bHovered ? HoveredCategoryButtonColor : CategoryButtonColor))
+				? FLinearColor::LerpUsingHSV(BaseColor, FamilyAccent, bSelected ? 0.55f : bHovered ? 0.35f : 0.14f)
 				: DisabledButtonColor);
+
+			if (CategoryButtonImages.IsValidIndex(ButtonIndex) && CategoryButtonImages[ButtonIndex])
+			{
+				CategoryButtonImages[ButtonIndex]->SetColorAndOpacity(bEnabled
+					? FamilyAccent
+					: USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Disabled).SecondaryTextColor);
+			}
+			if (CategoryButtonLabelTextBlocks.IsValidIndex(ButtonIndex)
+				&& CategoryButtonLabelTextBlocks[ButtonIndex])
+			{
+				CategoryButtonLabelTextBlocks[ButtonIndex]->SetColorAndOpacity(FSlateColor(
+					USRUIThemeLibrary::ResolveStatePalette(
+						bEnabled ? ESRUIVisualState::Neutral : ESRUIVisualState::Disabled).PrimaryTextColor));
+			}
+			if (FamilyTabs.IsValidIndex(ButtonIndex))
+			{
+				const FSRStructureBuildFamilyTab& Tab = FamilyTabs[ButtonIndex];
+				CategoryButton->SetToolTipText(FText::Format(
+					NSLOCTEXT("StarRoversBuildDock", "FamilyTabTooltipFormat", "{0}\nAvailable: {1} / {2}"),
+					Tab.Label,
+					FText::AsNumber(Tab.SelectableOptionCount),
+					FText::AsNumber(Tab.TotalOptionCount)));
+			}
 		}
 	}
 }
@@ -1728,22 +2916,18 @@ void USRStructureSelectionWidget::SelectStructureCategory(int32 CategoryIndex)
 	}
 
 	SelectedCategoryIndex = CategoryIndex;
+	SelectedFamilyFilter = FamilyTabs[CategoryIndex].Filter;
 	SelectedFacilityButtonIndex = INDEX_NONE;
+	SelectedStructureTabIndex = 0;
+	FSRStructureBuildDockModel::QueryOptions(
+		BuildOptions,
+		SelectedFamilyFilter,
+		bIncludeSharedWorkflowOptionsInFamilyTabs,
+		VisibleBuildOptionIds);
+	RebuildBuildOptions();
 	RefreshCategoryButtonStyles();
 	RefreshFacilityButtonBarVisibility();
-
-	if (CategoryIndex == 0)
-	{
-		SelectBuildOptionIfAvailable(ConveyorBuildOptionId);
-	}
-	else if (CategoryIndex == 1)
-	{
-		SelectBuildOptionIfAvailable(MinerBuildOptionId);
-	}
-	else
-	{
-		SetStructureSelectionTabIndex(0);
-	}
+	SetStructureSelectionTabIndex(0);
 }
 
 void USRStructureSelectionWidget::SelectFacilityButton(int32 FacilityButtonIndex)
@@ -1762,6 +2946,41 @@ void USRStructureSelectionWidget::SelectFacilityButton(int32 FacilityButtonIndex
 	SelectedFacilityButtonIndex = FacilityButtonIndex;
 	RefreshFacilityButtonStyles();
 	SelectBuildOptionIfAvailable(StructureId);
+}
+
+void USRStructureSelectionWidget::RevealBuildOptionInDock(FName StructureId)
+{
+	const FSRStructureBuildOption* BuildOption = FindBuildOption(StructureId);
+	if (!BuildOption)
+	{
+		return;
+	}
+
+	int32 VisibleOptionIndex = VisibleBuildOptionIds.IndexOfByKey(StructureId);
+	if (VisibleOptionIndex == INDEX_NONE)
+	{
+		const ESRStructureBuildFamilyFilter PreferredFilter =
+			FSRStructureBuildDockModel::ResolvePreferredFilter(*BuildOption);
+		const int32 PreferredTabIndex = FamilyTabs.IndexOfByPredicate(
+			[PreferredFilter](const FSRStructureBuildFamilyTab& Tab)
+			{
+				return Tab.Filter == PreferredFilter;
+			});
+		if (PreferredTabIndex != INDEX_NONE && IsStructureCategoryAvailable(PreferredTabIndex))
+		{
+			SelectStructureCategory(PreferredTabIndex);
+			VisibleOptionIndex = VisibleBuildOptionIds.IndexOfByKey(StructureId);
+		}
+	}
+
+	if (VisibleOptionIndex != INDEX_NONE)
+	{
+		SelectedStructureTabIndex = VisibleOptionIndex / FacilityButtonCount;
+		SelectedFacilityButtonIndex = VisibleOptionIndex % FacilityButtonCount;
+		RebuildStructureTabIndicators();
+		RefreshFacilityButtonLabels();
+		RefreshFacilityButtonStyles();
+	}
 }
 
 bool USRStructureSelectionWidget::SelectBuildOptionIfAvailable(FName StructureId)
@@ -1821,17 +3040,9 @@ void USRStructureSelectionWidget::ClearHoveredFacilityButton()
 
 const TArray<FName>* USRStructureSelectionWidget::GetSelectedFacilityBuildOptionIds() const
 {
-	if (SelectedCategoryIndex == 2)
-	{
-		return &ProcessingBuildOptionIds;
-	}
-
-	if (SelectedCategoryIndex == 3)
-	{
-		return &SynthesisBuildOptionIds;
-	}
-
-	return nullptr;
+	return IsStructureCategoryAvailable(SelectedCategoryIndex)
+		? &VisibleBuildOptionIds
+		: nullptr;
 }
 
 int32 USRStructureSelectionWidget::GetSelectedFacilityPageCount() const
@@ -1861,46 +3072,14 @@ FName USRStructureSelectionWidget::GetFacilityButtonStructureId(int32 FacilityBu
 
 bool USRStructureSelectionWidget::IsStructureCategoryAvailable(int32 CategoryIndex) const
 {
-	if (CategoryIndex == 0)
-	{
-		return IsBuildOptionSelectable(ConveyorBuildOptionId);
-	}
-
-	if (CategoryIndex == 1)
-	{
-		return IsBuildOptionSelectable(MinerBuildOptionId);
-	}
-
-	const TArray<FName>* FacilityBuildOptionIds = nullptr;
-	if (CategoryIndex == 2)
-	{
-		FacilityBuildOptionIds = &ProcessingBuildOptionIds;
-	}
-	else if (CategoryIndex == 3)
-	{
-		FacilityBuildOptionIds = &SynthesisBuildOptionIds;
-	}
-
-	if (!FacilityBuildOptionIds)
-	{
-		return false;
-	}
-
-	for (const FName StructureId : *FacilityBuildOptionIds)
-	{
-		if (IsBuildOptionSelectable(StructureId))
-		{
-			return true;
-		}
-	}
-
-	return false;
+	return FamilyTabs.IsValidIndex(CategoryIndex)
+		&& FamilyTabs[CategoryIndex].HasOptions();
 }
 
 bool USRStructureSelectionWidget::IsBuildOptionSelectable(FName StructureId) const
 {
 	const FSRStructureBuildOption* BuildOption = FindBuildOption(StructureId);
-	return BuildOption && BuildOption->bEnabled;
+	return BuildOption && BuildOption->IsSelectable();
 }
 
 int32 USRStructureSelectionWidget::FindCategoryButtonIndexAtScreenPosition(const FVector2D& ScreenPosition) const
@@ -1932,7 +3111,6 @@ int32 USRStructureSelectionWidget::FindFacilityButtonIndexAtScreenPosition(const
 		const UButton* FacilityButton = FacilityButtons[ButtonIndex];
 		if (IsValid(FacilityButton)
 			&& FacilityButton->IsVisible()
-			&& FacilityButton->GetIsEnabled()
 			&& FacilityButton->GetCachedGeometry().IsUnderLocation(ScreenPosition))
 		{
 			return ButtonIndex;
@@ -1984,6 +3162,39 @@ void USRStructureSelectionWidget::HandleCategory4Clicked()
 void USRStructureSelectionWidget::HandleCategory4Hovered()
 {
 	SetHoveredStructureCategory(3);
+}
+
+void USRStructureSelectionWidget::HandleCategory5Clicked()
+{
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=4"));
+	SelectStructureCategory(4);
+}
+
+void USRStructureSelectionWidget::HandleCategory5Hovered()
+{
+	SetHoveredStructureCategory(4);
+}
+
+void USRStructureSelectionWidget::HandleCategory6Clicked()
+{
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=5"));
+	SelectStructureCategory(5);
+}
+
+void USRStructureSelectionWidget::HandleCategory6Hovered()
+{
+	SetHoveredStructureCategory(5);
+}
+
+void USRStructureSelectionWidget::HandleCategory7Clicked()
+{
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: StructureSelection CategoryButton OnClicked Index=6"));
+	SelectStructureCategory(6);
+}
+
+void USRStructureSelectionWidget::HandleCategory7Hovered()
+{
+	SetHoveredStructureCategory(6);
 }
 
 void USRStructureSelectionWidget::HandleCategoryUnhovered()
@@ -2075,6 +3286,20 @@ const FSRStructureBuildOption* USRStructureSelectionWidget::FindBuildOption(FNam
 		: nullptr;
 }
 
+const FSRStructureBuildOption* USRStructureSelectionWidget::GetDetailBuildOption() const
+{
+	if (HoveredFacilityButtonIndex != INDEX_NONE)
+	{
+		if (const FSRStructureBuildOption* HoveredOption = FindBuildOption(
+			GetFacilityButtonStructureId(HoveredFacilityButtonIndex)))
+		{
+			return HoveredOption;
+		}
+	}
+
+	return bHasSelectedStructureId ? FindBuildOption(SelectedStructureId) : nullptr;
+}
+
 bool USRStructureSelectionWidget::IsScreenPositionOverStructureSelectionPanel(const FVector2D& ScreenPosition) const
 {
 	if (!IsVisible())
@@ -2091,6 +3316,9 @@ bool USRStructureSelectionWidget::IsScreenPositionOverStructureSelectionPanel(co
 	const bool bOverStructureTabBar = StructureTabBarBorder
 		&& StructureTabBarBorder->IsVisible()
 		&& StructureTabBarBorder->GetCachedGeometry().IsUnderLocation(ScreenPosition);
+	const bool bOverDetailPanel = StructureDetailBorder
+		&& StructureDetailBorder->IsVisible()
+		&& StructureDetailBorder->GetCachedGeometry().IsUnderLocation(ScreenPosition);
 
-	return bOverCategoryBar || bOverFacilityButtonBar || bOverStructureTabBar;
+	return bOverCategoryBar || bOverFacilityButtonBar || bOverStructureTabBar || bOverDetailPanel;
 }

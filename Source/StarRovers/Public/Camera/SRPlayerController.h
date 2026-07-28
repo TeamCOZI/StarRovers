@@ -4,6 +4,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Camera/SRPlayerControllerRuntimeState.h"
 #include "Camera/SRPlayerControllerWidgetLayers.h"
+#include "Assembly/SRAssemblyStructurePlacementPreview.h"
 #include "Simulation/SRAugmentSubsystem.h"
 #include "UI/SRCelestialBodyFocusInfo.h"
 #include "UI/SRFocusedHubShortcutWidget.h"
@@ -17,6 +18,7 @@ class USRCelestialBodyFocusInfoWidget;
 class USRCelestialBodyOverviewWidget;
 class USRFacilityControlWidget;
 class USRGameOverWidget;
+class USRPlayerGuidanceWidget;
 class USRStructureSelectionWidget;
 class USRStructureDataAsset;
 class USRTimeControlWidget;
@@ -25,6 +27,7 @@ class ASRCameraPawn;
 class USRCelestialBodyRegistrySubsystem;
 class FSRPlayerControllerInputBinder;
 class FSRPlayerControllerLifecycle;
+struct FSRStructureBuildCatalog;
 
 USTRUCT(BlueprintType)
 struct STARROVERS_API FSRAvailableStructureDataAssetOperationCategory
@@ -86,6 +89,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Focus")
     void RequestActorFocus(AActor* NewFocusedActor, bool bSnapImmediately = false);
 
+    /** Focuses one placed Facility and opens its existing Inspector path. */
+    UFUNCTION(BlueprintCallable, Category = "StarRovers|Focus")
+    bool RequestFacilityFocus(AActor* BodyActor, FName OccupantId, bool bCenterSurface = true);
+
+    /** Focuses any placed surface structure, including a natural resource deposit. */
+    bool RequestSurfaceStructureFocus(AActor* BodyActor, FName OccupantId, bool bCenterSurface = true);
+
     UFUNCTION(BlueprintCallable, Category = "StarRovers|Selection")
     void ClearSelection();
 
@@ -110,6 +120,9 @@ public:
     USRTimeControlWidget* GetTimeControlWidget() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
+    USRPlayerGuidanceWidget* GetPlayerGuidanceWidget() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     USRStructureSelectionWidget* GetStructureSelectionWidget() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
@@ -123,6 +136,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     USRGameOverWidget* GetGameOverWidget() const;
+
+    // Returns the same ruleset- and Augment-filtered catalog consumed by the
+    // structure selection widget. Exposed for PIE validation and tooling.
+    void GetBuildableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     bool IsPointerOverFacilityControlWidget() const;
@@ -150,6 +167,9 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
     USRStructureDataAsset* GetSelectedStructureDataAsset() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly|Placement Preview")
+    FSRStructurePlacementPreview GetSelectedStructurePlacementPreview() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|Assembly")
     bool IsConveyorBulkDeleteModifierActive() const;
@@ -257,6 +277,12 @@ protected:
     UPROPERTY()
     TObjectPtr<USRTimeControlWidget> TimeControlWidget;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "PlayerGuidanceWidgetClass"))
+    TSubclassOf<USRPlayerGuidanceWidget> PlayerGuidanceWidgetClass;
+
+    UPROPERTY()
+    TObjectPtr<USRPlayerGuidanceWidget> PlayerGuidanceWidget;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "StructureSelectionWidgetClass"))
     TSubclassOf<USRStructureSelectionWidget> StructureSelectionWidgetClass;
 
@@ -290,11 +316,16 @@ protected:
     UPROPERTY()
     TObjectPtr<USRGameOverWidget> GameOverWidget;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "WidgetLayerOrder", ToolTip = "Index 0 is the bottom UI layer. Later entries are drawn and hit-tested above earlier entries."))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "WidgetLayerOrder", ToolTip = "Index 0 is the bottom UI layer. Later entries are above earlier entries. Augment Choice and Game Over always retain modal priority."))
     TArray<ESRPlayerUILayer> WidgetLayerOrder;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly", meta = (DisplayName = "AvailableStructureDataAssets"))
     FSRAvailableStructureDataAssetCategories AvailableStructureDataAssets;
+
+    // Native soft references keep the generated Resource V2 build catalog out of
+    // the legacy Blueprint category arrays while remaining visible to the cooker.
+    UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly|Resource V2", meta = (DisplayName = "Authored Resource V2 Structures"))
+    TArray<TSoftObjectPtr<USRStructureDataAsset>> AuthoredResourceV2StructureDataAssets;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Assembly|Performance", meta = (DisplayName = "MaxStructurePlacementsPerFrame", ClampMin = "1"))
     int32 MaxStructurePlacementsPerFrame;
@@ -348,6 +379,7 @@ private:
     void RefreshOverviewWidget();
     void HandleOverviewCelestialBodyRequested(AActor* RequestedActor);
     void CreateTimeControlWidget();
+    void CreatePlayerGuidanceWidget();
     void CreateAugmentChoiceWidget();
     void BindAugmentSubsystem();
     void RegisterAvailableStructuresForAugments();
@@ -372,7 +404,9 @@ private:
     void HandlePrimaryStarGameOver(ASRStar* Star);
     int32 ResolveWidgetLayerZOrder(ESRPlayerUILayer WidgetLayer) const;
     void HandleStructureBuildOptionSelected(FName StructureId, USRStructureDataAsset* StructureDataAsset);
+    void GetConfiguredStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const;
     void GetAvailableStructureDataAssets(TArray<USRStructureDataAsset*>& OutStructureDataAssets) const;
+    void BuildStructureBuildCatalog(FSRStructureBuildCatalog& OutBuildCatalog) const;
     void UpdateAssemblyModeFromFocusedActorScreenSize();
     bool ShouldActivateAssemblyModeForFocusedActorScreenSize() const;
     void UpdateHitResultTraceDistance();
@@ -413,6 +447,7 @@ private:
     bool TryHandlePlacementRotationInput(int32 StepDelta);
     bool TryHandleSurfaceViewRotationInput(int32 StepDelta);
     void UpdateSelection(AActor* NewSelectedActor);
+    void RefreshMiningResourceDepositHighlights();
 
     FSRPlayerControllerRuntimeState RuntimeState;
     double NextFocusedHubShortcutRefreshTime = 0.0;

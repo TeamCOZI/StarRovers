@@ -1,5 +1,9 @@
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
 
+#include "Automation/SRFacilityNetworkComponent.h"
+#include "Automation/SROperationalEconomyProcessor.h"
+#include "Logistics/SRFleetCapacityV2.h"
+#include "Logistics/SRConditionedTransitV2.h"
 #include "SRSpaceLogisticsHubEndpointResolver.h"
 #include "SRSpaceLogisticsHubEndpointMotionTracker.h"
 #include "SRSpaceLogisticsRouteProcessor.h"
@@ -8,6 +12,8 @@
 #include "SRSpaceLogisticsStarFuelMissileProcessor.h"
 #include "SRSpaceLogisticsRouteVisualController.h"
 #include "Simulation/SRTimeControlSubsystem.h"
+#include "Simulation/SRSimulationSettings.h"
+#include "Simulation/SRAugmentSubsystem.h"
 
 namespace
 {
@@ -55,11 +61,12 @@ void USRSpaceLogisticsSubsystem::Tick(float DeltaTime)
 
 	if (!HubRoutes.IsEmpty())
 	{
-		FSRSpaceLogisticsRouteProcessor::ProcessRoutes(
+	FSRSpaceLogisticsRouteProcessor::ProcessRoutes(
 			*this,
 			SimulationDeltaTime,
 			HubRoutes,
-			SpaceshipActorsByRouteId);
+			SpaceshipActorsByRouteId,
+			NextFleetDepartureQueueSequence);
 		FSRSpaceLogisticsRouteVisualController::Refresh(*this, GetWorld(), HubRoutes, SpaceshipActorsByRouteId);
 	}
 
@@ -202,6 +209,86 @@ bool USRSpaceLogisticsSubsystem::SetHubRouteCargoResourceId(FName RouteId, FName
 	return FSRSpaceLogisticsRouteRegistry::SetHubRouteCargoResourceId(RouteId, CargoResourceId, HubRoutes);
 }
 
+bool USRSpaceLogisticsSubsystem::SetHubRouteProfile(
+	FName RouteId,
+	ESRSpaceLogisticsRouteProfileV2 RouteProfile)
+{
+	if (!IsHubRouteProfileUnlocked(RouteProfile))
+	{
+		return false;
+	}
+	return FSRSpaceLogisticsRouteRegistry::SetHubRouteProfile(RouteId, RouteProfile, HubRoutes);
+}
+
+bool USRSpaceLogisticsSubsystem::IsHubRouteProfileUnlocked(
+	ESRSpaceLogisticsRouteProfileV2 RouteProfile) const
+{
+	if (!IsFleetCapacityRulesActive())
+	{
+		return true;
+	}
+
+	const FSRSpaceLogisticsRouteProfileRulesV2 Rules =
+		FSRFleetCapacityV2::GetRouteProfileRules(RouteProfile);
+	if (Rules.Profile != RouteProfile || Rules.ProfileId.IsNone())
+	{
+		return false;
+	}
+	if (!Rules.bRequiresAugmentUnlock)
+	{
+		return true;
+	}
+
+	const USRAugmentSubsystem* AugmentSubsystem = GetWorld()
+		? GetWorld()->GetSubsystem<USRAugmentSubsystem>()
+		: nullptr;
+	return IsValid(AugmentSubsystem)
+		&& AugmentSubsystem->IsRouteProfileUnlockedV2(Rules.ProfileId);
+}
+
+bool USRSpaceLogisticsSubsystem::SetHubRouteConditionedTransitModule(
+	FName RouteId,
+	ESRConditionedTransitModuleV2 ConditionedTransitModule)
+{
+	if (ConditionedTransitModule != ESRConditionedTransitModuleV2::None)
+	{
+		if (!IsFleetCapacityRulesActive())
+		{
+			return false;
+		}
+		const FSRConditionedTransitModuleRulesV2 Rules =
+			FSRConditionedTransitV2::GetModuleRules(ConditionedTransitModule);
+		const USRAugmentSubsystem* AugmentSubsystem = GetWorld()
+			? GetWorld()->GetSubsystem<USRAugmentSubsystem>()
+			: nullptr;
+		if (!Rules.IsConditionedModule()
+			|| !IsValid(AugmentSubsystem)
+			|| !AugmentSubsystem->IsLogisticsModuleUnlockedV2(Rules.UnlockModuleId))
+		{
+			return false;
+		}
+	}
+
+	return FSRSpaceLogisticsRouteRegistry::SetHubRouteConditionedTransitModule(
+		RouteId,
+		ConditionedTransitModule,
+		HubRoutes);
+}
+
+FSRFleetCapacityReportV2 USRSpaceLogisticsSubsystem::GetHubFleetCapacityReport(
+	const FSRSpaceLogisticsHubEndpoint& HubEndpoint) const
+{
+	const USRSimulationSettings* Settings = GetDefault<USRSimulationSettings>();
+	const bool bRulesActive = IsFleetCapacityRulesActive();
+	return FSRFleetCapacityV2::BuildReport(
+		HubEndpoint,
+		HubRoutes,
+		bRulesActive,
+		bRulesActive ? ResolveActiveFleetBerthCountForHub(HubEndpoint) : 0,
+		IsValid(Settings) ? Settings->BaseFleetCapacityV2 : 8,
+		IsValid(Settings) ? Settings->FleetBerthCapacityV2 : 8);
+}
+
 bool USRSpaceLogisticsSubsystem::LaunchStarFuelMissileFromHub(
 	const FSRSpaceLogisticsHubEndpoint& SourceHub,
 	FName& OutMissileId,
@@ -263,6 +350,7 @@ void USRSpaceLogisticsSubsystem::ExportSaveData(FSRSpaceLogisticsSaveData& OutSa
 		*this,
 		HubRoutes,
 		NextHubRouteSequence,
+		NextFleetDepartureQueueSequence,
 		StarFuelMissiles,
 		NextStarFuelMissileSequence,
 		OutSaveData);
@@ -275,6 +363,7 @@ bool USRSpaceLogisticsSubsystem::ImportSaveData(const FSRSpaceLogisticsSaveData&
 		SaveData,
 		HubRoutes,
 		NextHubRouteSequence,
+		NextFleetDepartureQueueSequence,
 		SpaceshipActorsByRouteId,
 		StarFuelMissiles,
 		NextStarFuelMissileSequence,
@@ -337,4 +426,81 @@ bool USRSpaceLogisticsSubsystem::ResolveHubEndpointWorldVelocity(
 		HubEndpoint,
 		HubEndpointMotionSamples,
 		OutWorldVelocity);
+}
+
+bool USRSpaceLogisticsSubsystem::IsFleetCapacityRulesActive() const
+{
+	const USRSimulationSettings* Settings = GetDefault<USRSimulationSettings>();
+	return IsValid(Settings)
+		&& Settings->ResourceRulesetVersion == ESRResourceRulesetVersion::ResourceV2;
+}
+
+int32 USRSpaceLogisticsSubsystem::ResolveActiveFleetBerthCountForHub(
+	const FSRSpaceLogisticsHubEndpoint& HubEndpoint) const
+{
+	AActor* BodyActor = HubEndpoint.BodyActor.Get();
+	USRFacilityNetworkComponent* FacilityNetwork = IsValid(BodyActor)
+		? BodyActor->FindComponentByClass<USRFacilityNetworkComponent>()
+		: nullptr;
+	if (!IsValid(FacilityNetwork) || HubEndpoint.HubOccupantId.IsNone())
+	{
+		return 0;
+	}
+
+	RebuildHubEndpoints();
+	TArray<const FSRSpaceLogisticsHubEndpoint*> BodyHubs;
+	for (const FSRSpaceLogisticsHubEndpoint& CandidateHub : CachedHubEndpoints)
+	{
+		if (CandidateHub.BodyActor == BodyActor && !CandidateHub.HubOccupantId.IsNone())
+		{
+			BodyHubs.Add(&CandidateHub);
+		}
+	}
+	if (BodyHubs.IsEmpty())
+	{
+		return 0;
+	}
+
+	TArray<FName> FacilityOccupantIds;
+	FacilityNetwork->GetRegisteredFacilityOccupantIds(FacilityOccupantIds);
+	int32 AssignedBerthCount = 0;
+	for (const FName FacilityOccupantId : FacilityOccupantIds)
+	{
+		FSRFacilityInstance Facility;
+		if (!FacilityNetwork->GetFacilityInstance(FacilityOccupantId, Facility)
+			|| !FSROperationalEconomyProcessor::IsFleetBerthSupplied(Facility))
+		{
+			continue;
+		}
+
+		const FSRSpaceLogisticsHubEndpoint* AssignedHub = nullptr;
+		int64 BestDistance = MAX_int64;
+		for (const FSRSpaceLogisticsHubEndpoint* CandidateHub : BodyHubs)
+		{
+			if (!CandidateHub)
+			{
+				continue;
+			}
+			const bool bSameFace = CandidateHub->OriginCellId.Face == Facility.OriginCellId.Face;
+			const int64 GridDistance = FMath::Abs(
+				static_cast<int64>(CandidateHub->OriginCellId.CellX) - Facility.OriginCellId.CellX)
+				+ FMath::Abs(
+					static_cast<int64>(CandidateHub->OriginCellId.CellY) - Facility.OriginCellId.CellY);
+			const int64 Distance = GridDistance + (bSameFace ? 0 : (static_cast<int64>(1) << 40));
+			if (!AssignedHub
+				|| Distance < BestDistance
+				|| (Distance == BestDistance
+					&& CandidateHub->HubOccupantId.LexicalLess(AssignedHub->HubOccupantId)))
+			{
+				AssignedHub = CandidateHub;
+				BestDistance = Distance;
+			}
+		}
+
+		if (AssignedHub && AssignedHub->HubOccupantId == HubEndpoint.HubOccupantId)
+		{
+			++AssignedBerthCount;
+		}
+	}
+	return AssignedBerthCount;
 }

@@ -22,6 +22,7 @@ void ASRPlayerController::SetAssemblyModeActive(bool bNewAssemblyModeActive)
 	{
 		AssemblyComponent->SetAssemblyModeActive(bNewAssemblyModeActive);
 	}
+	RefreshMiningResourceDepositHighlights();
 	RefreshFocusInfoWidget();
 	RefreshStructureSelectionWidget();
 }
@@ -76,6 +77,13 @@ FName ASRPlayerController::GetSelectedStructureBuildId() const
 USRStructureDataAsset* ASRPlayerController::GetSelectedStructureDataAsset() const
 {
 	return SelectedStructureDataAsset;
+}
+
+FSRStructurePlacementPreview ASRPlayerController::GetSelectedStructurePlacementPreview() const
+{
+	return AssemblyComponent
+		? AssemblyComponent->GetSelectedStructurePlacementPreview()
+		: FSRStructurePlacementPreview();
 }
 
 bool ASRPlayerController::ShouldHandleAssemblyPlacementDrag() const
@@ -224,17 +232,27 @@ bool ASRPlayerController::RotateStructurePlacement(int32 StepDelta)
 
 void ASRPlayerController::HandleStructureBuildOptionSelected(FName StructureId, USRStructureDataAsset* StructureDataAsset)
 {
-	if (StructureId.IsNone() || !IsValid(StructureDataAsset))
+	const FSRStructureData StructureData = IsValid(StructureDataAsset)
+		? StructureDataAsset->BuildData()
+		: FSRStructureData();
+	if (StructureId.IsNone()
+		|| !IsValid(StructureDataAsset)
+		|| StructureData.StructureId != StructureId
+		|| !StructureData.bAvailableForConstruction
+		|| StructureData.bIsResourceDeposit)
 	{
 		if (!StructureId.IsNone())
 		{
-			SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController received structure build option '%s' without a valid StructureDataAsset."), *StructureId.ToString());
+			SR_LOG(Camera, LogTemp, Error,
+				TEXT("ASRPlayerController rejected structure build option '%s': invalid, mismatched, or unavailable StructureDataAsset."),
+				*StructureId.ToString());
 		}
 		FSRPlayerControllerStructureBuildSelectionState::ResetSelection(
 			SelectedStructureBuildId,
 			bHasSelectedStructureBuildId,
 			SelectedStructureDataAsset,
 			SelectedActor);
+		RefreshMiningResourceDepositHighlights();
 		return;
 	}
 
@@ -247,6 +265,7 @@ void ASRPlayerController::HandleStructureBuildOptionSelected(FName StructureId, 
 				bHasSelectedStructureBuildId,
 				SelectedStructureDataAsset,
 				SelectedActor);
+			RefreshMiningResourceDepositHighlights();
 			return;
 		}
 	}
@@ -258,17 +277,20 @@ void ASRPlayerController::HandleStructureBuildOptionSelected(FName StructureId, 
 		bHasSelectedStructureBuildId,
 		SelectedStructureDataAsset,
 		SelectedActor);
+	RefreshMiningResourceDepositHighlights();
 }
 
 bool ASRPlayerController::ClearSelectedStructureBuildOption()
 {
-	return FSRPlayerControllerStructureBuildSelectionState::ClearSelection(
+	const bool bClearedSelection = FSRPlayerControllerStructureBuildSelectionState::ClearSelection(
 		SelectedStructureBuildId,
 		bHasSelectedStructureBuildId,
 		SelectedStructureDataAsset,
 		SelectedActor,
 		StructureSelectionWidget,
 		AssemblyComponent);
+	RefreshMiningResourceDepositHighlights();
+	return bClearedSelection;
 }
 
 bool ASRPlayerController::TrySelectBuildOptionFromHoveredCell()

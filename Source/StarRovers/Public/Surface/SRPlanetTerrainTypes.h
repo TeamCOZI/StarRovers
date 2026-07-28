@@ -66,6 +66,7 @@ struct STARROVERS_API FSRDynamicMeshGenerationSnapshot
 	float RiverStrength = 0.28f;
 	float LakeStrength = 0.18f;
 	float TemperatureFrequency = 1.75f;
+	float TemperatureBias = 0.0f;
 	bool bApplyTemperatureStateSurfaceColor = true;
 	float TemperatureStateSurfaceColorBlendAlpha = 0.6f;
 	FLinearColor FrozenTemperatureStateSurfaceColor = FLinearColor(0.12f, 0.82f, 1.0f, 1.0f);
@@ -74,6 +75,7 @@ struct STARROVERS_API FSRDynamicMeshGenerationSnapshot
 	FLinearColor HotTemperatureStateSurfaceColor = FLinearColor(1.0f, 0.50f, 0.08f, 1.0f);
 	FLinearColor OverheatedTemperatureStateSurfaceColor = FLinearColor(1.0f, 0.08f, 0.03f, 1.0f);
 	float MoistureFrequency = 2.5f;
+	float MoistureBias = 0.0f;
 	float DetailFrequency = 18.0f;
 	float DetailStrength = 0.45f;
 	float NoiseStrength = 0.18f;
@@ -207,6 +209,9 @@ struct STARROVERS_API FSRDynamicMeshGeneration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "TemperatureFrequency", ClampMin = "0.01", ToolTip = "기온 노이즈의 샘플 빈도입니다. 값을 키우면 뜨겁고 추운 구역이 더 자잘하게 반복되고, 줄이면 넓은 기후대가 생깁니다."))
 	float TemperatureFrequency = 1.75f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "TemperatureBias", ClampMin = "-1.0", ClampMax = "1.0", ToolTip = "행성 전체 기온에 더하는 편향입니다. 양수는 Hot/Overheated Cell을, 음수는 Cold/Frozen Cell을 늘립니다."))
+	float TemperatureBias = 0.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation|Temperature Surface Color", meta = (DisplayName = "bApplyTemperatureStateSurfaceColor", ToolTip = "When enabled, terrain surface vertex colors are tinted by each cell's current TemperatureState. Runtime temperature changes update the affected cell colors."))
 	bool bApplyTemperatureStateSurfaceColor = true;
 
@@ -230,6 +235,9 @@ struct STARROVERS_API FSRDynamicMeshGeneration
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "MoistureFrequency", ClampMin = "0.01", ToolTip = "습도 노이즈의 샘플 빈도입니다. 값을 키우면 습윤/건조 구역이 더 자잘해지고, 줄이면 넓은 습도대가 생깁니다."))
 	float MoistureFrequency = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "MoistureBias", ClampMin = "-1.0", ClampMax = "1.0", ToolTip = "행성 전체 습도에 더하는 편향입니다. 양수는 습윤 지형을, 음수는 건조 지형을 늘립니다."))
+	float MoistureBias = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "DetailFrequency", ClampMin = "0.01", ToolTip = "최종 표면에 더하는 미세 기복 노이즈의 빈도입니다. 값을 키우면 작은 요철이 더 자주 나타나고, 줄이면 큰 완만한 변화만 남습니다."))
 	float DetailFrequency = 18.0f;

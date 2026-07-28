@@ -1,11 +1,15 @@
 #include "UI/SRGameOverWidget.h"
 
 #include "Utility/SRLog.h"
+#include "UI/SRUILayoutPolicy.h"
+#include "UI/SRStellarRunResultPresentation.h"
 #include "Blueprint/WidgetTree.h"
 #include "Celestial/SRStar.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/ScaleBox.h"
+#include "Components/ScaleBoxSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -123,14 +127,23 @@ void USRGameOverWidget::BuildGameOverWidgetTree()
 		BackgroundSlot->SetOffsets(FMargin(0.0f));
 	}
 
+	UScaleBox* ContentScaleBox = WidgetTree->ConstructWidget<UScaleBox>(
+		UScaleBox::StaticClass(),
+		TEXT("GameOverContentScaleBox"));
+	ContentScaleBox->SetStretch(EStretch::ScaleToFit);
+	ContentScaleBox->SetStretchDirection(EStretchDirection::DownOnly);
+	if (UCanvasPanelSlot* ContentScaleSlot = RootCanvasPanel->AddChildToCanvas(ContentScaleBox))
+	{
+		ContentScaleSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+		ContentScaleSlot->SetOffsets(FMargin(FSRUILayoutPolicy::DefaultSafeMargin));
+	}
+
 	USizeBox* ContentSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("GameOverContentSizeBox"));
 	ContentSizeBox->SetWidthOverride(620.0f);
-	if (UCanvasPanelSlot* ContentSlot = RootCanvasPanel->AddChildToCanvas(ContentSizeBox))
+	if (UScaleBoxSlot* ContentSlot = Cast<UScaleBoxSlot>(ContentScaleBox->AddChild(ContentSizeBox)))
 	{
-		ContentSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-		ContentSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-		ContentSlot->SetPosition(FVector2D::ZeroVector);
-		ContentSlot->SetAutoSize(true);
+		ContentSlot->SetHorizontalAlignment(HAlign_Center);
+		ContentSlot->SetVerticalAlignment(VAlign_Center);
 	}
 
 	UVerticalBox* ContentVerticalBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("GameOverContent"));
@@ -170,34 +183,38 @@ void USRGameOverWidget::BuildGameOverWidgetTree()
 
 void USRGameOverWidget::RefreshGameOverText()
 {
+	FSRStellarRunResultSnapshot Snapshot;
+	const ASRStar* Star = GameOverStar.Get();
+	if (IsValid(Star))
+	{
+		const FSRStellarFuelState FuelState = Star->GetStellarFuelState();
+		Snapshot.bHasStar = true;
+		Snapshot.RunProgress = FuelState.RunProgress;
+		Snapshot.StoredFuel = FuelState.StoredFuel;
+		Snapshot.ReferenceFuel = FuelState.InitialStageFuel;
+	}
+	const FSRStellarRunResultPresentation Presentation =
+		FSRStellarRunResultPresentationBuilder::Build(Snapshot);
+
+	if (BackgroundBorder)
+	{
+		BackgroundBorder->SetBrushColor(Presentation.BackgroundColor);
+	}
 	if (TitleTextBlock)
 	{
-		TitleTextBlock->SetText(NSLOCTEXT("StarRoversGameOver", "Title", "DEFEAT"));
+		TitleTextBlock->SetText(Presentation.TitleText);
+		TitleTextBlock->SetColorAndOpacity(FSlateColor(Presentation.TitleColor));
 	}
 
 	if (SubtitleTextBlock)
 	{
-		SubtitleTextBlock->SetText(NSLOCTEXT("StarRoversGameOver", "Subtitle", "The primary star has gone supernova."));
+		SubtitleTextBlock->SetText(Presentation.SubtitleText);
+		SubtitleTextBlock->SetColorAndOpacity(FSlateColor(Presentation.SubtitleColor));
 	}
 
-	if (!DetailTextBlock)
+	if (DetailTextBlock)
 	{
-		return;
+		DetailTextBlock->SetText(Presentation.DetailText);
+		DetailTextBlock->SetColorAndOpacity(FSlateColor(Presentation.DetailColor));
 	}
-
-	const ASRStar* Star = GameOverStar.Get();
-	if (!IsValid(Star))
-	{
-		DetailTextBlock->SetText(NSLOCTEXT(
-			"StarRoversGameOver",
-			"DefaultDetail",
-			"Stored fuel reached 0 and the stellar state collapsed completely."));
-		return;
-	}
-
-	const FSRStellarFuelState FuelState = Star->GetStellarFuelState();
-	DetailTextBlock->SetText(FText::FromString(FString::Printf(
-		TEXT("Stored Fuel: %.0f / %.0f\nFinal State: Supernova\nThe colony can no longer survive."),
-		FMath::Max(0.0, FuelState.StoredFuel),
-		FMath::Max(0.0, FuelState.InitialStageFuel))));
 }

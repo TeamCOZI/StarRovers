@@ -30,6 +30,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Identity", meta = (DisplayName = "BodyCategory"))
 	ESRCelestialBodyCategory BodyCategory = ESRCelestialBodyCategory::Planet;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Generation", meta = (DisplayName = "GenerationWeight", ClampMin = "0.0", ToolTip = "SolarSystemGenerator가 이 행성 환경을 선택할 상대 가중치입니다. 0이면 무작위 생성 후보에서 제외됩니다."))
+	float GenerationWeight = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|CelestialBody", meta = (DisplayName = "Scale", ClampMin = "0.0"))
 	float Scale = 20.0f;
 

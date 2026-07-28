@@ -3,6 +3,8 @@
 #include "Utility/SRLog.h"
 #include "Simulation/SRSolarSystemGeneratorPipeline.h"
 
+#include "Automation/SRResourceV2AuthoredContent.h"
+#include "Simulation/SRSimulationSettings.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Structure/SRStructurePlacementLibrary.h"
@@ -151,12 +153,17 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 	};
 
 	bool bLoggedMissingStructureDataAsset = false;
+	const USRSimulationSettings* SimulationSettings = GetDefault<USRSimulationSettings>();
+	const ESRResourceRulesetVersion ActiveResourceRuleset = IsValid(SimulationSettings)
+		? SimulationSettings->ResourceRulesetVersion
+		: ESRResourceRulesetVersion::Legacy;
 	USRStructureInstanceManagerComponent* StructureInstanceManager = Body->FindComponentByClass<USRStructureInstanceManagerComponent>();
-	auto GenerateRuleForCandidateCells = [this, Body, SurfaceGrid, StructureInstanceManager, &Cells, &RandomStream, &bLoggedMissingStructureDataAsset](
+	auto GenerateRuleForCandidateCells = [this, Body, SurfaceGrid, StructureInstanceManager, &Cells, &RandomStream, &bLoggedMissingStructureDataAsset, ActiveResourceRuleset](
 		const TArray<int32>& CandidateCellIndices,
 		USRStructureDataAsset* StructureDataAsset,
 		float SpawnChancePerCell,
 		int32 MaxCount,
+		int32 MinimumGuaranteedCount,
 		int32 MinCellSpacing)
 	{
 		const double RuleStart = GetSolarSystemGenerationTimingSeconds();
@@ -170,6 +177,12 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 			}
 			return;
 		}
+		if (!FSRResourceV2AuthoredContent::ShouldGenerateNaturalStructure(
+			StructureDataAsset,
+			ActiveResourceRuleset))
+		{
+			return;
+		}
 
 		if (CandidateCellIndices.IsEmpty())
 		{
@@ -180,9 +193,17 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 		double StageStart = GetSolarSystemGenerationTimingSeconds();
 		TArray<int32> CandidateIterationIndices = CandidateCellIndices;
 		const int32 SafeMaxCount = FMath::Max(0, MaxCount);
+		const int32 SafeMinimumGuaranteedCount = SafeMaxCount > 0
+			? FMath::Clamp(MinimumGuaranteedCount, 0, SafeMaxCount)
+			: FMath::Max(0, MinimumGuaranteedCount);
+		const bool bRequiresAdjacentBuildAccess =
+			StructureDataAsset->BuildData().bIsResourceDeposit;
 		const float SafeSpawnChancePerCell = FMath::Clamp(SpawnChancePerCell, 0.0f, 1.0f);
-		const int32 MinimumCandidateAttempts = SafeMaxCount > 0
-			? SafeMaxCount * FMath::Max(4, FMath::CeilToInt(1.0f / FMath::Max(SafeSpawnChancePerCell, 0.05f)))
+		const int32 DesiredPlacedCount = SafeMaxCount > 0
+			? SafeMaxCount
+			: SafeMinimumGuaranteedCount;
+		const int32 MinimumCandidateAttempts = DesiredPlacedCount > 0
+			? DesiredPlacedCount * FMath::Max(4, FMath::CeilToInt(1.0f / FMath::Max(SafeSpawnChancePerCell, 0.05f)))
 			: CandidateIterationIndices.Num();
 		const int32 PartialShuffleCount = FMath::Clamp(
 			FMath::Max(MinimumCandidateAttempts, 1024),
@@ -207,22 +228,61 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 			PlacedOriginCellIds.Reserve(ExpectedPlacedCount);
 		}
 		int32 PlacedCount = 0;
-		for (const int32 CandidateCellIndex : CandidateIterationIndices)
+		auto TryPlaceCandidate = [&](const int32 CandidateCellIndex)
 		{
 			if (SafeMaxCount > 0 && PlacedCount >= SafeMaxCount)
 			{
-				break;
+				return false;
 			}
 
 			if (!Cells.IsValidIndex(CandidateCellIndex))
 			{
-				continue;
+				return false;
 			}
 			const FSRPlanetSurfaceGridCell& CandidateCell = Cells[CandidateCellIndex];
-
-			if (SafeSpawnChancePerCell < 1.0f && RandomStream.FRand() > SafeSpawnChancePerCell)
+			if (CandidateCell.bOccupied)
 			{
-				continue;
+				return false;
+			}
+
+			// Every generated deposit must retain at least one concrete Miner
+			// approach cell. Random abundance is never allowed to create an
+			// unusable first-Line resource.
+			if (bRequiresAdjacentBuildAccess)
+			{
+				FSRPlanetSurfaceGridCellNeighbors Neighbors;
+				if (!SurfaceGrid->GetCellNeighbors(CandidateCell.CellId, Neighbors))
+				{
+					return false;
+				}
+				const FSRPlanetSurfaceGridCellId NeighborIds[] = {
+					Neighbors.NegativeU,
+					Neighbors.PositiveU,
+					Neighbors.NegativeV,
+					Neighbors.PositiveV,
+				};
+				bool bHasMinerApproachCell = false;
+				for (const FSRPlanetSurfaceGridCellId& NeighborId : NeighborIds)
+				{
+					FSRPlanetSurfaceGridCellInfo NeighborInfo;
+					if (!SurfaceGrid->GetCellInfoById(NeighborId, NeighborInfo))
+					{
+						continue;
+					}
+					if ((!NeighborInfo.bOccupied && NeighborInfo.bCanConstruct)
+						|| (StructureInstanceManager
+							&& !NeighborInfo.OccupantId.IsNone()
+							&& StructureInstanceManager->CanDestroyNaturalStructureForConstruction(
+								NeighborInfo.OccupantId)))
+					{
+						bHasMinerApproachCell = true;
+						break;
+					}
+				}
+				if (!bHasMinerApproachCell)
+				{
+					return false;
+				}
 			}
 
 			if (SafeMinCellSpacing > 0)
@@ -240,7 +300,7 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 				}
 				if (bTooCloseToPlacedStructure)
 				{
-					continue;
+					return false;
 				}
 			}
 
@@ -269,14 +329,52 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 				}
 				++PlacedCount;
 			}
+			return bPlacedStructure;
+		};
+
+		for (const int32 CandidateCellIndex : CandidateIterationIndices)
+		{
+			if (SafeMaxCount > 0 && PlacedCount >= SafeMaxCount)
+			{
+				break;
+			}
+			if (SafeSpawnChancePerCell < 1.0f && RandomStream.FRand() > SafeSpawnChancePerCell)
+			{
+				continue;
+			}
+			TryPlaceCandidate(CandidateCellIndex);
+		}
+
+		// The first pass keeps authored rarity. The second pass removes only the
+		// random roll so a required system resource cannot disappear by chance.
+		if (PlacedCount < SafeMinimumGuaranteedCount)
+		{
+			for (const int32 CandidateCellIndex : CandidateIterationIndices)
+			{
+				if (PlacedCount >= SafeMinimumGuaranteedCount)
+				{
+					break;
+				}
+				TryPlaceCandidate(CandidateCellIndex);
+			}
+		}
+		if (PlacedCount < SafeMinimumGuaranteedCount)
+		{
+			SR_LOG(SolarSystem, LogTemp, Warning,
+				TEXT("Natural structure rule '%s' on '%s' placed %d of %d guaranteed structures; valid spaced cells were exhausted."),
+				*GetNameSafe(StructureDataAsset),
+				*GetNameSafe(Body),
+				PlacedCount,
+				SafeMinimumGuaranteedCount);
 		}
 		FSRTimingLog::AddLine(FString::Printf(
-			TEXT("GenerateNaturalStructuresForBody.Rule '%s' %.2f ms Candidates=%d Iteration=%d Placed=%d Shuffle=%.2f ms"),
+			TEXT("GenerateNaturalStructuresForBody.Rule '%s' %.2f ms Candidates=%d Iteration=%d Placed=%d Guaranteed=%d Shuffle=%.2f ms"),
 			*GetNameSafe(StructureDataAsset),
 			GetSolarSystemGenerationElapsedMilliseconds(RuleStart),
 			InitialCandidateCount,
 			CandidateIterationIndices.Num(),
 			PlacedCount,
+			SafeMinimumGuaranteedCount,
 			ShuffleMs));
 	};
 
@@ -327,6 +425,7 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 			Rule.StructureDataAsset.Get(),
 			RuleOverride ? RuleOverride->SpawnChancePerCell : Rule.SpawnChancePerCell,
 			RuleOverride ? RuleOverride->MaxCount : Rule.MaxCount,
+			RuleOverride ? RuleOverride->MinimumGuaranteedCount : Rule.MinimumGuaranteedCount,
 			RuleOverride ? RuleOverride->MinCellSpacing : Rule.MinCellSpacing);
 	};
 
@@ -347,6 +446,7 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 			Rule.StructureDataAsset.Get(),
 			RuleOverride ? RuleOverride->SpawnChancePerCell : Rule.SpawnChancePerCell,
 			RuleOverride ? RuleOverride->MaxCount : Rule.MaxCount,
+			RuleOverride ? RuleOverride->MinimumGuaranteedCount : Rule.MinimumGuaranteedCount,
 			RuleOverride ? RuleOverride->MinCellSpacing : Rule.MinCellSpacing);
 	};
 

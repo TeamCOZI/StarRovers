@@ -1,9 +1,22 @@
 #include "SRSpaceLogisticsRouteRegistry.h"
 
+#include "Logistics/SRFleetCapacityV2.h"
+#include "Logistics/SRConditionedTransitV2.h"
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
 #include "SRSpaceLogisticsRoutePathResolver.h"
 #include "SRSpaceLogisticsRouteVisualController.h"
 #include "Utility/SRLog.h"
+#include "Simulation/SRSimulationSettings.h"
+
+namespace
+{
+	bool IsFleetCapacityRulesActive()
+	{
+		const USRSimulationSettings* Settings = GetDefault<USRSimulationSettings>();
+		return IsValid(Settings)
+			&& Settings->ResourceRulesetVersion == ESRResourceRulesetVersion::ResourceV2;
+	}
+}
 
 bool FSRSpaceLogisticsRouteRegistry::AreHubEndpointKeysEqual(
 	const FSRSpaceLogisticsHubEndpoint& Left,
@@ -62,8 +75,16 @@ bool FSRSpaceLogisticsRouteRegistry::CreateHubRoute(
 	HubRoute.DestinationHub = ResolvedDestinationHub;
 	HubRoute.bEnabled = true;
 	HubRoute.bReturnEmptyWhenNoCargo = bReturnEmptyWhenNoCargo;
-	HubRoute.MaxCargoStackCount = FMath::Max(1, MaxCargoStackCount);
+	HubRoute.RouteProfile = ESRSpaceLogisticsRouteProfileV2::NeutralShuttle;
+	HubRoute.ConditionedTransitModule = ESRConditionedTransitModuleV2::None;
+	HubRoute.MaxCargoStackCount = IsFleetCapacityRulesActive()
+		? FMath::Min(
+			FMath::Max(1, MaxCargoStackCount),
+			FSRFleetCapacityV2::GetRouteProfileRules(HubRoute.RouteProfile).CargoCapacity)
+		: FMath::Max(1, MaxCargoStackCount);
 	HubRoute.CargoResourceId = NAME_None;
+	HubRoute.FleetDepartureQueueSequence = 0;
+	HubRoute.FleetQueuePosition = 0;
 	HubRoute.Phase = ESRSpaceLogisticsHubRoutePhase::WaitingForCargo;
 	HubRoute.CurrentDockSide = ESRSpaceLogisticsHubRouteDockSide::Source;
 	ApplyHubRouteFlightSettings(SpaceLogisticsSubsystem, HubRoute, InitialSpeedUnitsPerSecond, LaunchAccelerationUnitsPerSecondSquared);
@@ -122,6 +143,10 @@ bool FSRSpaceLogisticsRouteRegistry::CreateDebugLocalOrbitRoute(
 	HubRoute.bReturnEmptyWhenNoCargo = true;
 	HubRoute.MaxCargoStackCount = 1;
 	HubRoute.CargoResourceId = NAME_None;
+	HubRoute.RouteProfile = ESRSpaceLogisticsRouteProfileV2::NeutralShuttle;
+	HubRoute.ConditionedTransitModule = ESRConditionedTransitModuleV2::None;
+	HubRoute.FleetDepartureQueueSequence = 0;
+	HubRoute.FleetQueuePosition = 0;
 	HubRoute.bDebugLocalOrbit = true;
 	HubRoute.Phase = ESRSpaceLogisticsHubRoutePhase::TravelingToDestination;
 	HubRoute.CurrentDockSide = ESRSpaceLogisticsHubRouteDockSide::Source;
@@ -196,7 +221,11 @@ bool FSRSpaceLogisticsRouteRegistry::SetHubRouteMaxCargoStackCount(
 		return false;
 	}
 
-	HubRoute->MaxCargoStackCount = FMath::Max(1, MaxCargoStackCount);
+	HubRoute->MaxCargoStackCount = IsFleetCapacityRulesActive()
+		? FMath::Min(
+			FMath::Max(1, MaxCargoStackCount),
+			FSRFleetCapacityV2::GetRouteProfileRules(HubRoute->RouteProfile).CargoCapacity)
+		: FMath::Max(1, MaxCargoStackCount);
 	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
@@ -245,6 +274,78 @@ bool FSRSpaceLogisticsRouteRegistry::SetHubRouteCargoResourceId(
 		TEXT("[SpaceLogistics] Hub route cargo resource filter updated: RouteId=%s CargoResourceId=%s"),
 		*RouteId.ToString(),
 		HubRoute->CargoResourceId.IsNone() ? TEXT("Any") : *HubRoute->CargoResourceId.ToString());
+	return true;
+}
+
+bool FSRSpaceLogisticsRouteRegistry::SetHubRouteProfile(
+	FName RouteId,
+	ESRSpaceLogisticsRouteProfileV2 RouteProfile,
+	TArray<FSRSpaceLogisticsHubRoute>& HubRoutes)
+{
+	FSRSpaceLogisticsHubRoute* HubRoute = FindMutableRoute(RouteId, HubRoutes);
+	if (!HubRoute || HubRoute->bDebugLocalOrbit)
+	{
+		return false;
+	}
+	if (HubRoute->Phase == ESRSpaceLogisticsHubRoutePhase::TravelingToDestination
+		|| HubRoute->Phase == ESRSpaceLogisticsHubRoutePhase::TravelingToSource
+		|| (!HubRoute->Cargo.ResourceId.IsNone() && HubRoute->Cargo.StackCount > 0))
+	{
+		return false;
+	}
+
+	const FSRSpaceLogisticsRouteProfileRulesV2 Rules =
+		FSRFleetCapacityV2::GetRouteProfileRules(RouteProfile);
+	HubRoute->RouteProfile = Rules.Profile;
+	if (Rules.Profile != ESRSpaceLogisticsRouteProfileV2::ConditionedHold)
+	{
+		HubRoute->ConditionedTransitModule = ESRConditionedTransitModuleV2::None;
+	}
+	HubRoute->MaxCargoStackCount = FMath::Max(1, Rules.CargoCapacity);
+	SR_LOG(SpaceLogistics,
+		LogTemp,
+		Display,
+		TEXT("[SpaceLogistics] Hub route profile updated: RouteId=%s Profile=%s CargoCapacity=%d FleetLoad=%d"),
+		*RouteId.ToString(),
+		*Rules.DisplayName.ToString(),
+		Rules.CargoCapacity,
+		Rules.FleetLoad);
+	return true;
+}
+
+bool FSRSpaceLogisticsRouteRegistry::SetHubRouteConditionedTransitModule(
+	FName RouteId,
+	ESRConditionedTransitModuleV2 ConditionedTransitModule,
+	TArray<FSRSpaceLogisticsHubRoute>& HubRoutes)
+{
+	FSRSpaceLogisticsHubRoute* HubRoute = FindMutableRoute(RouteId, HubRoutes);
+	if (!HubRoute || HubRoute->bDebugLocalOrbit)
+	{
+		return false;
+	}
+	if (HubRoute->Phase == ESRSpaceLogisticsHubRoutePhase::TravelingToDestination
+		|| HubRoute->Phase == ESRSpaceLogisticsHubRoutePhase::TravelingToSource
+		|| (!HubRoute->Cargo.ResourceId.IsNone() && HubRoute->Cargo.StackCount > 0))
+	{
+		return false;
+	}
+
+	const FSRConditionedTransitModuleRulesV2 ModuleRules =
+		FSRConditionedTransitV2::GetModuleRules(ConditionedTransitModule);
+	if (ConditionedTransitModule != ESRConditionedTransitModuleV2::None
+		&& (HubRoute->RouteProfile != ESRSpaceLogisticsRouteProfileV2::ConditionedHold
+			|| !ModuleRules.IsConditionedModule()))
+	{
+		return false;
+	}
+
+	HubRoute->ConditionedTransitModule = ModuleRules.Module;
+	SR_LOG(SpaceLogistics,
+		LogTemp,
+		Display,
+		TEXT("[SpaceLogistics] Hub route conditioned module updated: RouteId=%s Module=%s"),
+		*RouteId.ToString(),
+		*ModuleRules.DisplayName.ToString());
 	return true;
 }
 

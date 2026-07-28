@@ -16,6 +16,9 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Fonts/SlateFontInfo.h"
 #include "Styling/SlateColor.h"
+#include "UI/SRUIComponents.h"
+#include "UI/SRUILayoutPolicy.h"
+#include "UI/SRUITheme.h"
 
 namespace
 {
@@ -86,7 +89,55 @@ void USRCelestialBodyOverviewWidget::BuildOverviewWidgetTree()
 			WidgetTree->FindWidget(FName(TEXT("NameplateToggleButton"))));
 		NameplateToggleButtonTextBlock = Cast<UTextBlock>(
 			WidgetTree->FindWidget(FName(TEXT("NameplateToggleButtonTextBlock"))));
-		return;
+		StrategicStatusBadge = Cast<USRStatusBadgeWidget>(
+			WidgetTree->FindWidget(FName(TEXT("StrategicStatusBadge"))));
+		StrategicDetailTextBlock = Cast<UTextBlock>(
+			WidgetTree->FindWidget(FName(TEXT("StrategicDetailTextBlock"))));
+		StrategicFocusButton = Cast<UButton>(
+			WidgetTree->FindWidget(FName(TEXT("StrategicFocusButton"))));
+		StrategicFocusButtonTextBlock = Cast<UTextBlock>(
+			WidgetTree->FindWidget(FName(TEXT("StrategicFocusButtonTextBlock"))));
+		StrategyOverlayToggleButton = Cast<UButton>(
+			WidgetTree->FindWidget(FName(TEXT("StrategyOverlayToggleButton"))));
+		StrategyOverlayToggleButtonTextBlock = Cast<UTextBlock>(
+			WidgetTree->FindWidget(FName(TEXT("StrategyOverlayToggleButtonTextBlock"))));
+		if (OverviewCanvasPanel && OverviewBorder && OverviewVerticalBox
+			&& StarSystemTextBlock && StarSystemScrollBox
+			&& NameplateToggleButton && NameplateToggleButtonTextBlock
+			&& StrategicStatusBadge && StrategicDetailTextBlock
+			&& StrategicFocusButton && StrategicFocusButtonTextBlock
+			&& StrategyOverlayToggleButton && StrategyOverlayToggleButtonTextBlock)
+		{
+			NameplateToggleButton->OnClicked.RemoveDynamic(
+				this, &USRCelestialBodyOverviewWidget::HandleNameplateToggleClicked);
+			NameplateToggleButton->OnClicked.AddDynamic(
+				this, &USRCelestialBodyOverviewWidget::HandleNameplateToggleClicked);
+			StrategyOverlayToggleButton->OnClicked.RemoveDynamic(
+				this, &USRCelestialBodyOverviewWidget::HandleStrategyOverlayToggleClicked);
+			StrategyOverlayToggleButton->OnClicked.AddDynamic(
+				this, &USRCelestialBodyOverviewWidget::HandleStrategyOverlayToggleClicked);
+			StrategicFocusButton->OnClicked.RemoveDynamic(
+				this, &USRCelestialBodyOverviewWidget::HandleStrategicFocusClicked);
+			StrategicFocusButton->OnClicked.AddDynamic(
+				this, &USRCelestialBodyOverviewWidget::HandleStrategicFocusClicked);
+			NameplateToggleButtonTextBlock->SetText(bShowNameplateButtons
+				? NSLOCTEXT("StarRoversOverview", "NameplateButtonsOnCompact", "NAMES ON")
+				: NSLOCTEXT("StarRoversOverview", "NameplateButtonsOffCompact", "NAMES OFF"));
+			StrategyOverlayToggleButtonTextBlock->SetText(bShowStrategyOverlay
+				? NSLOCTEXT("StarRoversOverview", "StrategyOverlayOn", "ROUTES ON")
+				: NSLOCTEXT("StarRoversOverview", "StrategyOverlayOff", "ROUTES OFF"));
+			RefreshStrategicHeader();
+			return;
+		}
+
+		// Upgrade an existing Blueprint tree authored before the strategic
+		// command-layer contract without requiring an asset migration pass.
+		WidgetTree->RootWidget = nullptr;
+		NameplateActors.Reset();
+		NameplateButtons.Reset();
+		NameplateTextBlocks.Reset();
+		NameplateButtonLayouts.Reset();
+		StrategicRouteLineLayouts.Reset();
 	}
 
 	OverviewCanvasPanel = WidgetTree->ConstructWidget<UCanvasPanel>(
@@ -103,8 +154,8 @@ void USRCelestialBodyOverviewWidget::BuildOverviewWidgetTree()
 	{
 		CanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
 		CanvasSlot->SetAlignment(FVector2D(0.0f, 0.0f));
-		CanvasSlot->SetPosition(FVector2D(16.0f, 76.0f));
-		CanvasSlot->SetSize(FVector2D(280.0f, 420.0f));
+		CanvasSlot->SetPosition(FVector2D(FSRUILayoutPolicy::DefaultSafeMargin, 76.0f));
+		CanvasSlot->SetSize(FVector2D(332.0f, 510.0f));
 	}
 
 	OverviewVerticalBox = WidgetTree->ConstructWidget<UVerticalBox>(
@@ -125,25 +176,95 @@ void USRCelestialBodyOverviewWidget::BuildOverviewWidgetTree()
 		StarSystemTextBlockSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 10.0f));
 	}
 
+	StrategicStatusBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+		USRStatusBadgeWidget::StaticClass(), TEXT("StrategicStatusBadge"));
+	StrategicStatusBadge->SetBadge(
+		NSLOCTEXT("StarRoversOverview", "NetworkNominalInitial", "NETWORK NOMINAL"),
+		ESRUIVisualState::Positive);
+	if (UVerticalBoxSlot* StrategyBadgeSlot =
+			OverviewVerticalBox->AddChildToVerticalBox(StrategicStatusBadge))
+	{
+		StrategyBadgeSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+	}
+
+	StrategicDetailTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(), TEXT("StrategicDetailTextBlock"));
+	StrategicDetailTextBlock->SetAutoWrapText(true);
+	USRUIThemeLibrary::ApplyTextStyle(
+		StrategicDetailTextBlock, ESRUITextStyle::Caption, ESRUIVisualState::Neutral);
+	if (UVerticalBoxSlot* StrategyDetailSlot =
+			OverviewVerticalBox->AddChildToVerticalBox(StrategicDetailTextBlock))
+	{
+		StrategyDetailSlot->SetPadding(FMargin(2.0f, 0.0f, 2.0f, 6.0f));
+	}
+
+	StrategicFocusButton = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(), TEXT("StrategicFocusButton"));
+	StrategicFocusButton->SetBackgroundColor(
+		USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Selected).SurfaceColor);
+	StrategicFocusButtonTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(), TEXT("StrategicFocusButtonTextBlock"));
+	StrategicFocusButtonTextBlock->SetJustification(ETextJustify::Center);
+	USRUIThemeLibrary::ApplyTextStyle(
+		StrategicFocusButtonTextBlock, ESRUITextStyle::Caption, ESRUIVisualState::Selected, true);
+	StrategicFocusButton->AddChild(StrategicFocusButtonTextBlock);
+	StrategicFocusButton->OnClicked.AddDynamic(
+		this, &USRCelestialBodyOverviewWidget::HandleStrategicFocusClicked);
+	StrategicFocusButton->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* StrategyFocusSlot =
+			OverviewVerticalBox->AddChildToVerticalBox(StrategicFocusButton))
+	{
+		StrategyFocusSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+	}
+
+	UHorizontalBox* OverlayToggleRow = WidgetTree->ConstructWidget<UHorizontalBox>(
+		UHorizontalBox::StaticClass(), TEXT("OverviewOverlayToggleRow"));
+	if (UVerticalBoxSlot* ToggleRowSlot =
+			OverviewVerticalBox->AddChildToVerticalBox(OverlayToggleRow))
+	{
+		ToggleRowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+	}
+
 	NameplateToggleButton = WidgetTree->ConstructWidget<UButton>(
 		UButton::StaticClass(), TEXT("NameplateToggleButton"));
 	NameplateToggleButton->SetBackgroundColor(
 		FLinearColor(0.12f, 0.16f, 0.20f, 0.94f));
 	NameplateToggleButtonTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(), TEXT("NameplateToggleButtonTextBlock"));
-	NameplateToggleButtonTextBlock->SetText(
-		NSLOCTEXT("StarRoversOverview", "NameplateButtonsOn", "Nameplates: On"));
-	NameplateToggleButtonTextBlock->SetColorAndOpacity(
-		FSlateColor(FLinearColor::White));
+	NameplateToggleButtonTextBlock->SetText(bShowNameplateButtons
+		? NSLOCTEXT("StarRoversOverview", "NameplateButtonsOnCompact", "NAMES ON")
+		: NSLOCTEXT("StarRoversOverview", "NameplateButtonsOffCompact", "NAMES OFF"));
+	NameplateToggleButtonTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	NameplateToggleButtonTextBlock->SetJustification(ETextJustify::Center);
 	NameplateToggleButton->AddChild(NameplateToggleButtonTextBlock);
 	NameplateToggleButton->OnClicked.AddDynamic(
 		this, &USRCelestialBodyOverviewWidget::HandleNameplateToggleClicked);
-
-	if (UVerticalBoxSlot* NameplateToggleButtonSlot =
-			OverviewVerticalBox->AddChildToVerticalBox(NameplateToggleButton))
+	if (UHorizontalBoxSlot* NameplateToggleSlot =
+			OverlayToggleRow->AddChildToHorizontalBox(NameplateToggleButton))
 	{
-		NameplateToggleButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+		NameplateToggleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		NameplateToggleSlot->SetPadding(FMargin(0.0f, 0.0f, 3.0f, 0.0f));
+	}
+
+	StrategyOverlayToggleButton = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(), TEXT("StrategyOverlayToggleButton"));
+	StrategyOverlayToggleButton->SetBackgroundColor(
+		FLinearColor(0.12f, 0.16f, 0.20f, 0.94f));
+	StrategyOverlayToggleButtonTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(), TEXT("StrategyOverlayToggleButtonTextBlock"));
+	StrategyOverlayToggleButtonTextBlock->SetText(bShowStrategyOverlay
+		? NSLOCTEXT("StarRoversOverview", "StrategyOverlayOn", "ROUTES ON")
+		: NSLOCTEXT("StarRoversOverview", "StrategyOverlayOff", "ROUTES OFF"));
+	StrategyOverlayToggleButtonTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	StrategyOverlayToggleButtonTextBlock->SetJustification(ETextJustify::Center);
+	StrategyOverlayToggleButton->AddChild(StrategyOverlayToggleButtonTextBlock);
+	StrategyOverlayToggleButton->OnClicked.AddDynamic(
+		this, &USRCelestialBodyOverviewWidget::HandleStrategyOverlayToggleClicked);
+	if (UHorizontalBoxSlot* StrategyToggleSlot =
+			OverlayToggleRow->AddChildToHorizontalBox(StrategyOverlayToggleButton))
+	{
+		StrategyToggleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		StrategyToggleSlot->SetPadding(FMargin(3.0f, 0.0f, 0.0f, 0.0f));
 	}
 
 	StarSystemScrollBox = WidgetTree->ConstructWidget<UScrollBox>(
@@ -153,6 +274,8 @@ void USRCelestialBodyOverviewWidget::BuildOverviewWidgetTree()
 	{
 		StarSystemScrollBoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
+
+	RefreshStrategicHeader();
 }
 
 void USRCelestialBodyOverviewWidget::RebuildStarSystemScrollBox()
@@ -164,6 +287,10 @@ void USRCelestialBodyOverviewWidget::RebuildStarSystemScrollBox()
 
 	StarSystemScrollBox->ClearChildren();
 	EntryActions.Reset();
+	OperationsBadgeActors.Reset();
+	OperationsBadgeTextBlocks.Reset();
+	StarSystemRowActors.Reset();
+	StarSystemRowButtons.Reset();
 
 	TSet<AActor*> CelestialBodySet;
 	CelestialBodySet.Reserve(CelestialBodies.Num());
@@ -212,6 +339,9 @@ void USRCelestialBodyOverviewWidget::RebuildStarSystemScrollBox()
 	{
 		AddStarSystemScrollBoxButton(RootStarSystemBody, 0, ChildrenByParent);
 	}
+
+	OperationsBadgeRefreshAccumulator = 0.0f;
+	RefreshOperationsBadges();
 }
 
 void USRCelestialBodyOverviewWidget::AddStarSystemScrollBoxButton(
@@ -223,20 +353,29 @@ void USRCelestialBodyOverviewWidget::AddStarSystemScrollBoxButton(
 		return;
 	}
 
-	UButton* StarSystemScrollBoxButton =
-		WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
+	const int32 RowNumber = StarSystemRowButtons.Num() + 1;
+	UButton* StarSystemScrollBoxButton = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(),
+		FName(*FString::Printf(TEXT("StarSystemRowButton%d"), RowNumber)));
 	StarSystemScrollBoxButton->SetBackgroundColor(
-		CelestialBodyActor == SelectedActor
+		CelestialBodyActor == RecommendedSystemScanBody
+			? RecommendedSystemScanColor
+			: CelestialBodyActor == SelectedActor
 			? SelectedStarSystemScrollBoxButtonColor
 			: StarSystemScrollBoxButtonColor);
+	StarSystemRowActors.Add(CelestialBodyActor);
+	StarSystemRowButtons.Add(StarSystemScrollBoxButton);
 
 	UHorizontalBox* StarSystemHorizontalBox =
 		WidgetTree->ConstructWidget<UHorizontalBox>(
-			UHorizontalBox::StaticClass());
+			UHorizontalBox::StaticClass(),
+			FName(*FString::Printf(TEXT("StarSystemRowContent%d"), RowNumber)));
 	StarSystemScrollBoxButton->AddChild(StarSystemHorizontalBox);
 
 	UTextBlock* StarSystemNameplatePrefixTextBlock =
-		WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("StarSystemRowPrefix%d"), RowNumber)));
 	StarSystemNameplatePrefixTextBlock->SetText(
 		GetStarSystemTreePrefixText(CelestialBodyActor));
 	StarSystemNameplatePrefixTextBlock->SetColorAndOpacity(
@@ -252,7 +391,9 @@ void USRCelestialBodyOverviewWidget::AddStarSystemScrollBoxButton(
 	}
 
 	UTextBlock* StarSystemNameplateTextBlock =
-		WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("StarSystemRowName%d"), RowNumber)));
 	StarSystemNameplateTextBlock->SetText(
 		GetStarSystemNameplateText(CelestialBodyActor));
 	StarSystemNameplateTextBlock->SetColorAndOpacity(
@@ -264,6 +405,27 @@ void USRCelestialBodyOverviewWidget::AddStarSystemScrollBoxButton(
 	{
 		NameSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
+
+	UTextBlock* OperationsBadgeTextBlock =
+		WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("StarSystemRowStatus%d"), RowNumber)));
+	OperationsBadgeTextBlock->SetColorAndOpacity(
+		FSlateColor(FLinearColor(0.55f, 0.68f, 0.74f, 1.0f)));
+	OperationsBadgeTextBlock->SetJustification(ETextJustify::Right);
+	OperationsBadgeTextBlock->SetAutoWrapText(false);
+	FSlateFontInfo OperationsBadgeFont = OperationsBadgeTextBlock->GetFont();
+	OperationsBadgeFont.Size = 11;
+	OperationsBadgeTextBlock->SetFont(OperationsBadgeFont);
+	if (UHorizontalBoxSlot* OperationsBadgeSlot =
+			StarSystemHorizontalBox->AddChildToHorizontalBox(
+				OperationsBadgeTextBlock))
+	{
+		OperationsBadgeSlot->SetPadding(FMargin(8.0f, 1.0f, 4.0f, 0.0f));
+		OperationsBadgeSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
+	OperationsBadgeActors.Add(CelestialBodyActor);
+	OperationsBadgeTextBlocks.Add(OperationsBadgeTextBlock);
 
 	USRCelestialBodyOverviewEntryAction* EntryAction =
 		NewObject<USRCelestialBodyOverviewEntryAction>(this);
@@ -304,6 +466,35 @@ FText USRCelestialBodyOverviewWidget::GetStarSystemNameplateText(
 	return IsValid(CelestialBodyActor)
 			   ? FText::FromString(CelestialBodyActor->GetName())
 			   : FText::GetEmpty();
+}
+
+FText USRCelestialBodyOverviewWidget::GetWorldNameplateText(
+	const AActor* CelestialBodyActor) const
+{
+	const FText Prefix = GetStarSystemNameplatePrefixText(
+		const_cast<AActor*>(CelestialBodyActor));
+	const FText BodyName = GetStarSystemNameplateText(CelestialBodyActor);
+	const FSRStrategicBodyPresentation* StrategyBody =
+		StrategicPresentation.FindBody(CelestialBodyActor);
+	if (bShowStrategyOverlay && StrategyBody && StrategyBody->bHasBottleneck)
+	{
+		return FText::Format(
+			NSLOCTEXT("StarRoversOverview", "StrategicNameplateFormat", "{0} {1}  [{2}]"),
+			Prefix,
+			BodyName,
+			StrategyBody->ShortBadgeText);
+	}
+	if (CelestialBodyActor == RecommendedSystemScanBody)
+	{
+		return FText::Format(
+			NSLOCTEXT("StarRoversOverview", "RecommendedNameplateFormat", "SCAN {0} {1}"),
+			Prefix,
+			BodyName);
+	}
+	return FText::Format(
+		NSLOCTEXT("StarRoversOverview", "NameplateFormat", "{0} {1}"),
+		Prefix,
+		BodyName);
 }
 
 FText USRCelestialBodyOverviewWidget::GetStarSystemNameplatePrefixText(

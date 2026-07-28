@@ -8,6 +8,7 @@
 #include "SRSpaceLogisticsRoutePathResolver.h"
 #include "SRSpaceLogisticsRouteVisualController.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
+#include "Simulation/SRSimulationSettings.h"
 #include "Utility/SRLog.h"
 
 namespace StarRovers::SpaceLogistics::StarFuelMissiles
@@ -19,17 +20,39 @@ namespace StarRovers::SpaceLogistics::StarFuelMissiles
 
 	double CalculateMissileFuelValue(const FSRResourceInstance& Cargo)
 	{
-		if (!HasValidMissileCargo(Cargo))
+		if (!CanUseAsMissileFuelCargo(Cargo))
 		{
 			return 0.0;
 		}
 
-		return FMath::Max(0.0, Cargo.EnergyValue) * static_cast<double>(FMath::Max(1, Cargo.StackCount));
+		const USRSimulationSettings* Settings = GetDefault<USRSimulationSettings>();
+		const bool bUsesResourceV2 = IsValid(Settings)
+			&& Settings->ResourceRulesetVersion == ESRResourceRulesetVersion::ResourceV2;
+		const double Energy = bUsesResourceV2 ? Cargo.CurrentEnergy : Cargo.EnergyValue;
+		return FMath::Max(0.0, Energy) * static_cast<double>(FMath::Max(1, Cargo.StackCount));
 	}
 
 	bool CanUseAsMissileFuelCargo(const FSRResourceInstance& Cargo)
 	{
-		return CalculateMissileFuelValue(Cargo) > UE_DOUBLE_SMALL_NUMBER;
+		if (!HasValidMissileCargo(Cargo))
+		{
+			return false;
+		}
+
+		const USRSimulationSettings* Settings = GetDefault<USRSimulationSettings>();
+		const bool bUsesResourceV2 = IsValid(Settings)
+			&& Settings->ResourceRulesetVersion == ESRResourceRulesetVersion::ResourceV2;
+		if (!bUsesResourceV2)
+		{
+			return FMath::IsFinite(Cargo.EnergyValue)
+				&& Cargo.EnergyValue > UE_DOUBLE_SMALL_NUMBER;
+		}
+
+		return Cargo.ResourceSchemaVersion == StarRovers::Resources::CurrentResourceSchemaVersion
+			&& Cargo.ResourceClass == ESRResourceClass::StellarFuel
+			&& Cargo.Family == ESRResourceFamily::None
+			&& FMath::IsFinite(Cargo.CurrentEnergy)
+			&& Cargo.CurrentEnergy > UE_DOUBLE_SMALL_NUMBER;
 	}
 
 	bool IsClickSphereCollision(const USphereComponent& SphereComponent)

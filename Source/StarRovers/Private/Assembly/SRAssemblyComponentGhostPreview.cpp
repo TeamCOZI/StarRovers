@@ -2,11 +2,24 @@
 
 #include "Assembly/SRAssemblyStructureDragPreviewUpdater.h"
 #include "Assembly/SRAssemblyStructureGhostPreviewUpdater.h"
+#include "Assembly/SRAssemblyStructurePlacementPreview.h"
 #include "Camera/SRPlayerController.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
+
+FSRStructurePlacementPreview USRAssemblyComponent::GetSelectedStructurePlacementPreview() const
+{
+	ASRPlayerController* PlayerController = GetOwnerController();
+	USRStructureDataAsset* SelectedStructureDataAsset = PlayerController
+		? PlayerController->GetSelectedStructureDataAsset()
+		: nullptr;
+	return FSRAssemblyStructurePlacementPreviewEvaluator::Evaluate(
+		ModeState.bAssemblyModeActive ? HoveredSurfaceGrid.Get() : nullptr,
+		ModeState.bAssemblyModeActive ? SelectedStructureDataAsset : nullptr,
+		GetStructurePlacementRotationSteps()).Preview;
+}
 
 void USRAssemblyComponent::UpdateStructureGhostPreview()
 {
@@ -27,6 +40,10 @@ void USRAssemblyComponent::UpdateStructureGhostPreview()
 	if (UpdateResult == StarRovers::Assembly::ESRAssemblyStructureGhostPreviewUpdateResult::DestroyPreview)
 	{
 		StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
+	}
+	else if (UpdateResult == StarRovers::Assembly::ESRAssemblyStructureGhostPreviewUpdateResult::BlockedPreview)
+	{
+		StructurePreview.DestroyGhostActor(HoveredSurfaceGrid, true);
 	}
 }
 
@@ -85,4 +102,3 @@ bool USRAssemblyComponent::UpdateStructurePlacementDragPreview(
 	StructurePreview.ClearGhostPortPreview();
 	return true;
 }
-

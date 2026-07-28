@@ -9,8 +9,11 @@ class UBorder;
 class UButton;
 class UCanvasPanel;
 class UImage;
+class UHorizontalBox;
 class UProgressBar;
+class UScaleBox;
 class USizeBox;
+class USRStatusBadgeWidget;
 class UTextBlock;
 class UTexture2D;
 class SWidget;
@@ -68,7 +71,7 @@ protected:
 	float TopBarHeightViewportRatio = 0.05f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Top Bar", meta = (DisplayName = "Cycle Count Height Viewport Ratio", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "0.25"))
-	float CycleCountHeightViewportRatio = 0.05f;
+	float CycleCountHeightViewportRatio = 0.032f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Bottom Bar", meta = (DisplayName = "Bottom Focus Name Height Viewport Ratio", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "0.25"))
 	float BottomFocusNameHeightViewportRatio = 0.05f;
@@ -92,13 +95,13 @@ protected:
 	float MiniMapRefreshInterval = 0.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Top Bar", meta = (DisplayName = "Top Center Width Viewport Ratio", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
-	float TopCenterWidthViewportRatio = 0.50f;
+	float TopCenterWidthViewportRatio = 0.56f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Top Bar", meta = (DisplayName = "Progress Bar Height Ratio", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
 	float ProgressBarHeightRatio = 0.30f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Top Bar", meta = (DisplayName = "Cycle Count Width Viewport Ratio", ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
-	float CycleCountWidthViewportRatio = 0.15f;
+	float CycleCountWidthViewportRatio = 0.34f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI|Top Bar", meta = (DisplayName = "Button Gap To Width Ratio", ClampMin = "0.0", UIMin = "0.0", UIMax = "1.0"))
 	float ButtonGapToWidthRatio = 0.25f;
@@ -153,6 +156,30 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> FuelSupplyProgressTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UScaleBox> StellarSurvivalRailScaleBox;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UHorizontalBox> StellarSurvivalRailHorizontalBox;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> StellarSurvivalTimeBadge;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> StellarObjectiveBadge;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> StellarIncomeBadge;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> StellarConsumptionBadge;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> StellarNetBadge;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USRStatusBadgeWidget> StellarInboundBadge;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasPanel> CycleProgressContainer;
@@ -342,6 +369,9 @@ protected:
 
 	UPROPERTY(Transient)
 	int32 LastCycleIndex = INDEX_NONE;
+
+	UPROPERTY(Transient)
+	FString LastCycleSummaryTextString;
 
 	UPROPERTY(Transient)
 	bool bHasLayoutState = false;

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Automation/SRFacilityDataAsset.h"
 #include "Celestial/SRStellarEvolutionTypes.h"
+#include "Simulation/SRStellarDemandModel.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "SRCelestialBodyFocusInfo.generated.h"
@@ -98,6 +99,27 @@ struct STARROVERS_API FSRFocusedStarFuelInfo
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "NextFuelDecreaseMultiplier"))
 	double RequirementGrowthPerCycle = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bUsesStellarPressureCurveV2"))
+	bool bUsesStellarPressureCurveV2 = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "DemandPhase"))
+	ESRStellarDemandPhaseV2 DemandPhase = ESRStellarDemandPhaseV2::Grace;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "NextCycleDemandPerSecond"))
+	double NextCycleDemandPerSecond = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "FuelPressureRatio"))
+	float FuelPressureRatio = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastFuelDeliveryAmount"))
+	double LastFuelDeliveryAmount = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastFuelReserveGain"))
+	double LastFuelReserveGain = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastFuelReserveOverflow"))
+	double LastFuelReserveOverflow = 0.0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastFuelDecreaseRateCycleIndex"))
 	int32 LastFuelDecreaseRateCycleIndex = 0;

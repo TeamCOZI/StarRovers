@@ -74,6 +74,7 @@ FSRCelestialBodyData USRPlanetDataAsset::BuildData() const
 	Result.Mass = FMath::Max(0.0f, Mass);
 	Result.GravityRatio = FMath::Max(0.0f, GravityRatio);
 	Result.GravityRadiusRatio = FMath::Max(0.0f, GravityRadiusRatio);
+	Result.bCanConstruct = true;
 	Result.DynamicMeshGeneration = DynamicMeshGeneration;
 	if (IsValid(TerrainProfileDataAsset.Get()))
 	{

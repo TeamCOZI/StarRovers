@@ -475,6 +475,7 @@ FSRDynamicMeshGenerationSnapshot FSRDynamicMeshGeneration::MakeThreadSafeSnapsho
 	Snapshot.RiverStrength = RiverStrength;
 	Snapshot.LakeStrength = LakeStrength;
 	Snapshot.TemperatureFrequency = TemperatureFrequency;
+	Snapshot.TemperatureBias = FMath::Clamp(TemperatureBias, -1.0f, 1.0f);
 	Snapshot.bApplyTemperatureStateSurfaceColor = bApplyTemperatureStateSurfaceColor;
 	Snapshot.TemperatureStateSurfaceColorBlendAlpha = TemperatureStateSurfaceColorBlendAlpha;
 	Snapshot.FrozenTemperatureStateSurfaceColor = FrozenTemperatureStateSurfaceColor;
@@ -483,6 +484,7 @@ FSRDynamicMeshGenerationSnapshot FSRDynamicMeshGeneration::MakeThreadSafeSnapsho
 	Snapshot.HotTemperatureStateSurfaceColor = HotTemperatureStateSurfaceColor;
 	Snapshot.OverheatedTemperatureStateSurfaceColor = OverheatedTemperatureStateSurfaceColor;
 	Snapshot.MoistureFrequency = MoistureFrequency;
+	Snapshot.MoistureBias = FMath::Clamp(MoistureBias, -1.0f, 1.0f);
 	Snapshot.DetailFrequency = DetailFrequency;
 	Snapshot.DetailStrength = DetailStrength;
 	Snapshot.NoiseStrength = NoiseStrength;

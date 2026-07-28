@@ -9,6 +9,7 @@ void USRTimeControlSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	if (const USRSimulationSettings* SimulationSettings = GetDefault<USRSimulationSettings>())
 	{
 		SetSecondsPerPeriod(SimulationSettings->SecondsPerPeriod);
+		SetSimulationPaused(SimulationSettings->bPauseSimulationOnRunStart);
 	}
 }
 
@@ -127,4 +128,49 @@ float USRTimeControlSubsystem::GetCycleProgressRatio() const
 	return SecondsPerPeriod > UE_SMALL_NUMBER
 		? FMath::Clamp(CycleProgressSeconds / SecondsPerPeriod, 0.0f, 1.0f)
 		: 0.0f;
+}
+
+void USRTimeControlSubsystem::ExportSaveData(FSRTimeControlSaveData& OutSaveData) const
+{
+	OutSaveData = FSRTimeControlSaveData();
+	OutSaveData.TimeScale = TimeScale;
+	OutSaveData.SecondsPerPeriod = SecondsPerPeriod;
+	OutSaveData.CycleProgressSeconds = CycleProgressSeconds;
+	OutSaveData.CurrentCycleIndex = CurrentCycleIndex;
+	OutSaveData.bSimulationPaused = bSimulationPaused;
+}
+
+bool USRTimeControlSubsystem::ImportSaveData(
+	const FSRTimeControlSaveData& SaveData,
+	FString& OutFailureReason)
+{
+	OutFailureReason.Reset();
+	if (!SaveData.IsSupportedVersion())
+	{
+		OutFailureReason = FString::Printf(
+			TEXT("Unsupported Time Control save version %d."),
+			SaveData.Version);
+		return false;
+	}
+	if (!FMath::IsFinite(SaveData.TimeScale)
+		|| SaveData.TimeScale < 0.0f
+		|| !FMath::IsFinite(SaveData.SecondsPerPeriod)
+		|| SaveData.SecondsPerPeriod <= UE_SMALL_NUMBER
+		|| !FMath::IsFinite(SaveData.CycleProgressSeconds)
+		|| SaveData.CycleProgressSeconds < 0.0f
+		// SetSecondsPerPeriod can legitimately clamp progress to the exact
+		// boundary. The next simulation tick advances that pending cycle.
+		|| SaveData.CycleProgressSeconds > SaveData.SecondsPerPeriod
+		|| SaveData.CurrentCycleIndex < 0)
+	{
+		OutFailureReason = TEXT("Time Control save contains an invalid clock value.");
+		return false;
+	}
+
+	TimeScale = SaveData.TimeScale;
+	SecondsPerPeriod = SaveData.SecondsPerPeriod;
+	CycleProgressSeconds = SaveData.CycleProgressSeconds;
+	CurrentCycleIndex = SaveData.CurrentCycleIndex;
+	bSimulationPaused = SaveData.bSimulationPaused;
+	return true;
 }

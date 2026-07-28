@@ -37,10 +37,12 @@ struct STARROVERS_API FSRAssemblyStructurePreviewState
 {
 	GENERATED_BODY()
 
+	void SetInvalidPlacementPreview(USRPlanetSurfaceGrid* SurfaceGrid, const TArray<FSRPlanetSurfaceGridCellId>& CellIds);
+	void ClearInvalidPlacementPreview();
 	void ClearGhostPortPreview();
 	void UpdateGhostPortPreview(USRPlanetSurfaceGrid* SurfaceGrid, const FSRStructureData& StructureData, const TArray<FSRPlanetSurfaceGridCellId>& FootprintCellIds, int32 PlacementRotationSteps);
 	bool UpdateGhostActor(UWorld* World, AActor* Owner, USRPlanetSurfaceGrid* HoveredSurfaceGrid, USRStructureDataAsset* StructureDataAsset, const FSRStructureData& StructureData, const FTransform& GhostTransform, const FSRPlanetSurfaceGridCellInfo& PreviewCellInfo, UMaterialInterface* PreviewMaterial);
-	void DestroyGhostActor(USRPlanetSurfaceGrid* HoveredSurfaceGrid);
+	void DestroyGhostActor(USRPlanetSurfaceGrid* HoveredSurfaceGrid, bool bPreserveInvalidPlacementPreview = false);
 	void DestroyPlacementDragPreviewActors(USRPlanetSurfaceGrid* HoveredSurfaceGrid);
 	AActor* SpawnPlacementDragPreviewActor(UWorld* World, AActor* FallbackOwner, USRPlanetSurfaceGrid* SurfaceGrid, USRStructureDataAsset* StructureDataAsset) const;
 	void LogInvalidGhostDataAssetOnce(USRStructureDataAsset* StructureDataAsset, const TCHAR* Reason);
@@ -55,6 +57,9 @@ struct STARROVERS_API FSRAssemblyStructurePreviewState
 	TObjectPtr<USRPlanetSurfaceGrid> StructureGhostPortPreviewSurfaceGrid = nullptr;
 
 	UPROPERTY(Transient)
+	TObjectPtr<USRPlanetSurfaceGrid> StructureInvalidPlacementPreviewSurfaceGrid = nullptr;
+
+	UPROPERTY(Transient)
 	TObjectPtr<USRStructureDataAsset> LastLoggedInvalidGhostDataAsset = nullptr;
 
 	UPROPERTY(Transient)
@@ -65,6 +70,9 @@ struct STARROVERS_API FSRAssemblyStructurePreviewState
 
 	UPROPERTY(Transient)
 	bool bHasStructureGhostPortPreview = false;
+
+	UPROPERTY(Transient)
+	bool bHasStructureInvalidPlacementPreview = false;
 
 	UPROPERTY(Transient)
 	TArray<FSRStructurePlacementDragPreviewActor> StructurePlacementDragPreviewActors;
@@ -158,6 +166,7 @@ struct STARROVERS_API FSRAssemblyConveyorPreviewState
 
 struct STARROVERS_API FSRAssemblyPreviewResetOptions
 {
+	bool bClearStructureInvalidPlacementPreview = true;
 	bool bClearConveyorPortPreview = true;
 	bool bClearConveyorBulkDeletionPreview = true;
 	bool bClearConveyorInvalidPlacementPreview = true;

@@ -6,6 +6,7 @@
 #include "UI/SRCelestialBodyOverviewWidget.h"
 #include "UI/SRFacilityControlWidget.h"
 #include "UI/SRFocusedHubShortcutWidget.h"
+#include "UI/SRGameOverWidget.h"
 #include "UI/SRStructureSelectionWidget.h"
 #include "UI/SRTimeControlWidget.h"
 
@@ -20,7 +21,8 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 	USRCelestialBodyOverviewWidget* OverviewWidget,
 	USRTimeControlWidget* TimeControlWidget,
 	USRAugmentChoiceWidget* AugmentChoiceWidget,
-	USRStructureSelectionWidget* StructureSelectionWidget)
+	USRStructureSelectionWidget* StructureSelectionWidget,
+	USRGameOverWidget* GameOverWidget)
 {
 	const bool bOverFacilityControl = IsValid(FacilityControlWidget) && FacilityControlWidget->IsPointerOverControlPanel();
 	const bool bOverHubShortcut = IsValid(FocusedHubShortcutWidget) && FocusedHubShortcutWidget->IsPointerOverHubShortcutUI();
@@ -29,13 +31,15 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 	const bool bOverTimeControl = IsValid(TimeControlWidget) && TimeControlWidget->IsPointerOverTimeControlPanel();
 	const bool bOverAugmentChoice = IsValid(AugmentChoiceWidget) && AugmentChoiceWidget->IsVisible();
 	const bool bOverStructureSelection = IsValid(StructureSelectionWidget) && StructureSelectionWidget->IsPointerOverStructureSelectionPanel();
+	const bool bOverGameOver = IsValid(GameOverWidget) && GameOverWidget->IsVisible();
 	const bool bOverBlockingUI = bOverFacilityControl
 		|| bOverHubShortcut
 		|| bOverFocusInfo
 		|| bOverOverview
 		|| bOverTimeControl
 		|| bOverAugmentChoice
-		|| bOverStructureSelection;
+		|| bOverStructureSelection
+		|| bOverGameOver;
 	ESRPlayerUILayer TopBlockingUILayer = ESRPlayerUILayer::FocusInfo;
 	const TCHAR* TopBlockingUIName = TEXT("None");
 	int32 TopBlockingUIZOrder = MIN_int32;
@@ -64,8 +68,9 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 	ConsiderBlockingUILayer(bOverTimeControl, ESRPlayerUILayer::TimeControl, TEXT("TimeControl"));
 	ConsiderBlockingUILayer(bOverAugmentChoice, ESRPlayerUILayer::AugmentChoice, TEXT("AugmentChoice"));
 	ConsiderBlockingUILayer(bOverStructureSelection, ESRPlayerUILayer::StructureSelection, TEXT("StructureSelection"));
+	ConsiderBlockingUILayer(bOverGameOver, ESRPlayerUILayer::GameOver, TEXT("GameOver"));
 
-	SR_LOG(Camera, LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick Mouse=(%.1f, %.1f) HasMouse=%s FacilityControl=%s HubShortcut=%s FocusInfo=%s Overview=%s TimeControl=%s AugmentChoice=%s StructureSelection=%s TopBlockingUI=%s TopZOrder=%d"),
+	SR_LOG(Camera, LogTemp, Log, TEXT("SR UI Click Trace: PlayerController LeftClick Mouse=(%.1f, %.1f) HasMouse=%s FacilityControl=%s HubShortcut=%s FocusInfo=%s Overview=%s TimeControl=%s AugmentChoice=%s StructureSelection=%s GameOver=%s TopBlockingUI=%s TopZOrder=%d"),
 		MouseX,
 		MouseY,
 		bHasMousePosition ? TEXT("true") : TEXT("false"),
@@ -76,6 +81,7 @@ bool FSRPlayerControllerPointerUIRouter::RouteLeftClick(
 		bOverTimeControl ? TEXT("true") : TEXT("false"),
 		bOverAugmentChoice ? TEXT("true") : TEXT("false"),
 		bOverStructureSelection ? TEXT("true") : TEXT("false"),
+		bOverGameOver ? TEXT("true") : TEXT("false"),
 		TopBlockingUIName,
 		TopBlockingUIZOrder);
 

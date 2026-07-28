@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Automation/SRFacilityRuntimeData.h"
+#include "Automation/SRResourceProcessingKernel.h"
+#include "Automation/SRStellarFuelTypes.h"
 #include "SRFacilityMiningProcessor.h"
 
 class UActorComponent;
@@ -26,8 +28,14 @@ struct FSRFacilityProcessingCompletionResult
 	ESRFacilityProcessingStepKind StepKind = ESRFacilityProcessingStepKind::None;
 	FSRFacilityMiningCompletionResult MiningResult;
 	FSRResourceInstance PrimaryOutputResource;
+	FSRResourceProcessResult ResourceV2ProcessResult;
+	FSRStellarFuelFabricationResultV2 StellarFuelFabricationResult;
 	int32 OutputCount = 0;
 	int32 AdditionalOutputCount = 0;
+	bool bUsedResourceV2 = false;
+	bool bUsedResourceV2Process = false;
+	bool bUsedStellarFuelFabricatorV2 = false;
+	bool bUsedOperationalEconomyV2 = false;
 };
 
 class FSRFacilityProcessingStepExecutor

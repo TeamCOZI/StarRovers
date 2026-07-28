@@ -71,6 +71,38 @@ namespace
 	}
 }
 
+void FSRAssemblyStructurePreviewState::SetInvalidPlacementPreview(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const TArray<FSRPlanetSurfaceGridCellId>& CellIds)
+{
+	if (!IsValid(SurfaceGrid) || CellIds.IsEmpty())
+	{
+		ClearInvalidPlacementPreview();
+		return;
+	}
+
+	if (IsValid(StructureInvalidPlacementPreviewSurfaceGrid)
+		&& StructureInvalidPlacementPreviewSurfaceGrid != SurfaceGrid)
+	{
+		StructureInvalidPlacementPreviewSurfaceGrid->ClearInvalidPreviewCells();
+	}
+
+	SurfaceGrid->SetInvalidPreviewCells(CellIds);
+	StructureInvalidPlacementPreviewSurfaceGrid = SurfaceGrid;
+	bHasStructureInvalidPlacementPreview = true;
+}
+
+void FSRAssemblyStructurePreviewState::ClearInvalidPlacementPreview()
+{
+	if (bHasStructureInvalidPlacementPreview && IsValid(StructureInvalidPlacementPreviewSurfaceGrid))
+	{
+		StructureInvalidPlacementPreviewSurfaceGrid->ClearInvalidPreviewCells();
+	}
+
+	StructureInvalidPlacementPreviewSurfaceGrid = nullptr;
+	bHasStructureInvalidPlacementPreview = false;
+}
+
 void FSRAssemblyStructurePreviewState::ClearGhostPortPreview()
 {
 	if (bHasStructureGhostPortPreview && IsValid(StructureGhostPortPreviewSurfaceGrid))
@@ -232,9 +264,15 @@ bool FSRAssemblyStructurePreviewState::UpdateGhostActor(
 	return true;
 }
 
-void FSRAssemblyStructurePreviewState::DestroyGhostActor(USRPlanetSurfaceGrid* HoveredSurfaceGrid)
+void FSRAssemblyStructurePreviewState::DestroyGhostActor(
+	USRPlanetSurfaceGrid* HoveredSurfaceGrid,
+	bool bPreserveInvalidPlacementPreview)
 {
 	ClearGhostPortPreview();
+	if (!bPreserveInvalidPlacementPreview)
+	{
+		ClearInvalidPlacementPreview();
+	}
 
 	if (IsValid(HoveredSurfaceGrid))
 	{
@@ -634,6 +672,10 @@ void FSRAssemblyPreviewReset::Apply(
 	USRPlanetSurfaceGrid* HoveredSurfaceGrid,
 	const FSRAssemblyPreviewResetOptions& Options)
 {
+	if (Options.bClearStructureInvalidPlacementPreview)
+	{
+		StructurePreview.ClearInvalidPlacementPreview();
+	}
 	if (Options.bClearConveyorPortPreview)
 	{
 		ConveyorPreview.ClearPortPreview();
@@ -648,7 +690,9 @@ void FSRAssemblyPreviewReset::Apply(
 	}
 	if (Options.bDestroyStructureGhostActor)
 	{
-		StructurePreview.DestroyGhostActor(HoveredSurfaceGrid);
+		StructurePreview.DestroyGhostActor(
+			HoveredSurfaceGrid,
+			!Options.bClearStructureInvalidPlacementPreview);
 	}
 	if (Options.bDestroyStructurePlacementDragPreviewActors)
 	{

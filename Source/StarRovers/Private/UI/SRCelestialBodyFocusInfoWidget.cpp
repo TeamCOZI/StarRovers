@@ -9,6 +9,7 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/PanelWidget.h"
+#include "Components/ProgressBar.h"
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
@@ -150,6 +151,36 @@ namespace
 
 	FString BuildFocusedStarFuelSummary(const FSRFocusedStarFuelInfo& FuelInfo)
 	{
+		if (FuelInfo.bUsesStellarPressureCurveV2)
+		{
+			const TCHAR* DemandPhaseLabel = TEXT("Grace");
+			switch (FuelInfo.DemandPhase)
+			{
+			case ESRStellarDemandPhaseV2::Expansion:
+				DemandPhaseLabel = TEXT("Expansion");
+				break;
+			case ESRStellarDemandPhaseV2::Plateau:
+				DemandPhaseLabel = TEXT("Plateau");
+				break;
+			case ESRStellarDemandPhaseV2::Grace:
+			default:
+				break;
+			}
+			return FString::Printf(
+				TEXT("Stellar Pressure V2\nStage: %s\nReserve: %.0f / %.0f\nPressure: %.0f%%\nDemand: %.1f/s -> %.1f/s\nPhase: %s | Cycle %d\nLast Delivery: +%.1f\nReserve Gain: +%.1f | Stabilization: +%.1f\nGameOver: %s"),
+				GetStellarEvolutionStageLabel(FuelInfo.EvolutionStage),
+				FuelInfo.StoredFuel,
+				FuelInfo.InitialStageFuel,
+				FuelInfo.FuelPressureRatio * 100.0f,
+				FuelInfo.RequiredFuelPerCycle,
+				FuelInfo.NextCycleDemandPerSecond,
+				DemandPhaseLabel,
+				FuelInfo.LastFuelDecreaseRateCycleIndex,
+				FuelInfo.LastFuelDeliveryAmount,
+				FuelInfo.LastFuelReserveGain,
+				FuelInfo.LastFuelReserveOverflow,
+				FuelInfo.bSupernovaGameOver ? TEXT("Yes") : TEXT("No"));
+		}
 		return FString::Printf(
 			TEXT("Stellar Evolution\nStage: %s\nFuel: %.2f / %.2f\nCurrent Decrease/sec: %.2f\nInitial Decrease/sec: %.2f\nNext Multiplier: %.2fx\nRateCycleIndex: %d\nLastSecond: %s\nLastSecondIndex: %d\nLast Decrease: %.2f\nConsumed: %.2f\nOverkill: %.2f\nGameOver: %s"),
 			GetStellarEvolutionStageLabel(FuelInfo.EvolutionStage),
@@ -176,6 +207,13 @@ namespace
 			&& FMath::IsNearlyEqual(Left.InitialFuelDecreasePerSecond, Right.InitialFuelDecreasePerSecond)
 			&& FMath::IsNearlyEqual(Left.RequiredFuelPerCycle, Right.RequiredFuelPerCycle)
 			&& FMath::IsNearlyEqual(Left.RequirementGrowthPerCycle, Right.RequirementGrowthPerCycle)
+			&& Left.bUsesStellarPressureCurveV2 == Right.bUsesStellarPressureCurveV2
+			&& Left.DemandPhase == Right.DemandPhase
+			&& FMath::IsNearlyEqual(Left.NextCycleDemandPerSecond, Right.NextCycleDemandPerSecond)
+			&& FMath::IsNearlyEqual(Left.FuelPressureRatio, Right.FuelPressureRatio)
+			&& FMath::IsNearlyEqual(Left.LastFuelDeliveryAmount, Right.LastFuelDeliveryAmount)
+			&& FMath::IsNearlyEqual(Left.LastFuelReserveGain, Right.LastFuelReserveGain)
+			&& FMath::IsNearlyEqual(Left.LastFuelReserveOverflow, Right.LastFuelReserveOverflow)
 			&& Left.LastFuelDecreaseRateCycleIndex == Right.LastFuelDecreaseRateCycleIndex
 			&& FMath::IsNearlyEqual(Left.RedGiantPressure, Right.RedGiantPressure)
 			&& FMath::IsNearlyEqual(Left.RedGiantPressurePerMissingFuel, Right.RedGiantPressurePerMissingFuel)
@@ -189,6 +227,42 @@ namespace
 
 	constexpr float FocusDetailsBoxWidth = 360.0f;
 	constexpr float FocusDetailsBoxHeight = 260.0f;
+	constexpr float BodyOperationsRefreshIntervalSeconds = 0.50f;
+
+	FLinearColor GetOperationsPressureColor(const ESRCelestialBodyOperationsPressure Pressure)
+	{
+		switch (Pressure)
+		{
+		case ESRCelestialBodyOperationsPressure::OverCapacity:
+			return FLinearColor(0.96f, 0.24f, 0.20f, 1.0f);
+		case ESRCelestialBodyOperationsPressure::AtCapacity:
+		case ESRCelestialBodyOperationsPressure::NearCapacity:
+			return FLinearColor(1.0f, 0.68f, 0.16f, 1.0f);
+		case ESRCelestialBodyOperationsPressure::Idle:
+			return FLinearColor(0.52f, 0.68f, 0.76f, 1.0f);
+		case ESRCelestialBodyOperationsPressure::Nominal:
+		default:
+			return FLinearColor(0.20f, 0.86f, 0.68f, 1.0f);
+		}
+	}
+
+	FLinearColor GetResourceReservePressureColor(const ESRResourceReservePressure Pressure)
+	{
+		switch (Pressure)
+		{
+		case ESRResourceReservePressure::Depleted:
+			return FLinearColor(0.96f, 0.24f, 0.20f, 1.0f);
+		case ESRResourceReservePressure::Critical:
+			return FLinearColor(1.0f, 0.42f, 0.18f, 1.0f);
+		case ESRResourceReservePressure::Low:
+			return FLinearColor(1.0f, 0.72f, 0.20f, 1.0f);
+		case ESRResourceReservePressure::Healthy:
+			return FLinearColor(0.30f, 0.86f, 0.58f, 1.0f);
+		case ESRResourceReservePressure::Unavailable:
+		default:
+			return FLinearColor(0.52f, 0.68f, 0.76f, 1.0f);
+		}
+	}
 }
 
 TSharedRef<SWidget> USRCelestialBodyFocusInfoWidget::RebuildWidget()
@@ -208,6 +282,7 @@ void USRCelestialBodyFocusInfoWidget::NativeConstruct()
 
 	BuildFocusInfoWidgetTree();
 	BindAssemblyModeButtonHandler();
+	RefreshBodyOperationsSummary(true);
 	RefreshFocusInfoText();
 }
 
@@ -217,6 +292,7 @@ void USRCelestialBodyFocusInfoWidget::NativePreConstruct()
 
 	BuildFocusInfoWidgetTree();
 	BindAssemblyModeButtonHandler();
+	RefreshBodyOperationsSummary(true);
 	RefreshFocusInfoText();
 }
 
@@ -229,9 +305,16 @@ void USRCelestialBodyFocusInfoWidget::NativeTick(const FGeometry& MyGeometry, fl
 		return;
 	}
 
-	if (RefreshStarFuelInfoFromFocusedActor())
+	const bool bStarFuelChanged = RefreshStarFuelInfoFromFocusedActor();
+	BodyOperationsRefreshAccumulator += FMath::Max(0.0f, InDeltaTime);
+	const bool bBodyOperationsChanged = RefreshBodyOperationsSummary();
+	if (bStarFuelChanged)
 	{
 		RefreshFocusInfoText();
+	}
+	else if (bBodyOperationsChanged)
+	{
+		RefreshBodyOperationsPanel();
 	}
 }
 
@@ -277,6 +360,8 @@ void USRCelestialBodyFocusInfoWidget::SetFocusInfo(const FSRCelestialBodyFocusIn
 {
 	FocusInfo = NewFocusInfo;
 	bHasFocusInfo = NewFocusInfo.bIsValid;
+	BodyOperationsRefreshAccumulator = BodyOperationsRefreshIntervalSeconds;
+	RefreshBodyOperationsSummary(true);
 	RefreshFocusInfoText();
 	OnFocusInfoChanged(FocusInfo);
 }
@@ -285,6 +370,9 @@ void USRCelestialBodyFocusInfoWidget::ClearFocusInfo()
 {
 	FocusInfo = FSRCelestialBodyFocusInfo();
 	bHasFocusInfo = false;
+	BodyOperationsSummary = FSRCelestialBodyOperationsSummary();
+	BodyOperationsPanelSignature.Reset();
+	BodyOperationsRefreshAccumulator = 0.0f;
 	RefreshFocusInfoText();
 	OnFocusCleared();
 }
@@ -321,6 +409,12 @@ bool USRCelestialBodyFocusInfoWidget::IsPointerOverFocusInfoUI() const
 	return IsScreenPositionOverFocusInfoUI(FSlateApplication::Get().GetCursorPos());
 }
 
+FSRCelestialBodyOperationsSummary
+USRCelestialBodyFocusInfoWidget::GetBodyOperationsSummary() const
+{
+	return BodyOperationsSummary;
+}
+
 FSRStarRoversAssemblyModeRequestedSignature& USRCelestialBodyFocusInfoWidget::OnAssemblyModeRequested()
 {
 	return AssemblyModeRequestedEvent;
@@ -335,8 +429,16 @@ void USRCelestialBodyFocusInfoWidget::BuildFocusInfoWidgetTree()
 
 	if (WidgetTree->RootWidget)
 	{
-		EnsureHoveredCellTextBlock(WidgetTree->RootWidget);
-		EnsureAssemblyModeButton(WidgetTree->RootWidget);
+		FocusInfoBorder = Cast<UBorder>(WidgetTree->FindWidget(FName(TEXT("FocusInfoBorder"))));
+		VariableNameTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("VariableNameTextBlock"))));
+		UWidget* FocusInfoContentParent = WidgetTree->FindWidget(FName(TEXT("FocusInfoVerticalBox")));
+		if (!FocusInfoContentParent)
+		{
+			FocusInfoContentParent = WidgetTree->RootWidget;
+		}
+		EnsureBodyOperationsPanel(FocusInfoContentParent);
+		EnsureHoveredCellTextBlock(FocusInfoContentParent);
+		EnsureAssemblyModeButton(FocusInfoContentParent);
 		BindAssemblyModeButtonHandler();
 		RefreshFocusInfoText();
 		RefreshAssemblyModeButton();
@@ -376,12 +478,218 @@ void USRCelestialBodyFocusInfoWidget::BuildFocusInfoWidgetTree()
 		}
 	}
 
+	EnsureBodyOperationsPanel(FocusInfoVerticalBox);
+
 	EnsureHoveredCellTextBlock(FocusInfoVerticalBox);
 
 	EnsureAssemblyModeButton(FocusInfoVerticalBox);
 	BindAssemblyModeButtonHandler();
 	RefreshFocusInfoText();
 	RefreshAssemblyModeButton();
+}
+
+void USRCelestialBodyFocusInfoWidget::EnsureBodyOperationsPanel(
+	UWidget* BodyOperationsPanelParent)
+{
+	if (!WidgetTree)
+	{
+		return;
+	}
+
+	auto FindTextBlock = [this](const TCHAR* WidgetName)
+	{
+		return Cast<UTextBlock>(WidgetTree->FindWidget(FName(WidgetName)));
+	};
+
+	if (!BodyOperationsContainer)
+	{
+		BodyOperationsContainer = Cast<USizeBox>(
+			WidgetTree->FindWidget(FName(TEXT("BodyOperationsContainer"))));
+	}
+	if (!BodyOperationsBorder)
+	{
+		BodyOperationsBorder = Cast<UBorder>(
+			WidgetTree->FindWidget(FName(TEXT("BodyOperationsBorder"))));
+	}
+	if (!BodyOperationsTitleTextBlock)
+	{
+		BodyOperationsTitleTextBlock = FindTextBlock(TEXT("BodyOperationsTitleTextBlock"));
+	}
+	if (!OperationalLoadTextBlock)
+	{
+		OperationalLoadTextBlock = FindTextBlock(TEXT("OperationalLoadTextBlock"));
+	}
+	if (!OperationalLoadProgressBar)
+	{
+		OperationalLoadProgressBar = Cast<UProgressBar>(
+			WidgetTree->FindWidget(FName(TEXT("OperationalLoadProgressBar"))));
+	}
+	if (!OperationalStatusTextBlock)
+	{
+		OperationalStatusTextBlock = FindTextBlock(TEXT("OperationalStatusTextBlock"));
+	}
+	if (!ResourceReserveTextBlock)
+	{
+		ResourceReserveTextBlock = FindTextBlock(TEXT("ResourceReserveTextBlock"));
+	}
+	if (!CapacityBreakdownTextBlock)
+	{
+		CapacityBreakdownTextBlock = FindTextBlock(TEXT("CapacityBreakdownTextBlock"));
+	}
+	if (!FacilitySummaryTextBlock)
+	{
+		FacilitySummaryTextBlock = FindTextBlock(TEXT("FacilitySummaryTextBlock"));
+	}
+	if (!PrioritySpeedTextBlock)
+	{
+		PrioritySpeedTextBlock = FindTextBlock(TEXT("PrioritySpeedTextBlock"));
+	}
+	if (!FleetSummaryTextBlock)
+	{
+		FleetSummaryTextBlock = FindTextBlock(TEXT("FleetSummaryTextBlock"));
+	}
+	if (!LogisticsSummaryTextBlock)
+	{
+		LogisticsSummaryTextBlock = FindTextBlock(TEXT("LogisticsSummaryTextBlock"));
+	}
+
+	if (!BodyOperationsContainer)
+	{
+		BodyOperationsContainer = WidgetTree->ConstructWidget<USizeBox>(
+			USizeBox::StaticClass(), TEXT("BodyOperationsContainer"));
+	}
+	if (!BodyOperationsBorder)
+	{
+		BodyOperationsBorder = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(), TEXT("BodyOperationsBorder"));
+	}
+
+	UVerticalBox* BodyOperationsVerticalBox = Cast<UVerticalBox>(
+		WidgetTree->FindWidget(FName(TEXT("BodyOperationsVerticalBox"))));
+	if (!BodyOperationsVerticalBox)
+	{
+		BodyOperationsVerticalBox = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(), TEXT("BodyOperationsVerticalBox"));
+	}
+
+	auto EnsureTextBlock = [this](TObjectPtr<UTextBlock>& TextBlock, const TCHAR* WidgetName)
+	{
+		if (!TextBlock)
+		{
+			TextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), WidgetName);
+		}
+		TextBlock->SetAutoWrapText(true);
+		TextBlock->SetWrapTextAt(FocusDetailsBoxWidth - 44.0f);
+		TextBlock->SetColorAndOpacity(FSlateColor(FLinearColor(0.78f, 0.88f, 0.94f, 1.0f)));
+		FSlateFontInfo Font = TextBlock->GetFont();
+		Font.Size = 12;
+		TextBlock->SetFont(Font);
+	};
+
+	EnsureTextBlock(BodyOperationsTitleTextBlock, TEXT("BodyOperationsTitleTextBlock"));
+	EnsureTextBlock(OperationalLoadTextBlock, TEXT("OperationalLoadTextBlock"));
+	EnsureTextBlock(OperationalStatusTextBlock, TEXT("OperationalStatusTextBlock"));
+	EnsureTextBlock(ResourceReserveTextBlock, TEXT("ResourceReserveTextBlock"));
+	EnsureTextBlock(CapacityBreakdownTextBlock, TEXT("CapacityBreakdownTextBlock"));
+	EnsureTextBlock(FacilitySummaryTextBlock, TEXT("FacilitySummaryTextBlock"));
+	EnsureTextBlock(PrioritySpeedTextBlock, TEXT("PrioritySpeedTextBlock"));
+	EnsureTextBlock(FleetSummaryTextBlock, TEXT("FleetSummaryTextBlock"));
+	EnsureTextBlock(LogisticsSummaryTextBlock, TEXT("LogisticsSummaryTextBlock"));
+
+	if (!OperationalLoadProgressBar)
+	{
+		OperationalLoadProgressBar = WidgetTree->ConstructWidget<UProgressBar>(
+			UProgressBar::StaticClass(), TEXT("OperationalLoadProgressBar"));
+	}
+
+	FSlateFontInfo TitleFont = BodyOperationsTitleTextBlock->GetFont();
+	TitleFont.Size = 14;
+	BodyOperationsTitleTextBlock->SetFont(TitleFont);
+	BodyOperationsTitleTextBlock->SetColorAndOpacity(
+		FSlateColor(FLinearColor(0.64f, 0.90f, 1.0f, 1.0f)));
+	BodyOperationsTitleTextBlock->SetText(
+		NSLOCTEXT("StarRoversBodyOperations", "OperationsTitle", "OPERATIONS"));
+
+	FSlateFontInfo LoadFont = OperationalLoadTextBlock->GetFont();
+	LoadFont.Size = 16;
+	OperationalLoadTextBlock->SetFont(LoadFont);
+	OperationalLoadProgressBar->SetPercent(0.0f);
+
+	BodyOperationsContainer->SetWidthOverride(FocusDetailsBoxWidth);
+	BodyOperationsBorder->SetPadding(FMargin(12.0f));
+	BodyOperationsBorder->SetBrushColor(FLinearColor(0.035f, 0.075f, 0.11f, 0.96f));
+	if (BodyOperationsContainer->GetContent() != BodyOperationsBorder)
+	{
+		BodyOperationsContainer->SetContent(BodyOperationsBorder);
+	}
+	if (BodyOperationsBorder->GetContent() != BodyOperationsVerticalBox)
+	{
+		BodyOperationsBorder->SetContent(BodyOperationsVerticalBox);
+	}
+
+	auto AddTextRow = [BodyOperationsVerticalBox](UTextBlock* TextBlock, const FMargin& RowPadding)
+	{
+		if (!TextBlock || TextBlock->GetParent() == BodyOperationsVerticalBox)
+		{
+			return;
+		}
+		if (TextBlock->GetParent())
+		{
+			TextBlock->GetParent()->RemoveChild(TextBlock);
+		}
+		if (UVerticalBoxSlot* RowSlot = BodyOperationsVerticalBox->AddChildToVerticalBox(TextBlock))
+		{
+			RowSlot->SetPadding(RowPadding);
+		}
+	};
+
+	AddTextRow(BodyOperationsTitleTextBlock, FMargin(0.0f, 0.0f, 0.0f, 5.0f));
+	AddTextRow(OperationalLoadTextBlock, FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+	if (OperationalLoadProgressBar->GetParent() != BodyOperationsVerticalBox)
+	{
+		if (OperationalLoadProgressBar->GetParent())
+		{
+			OperationalLoadProgressBar->GetParent()->RemoveChild(OperationalLoadProgressBar);
+		}
+		if (UVerticalBoxSlot* ProgressSlot = BodyOperationsVerticalBox->AddChildToVerticalBox(OperationalLoadProgressBar))
+		{
+			ProgressSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		}
+	}
+	AddTextRow(OperationalStatusTextBlock, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+	AddTextRow(ResourceReserveTextBlock, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+	AddTextRow(CapacityBreakdownTextBlock, FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+	AddTextRow(FacilitySummaryTextBlock, FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+	AddTextRow(PrioritySpeedTextBlock, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+	AddTextRow(FleetSummaryTextBlock, FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+	AddTextRow(LogisticsSummaryTextBlock, FMargin(0.0f));
+
+	if (!BodyOperationsContainer->GetParent())
+	{
+		if (UVerticalBox* ParentVerticalBox = Cast<UVerticalBox>(BodyOperationsPanelParent))
+		{
+			if (UVerticalBoxSlot* OperationsSlot = ParentVerticalBox->AddChildToVerticalBox(BodyOperationsContainer))
+			{
+				OperationsSlot->SetPadding(FMargin(0.0f, 2.0f, 0.0f, 8.0f));
+			}
+		}
+		else if (UCanvasPanel* ParentCanvasPanel = Cast<UCanvasPanel>(BodyOperationsPanelParent))
+		{
+			if (UCanvasPanelSlot* OperationsSlot = ParentCanvasPanel->AddChildToCanvas(BodyOperationsContainer))
+			{
+				OperationsSlot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 0.0f));
+				OperationsSlot->SetAlignment(FVector2D(1.0f, 0.0f));
+				OperationsSlot->SetPosition(FVector2D(-408.0f, 32.0f));
+				OperationsSlot->SetAutoSize(true);
+			}
+		}
+		else if (UPanelWidget* ParentPanelWidget = Cast<UPanelWidget>(BodyOperationsPanelParent))
+		{
+			ParentPanelWidget->AddChild(BodyOperationsContainer);
+		}
+	}
+
+	RefreshBodyOperationsPanel();
 }
 
 void USRCelestialBodyFocusInfoWidget::EnsureHoveredCellTextBlock(UWidget* HoveredCellTextBlockParent)
@@ -600,6 +908,13 @@ bool USRCelestialBodyFocusInfoWidget::RefreshStarFuelInfoFromFocusedActor()
 	NewFuelInfo.InitialFuelDecreasePerSecond = FuelState.InitialFuelDecreasePerSecond;
 	NewFuelInfo.RequiredFuelPerCycle = FuelState.RequiredFuelPerCycle;
 	NewFuelInfo.RequirementGrowthPerCycle = FuelState.RequirementGrowthPerCycle;
+	NewFuelInfo.bUsesStellarPressureCurveV2 = FuelState.bUsesStellarPressureCurveV2;
+	NewFuelInfo.DemandPhase = FuelState.DemandPhase;
+	NewFuelInfo.NextCycleDemandPerSecond = FuelState.NextCycleDemandPerSecond;
+	NewFuelInfo.FuelPressureRatio = FuelState.FuelPressureRatio;
+	NewFuelInfo.LastFuelDeliveryAmount = FuelState.LastFuelDeliveryAmount;
+	NewFuelInfo.LastFuelReserveGain = FuelState.LastFuelReserveGain;
+	NewFuelInfo.LastFuelReserveOverflow = FuelState.LastFuelReserveOverflow;
 	NewFuelInfo.LastFuelDecreaseRateCycleIndex = FuelState.LastFuelDecreaseRateCycleIndex;
 	NewFuelInfo.RedGiantPressure = FuelState.RedGiantPressure;
 	NewFuelInfo.RedGiantPressurePerMissingFuel = FuelState.RedGiantPressurePerMissingFuel;
@@ -617,6 +932,213 @@ bool USRCelestialBodyFocusInfoWidget::RefreshStarFuelInfoFromFocusedActor()
 
 	FocusInfo.StarFuelInfo = NewFuelInfo;
 	return true;
+}
+
+bool USRCelestialBodyFocusInfoWidget::RefreshBodyOperationsSummary(bool bForceRefresh)
+{
+	if (!bForceRefresh
+		&& BodyOperationsRefreshAccumulator < BodyOperationsRefreshIntervalSeconds)
+	{
+		return false;
+	}
+
+	BodyOperationsRefreshAccumulator = 0.0f;
+	FSRCelestialBodyOperationsSummary NewSummary;
+	if (bHasFocusInfo && FocusInfo.bIsValid && IsValid(FocusInfo.Actor))
+	{
+		FSRCelestialBodyOperationsSummaryBuilder::BuildSummary(
+			FocusInfo.Actor.Get(), NewSummary);
+	}
+	BodyOperationsSummary = MoveTemp(NewSummary);
+	return true;
+}
+
+void USRCelestialBodyFocusInfoWidget::RefreshBodyOperationsPanel()
+{
+	if (!BodyOperationsContainer)
+	{
+		return;
+	}
+
+	if (!bHasFocusInfo || !BodyOperationsSummary.bIsValid)
+	{
+		BodyOperationsContainer->SetVisibility(ESlateVisibility::Collapsed);
+		BodyOperationsPanelSignature.Reset();
+		return;
+	}
+
+	BodyOperationsContainer->SetVisibility(ESlateVisibility::Visible);
+	const FSROperationalCapacityReportV2& Capacity =
+		BodyOperationsSummary.OperationalCapacity;
+	const float Utilization =
+		FSRCelestialBodyOperationsSummaryBuilder::GetOperationalUtilization(
+			BodyOperationsSummary);
+	const ESRCelestialBodyOperationsPressure Pressure =
+		FSRCelestialBodyOperationsSummaryBuilder::ResolveOperationalPressure(
+			BodyOperationsSummary);
+	const FLinearColor PressureColor = GetOperationsPressureColor(Pressure);
+	const int32 UtilizationPercent = Capacity.TotalCapacity > 0
+		? FMath::RoundToInt(Utilization * 100.0f)
+		: (Capacity.TotalDemand > 0 ? 999 : 0);
+	const FString StatusText = Capacity.bRulesActive
+		? FSRCelestialBodyOperationsSummaryBuilder::BuildOperationalStatusText(
+			BodyOperationsSummary)
+		: FString(TEXT("Legacy ruleset - Capacity is informational"));
+	const FString BusiestHubText = BodyOperationsSummary.HubCount > 1
+		? FString::Printf(
+			TEXT(" | Busiest %d/%d"),
+			BodyOperationsSummary.BusiestHubReservedLoad,
+			BodyOperationsSummary.BusiestHubTotalCapacity)
+		: FString();
+	const FString FleetText = BodyOperationsSummary.HubCount > 0
+		? FString::Printf(
+			TEXT("Fleet Load %d / %d | Available %d | Queue %d%s"),
+			BodyOperationsSummary.FleetReservedLoad,
+			BodyOperationsSummary.FleetTotalCapacity,
+			BodyOperationsSummary.FleetAvailableCapacity,
+			BodyOperationsSummary.FleetQueuedDepartureCount,
+			*BusiestHubText)
+		: FString(TEXT("Fleet: no Hub on this body"));
+	const FString LogisticsText = BodyOperationsSummary.HubCount > 0
+		? FString::Printf(
+			TEXT("Logistics: %d Hubs | %d Routes | %d Blocked | %d supplied Berths | %d Missiles"),
+			BodyOperationsSummary.HubCount,
+			BodyOperationsSummary.ConnectedRouteCount,
+			BodyOperationsSummary.BlockedRouteCount,
+			BodyOperationsSummary.ActiveFleetBerthCount,
+			BodyOperationsSummary.ActiveStarFuelMissileCount)
+		: FString::Printf(
+			TEXT("Logistics: %d Routes | %d Missiles"),
+			BodyOperationsSummary.ConnectedRouteCount,
+			BodyOperationsSummary.ActiveStarFuelMissileCount);
+
+	const FString NewSignature = FString::Printf(
+		TEXT("Rules=%d|Capacity=%d,%d,%d,%d,%d,%d|Tiers=%d,%d,%d,%d,%d,%d|Facilities=%d,%d,%d,%d|Reserve=%d,%d,%d,%lld,%lld,%d,%d|Logistics=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d"),
+		Capacity.bRulesActive ? 1 : 0,
+		Capacity.BaseCapacity,
+		Capacity.ActiveServiceCoreCount,
+		Capacity.ServiceCoreCapacity,
+		Capacity.AugmentCapacity,
+		Capacity.TotalCapacity,
+		Capacity.TotalDemand,
+		Capacity.Critical.Demand,
+		FMath::RoundToInt(Capacity.Critical.SpeedFactor * 1000.0f),
+		Capacity.Normal.Demand,
+		FMath::RoundToInt(Capacity.Normal.SpeedFactor * 1000.0f),
+		Capacity.Background.Demand,
+		FMath::RoundToInt(Capacity.Background.SpeedFactor * 1000.0f),
+		BodyOperationsSummary.FacilityCount,
+		BodyOperationsSummary.EnabledFacilityCount,
+		BodyOperationsSummary.ProcessingFacilityCount,
+		BodyOperationsSummary.ThrottledFacilityCount,
+		BodyOperationsSummary.ResourceReserve.DepositCount,
+		BodyOperationsSummary.ResourceReserve.ActiveDepositCount,
+		BodyOperationsSummary.ResourceReserve.DepletedDepositCount,
+		BodyOperationsSummary.ResourceReserve.RemainingCardAmount,
+		BodyOperationsSummary.ResourceReserve.RemainingUtilityAmount,
+		FMath::RoundToInt(BodyOperationsSummary.ResourceReserve.RemainingRatio * 1000.0f),
+		static_cast<int32>(BodyOperationsSummary.ResourceReserve.Pressure),
+		BodyOperationsSummary.HubCount,
+		BodyOperationsSummary.ConnectedRouteCount,
+		BodyOperationsSummary.BlockedRouteCount,
+		BodyOperationsSummary.FleetReservedLoad,
+		BodyOperationsSummary.FleetTotalCapacity,
+		BodyOperationsSummary.FleetAvailableCapacity,
+		BodyOperationsSummary.FleetQueuedDepartureCount,
+		BodyOperationsSummary.ActiveFleetBerthCount,
+		BodyOperationsSummary.BusiestHubReservedLoad,
+		BodyOperationsSummary.BusiestHubTotalCapacity,
+		BodyOperationsSummary.ActiveStarFuelMissileCount);
+	if (BodyOperationsPanelSignature == NewSignature)
+	{
+		return;
+	}
+	BodyOperationsPanelSignature = NewSignature;
+
+	if (OperationalLoadTextBlock)
+	{
+		OperationalLoadTextBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("OPERATIONAL LOAD  %d / %d  (%s)"),
+			Capacity.TotalDemand,
+			Capacity.TotalCapacity,
+			Capacity.TotalCapacity > 0
+				? *FString::Printf(TEXT("%d%%"), UtilizationPercent)
+				: (Capacity.TotalDemand > 0 ? TEXT("NO CAPACITY") : TEXT("0%")))));
+		OperationalLoadTextBlock->SetColorAndOpacity(FSlateColor(PressureColor));
+	}
+	if (OperationalLoadProgressBar)
+	{
+		OperationalLoadProgressBar->SetPercent(FMath::Clamp(Utilization, 0.0f, 1.0f));
+		OperationalLoadProgressBar->SetFillColorAndOpacity(PressureColor);
+	}
+	if (OperationalStatusTextBlock)
+	{
+		OperationalStatusTextBlock->SetText(FText::FromString(StatusText));
+		OperationalStatusTextBlock->SetColorAndOpacity(FSlateColor(PressureColor));
+	}
+	if (ResourceReserveTextBlock)
+	{
+		ResourceReserveTextBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("%s\n%s"),
+			*FSRCelestialBodyOperationsSummaryBuilder::BuildResourceReserveText(
+				BodyOperationsSummary),
+			*FSRCelestialBodyOperationsSummaryBuilder::BuildResourceReserveStatusText(
+				BodyOperationsSummary))));
+		ResourceReserveTextBlock->SetColorAndOpacity(FSlateColor(
+			GetResourceReservePressureColor(BodyOperationsSummary.ResourceReserve.Pressure)));
+	}
+	if (CapacityBreakdownTextBlock)
+	{
+		CapacityBreakdownTextBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("Capacity %d = Base %d + Cores %d (+%d) + Augments %d"),
+			Capacity.TotalCapacity,
+			Capacity.BaseCapacity,
+			Capacity.ActiveServiceCoreCount,
+			Capacity.ServiceCoreCapacity,
+			Capacity.AugmentCapacity)));
+	}
+	if (FacilitySummaryTextBlock)
+	{
+		FacilitySummaryTextBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("Facilities %d | Enabled %d | Processing %d | Throttled %d"),
+			BodyOperationsSummary.FacilityCount,
+			BodyOperationsSummary.EnabledFacilityCount,
+			BodyOperationsSummary.ProcessingFacilityCount,
+			BodyOperationsSummary.ThrottledFacilityCount)));
+	}
+	if (PrioritySpeedTextBlock)
+	{
+		PrioritySpeedTextBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("Priority Speed: C %.0f%% (%d) | N %.0f%% (%d) | B %.0f%% (%d)"),
+			Capacity.Critical.SpeedFactor * 100.0f,
+			Capacity.Critical.Demand,
+			Capacity.Normal.SpeedFactor * 100.0f,
+			Capacity.Normal.Demand,
+			Capacity.Background.SpeedFactor * 100.0f,
+			Capacity.Background.Demand)));
+	}
+	if (FleetSummaryTextBlock)
+	{
+		FleetSummaryTextBlock->SetText(FText::FromString(FleetText));
+		FleetSummaryTextBlock->SetColorAndOpacity(FSlateColor(
+			BodyOperationsSummary.FleetQueuedDepartureCount > 0
+				? FLinearColor(1.0f, 0.68f, 0.16f, 1.0f)
+				: FLinearColor(0.68f, 0.86f, 0.96f, 1.0f)));
+	}
+	if (LogisticsSummaryTextBlock)
+	{
+		LogisticsSummaryTextBlock->SetText(FText::FromString(LogisticsText));
+		LogisticsSummaryTextBlock->SetColorAndOpacity(FSlateColor(
+			BodyOperationsSummary.BlockedRouteCount > 0
+				? FLinearColor(1.0f, 0.46f, 0.24f, 1.0f)
+				: FLinearColor(0.68f, 0.86f, 0.96f, 1.0f)));
+	}
+
+	const FString BodyOperationsToolTipText = FString::Printf(
+		TEXT("%s\n\nFleet Capacity is reserved per Hub while a ship is away from its dock. Multiple Hubs are aggregated here; Busiest identifies the tightest individual Hub."),
+		*FSRCelestialBodyOperationsSummaryBuilder::BuildOperationalToolTipText(
+			BodyOperationsSummary));
+	BodyOperationsContainer->SetToolTipText(FText::FromString(BodyOperationsToolTipText));
 }
 
 void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
@@ -711,14 +1233,23 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 			}
 			HoveredCellTextBlock->SetText(FText::FromString(CellText));
 			HoveredCellTextBlock->SetVisibility(ESlateVisibility::Visible);
+			if (HoveredCellContainer)
+			{
+				HoveredCellContainer->SetVisibility(ESlateVisibility::Visible);
+			}
 		}
 		else
 		{
 			HoveredCellTextBlock->SetText(FText::GetEmpty());
 			HoveredCellTextBlock->SetVisibility(ESlateVisibility::Hidden);
+			if (HoveredCellContainer)
+			{
+				HoveredCellContainer->SetVisibility(ESlateVisibility::Collapsed);
+			}
 		}
 	}
 
+	RefreshBodyOperationsPanel();
 	RefreshAssemblyModeButton();
 }
 
@@ -759,6 +1290,12 @@ bool USRCelestialBodyFocusInfoWidget::IsScreenPositionOverFocusInfoUI(const FVec
 	}
 
 	if (FocusInfoBorder && FocusInfoBorder->GetCachedGeometry().IsUnderLocation(ScreenPosition))
+	{
+		return true;
+	}
+	if (BodyOperationsBorder
+		&& BodyOperationsBorder->IsVisible()
+		&& BodyOperationsBorder->GetCachedGeometry().IsUnderLocation(ScreenPosition))
 	{
 		return true;
 	}

@@ -14,6 +14,7 @@ namespace StarRovers::Assembly
 	enum class ESRAssemblyStructureGhostPreviewUpdateResult : uint8
 	{
 		DestroyPreview,
+		BlockedPreview,
 		NoChange,
 		Updated,
 	};

@@ -244,6 +244,13 @@ FSRCelestialBodyFocusInfo USRCelestialBodyRuntimeLibrary::BuildCelestialBodyFocu
 		FocusInfo.StarFuelInfo.InitialFuelDecreasePerSecond = FuelState.InitialFuelDecreasePerSecond;
 		FocusInfo.StarFuelInfo.RequiredFuelPerCycle = FuelState.RequiredFuelPerCycle;
 		FocusInfo.StarFuelInfo.RequirementGrowthPerCycle = FuelState.RequirementGrowthPerCycle;
+		FocusInfo.StarFuelInfo.bUsesStellarPressureCurveV2 = FuelState.bUsesStellarPressureCurveV2;
+		FocusInfo.StarFuelInfo.DemandPhase = FuelState.DemandPhase;
+		FocusInfo.StarFuelInfo.NextCycleDemandPerSecond = FuelState.NextCycleDemandPerSecond;
+		FocusInfo.StarFuelInfo.FuelPressureRatio = FuelState.FuelPressureRatio;
+		FocusInfo.StarFuelInfo.LastFuelDeliveryAmount = FuelState.LastFuelDeliveryAmount;
+		FocusInfo.StarFuelInfo.LastFuelReserveGain = FuelState.LastFuelReserveGain;
+		FocusInfo.StarFuelInfo.LastFuelReserveOverflow = FuelState.LastFuelReserveOverflow;
 		FocusInfo.StarFuelInfo.LastFuelDecreaseRateCycleIndex = FuelState.LastFuelDecreaseRateCycleIndex;
 		FocusInfo.StarFuelInfo.RedGiantPressure = FuelState.RedGiantPressure;
 		FocusInfo.StarFuelInfo.RedGiantPressurePerMissingFuel = FuelState.RedGiantPressurePerMissingFuel;

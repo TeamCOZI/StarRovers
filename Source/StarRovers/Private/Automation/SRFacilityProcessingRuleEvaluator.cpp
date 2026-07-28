@@ -1,7 +1,16 @@
 #include "SRFacilityProcessingRuleEvaluator.h"
 
 #include "Automation/SRFacilityDataAsset.h"
+#include "Automation/SRFacilityResourceV2Processor.h"
+#include "Automation/SROperationalEconomyProcessor.h"
+#include "Automation/SRRefinementResistanceV2.h"
 #include "Automation/SRResourceDataAsset.h"
+#include "Automation/SRResourceInstanceOperations.h"
+#include "Automation/SRStellarFuelFabricator.h"
+#include "Components/ActorComponent.h"
+#include "Engine/World.h"
+#include "Simulation/SRAugmentSubsystem.h"
+#include "Simulation/SRSimulationSettings.h"
 #include "SRFacilityMiningTargetResolver.h"
 #include "SRFacilityEffectConditionEvaluator.h"
 #include "SRFacilityOutputResourceBuilder.h"
@@ -63,16 +72,23 @@ namespace
 			return false;
 		}
 
+		const bool bUsesResourceV2 =
+			FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(FacilityDataAsset)
+			|| FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(FacilityDataAsset)
+			|| FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(FacilityDataAsset);
 		const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
 			StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, ResourceInstances);
-		const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
+		const ESRFacilityTemperatureState EffectiveTemperatureState = bUsesResourceV2
+			? FacilityInstance.TemperatureState
+			: ProcessContext.EffectiveTemperatureState;
 		if (EffectiveTemperatureState == ESRFacilityTemperatureState::Frozen
 			|| EffectiveTemperatureState == ESRFacilityTemperatureState::Overheated)
 		{
 			return false;
 		}
 
-		return CanResourcesAdvanceAtTemperature(ResourceInstances, EffectiveTemperatureState);
+		return bUsesResourceV2
+			|| CanResourcesAdvanceAtTemperature(ResourceInstances, EffectiveTemperatureState);
 	}
 }
 
@@ -89,6 +105,19 @@ bool FSRFacilityProcessingRuleEvaluator::CanRun(
 	if (!IsValid(FacilityDataAsset))
 	{
 		return false;
+	}
+	if (IsValid(OwnerComponent))
+	{
+		if (const USRAugmentSubsystem* AugmentSubsystem = OwnerComponent->GetWorld()
+			? OwnerComponent->GetWorld()->GetSubsystem<USRAugmentSubsystem>()
+			: nullptr)
+		{
+			FString RecipeFailure;
+			if (!AugmentSubsystem->IsFacilityRecipeUnlockedV2(FacilityInstance, RecipeFailure))
+			{
+				return false;
+			}
+		}
 	}
 
 	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine)
@@ -113,7 +142,18 @@ bool FSRFacilityProcessingRuleEvaluator::CanRun(
 	}
 
 	TArray<FSRResourceInstance> OutputResources;
-	FSRFacilityOutputResourceBuilder::BuildOutputResources(FacilityInstance, InputResources, OutputResources);
+	const FName ProcessingBodyId = StarRovers::Resources::ResolveCelestialBodyResourceId(
+		IsValid(OwnerComponent) ? OwnerComponent->GetOwner() : nullptr);
+	FSRFacilityOutputResourceBuilder::BuildOutputResources(
+		FacilityInstance,
+		InputResources,
+		OutputResources,
+		nullptr,
+		nullptr,
+		nullptr,
+		nullptr,
+		nullptr,
+		ProcessingBodyId);
 	if (OutputResources.IsEmpty())
 	{
 		return FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(FacilityInstance);
@@ -164,13 +204,109 @@ bool FSRFacilityProcessingRuleEvaluator::CanMiningRun(
 	return FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(FacilityInstance, OutputResources);
 }
 
+namespace
+{
+	float ResolveUnsnapshottedProcessSeconds(const FSRFacilityInstance& FacilityInstance)
+	{
+		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		if (FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(FacilityDataAsset))
+		{
+			return FSRFacilityProcessingRuleEvaluator::ResolveRefinementResistance(FacilityInstance).EffectiveProcessSeconds;
+		}
+		if (FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(FacilityDataAsset)
+			|| FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(FacilityDataAsset))
+		{
+			return IsValid(FacilityDataAsset)
+				? FMath::Max(0.01f, FacilityDataAsset->BaseProcessSeconds)
+				: 0.01f;
+		}
+
+		const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
+			StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, FacilityInstance.ProcessingInventory);
+		return StarRovers::FacilityProcessing::ResolveFacilityProcessSeconds(
+			FacilityDataAsset,
+			ProcessContext.EffectiveTemperatureState,
+			FacilityInstance.ProcessingInventory);
+	}
+}
+
 float FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(const FSRFacilityInstance& FacilityInstance)
 {
+	if (FacilityInstance.bProcessing
+		&& FacilityInstance.bHasResolvedProcessSeconds
+		&& FMath::IsFinite(FacilityInstance.ResolvedProcessSeconds)
+		&& FacilityInstance.ResolvedProcessSeconds > 0.0f)
+	{
+		return FMath::Max(0.01f, FacilityInstance.ResolvedProcessSeconds);
+	}
+	return ResolveUnsnapshottedProcessSeconds(FacilityInstance);
+}
+
+float FSRFacilityProcessingRuleEvaluator::CaptureProcessSecondsSnapshot(FSRFacilityInstance& FacilityInstance)
+{
+	ClearProcessSecondsSnapshot(FacilityInstance);
+	const float ResolvedSeconds = FMath::Max(
+		0.01f,
+		ResolveUnsnapshottedProcessSeconds(FacilityInstance));
+	FacilityInstance.ResolvedProcessSeconds = ResolvedSeconds;
+	FacilityInstance.bHasResolvedProcessSeconds = true;
+	return ResolvedSeconds;
+}
+
+void FSRFacilityProcessingRuleEvaluator::ClearProcessSecondsSnapshot(FSRFacilityInstance& FacilityInstance)
+{
+	FacilityInstance.ResolvedProcessSeconds = 0.0f;
+	FacilityInstance.bHasResolvedProcessSeconds = false;
+}
+
+FSRRefinementResistanceResultV2 FSRFacilityProcessingRuleEvaluator::ResolveRefinementResistance(
+	const FSRFacilityInstance& FacilityInstance)
+{
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-	const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
-		StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, FacilityInstance.ProcessingInventory);
-	return StarRovers::FacilityProcessing::ResolveFacilityProcessSeconds(
-		FacilityDataAsset,
-		ProcessContext.EffectiveTemperatureState,
-		FacilityInstance.ProcessingInventory);
+	const float BaseProcessSeconds = IsValid(FacilityDataAsset)
+		? FacilityDataAsset->BaseProcessSeconds
+		: 0.01f;
+	FSRRefinementResistanceResultV2 Result =
+		FSRRefinementResistanceV2::MakeInactive(BaseProcessSeconds);
+	if (!FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(FacilityDataAsset)
+		|| FacilityDataAsset->ResourceV2Process.ProcessRole != ESRFacilityProcessRoleV2::FamilyProcess
+		|| FMath::IsNearlyZero(FacilityDataAsset->ResourceV2Process.FacilityEnergyDelta))
+	{
+		return Result;
+	}
+
+	const FSRResourceInstance* InputResource = FacilityInstance.ProcessingInventory.IsEmpty()
+		? nullptr
+		: &FacilityInstance.ProcessingInventory[0];
+	TArray<FSRResourceInstance> PendingInputs;
+	if (!InputResource
+		&& FSRFacilityProcessingInventoryRouter::GatherPendingInputResources(
+			FacilityInstance,
+			PendingInputs)
+		&& !PendingInputs.IsEmpty())
+	{
+		InputResource = &PendingInputs[0];
+	}
+	if (!InputResource)
+	{
+		return Result;
+	}
+
+	const USRSimulationSettings* Settings = GetDefault<USRSimulationSettings>();
+	FSRRefinementResistanceResultV2 EvaluatedResult = FSRRefinementResistanceV2::Evaluate(
+		*InputResource,
+		BaseProcessSeconds,
+		IsValid(Settings) ? Settings->RefinementResistanceEnergyScaleV2 : 40.0);
+	if (EvaluatedResult.bApplied
+		&& FacilityInstance.bProcessing
+		&& FacilityInstance.bHasResolvedProcessSeconds
+		&& FMath::IsFinite(FacilityInstance.ResolvedProcessSeconds)
+		&& FacilityInstance.ResolvedProcessSeconds > 0.0f)
+	{
+		EvaluatedResult.EffectiveProcessSeconds =
+			FMath::Max(0.01f, FacilityInstance.ResolvedProcessSeconds);
+		EvaluatedResult.CycleMultiplier =
+			EvaluatedResult.EffectiveProcessSeconds / EvaluatedResult.BaseProcessSeconds;
+	}
+	return EvaluatedResult;
 }

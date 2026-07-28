@@ -87,6 +87,20 @@ struct STARROVERS_API FSRFacilityInstance
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "ProcessingInventory"))
 	TArray<FSRResourceInstance> ProcessingInventory;
 
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility|Operational Capacity", meta = (DisplayName = "OperationalPriority"))
+	ESROperationalPriorityV2 OperationalPriority = ESROperationalPriorityV2::Normal;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility|Operational Capacity", meta = (DisplayName = "OperationalSpeedFactor"))
+	float OperationalSpeedFactor = 1.0f;
+
+	// NAME_None uses the Facility Data Asset default. Runtime selection lives on
+	// the placed Facility so one authored Imprinter can serve every unlocked recipe.
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility|Resource V2 Recipe", meta = (DisplayName = "SelectedProcessTagRecipeId"))
+	FName SelectedProcessTagRecipeId = NAME_None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility|Resource V2 Recipe", meta = (DisplayName = "SelectedFuelImprintRecipeId"))
+	FName SelectedFuelImprintRecipeId = NAME_None;
+
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "MiningTargetDepositOccupantId"))
 	FName MiningTargetDepositOccupantId = NAME_None;
 
@@ -95,6 +109,14 @@ struct STARROVERS_API FSRFacilityInstance
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "ProcessProgressSeconds"))
 	float ProcessProgressSeconds = 0.0f;
+
+	// Captured after inputs are reserved. Runtime settings and authored balance
+	// edits cannot move the finish line of an already-started operation.
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "ResolvedProcessSeconds"))
+	float ResolvedProcessSeconds = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "bHasResolvedProcessSeconds"))
+	bool bHasResolvedProcessSeconds = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "bProcessing"))
 	bool bProcessing = false;

@@ -58,12 +58,17 @@ bool USRFacilityNetworkComponent::SetFacilityTemperatureState(FName OccupantId, 
 
 bool USRFacilityNetworkComponent::SetFacilityProcessEnabled(FName OccupantId, bool bEnabled)
 {
-	return FSRFacilityOperationStateController::SetProcessEnabled(
+	const bool bChanged = FSRFacilityOperationStateController::SetProcessEnabled(
 		this,
 		RuntimeState,
 		OccupantId,
 		bEnabled,
 		bAutoProcessFacilities);
+	if (bChanged)
+	{
+		RefreshOperationalCapacity();
+	}
+	return bChanged;
 }
 
 bool USRFacilityNetworkComponent::SetFacilityDeliverEnabled(FName OccupantId, bool bEnabled)
@@ -84,6 +89,14 @@ int32 USRFacilityNetworkComponent::ProcessFacilities(float DeltaTime)
 		[this](FSRFacilityInstance& FacilityInstance)
 		{
 			return TryStartProcessing(FacilityInstance);
+		},
+		[this]()
+		{
+			RefreshOperationalCapacity();
+		},
+		[](const FSRFacilityInstance& FacilityInstance)
+		{
+			return FacilityInstance.OperationalSpeedFactor;
 		},
 		[this](FSRFacilityInstance& FacilityInstance)
 		{
@@ -140,6 +153,24 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 	{
 		return false;
 	}
+	RefreshOperationalCapacity();
+	if (CompletionResult.StepKind == ESRFacilityProcessingStepKind::Mining
+		&& !CompletionResult.MiningResult.MinedResource.ResourceId.IsNone())
+	{
+		ResourceProducedEvent.Broadcast(
+			this,
+			FacilityInstance.OccupantId,
+			CompletionResult.MiningResult.MinedResource);
+	}
+	else if (CompletionResult.StepKind == ESRFacilityProcessingStepKind::Standard
+		&& CompletionResult.OutputCount > 0
+		&& !CompletionResult.PrimaryOutputResource.ResourceId.IsNone())
+	{
+		ResourceProducedEvent.Broadcast(
+			this,
+			FacilityInstance.OccupantId,
+			CompletionResult.PrimaryOutputResource);
+	}
 
 	if (!bLogFacilityNetworkEvents)
 	{
@@ -163,15 +194,40 @@ bool USRFacilityNetworkComponent::TryCompleteProcessing(FSRFacilityInstance& Fac
 	if (CompletionResult.StepKind == ESRFacilityProcessingStepKind::Standard)
 	{
 		const FString FacilityLogName = BuildFacilityLogName(FacilityInstance);
+		const FString ResourceV2Summary = CompletionResult.bUsedResourceV2Process
+			? FString::Printf(
+				TEXT(" V2Delta=(Facility=%+.3f Family=%+.3f Tag=%+.3f Clamp=%+.3f) StateChanges=(+0x%X -0x%X)"),
+				CompletionResult.ResourceV2ProcessResult.FacilityEnergyDelta,
+				CompletionResult.ResourceV2ProcessResult.FamilyEnergyDelta,
+				CompletionResult.ResourceV2ProcessResult.ProcessTagEnergyDelta,
+				CompletionResult.ResourceV2ProcessResult.ClampEnergyDelta,
+				CompletionResult.ResourceV2ProcessResult.ActivatedFamilyStateFlags,
+				CompletionResult.ResourceV2ProcessResult.ClearedFamilyStateFlags)
+			: CompletionResult.bUsedStellarFuelFabricatorV2
+				? FString::Printf(
+					TEXT(" StellarFuel=(Hand=%s A=%.3f B=%.3f C=%.3f Energy=%.3f Topology=%s Twin=%d Catalyst=%d)"),
+					*StaticEnum<ESRStellarFuelHandV2>()->GetNameStringByValue(
+						static_cast<int64>(CompletionResult.StellarFuelFabricationResult.Hand)),
+					CompletionResult.StellarFuelFabricationResult.FormulaA,
+					CompletionResult.StellarFuelFabricationResult.FormulaB,
+					CompletionResult.StellarFuelFabricationResult.FormulaC,
+					CompletionResult.StellarFuelFabricationResult.FuelEnergy,
+					CompletionResult.StellarFuelFabricationResult.AppliedTopologySealId.IsNone()
+						? TEXT("None")
+						: *CompletionResult.StellarFuelFabricationResult.AppliedTopologySealId.ToString(),
+					CompletionResult.StellarFuelFabricationResult.EffectiveTwinSealCount,
+					CompletionResult.StellarFuelFabricationResult.EffectivePrismaticCatalystCount)
+				: FString();
 		SR_LOG(FacilityNetwork, LogTemp,
 			Display,
-			TEXT("[FacilityNetwork] Processing completed: OccupantId=%s Facility=%s OutputResourceId=%s OutputCount=%d AdditionalOutputs=%d Owner=%s"),
+			TEXT("[FacilityNetwork] Processing completed: OccupantId=%s Facility=%s OutputResourceId=%s OutputCount=%d AdditionalOutputs=%d Owner=%s%s"),
 			*FacilityInstance.OccupantId.ToString(),
 			*FacilityLogName,
 			CompletionResult.PrimaryOutputResource.ResourceId.IsNone() ? TEXT("None") : *CompletionResult.PrimaryOutputResource.ResourceId.ToString(),
 			CompletionResult.OutputCount,
 			CompletionResult.AdditionalOutputCount,
-			*GetNameSafe(GetOwner()));
+			*GetNameSafe(GetOwner()),
+			*ResourceV2Summary);
 	}
 	return true;
 }

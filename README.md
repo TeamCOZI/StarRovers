@@ -161,6 +161,7 @@ The core surface automation model is cell occupancy and item flow.
 - Conveyors move resources from a facility Output Port to another facility Input Port.
 - Facility input, processing, and output behavior can depend on Cell temperature, resource process tags, and Facility DA effects.
 - Facility UI shows process state, process/deliver readiness, per-port resource slots, output preview with Energy formula breakdown, and compact process-tag state.
+- The celestial overview shows each planet/moon's live `L Load/Capacity` badge. Focusing that body opens an Operations card with Capacity sources, facility activity/throttling, priority speeds, and aggregate Hub/Fleet/route pressure.
 - The player combines limited space and resource flow to raise stellar fuel production.
 
 ### 4.3 Stellar Fuel Production

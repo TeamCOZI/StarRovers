@@ -29,6 +29,7 @@ FSRCelestialBodyData USRStarDataAsset::BuildData() const
 	Result.Mass = FMath::Max(0.0f, Mass);
 	Result.GravityRatio = FMath::Max(0.0f, GravityRatio);
 	Result.GravityRadiusRatio = FMath::Max(0.0f, GravityRadiusRatio);
+	Result.bCanConstruct = false;
 	Result.DynamicMeshGeneration.bDynamicMeshGeneration = false;
 	Result.GenerationSeed = GenerationSeed;
 	Result.DynamicMeshGeneration.GenerationSeed = GenerationSeed;

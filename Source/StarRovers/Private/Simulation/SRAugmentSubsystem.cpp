@@ -1,9 +1,16 @@
 #include "Simulation/SRAugmentSubsystem.h"
 
+#include "Automation/SRResourceSystemContent.h"
+#include "Automation/SRFacilityResourceV2Processor.h"
+#include "Celestial/SRCelestialBodyRuntimeLibrary.h"
+#include "Logistics/SRSpaceLogisticsSubsystem.h"
+#include "Engine/World.h"
+#include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Utility/SRLog.h"
 #include "Simulation/SRSimulationSettings.h"
 #include "Simulation/SRTimeControlSubsystem.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "Structure/SRStructureInstanceManagerComponent.h"
 
 namespace
 {
@@ -39,6 +46,18 @@ namespace
 
 		return false;
 	}
+
+	bool HasRarity(const TArray<FSRAugmentPackageDefinitionV2>& Definitions, ESRFacilityRarity Rarity)
+	{
+		for (const FSRAugmentPackageDefinitionV2& Definition : Definitions)
+		{
+			if (Definition.Rarity == Rarity)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 }
 
 void USRAugmentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -57,6 +76,7 @@ void USRAugmentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		bPauseSimulationDuringChoice = SimulationSettings->bPauseSimulationDuringAugmentChoice;
 		AugmentRandomSeed = SimulationSettings->AugmentRandomSeed;
 		bDebugUnlockAllFacilitiesWithoutAugments = SimulationSettings->bDebugUnlockAllFacilitiesWithoutAugments;
+		bDebugUnlockAllAugmentPackagesV2 = SimulationSettings->bDebugUnlockAllAugmentPackagesV2;
 	}
 
 	Collection.InitializeDependency(USRTimeControlSubsystem::StaticClass());
@@ -142,6 +162,11 @@ void USRAugmentSubsystem::GenerateAugmentChoices(int32 CycleIndex)
 	{
 		return;
 	}
+	if (IsResourceV2RulesetActive())
+	{
+		GenerateResourceV2AugmentChoices(CycleIndex);
+		return;
+	}
 
 	TArray<USRStructureDataAsset*> InitialCandidates = GetEligibleAugmentCandidates();
 	if (InitialCandidates.IsEmpty())
@@ -184,22 +209,11 @@ void USRAugmentSubsystem::GenerateAugmentChoices(int32 CycleIndex)
 
 	UpdateHighTechBonusAfterOffer(InitialCandidates, GeneratedChoices);
 	CurrentChoices = MoveTemp(GeneratedChoices);
-	CurrentAugmentChoiceCycleIndex = CycleIndex;
 	SR_LOG(Augment, LogTemp, Log, TEXT("USRAugmentSubsystem generated %d augment choices for cycle %d from %d candidates."),
 		CurrentChoices.Num(),
-		CurrentAugmentChoiceCycleIndex,
+		CycleIndex,
 		InitialCandidates.Num());
-
-	if (bPauseSimulationDuringChoice)
-	{
-		if (USRTimeControlSubsystem* TimeControlSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRTimeControlSubsystem>() : nullptr)
-		{
-			TimeControlSubsystem->SetSimulationPaused(true);
-			bPausedSimulationForCurrentChoice = true;
-		}
-	}
-
-	OnAugmentChoicesReady.Broadcast(CurrentChoices, CurrentAugmentChoiceCycleIndex);
+	PublishCurrentChoices(CycleIndex);
 }
 
 bool USRAugmentSubsystem::SelectAugmentChoiceByIndex(int32 ChoiceIndex)
@@ -210,7 +224,10 @@ bool USRAugmentSubsystem::SelectAugmentChoiceByIndex(int32 ChoiceIndex)
 	}
 
 	const FSRAugmentChoice SelectedChoice = CurrentChoices[ChoiceIndex];
-	if (!UnlockStructure(SelectedChoice.StructureDataAsset.Get()))
+	const bool bUnlocked = SelectedChoice.ChoiceKind == ESRAugmentChoiceKind::ResourceV2Package
+		? UnlockAugmentPackageV2(SelectedChoice.PackageId)
+		: UnlockStructure(SelectedChoice.StructureDataAsset.Get());
+	if (!bUnlocked)
 	{
 		return false;
 	}
@@ -236,6 +253,23 @@ bool USRAugmentSubsystem::SelectAugmentChoiceByStructureId(FName StructureId)
 		}
 	}
 
+	return false;
+}
+
+bool USRAugmentSubsystem::SelectAugmentChoiceByPackageId(FName PackageId)
+{
+	if (PackageId.IsNone())
+	{
+		return false;
+	}
+	for (int32 ChoiceIndex = 0; ChoiceIndex < CurrentChoices.Num(); ++ChoiceIndex)
+	{
+		if (CurrentChoices[ChoiceIndex].ChoiceKind == ESRAugmentChoiceKind::ResourceV2Package
+			&& CurrentChoices[ChoiceIndex].PackageId == PackageId)
+		{
+			return SelectAugmentChoiceByIndex(ChoiceIndex);
+		}
+	}
 	return false;
 }
 
@@ -293,6 +327,18 @@ bool USRAugmentSubsystem::IsStructureUnlocked(const USRStructureDataAsset* Struc
 	{
 		return true;
 	}
+	if (IsResourceV2RulesetActive())
+	{
+		// Legacy and unmapped assets stay available during migration. Resource V2
+		// content is gated only when it declares a stable conditional Content id.
+		if (FacilityDataAsset->FacilityDefinitionVersion
+			< StarRovers::Facilities::CurrentFacilityDefinitionVersion
+			|| FacilityDataAsset->ResourceV2ContentId.IsNone())
+		{
+			return true;
+		}
+		return IsFacilityContentUnlockedV2(FacilityDataAsset->ResourceV2ContentId);
+	}
 
 	return UnlockedStructureIds.Contains(StructureData.StructureId);
 }
@@ -302,6 +348,15 @@ bool USRAugmentSubsystem::IsStructureUnlockedById(FName StructureId) const
 	if (StructureId.IsNone())
 	{
 		return false;
+	}
+
+	for (const USRStructureDataAsset* StructureDataAsset : RegisteredStructureDataAssets)
+	{
+		if (IsValid(StructureDataAsset)
+			&& StructureDataAsset->BuildData().StructureId == StructureId)
+		{
+			return IsStructureUnlocked(StructureDataAsset);
+		}
 	}
 
 	if (UnlockedStructureIds.Contains(StructureId))
@@ -354,6 +409,274 @@ float USRAugmentSubsystem::GetHighTechBonusChancePercent() const
 	return HighTechBonusChancePercent;
 }
 
+bool USRAugmentSubsystem::UnlockAugmentPackageV2(FName PackageId)
+{
+	if (!IsResourceV2RulesetActive() || PackageId.IsNone())
+	{
+		return false;
+	}
+	if (SelectedAugmentPackageIdsV2.Contains(PackageId))
+	{
+		return true;
+	}
+
+	FSRAugmentPackageDefinitionV2 Definition;
+	if (!FSRAugmentPackageContentV2::TryGetDefinition(PackageId, Definition))
+	{
+		return false;
+	}
+	const FSRAugmentBuildContextV2 Context = BuildResourceV2OfferContext();
+	FString FailureReason;
+	if (!FSRAugmentPackageContentV2::IsDefinitionEligible(Definition, Context, &FailureReason))
+	{
+		SR_LOG(Augment, LogTemp, Warning,
+			TEXT("Resource V2 Augment Package %s could not be unlocked: %s"),
+			*PackageId.ToString(),
+			*FailureReason);
+		return false;
+	}
+
+	SelectedAugmentPackageIdsV2.Add(PackageId);
+	if (Definition.IsMacroDoctrine())
+	{
+		ActiveMacroDoctrineIdV2 = PackageId;
+	}
+	OnAugmentPackagesChanged.Broadcast();
+	OnUnlockedStructuresChanged.Broadcast();
+	SR_LOG(Augment, LogTemp, Display,
+		TEXT("Resource V2 Augment Package unlocked: Package=%s Strategy=%s Role=%s Grants=(%s)"),
+		*PackageId.ToString(),
+		*Definition.StrategyId.ToString(),
+		*StaticEnum<ESRAugmentPackageRoleV2>()->GetNameStringByValue(static_cast<int64>(Definition.PackageRole)),
+		*FSRAugmentPackageContentV2::BuildGrantSummary(Definition));
+	return true;
+}
+
+bool USRAugmentSubsystem::IsAugmentPackageUnlockedV2(FName PackageId) const
+{
+	if (SelectedAugmentPackageIdsV2.Contains(PackageId))
+	{
+		return true;
+	}
+	if (!bDebugUnlockAllAugmentPackagesV2)
+	{
+		return false;
+	}
+	FSRAugmentPackageDefinitionV2 Definition;
+	return FSRAugmentPackageContentV2::TryGetDefinition(PackageId, Definition);
+}
+
+TArray<FName> USRAugmentSubsystem::GetSelectedAugmentPackageIdsV2() const
+{
+	TArray<FName> PackageIds = SelectedAugmentPackageIdsV2.Array();
+	PackageIds.Sort([](const FName& Left, const FName& Right)
+	{
+		return Left.LexicalLess(Right);
+	});
+	return PackageIds;
+}
+
+FName USRAugmentSubsystem::GetActiveMacroDoctrineIdV2() const
+{
+	return ActiveMacroDoctrineIdV2;
+}
+
+bool USRAugmentSubsystem::IsProcessTagRecipeUnlockedV2(FName TagId) const
+{
+	TArray<FName> PackageIds = GetSelectedAugmentPackageIdsV2();
+	if (bDebugUnlockAllAugmentPackagesV2)
+	{
+		TArray<FSRAugmentPackageDefinitionV2> Definitions;
+		FSRAugmentPackageContentV2::GetAllDefinitions(Definitions);
+		for (const FSRAugmentPackageDefinitionV2& Definition : Definitions)
+		{
+			PackageIds.AddUnique(Definition.PackageId);
+		}
+	}
+	return FSRAugmentPackageContentV2::IsProcessTagRecipeUnlocked(TagId, PackageIds);
+}
+
+bool USRAugmentSubsystem::IsFuelImprintRecipeUnlockedV2(FName ImprintId) const
+{
+	TArray<FName> PackageIds = GetSelectedAugmentPackageIdsV2();
+	if (bDebugUnlockAllAugmentPackagesV2)
+	{
+		TArray<FSRAugmentPackageDefinitionV2> Definitions;
+		FSRAugmentPackageContentV2::GetAllDefinitions(Definitions);
+		for (const FSRAugmentPackageDefinitionV2& Definition : Definitions)
+		{
+			PackageIds.AddUnique(Definition.PackageId);
+		}
+	}
+	return FSRAugmentPackageContentV2::IsFuelImprintRecipeUnlocked(ImprintId, PackageIds);
+}
+
+bool USRAugmentSubsystem::IsFacilityContentUnlockedV2(FName FacilityContentId) const
+{
+	if (bDebugUnlockAllFacilitiesWithoutAugments || bDebugUnlockAllAugmentPackagesV2)
+	{
+		return true;
+	}
+	return FSRAugmentPackageContentV2::IsFacilityContentUnlocked(
+		FacilityContentId,
+		GetSelectedAugmentPackageIdsV2());
+}
+
+bool USRAugmentSubsystem::IsLogisticsModuleUnlockedV2(FName ModuleId) const
+{
+	if (bDebugUnlockAllFacilitiesWithoutAugments || bDebugUnlockAllAugmentPackagesV2)
+	{
+		return true;
+	}
+	return FSRAugmentPackageContentV2::IsLogisticsModuleUnlocked(
+		ModuleId,
+		GetSelectedAugmentPackageIdsV2());
+}
+
+bool USRAugmentSubsystem::IsRouteProfileUnlockedV2(FName ProfileId) const
+{
+	if (bDebugUnlockAllFacilitiesWithoutAugments || bDebugUnlockAllAugmentPackagesV2)
+	{
+		return true;
+	}
+	return FSRAugmentPackageContentV2::IsRouteProfileUnlocked(
+		ProfileId,
+		GetSelectedAugmentPackageIdsV2());
+}
+
+FSRAugmentBuildContextV2 USRAugmentSubsystem::BuildResourceV2OfferContext() const
+{
+	FSRAugmentBuildContextV2 Context;
+	Context.SelectedPackageIds = GetSelectedAugmentPackageIdsV2();
+	Context.ActiveMacroDoctrineId = ActiveMacroDoctrineIdV2;
+	FSRAugmentPackageContentV2::GetTechnologyFacilityContentIds(Context.AvailableFacilityContentIds);
+
+	for (const USRStructureDataAsset* StructureDataAsset : RegisteredStructureDataAssets)
+	{
+		if (!IsValid(StructureDataAsset))
+		{
+			continue;
+		}
+		const FSRStructureData StructureData = StructureDataAsset->BuildData();
+		if (const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
+			IsValid(FacilityDataAsset) && !FacilityDataAsset->ResourceV2ContentId.IsNone())
+		{
+			Context.AvailableFacilityContentIds.AddUnique(FacilityDataAsset->ResourceV2ContentId);
+		}
+	}
+
+	// Registered Structure assets describe the project catalog, not the current
+	// Run. Resource compatibility must come only from harvestable Card deposits
+	// that were actually generated on constructible celestial bodies.
+	if (const UWorld* World = GetWorld())
+	{
+		if (const USRCelestialBodyRegistrySubsystem* Registry =
+			World->GetSubsystem<USRCelestialBodyRegistrySubsystem>())
+		{
+			TArray<AActor*> CelestialBodies;
+			Registry->GetCelestialBodies(CelestialBodies);
+			for (AActor* BodyActor : CelestialBodies)
+			{
+				if (!IsValid(BodyActor)
+					|| !USRCelestialBodyRuntimeLibrary::GetCelestialCanConstruct(BodyActor))
+				{
+					continue;
+				}
+				const USRStructureInstanceManagerComponent* StructureManager =
+					BodyActor->FindComponentByClass<USRStructureInstanceManagerComponent>();
+				if (!IsValid(StructureManager))
+				{
+					continue;
+				}
+
+				TArray<FSRPlacedStructureInstance> PlacedStructures;
+				StructureManager->GetPlacedStructures(PlacedStructures);
+				for (const FSRPlacedStructureInstance& PlacedStructure : PlacedStructures)
+				{
+					FSRResourceDepositInstance Deposit;
+					if (PlacedStructure.OccupantId.IsNone()
+						|| !StructureManager->GetResourceDepositInstance(
+							PlacedStructure.OccupantId,
+							Deposit)
+						|| !FSRResourceDepositAmountModel::CanHarvest(Deposit.RemainingAmount))
+					{
+						continue;
+					}
+
+					const USRResourceDataAsset* ResourceDataAsset =
+						Deposit.ResourceDataAsset.Get();
+					if (!IsValid(ResourceDataAsset)
+						|| ResourceDataAsset->ResourceDefinitionVersion
+							< StarRovers::Resources::CurrentResourceDefinitionVersion
+						|| ResourceDataAsset->ResourceClass != ESRResourceClass::Card)
+					{
+						continue;
+					}
+					if (ResourceDataAsset->Family != ESRResourceFamily::None)
+					{
+						Context.AccessibleFamilies.AddUnique(ResourceDataAsset->Family);
+					}
+					if (ResourceDataAsset->NativeSpectrum != ESRResourceSpectrum::None)
+					{
+						Context.AccessibleSpectra.AddUnique(ResourceDataAsset->NativeSpectrum);
+					}
+					if (ResourceDataAsset->NativeGrade >= StarRovers::Resources::MinimumGrade
+						&& ResourceDataAsset->NativeGrade <= StarRovers::Resources::MaximumGrade)
+					{
+						Context.AccessibleGrades.AddUnique(ResourceDataAsset->NativeGrade);
+					}
+				}
+			}
+		}
+	}
+
+	if (const USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem =
+		GetWorld() ? GetWorld()->GetSubsystem<USRSpaceLogisticsSubsystem>() : nullptr)
+	{
+		TArray<FSRSpaceLogisticsHubEndpoint> HubEndpoints;
+		SpaceLogisticsSubsystem->GetHubEndpoints(HubEndpoints);
+		Context.HubEndpointCount = HubEndpoints.Num();
+	}
+	return Context;
+}
+
+bool USRAugmentSubsystem::IsFacilityRecipeUnlockedV2(
+	const FSRFacilityInstance& FacilityInstance,
+	FString& OutFailureReason) const
+{
+	OutFailureReason.Reset();
+	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+	if (!IsResourceV2RulesetActive() || !IsValid(FacilityDataAsset))
+	{
+		return true;
+	}
+	if (!FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(FacilityDataAsset))
+	{
+		return true;
+	}
+	if (FacilityDataAsset->ResourceV2Process.ProcessRole == ESRFacilityProcessRoleV2::ApplyProcessTag
+		&& !IsProcessTagRecipeUnlockedV2(
+			FSRFacilityResourceV2Processor::ResolveProcessTagRecipeId(FacilityInstance)))
+	{
+		const FName RecipeId = FSRFacilityResourceV2Processor::ResolveProcessTagRecipeId(FacilityInstance);
+		OutFailureReason = FString::Printf(
+			TEXT("Process Tag recipe %s requires an Augment Package."),
+			RecipeId.IsNone() ? TEXT("None") : *RecipeId.ToString());
+		return false;
+	}
+	if (FacilityDataAsset->ResourceV2Process.ProcessRole == ESRFacilityProcessRoleV2::ApplyFuelImprint
+		&& !IsFuelImprintRecipeUnlockedV2(
+			FSRFacilityResourceV2Processor::ResolveFuelImprintRecipeId(FacilityInstance)))
+	{
+		const FName RecipeId = FSRFacilityResourceV2Processor::ResolveFuelImprintRecipeId(FacilityInstance);
+		OutFailureReason = FString::Printf(
+			TEXT("Fuel Imprint recipe %s requires an Augment Package."),
+			RecipeId.IsNone() ? TEXT("None") : *RecipeId.ToString());
+		return false;
+	}
+	return true;
+}
+
 void USRAugmentSubsystem::HandleGameCycleAdvanced(int32 CurrentCycleIndex)
 {
 	const int32 SafeInterval = FMath::Max(1, AugmentIntervalCycles);
@@ -384,6 +707,120 @@ void USRAugmentSubsystem::UnbindTimeControlSubsystem()
 	}
 }
 
+bool USRAugmentSubsystem::IsResourceV2RulesetActive() const
+{
+	const USRSimulationSettings* SimulationSettings = GetDefault<USRSimulationSettings>();
+	return IsValid(SimulationSettings)
+		&& SimulationSettings->ResourceRulesetVersion == ESRResourceRulesetVersion::ResourceV2;
+}
+
+void USRAugmentSubsystem::GenerateResourceV2AugmentChoices(int32 CycleIndex)
+{
+	const FSRAugmentBuildContextV2 Context = BuildResourceV2OfferContext();
+	TArray<FSRAugmentPackageDefinitionV2> EligibleDefinitions;
+	FSRAugmentPackageContentV2::BuildEligibleDefinitions(Context, EligibleDefinitions);
+	if (EligibleDefinitions.IsEmpty())
+	{
+		SR_LOG(Augment, LogTemp, Warning,
+			TEXT("No eligible Resource V2 Augment Packages remain for cycle %d."),
+			CycleIndex);
+		return;
+	}
+
+	FSRAugmentOfferGenerationRulesV2 OfferRules;
+	OfferRules.ChoiceCount = FMath::Max(1, ChoicesPerOffer);
+	OfferRules.BasicWeight = FMath::Max(0.0f, BasicChancePercent);
+	OfferRules.AdvancedWeight = FMath::Max(0.0f, AdvancedChancePercent);
+	OfferRules.HighTechWeight = GetHighTechEffectiveChancePercent();
+	OfferRules.RandomSeed = HashCombineFast(
+		GetTypeHash(AugmentRandomSeed),
+		HashCombineFast(GetTypeHash(CycleIndex), GetTypeHash(Context.SelectedPackageIds.Num())));
+	OfferRules.RecentlyOfferedPackageIds = PreviousAugmentOfferPackageIdsV2;
+
+	TArray<FSRAugmentPackageOfferV2> PackageOffers;
+	FSRAugmentPackageContentV2::GenerateOffer(Context, OfferRules, PackageOffers);
+	TArray<FSRAugmentChoice> GeneratedChoices;
+	GeneratedChoices.Reserve(PackageOffers.Num());
+	for (const FSRAugmentPackageOfferV2& PackageOffer : PackageOffers)
+	{
+		FSRAugmentPackageDefinitionV2 Definition;
+		if (!FSRAugmentPackageContentV2::TryGetDefinition(PackageOffer.PackageId, Definition))
+		{
+			continue;
+		}
+
+		FSRAugmentChoice& Choice = GeneratedChoices.AddDefaulted_GetRef();
+		Choice.ChoiceKind = ESRAugmentChoiceKind::ResourceV2Package;
+		Choice.PackageId = Definition.PackageId;
+		Choice.StrategyId = Definition.StrategyId;
+		Choice.PackageRole = Definition.PackageRole;
+		Choice.OfferRole = PackageOffer.OfferRole;
+		Choice.StructureId = Definition.PackageId;
+		Choice.DisplayName = Definition.DisplayName;
+		Choice.Description = Definition.Description;
+		Choice.Rarity = Definition.Rarity;
+		Choice.GrantSummary = FText::FromString(
+			FSRAugmentPackageContentV2::BuildGrantSummary(Definition));
+		Choice.ExampleLinePreview = Definition.ExampleLinePreview;
+	}
+	if (GeneratedChoices.IsEmpty())
+	{
+		return;
+	}
+
+	PreviousAugmentOfferPackageIdsV2.Reset(PackageOffers.Num());
+	for (const FSRAugmentPackageOfferV2& PackageOffer : PackageOffers)
+	{
+		PreviousAugmentOfferPackageIdsV2.Add(PackageOffer.PackageId);
+	}
+	UpdateResourceV2HighTechBonusAfterOffer(EligibleDefinitions, GeneratedChoices);
+	CurrentChoices = MoveTemp(GeneratedChoices);
+	SR_LOG(Augment, LogTemp, Display,
+		TEXT("Generated %d Resource V2 Augment Package choices for cycle %d from %d eligible Packages."),
+		CurrentChoices.Num(),
+		CycleIndex,
+		EligibleDefinitions.Num());
+	PublishCurrentChoices(CycleIndex);
+}
+
+void USRAugmentSubsystem::PublishCurrentChoices(int32 CycleIndex)
+{
+	if (CurrentChoices.IsEmpty())
+	{
+		return;
+	}
+	CurrentAugmentChoiceCycleIndex = CycleIndex;
+	if (bPauseSimulationDuringChoice)
+	{
+		if (USRTimeControlSubsystem* TimeControlSubsystem =
+			GetWorld() ? GetWorld()->GetSubsystem<USRTimeControlSubsystem>() : nullptr)
+		{
+			TimeControlSubsystem->SetSimulationPaused(true);
+			bPausedSimulationForCurrentChoice = true;
+		}
+	}
+	OnAugmentChoicesReady.Broadcast(CurrentChoices, CurrentAugmentChoiceCycleIndex);
+}
+
+void USRAugmentSubsystem::UpdateResourceV2HighTechBonusAfterOffer(
+	const TArray<FSRAugmentPackageDefinitionV2>& EligibleDefinitions,
+	const TArray<FSRAugmentChoice>& GeneratedChoices)
+{
+	if (HasRarity(GeneratedChoices, ESRFacilityRarity::HighTech))
+	{
+		HighTechBonusChancePercent = 0.0f;
+		return;
+	}
+	if (!HasRarity(EligibleDefinitions, ESRFacilityRarity::HighTech))
+	{
+		return;
+	}
+	HighTechBonusChancePercent = FMath::Clamp(
+		HighTechBonusChancePercent + FMath::Max(0.0f, HighTechPityIncreasePercent),
+		0.0f,
+		FMath::Max(0.0f, HighTechPityCapPercent));
+}
+
 TArray<USRStructureDataAsset*> USRAugmentSubsystem::GetEligibleAugmentCandidates() const
 {
 	TArray<USRStructureDataAsset*> Candidates;
@@ -409,11 +846,23 @@ bool USRAugmentSubsystem::IsStructureUnlockControlled(const USRStructureDataAsse
 
 	const FSRStructureData StructureData = StructureDataAsset->BuildData();
 	const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
-	return StructureData.bAvailableForConstruction
+	const bool bStandardFacility = StructureData.bAvailableForConstruction
 		&& !StructureData.bIsResourceDeposit
 		&& IsValid(FacilityDataAsset)
 		&& FacilityDataAsset->FacilityKind == ESRFacilityKind::Standard
 		&& FacilityDataAsset->Rarity != ESRFacilityRarity::Starting;
+	if (!bStandardFacility)
+	{
+		return false;
+	}
+	if (!IsResourceV2RulesetActive())
+	{
+		return true;
+	}
+	return FacilityDataAsset->FacilityDefinitionVersion
+		>= StarRovers::Facilities::CurrentFacilityDefinitionVersion
+		&& !FacilityDataAsset->ResourceV2ContentId.IsNone()
+		&& !IsFacilityContentUnlockedV2(FacilityDataAsset->ResourceV2ContentId);
 }
 
 bool USRAugmentSubsystem::IsDebugUnlockableFacility(const USRStructureDataAsset* StructureDataAsset) const

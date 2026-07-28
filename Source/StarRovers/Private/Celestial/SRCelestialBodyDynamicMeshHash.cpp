@@ -40,7 +40,9 @@ namespace
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.MountainFrequency));
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.DetailFrequency));
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.MoistureFrequency));
+		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.MoistureBias));
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.TemperatureFrequency));
+		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.TemperatureBias));
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.ValleyStrength));
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.MountainStrength));
 		Hash = HashCombine(Hash, ::GetTypeHash(DynamicMeshGeneration.NoiseStrength));

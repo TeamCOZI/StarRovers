@@ -136,7 +136,8 @@ void ASRPlayerController::HandleLeftClick()
 		OverviewWidget,
 		TimeControlWidget,
 		AugmentChoiceWidget,
-		StructureSelectionWidget))
+		StructureSelectionWidget,
+		GameOverWidget))
 	{
 		return;
 	}

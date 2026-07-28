@@ -1,10 +1,25 @@
 #include "UI/SRFacilityControlWidget.h"
 
+#include "UI/SRFacilityInspectorPresentation.h"
+#include "UI/SRHubRoutePresentation.h"
+#include "UI/SRResourceGlyph.h"
+#include "UI/SRUIComponents.h"
+#include "UI/SRUILayoutPolicy.h"
+#include "UI/SRUITheme.h"
+
 #include "Utility/SRLog.h"
 #include "Automation/SRFacilityNetworkComponent.h"
 #include "Automation/SRFacilityProcessContextResolver.h"
 #include "Automation/SRFacilityProcessingRuleEvaluator.h"
 #include "Automation/SRFacilityResourceOperations.h"
+#include "Automation/SRFacilityResourceV2Processor.h"
+#include "Automation/SROperationalEconomyProcessor.h"
+#include "Automation/SRResourceInstanceOperations.h"
+#include "Automation/SRResourceSystemContent.h"
+#include "Automation/SRStellarFuelBatchPlanner.h"
+#include "Automation/SRStellarFuelFabricator.h"
+#include "Simulation/SRAugmentSubsystem.h"
+#include "Simulation/SRSimulationSettings.h"
 #include "Blueprint/WidgetTree.h"
 #include "Camera/SRPlayerController.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
@@ -17,6 +32,8 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ProgressBar.h"
+#include "Components/ScaleBox.h"
+#include "Components/ScaleBoxSlot.h"
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
@@ -25,9 +42,13 @@
 #include "Components/Widget.h"
 #include "Fonts/SlateFontInfo.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "Logistics/SRFleetCapacityV2.h"
+#include "Logistics/SRConditionedTransitV2.h"
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
+#include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Structure/SRStructureDataAsset.h"
 
 namespace
@@ -37,6 +58,73 @@ namespace
 	FString FormatFacilityEnergyDisplayValue(double Value)
 	{
 		return FString::Printf(TEXT("%.1f"), Value);
+	}
+
+	bool UsesResourceV2Display()
+	{
+		return FSRFacilityResourceV2Processor::IsResourceV2RulesetActive();
+	}
+
+	double ResolveDisplayedEnergy(const FSRResourceInstance& ResourceInstance)
+	{
+		return UsesResourceV2Display()
+			? ResourceInstance.CurrentEnergy
+			: ResourceInstance.EnergyValue;
+	}
+
+	FString GetResourceV2FamilyLabel(ESRResourceFamily Family)
+	{
+		const UEnum* FamilyEnum = StaticEnum<ESRResourceFamily>();
+		return FamilyEnum
+			? FamilyEnum->GetDisplayNameTextByValue(static_cast<int64>(Family)).ToString()
+			: TEXT("Unknown");
+	}
+
+	FString GetResourceV2SpectrumLabel(ESRResourceSpectrum Spectrum)
+	{
+		const UEnum* SpectrumEnum = StaticEnum<ESRResourceSpectrum>();
+		return SpectrumEnum
+			? SpectrumEnum->GetDisplayNameTextByValue(static_cast<int64>(Spectrum)).ToString()
+			: TEXT("Unknown");
+	}
+
+	FString GetResourceV2RecipeDisplayName(FName RecipeId)
+	{
+		FSRProcessTagDefinitionV2 ProcessTagDefinition;
+		if (FSRResourceSystemContent::TryGetProcessTagDefinition(RecipeId, ProcessTagDefinition))
+		{
+			return ProcessTagDefinition.DisplayName.IsEmpty()
+				? RecipeId.ToString()
+				: ProcessTagDefinition.DisplayName.ToString();
+		}
+
+		FSRFuelImprintDefinitionV2 FuelImprintDefinition;
+		if (FSRResourceSystemContent::TryGetFuelImprintDefinition(RecipeId, FuelImprintDefinition))
+		{
+			return FuelImprintDefinition.DisplayName.IsEmpty()
+				? RecipeId.ToString()
+				: FuelImprintDefinition.DisplayName.ToString();
+		}
+		return RecipeId.IsNone() ? TEXT("None") : RecipeId.ToString();
+	}
+
+	FString BuildResourceV2StateLabel(const FSRResourceInstance& ResourceInstance, int32 MaximumLabels = 2)
+	{
+		TArray<FString> Labels;
+		const UEnum* StateEnum = StaticEnum<ESRResourceFamilyState>();
+		for (int32 StateIndex = 0;
+			StateIndex <= static_cast<int32>(ESRResourceFamilyState::Collapsed) && Labels.Num() < MaximumLabels;
+			++StateIndex)
+		{
+			if ((ResourceInstance.ActiveFamilyStateFlags & (1 << StateIndex)) == 0)
+			{
+				continue;
+			}
+			Labels.Add(StateEnum
+				? StateEnum->GetDisplayNameTextByValue(StateIndex).ToString()
+				: FString::FromInt(StateIndex));
+		}
+		return Labels.IsEmpty() ? TEXT("No State") : FString::Join(Labels, TEXT(" "));
 	}
 
 	const TCHAR* GetFacilityTemperatureLabel(ESRFacilityTemperatureState TemperatureState)
@@ -76,27 +164,6 @@ namespace
 			return TEXT("Charge");
 		default:
 			return TEXT("Tag");
-		}
-	}
-
-	const TCHAR* GetResourceProcessTagShortLabel(ESRResourceProcessTag ResourceTag)
-	{
-		switch (ResourceTag)
-		{
-		case ESRResourceProcessTag::Responsive:
-			return TEXT("He");
-		case ESRResourceProcessTag::HalfLife:
-			return TEXT("H");
-		case ESRResourceProcessTag::Volatile:
-			return TEXT("V");
-		case ESRResourceProcessTag::Supercooled:
-			return TEXT("Su");
-		case ESRResourceProcessTag::HyperReactive:
-			return TEXT("Hy");
-		case ESRResourceProcessTag::Charge:
-			return TEXT("C");
-		default:
-			return TEXT("T");
 		}
 	}
 
@@ -325,26 +392,183 @@ namespace
 		return ConditionLogic == ESRFacilityConditionLogic::Or ? TEXT("||") : TEXT("&&");
 	}
 
-	const TCHAR* GetHubRoutePhaseLabel(ESRSpaceLogisticsHubRoutePhase Phase)
+	FString GetHubRouteProfileShortLabel(ESRSpaceLogisticsRouteProfileV2 Profile)
 	{
-		switch (Phase)
+		switch (Profile)
 		{
-		case ESRSpaceLogisticsHubRoutePhase::Idle:
-			return TEXT("Idle");
-		case ESRSpaceLogisticsHubRoutePhase::WaitingForCargo:
-			return TEXT("Waiting");
-		case ESRSpaceLogisticsHubRoutePhase::TravelingToDestination:
-			return TEXT("Outbound");
-		case ESRSpaceLogisticsHubRoutePhase::UnloadingAtDestination:
-			return TEXT("Unload Dest");
-		case ESRSpaceLogisticsHubRoutePhase::TravelingToSource:
-			return TEXT("Return");
-		case ESRSpaceLogisticsHubRoutePhase::UnloadingAtSource:
-			return TEXT("Unload Source");
-		case ESRSpaceLogisticsHubRoutePhase::Blocked:
-			return TEXT("Blocked");
+		case ESRSpaceLogisticsRouteProfileV2::CardCourier:
+			return TEXT("Courier");
+		case ESRSpaceLogisticsRouteProfileV2::BulkRawHold:
+			return TEXT("Bulk");
+		case ESRSpaceLogisticsRouteProfileV2::ConditionedHold:
+			return TEXT("Conditioned");
+		case ESRSpaceLogisticsRouteProfileV2::NeutralShuttle:
 		default:
-			return TEXT("Unknown");
+			return TEXT("Shuttle");
+		}
+	}
+
+	FString GetConditionedTransitModuleShortLabel(ESRConditionedTransitModuleV2 Module)
+	{
+		switch (Module)
+		{
+		case ESRConditionedTransitModuleV2::CryogenicHold:
+			return TEXT("Cryogenic");
+		case ESRConditionedTransitModuleV2::BioCultureHold:
+			return TEXT("Bio-Culture");
+		case ESRConditionedTransitModuleV2::GroundingHold:
+			return TEXT("Grounding");
+		case ESRConditionedTransitModuleV2::None:
+		default:
+			return TEXT("Neutral");
+		}
+	}
+
+	ESRSpaceLogisticsRouteProfileV2 ResolveNextUnlockedRouteProfile(
+		ESRSpaceLogisticsRouteProfileV2 CurrentProfile,
+		const USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem)
+	{
+		TArray<ESRSpaceLogisticsRouteProfileV2> Profiles;
+		FSRFleetCapacityV2::GetRouteProfiles(Profiles);
+		const int32 CurrentIndex = Profiles.IndexOfByKey(CurrentProfile);
+		const int32 StartIndex = CurrentIndex == INDEX_NONE ? 0 : CurrentIndex;
+		for (int32 Offset = 1; Offset <= Profiles.Num(); ++Offset)
+		{
+			const ESRSpaceLogisticsRouteProfileV2 Candidate =
+				Profiles[(StartIndex + Offset) % Profiles.Num()];
+			if (IsValid(SpaceLogisticsSubsystem)
+				&& SpaceLogisticsSubsystem->IsHubRouteProfileUnlocked(Candidate))
+			{
+				return Candidate;
+			}
+		}
+		return CurrentProfile;
+	}
+
+	bool IsConditionedTransitModuleUnlocked(
+		ESRConditionedTransitModuleV2 Module,
+		const USRAugmentSubsystem* AugmentSubsystem)
+	{
+		if (Module == ESRConditionedTransitModuleV2::None)
+		{
+			return true;
+		}
+		const FSRConditionedTransitModuleRulesV2 Rules = FSRConditionedTransitV2::GetModuleRules(Module);
+		return Rules.IsConditionedModule()
+			&& IsValid(AugmentSubsystem)
+			&& AugmentSubsystem->IsLogisticsModuleUnlockedV2(Rules.UnlockModuleId);
+	}
+
+	ESRConditionedTransitModuleV2 ResolveNextUnlockedConditionedTransitModule(
+		ESRConditionedTransitModuleV2 CurrentModule,
+		const USRAugmentSubsystem* AugmentSubsystem)
+	{
+		TArray<ESRConditionedTransitModuleV2> Candidates = {
+			ESRConditionedTransitModuleV2::None,
+		};
+		TArray<ESRConditionedTransitModuleV2> ConditionedModules;
+		FSRConditionedTransitV2::GetConditionedModules(ConditionedModules);
+		Candidates.Append(ConditionedModules);
+		const int32 CurrentIndex = Candidates.IndexOfByKey(CurrentModule);
+		const int32 StartIndex = CurrentIndex == INDEX_NONE ? 0 : CurrentIndex;
+		for (int32 Offset = 1; Offset <= Candidates.Num(); ++Offset)
+		{
+			const ESRConditionedTransitModuleV2 Candidate =
+				Candidates[(StartIndex + Offset) % Candidates.Num()];
+			if (IsConditionedTransitModuleUnlocked(Candidate, AugmentSubsystem))
+			{
+				return Candidate;
+			}
+		}
+		return ESRConditionedTransitModuleV2::None;
+	}
+
+	FString BuildConditionedTransitPreviewLabel(
+		const FSRSpaceLogisticsHubRoute& Route,
+		const USRAugmentSubsystem* AugmentSubsystem)
+	{
+		const FSRConditionedTransitModuleRulesV2 Rules =
+			FSRConditionedTransitV2::GetModuleRules(Route.ConditionedTransitModule);
+		if (!Rules.IsConditionedModule())
+		{
+			return TEXT("Hold: Neutral (state-neutral)");
+		}
+		const bool bUnlocked = IsConditionedTransitModuleUnlocked(
+			Route.ConditionedTransitModule,
+			AugmentSubsystem);
+		if (!bUnlocked)
+		{
+			return FString::Printf(TEXT("Hold: %s (locked)"), *GetConditionedTransitModuleShortLabel(Route.ConditionedTransitModule));
+		}
+
+		const bool bTraveling =
+			Route.Phase == ESRSpaceLogisticsHubRoutePhase::TravelingToDestination
+			|| Route.Phase == ESRSpaceLogisticsHubRoutePhase::TravelingToSource;
+		const bool bConditioning =
+			Route.Phase == ESRSpaceLogisticsHubRoutePhase::ConditioningAtDestination
+			|| Route.Phase == ESRSpaceLogisticsHubRoutePhase::ConditioningAtSource;
+		if (!Route.Cargo.ResourceId.IsNone()
+			&& Route.Cargo.StackCount > 0
+			&& (bTraveling || bConditioning))
+		{
+			const bool bOutbound =
+				Route.Phase == ESRSpaceLogisticsHubRoutePhase::TravelingToDestination
+				|| Route.Phase == ESRSpaceLogisticsHubRoutePhase::ConditioningAtDestination;
+			const FName SourceBodyId = StarRovers::Resources::ResolveCelestialBodyResourceId(
+				bOutbound ? Route.SourceHub.BodyActor.Get() : Route.DestinationHub.BodyActor.Get());
+			const FName DestinationBodyId = StarRovers::Resources::ResolveCelestialBodyResourceId(
+				bOutbound ? Route.DestinationHub.BodyActor.Get() : Route.SourceHub.BodyActor.Get());
+			const FSRConditionedTransitResultV2 Preview = FSRConditionedTransitV2::EvaluateArrival(
+				Route.Cargo,
+				Route.RouteProfile,
+				Route.ConditionedTransitModule,
+				SourceBodyId,
+				DestinationBodyId,
+				true);
+			if (Preview.bProcessApplied)
+			{
+				if (bConditioning)
+				{
+					return FString::Printf(
+						TEXT("%s conditioning %.1f/%.1fs | E %.1f -> %.1f (%+.1f)"),
+						*GetConditionedTransitModuleShortLabel(Route.ConditionedTransitModule),
+						Route.ConditioningProgressSeconds,
+						Route.ConditioningDurationSeconds,
+						Preview.ProcessResult.InputEnergy,
+						Preview.ProcessResult.OutputEnergy,
+						Preview.ProcessResult.AppliedEnergyDelta);
+				}
+				const USRSimulationSettings* Settings = GetDefault<USRSimulationSettings>();
+				const FSRConditioningDwellResultV2 Dwell = FSRConditionedTransitV2::EvaluateConditioningDwell(
+					Route.RouteProfile,
+					Route.ConditionedTransitModule,
+					Route.Cargo,
+					IsValid(Settings) ? Settings->RefinementResistanceEnergyScaleV2 : 40.0);
+				return FString::Printf(
+					TEXT("%s preview: %.1fs then E %.1f -> %.1f (%+.1f)"),
+					*GetConditionedTransitModuleShortLabel(Route.ConditionedTransitModule),
+					Dwell.RefinementResistance.EffectiveProcessSeconds,
+					Preview.ProcessResult.InputEnergy,
+					Preview.ProcessResult.OutputEnergy,
+					Preview.ProcessResult.AppliedEnergyDelta);
+			}
+			return FString::Printf(
+				TEXT("%s preview: %s"),
+				*GetConditionedTransitModuleShortLabel(Route.ConditionedTransitModule),
+				*Preview.FailureReason);
+		}
+
+		switch (Route.ConditionedTransitModule)
+		{
+		case ESRConditionedTransitModuleV2::CryogenicHold:
+			return TEXT("Hold: Cryogenic | Metal Cold +3");
+		case ESRConditionedTransitModuleV2::BioCultureHold:
+			return TEXT("Hold: Bio-Culture | Organic Growth");
+		case ESRConditionedTransitModuleV2::GroundingHold:
+			return TEXT("Hold: Grounding | Plasma Discharge +1");
+		case ESRConditionedTransitModuleV2::None:
+		default:
+			return TEXT("Hold: Neutral (state-neutral)");
 		}
 	}
 
@@ -492,33 +716,15 @@ namespace
 		return INDEX_NONE;
 	}
 
-	FString BuildHubEndpointUILabel(const FSRSpaceLogisticsHubEndpoint& HubEndpoint, UWorld* World)
+	FString BuildHubEndpointUILabel(const FSRSpaceLogisticsHubEndpoint& HubEndpoint)
 	{
 		const FString HubName = HubEndpoint.DisplayName.IsEmpty()
 			? HubEndpoint.HubOccupantId.ToString()
 			: HubEndpoint.DisplayName.ToString();
 		const FString BodyName = BuildCelestialBodyDisplayName(HubEndpoint.BodyActor.Get());
-		FString OrbitOrderLabel = TEXT("Orbit order unknown");
-		if (USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(HubEndpoint.BodyActor.Get()))
-		{
-			OrbitOrderLabel = TEXT("Primary Star");
-		}
-		else
-		{
-			bool bIsSatellite = false;
-			const int32 StarOrbitOrdinal = ResolveStarOrbitOrdinal(HubEndpoint.BodyActor.Get(), World, bIsSatellite);
-			if (StarOrbitOrdinal != INDEX_NONE)
-			{
-				OrbitOrderLabel = bIsSatellite
-					? FString::Printf(TEXT("#%d from star / satellite"), StarOrbitOrdinal)
-					: FString::Printf(TEXT("#%d from star"), StarOrbitOrdinal);
-			}
-		}
-
 		return FString::Printf(
-			TEXT("%s\n%s\n%s"),
+			TEXT("%s / %s"),
 			*BodyName,
-			*OrbitOrderLabel,
 			*HubName);
 	}
 
@@ -602,21 +808,8 @@ namespace
 
 	FString BuildResourceDisplayName(const FSRResourceInstance& ResourceInstance)
 	{
-		if (const USRResourceDataAsset* ResourceDataAsset = ResourceInstance.ResourceDataAsset.Get())
-		{
-			if (!ResourceDataAsset->DisplayName.IsEmpty())
-			{
-				return ResourceDataAsset->DisplayName.ToString();
-			}
-			if (!ResourceDataAsset->ResourceId.IsNone())
-			{
-				return ResourceDataAsset->ResourceId.ToString();
-			}
-		}
-
-		return ResourceInstance.ResourceId.IsNone()
-			? TEXT("UnknownResource")
-			: ResourceInstance.ResourceId.ToString();
+		return FSRResourceGlyphPresentationBuilder::Build(ResourceInstance)
+			.DisplayName.ToString();
 	}
 
 	FString BuildResourceDataAssetDisplayName(const USRResourceDataAsset* ResourceDataAsset)
@@ -638,42 +831,8 @@ namespace
 
 	FString BuildResourceSummary(const FSRResourceInstance& ResourceInstance)
 	{
-		if (ResourceInstance.ResourceId.IsNone())
-		{
-			return TEXT("None");
-		}
-
-		FString Summary = FString::Printf(
-			TEXT("%s x%d\nEnergy Total: %s\nLimit: %d"),
-			*BuildResourceDisplayName(ResourceInstance),
-			FMath::Max(0, ResourceInstance.StackCount),
-			*FormatFacilityEnergyDisplayValue(ResourceInstance.EnergyValue),
-			ResourceInstance.RemainingProcessLimit);
-
-		if (!ResourceInstance.Tags.IsEmpty())
-		{
-			Summary += FString::Printf(TEXT("\nTags: %d"), ResourceInstance.Tags.Num());
-		}
-		return Summary;
-	}
-
-	FString BuildCompactResourceSummary(const FSRResourceInstance* ResourceInstance)
-	{
-		if (!ResourceInstance || ResourceInstance->ResourceId.IsNone())
-		{
-			return TEXT("Empty");
-		}
-
-		FString Summary = BuildResourceDisplayName(*ResourceInstance);
-		Summary += FString::Printf(
-			TEXT("\nEnergy Total: %s  Limit: %d"),
-			*FormatFacilityEnergyDisplayValue(ResourceInstance->EnergyValue),
-			ResourceInstance->RemainingProcessLimit);
-		if (!ResourceInstance->Tags.IsEmpty())
-		{
-			Summary += FString::Printf(TEXT("\nTags: %d"), ResourceInstance->Tags.Num());
-		}
-		return Summary;
+		return FSRResourceGlyphPresentationBuilder::Build(ResourceInstance)
+			.ToolTipText.ToString();
 	}
 
 	FString BuildResourceSlotText(
@@ -687,57 +846,9 @@ namespace
 			? FString::Printf(TEXT("%s %d"), Label, SlotIndex + 1)
 			: PortId.ToString();
 		const FString ResourceText = ResourceInstance
-			? BuildCompactResourceSummary(ResourceInstance)
+			? FSRResourceGlyphPresentationBuilder::Build(*ResourceInstance).StableSignature
 			: FString(EmptyText);
 		return FString::Printf(TEXT("%s %d\n%s\n%s"), Label, SlotIndex + 1, *PortLabel, *ResourceText);
-	}
-
-	FString BuildResourceTagCardLabel(const FSRResourceInstance& ResourceInstance)
-	{
-		TArray<FString> TagLabels;
-		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
-		{
-			if (TagStack.StackCount <= 0)
-			{
-				continue;
-			}
-
-			FString TagLabel;
-			if (TagStack.Tag == ESRResourceProcessTag::HalfLife)
-			{
-				const int32 RemainingCycles = TagStack.RemainingCycles > 0
-					? TagStack.RemainingCycles
-					: StarRovers::FacilityResources::HalfLifeDefaultCycles;
-				TagLabel = FString::Printf(
-					TEXT("%s %d/%d"),
-					GetResourceProcessTagShortLabel(TagStack.Tag),
-					RemainingCycles,
-					StarRovers::FacilityResources::HalfLifeDefaultCycles);
-			}
-			else if (TagStack.Tag == ESRResourceProcessTag::Charge)
-			{
-				TagLabel = FString::Printf(
-					TEXT("%s %d"),
-					GetResourceProcessTagShortLabel(TagStack.Tag),
-					FMath::Max(0, TagStack.RemainingCycles));
-			}
-			else
-			{
-				TagLabel = GetResourceProcessTagShortLabel(TagStack.Tag);
-			}
-
-			for (int32 StackIndex = 0; StackIndex < TagStack.StackCount; ++StackIndex)
-			{
-				TagLabels.Add(TagLabel);
-			}
-		}
-
-		if (TagLabels.IsEmpty())
-		{
-			return TEXT("No Tag");
-		}
-
-		return FString::Join(TagLabels, TEXT(" "));
 	}
 
 	FString BuildInventoryCardPortLabel(const FSRFacilityPortInventory& PortInventory, int32 SlotIndex, const TCHAR* FallbackLabel)
@@ -757,13 +868,28 @@ namespace
 		for (const FSRResourceInstance& ResourceInstance : PortInventory.Inventory)
 		{
 			Signature += FString::Printf(
-				TEXT("|%s:%.3f:%d:%d:%d:%d"),
+				TEXT("|%s:%.3f:%d:%d:%d:%d:V2/%d/%d/%.3f/%d/%d/%X/%s/%d/%d/H/%s/%d/%d/%s/%s/%d"),
 				*ResourceInstance.ResourceId.ToString(),
 				ResourceInstance.EnergyValue,
 				ResourceInstance.RemainingProcessLimit,
 				ResourceInstance.ProcessCount,
 				ResourceInstance.EnergyChangeCount,
-				ResourceInstance.StackCount);
+				ResourceInstance.StackCount,
+				ResourceInstance.ResourceSchemaVersion,
+				static_cast<int32>(ResourceInstance.Family),
+				ResourceInstance.CurrentEnergy,
+				static_cast<int32>(ResourceInstance.Spectrum),
+				ResourceInstance.Grade,
+				ResourceInstance.ActiveFamilyStateFlags,
+				*ResourceInstance.ProcessTagSlot.TagId.ToString(),
+				static_cast<int32>(ResourceInstance.ProcessTagSlot.Lifecycle),
+				ResourceInstance.ProcessTagSlot.RemainingTriggers,
+				*ResourceInstance.ProcessingMemory.LastProcessArchetype.ToString(),
+				static_cast<int32>(ResourceInstance.ProcessingMemory.LastTemperature),
+				static_cast<int32>(ResourceInstance.ProcessingMemory.LastFamilyAction),
+				*ResourceInstance.LogisticsMetadata.LastProcessedBodyId.ToString(),
+				*ResourceInstance.LogisticsMetadata.LastTransitDestinationBodyId.ToString(),
+				ResourceInstance.LogisticsMetadata.TransitCount);
 			for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
 			{
 				Signature += FString::Printf(
@@ -822,10 +948,211 @@ namespace
 		}
 	}
 
+	struct FFacilityInspectorPreviewSnapshot
+	{
+		TArray<FSRResourceInstance> Inputs;
+		TArray<FSRResourceInstance> Outputs;
+		TArray<FString> EnergyFormulaTexts;
+		bool bPreviewResolved = false;
+		bool bOutputBlocked = false;
+	};
+
+	FFacilityInspectorPreviewSnapshot BuildFacilityInspectorPreviewSnapshot(
+		USRFacilityNetworkComponent* FacilityNetwork,
+		const FSRFacilityInstance& FacilityInstance,
+		float ProgressRatio)
+	{
+		FFacilityInspectorPreviewSnapshot Snapshot;
+		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		const bool bIsMiningFacility = IsValid(FacilityDataAsset)
+			&& FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine;
+		if (bIsMiningFacility)
+		{
+			FSRResourceDepositInstance MiningTarget;
+			if (IsValid(FacilityNetwork)
+				&& FacilityNetwork->GetFacilityMiningTarget(FacilityInstance.OccupantId, MiningTarget)
+				&& IsValid(MiningTarget.ResourceDataAsset.Get()))
+			{
+				Snapshot.Inputs.Add(MiningTarget.ResourceDataAsset->BuildDefaultInstance());
+			}
+		}
+		else
+		{
+			BuildNextInputPreviewResources(FacilityInstance, Snapshot.Inputs);
+		}
+
+		if (!IsValid(FacilityNetwork))
+		{
+			return Snapshot;
+		}
+
+		FSRResourceInstance PrimaryOutput;
+		TArray<FSRResourceInstance> AdditionalOutputs;
+		int32 PrimaryOutputCount = 0;
+		Snapshot.bPreviewResolved = FacilityNetwork->GetFacilityOutputPreview(
+			FacilityInstance.OccupantId,
+			PrimaryOutput,
+			AdditionalOutputs,
+			PrimaryOutputCount,
+			Snapshot.EnergyFormulaTexts);
+		if (!Snapshot.bPreviewResolved)
+		{
+			return Snapshot;
+		}
+
+		for (int32 OutputIndex = 0; OutputIndex < FMath::Max(0, PrimaryOutputCount); ++OutputIndex)
+		{
+			Snapshot.Outputs.Add(PrimaryOutput);
+		}
+		Snapshot.Outputs.Append(AdditionalOutputs);
+
+		if (!FacilityInstance.bProcessing
+			|| ProgressRatio < 0.999f
+			|| Snapshot.Outputs.IsEmpty())
+		{
+			return Snapshot;
+		}
+
+		TArray<FSRFacilityPortInventory> SimulatedOutputPorts = FacilityInstance.OutputPortInventories;
+		for (const FSRResourceInstance& Output : Snapshot.Outputs)
+		{
+			const int32 RequiredStackCount = StarRovers::FacilityResources::GetResourceStackCount(Output);
+			if (RequiredStackCount <= 0
+				|| StarRovers::FacilityResources::TryAddResourceToInventorySlots(SimulatedOutputPorts, Output)
+					!= RequiredStackCount)
+			{
+				Snapshot.bOutputBlocked = true;
+				break;
+			}
+		}
+		return Snapshot;
+	}
+
+	FString BuildConciseProcessRuleSummary(const FSRFacilityInstance& FacilityInstance)
+	{
+		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
+		if (!IsValid(FacilityDataAsset))
+		{
+			return TEXT("PROCESS RULE  |  Facility definition unavailable");
+		}
+		if (FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(FacilityDataAsset))
+		{
+			return TEXT("5-CARD SYNTHESIS  |  Hand + Seals + Imprints\nFinal multiplication is applied here only");
+		}
+		if (FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(FacilityDataAsset))
+		{
+			return FacilityDataAsset->ResourceV2Synthesis.SynthesisRole
+				== ESRFacilitySynthesisRoleV2::IndustrialSupplyFabricator
+				? TEXT("SUPPLY SYNTHESIS  |  Common Ore + Biomass Feedstock\nProduces 2 Industrial Supply")
+				: TEXT("SERVICE CORE  |  Industrial Supply -> Capacity\nConsumes supply; no resource output");
+		}
+		if (FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(FacilityDataAsset))
+		{
+			const FSRFacilityProcessDefinitionV2& Definition = FacilityDataAsset->ResourceV2Process;
+			const FString FamilyLabel = Definition.AcceptedFamily == ESRResourceFamily::None
+				? TEXT("Any Family")
+				: GetResourceV2FamilyLabel(Definition.AcceptedFamily);
+			switch (Definition.ProcessRole)
+			{
+			case ESRFacilityProcessRoleV2::ApplyProcessTag:
+				return FString::Printf(
+					TEXT("TAG IMPRINT  |  %s\nRecipe: %s  |  Energy unchanged"),
+					*FamilyLabel,
+					*GetResourceV2RecipeDisplayName(
+						FSRFacilityResourceV2Processor::ResolveProcessTagRecipeId(FacilityInstance)));
+			case ESRFacilityProcessRoleV2::ApplyFuelImprint:
+				return FString::Printf(
+					TEXT("FUEL IMPRINT  |  %s\nRecipe: %s  |  Energy unchanged"),
+					*FamilyLabel,
+					*GetResourceV2RecipeDisplayName(
+						FSRFacilityResourceV2Processor::ResolveFuelImprintRecipeId(FacilityInstance)));
+			case ESRFacilityProcessRoleV2::ClearProcessTag:
+				return FString::Printf(
+					TEXT("TAG SCRUB  |  %s\nClears Process Tag  |  Energy unchanged"),
+					*FamilyLabel);
+			case ESRFacilityProcessRoleV2::FamilyProcess:
+			default:
+				return FString::Printf(
+					TEXT("%s  |  %s / %s\nEnergy %+.1f additive  |  Cell temperature applies"),
+					*Definition.ProcessArchetype.ToString(),
+					*FamilyLabel,
+					*StaticEnum<ESRResourceFamilyAction>()->GetDisplayNameTextByValue(
+						static_cast<int64>(Definition.FamilyAction)).ToString(),
+					Definition.FacilityEnergyDelta);
+			}
+		}
+
+		const UEnum* OperationEnum = StaticEnum<ESRFacilityOperationKind>();
+		const FString OperationLabel = OperationEnum
+			? OperationEnum->GetDisplayNameTextByValue(static_cast<int64>(FacilityDataAsset->OperationKind)).ToString()
+			: TEXT("Process");
+		return FString::Printf(
+			TEXT("%s  |  %d authored effect%s"),
+			*OperationLabel,
+			FacilityDataAsset->Effects.Num(),
+			FacilityDataAsset->Effects.Num() == 1 ? TEXT("") : TEXT("s"));
+	}
+
+	FString BuildInspectorStateTransitionSummary(
+		const TArray<FSRResourceInstance>& Inputs,
+		const TArray<FSRResourceInstance>& Outputs,
+		bool bUsesFinalFuelFormula)
+	{
+		if (bUsesFinalFuelFormula && !Inputs.IsEmpty() && !Outputs.IsEmpty())
+		{
+			return TEXT("STATE / TAG  |  Five Cards consumed; Seals and Imprints score at fabrication");
+		}
+		if (Inputs.IsEmpty() || Outputs.IsEmpty())
+		{
+			return TEXT("STATE / TAG  |  Awaiting valid input");
+		}
+
+		const FSRResourceInstance& Input = Inputs[0];
+		const FSRResourceInstance& Output = Outputs[0];
+		TArray<FString> Changes;
+		const UEnum* StateEnum = StaticEnum<ESRResourceFamilyState>();
+		for (int32 StateIndex = 0; StateIndex <= static_cast<int32>(ESRResourceFamilyState::Collapsed); ++StateIndex)
+		{
+			const bool bWasActive = (Input.ActiveFamilyStateFlags & (1 << StateIndex)) != 0;
+			const bool bIsActive = (Output.ActiveFamilyStateFlags & (1 << StateIndex)) != 0;
+			if (bWasActive == bIsActive)
+			{
+				continue;
+			}
+			const FString StateLabel = StateEnum
+				? StateEnum->GetDisplayNameTextByValue(StateIndex).ToString()
+				: FString::FromInt(StateIndex);
+			Changes.Add(FString::Printf(TEXT("%s %s"), *StateLabel, bIsActive ? TEXT("ON") : TEXT("OFF")));
+		}
+
+		if (Input.ProcessTagSlot.TagId != Output.ProcessTagSlot.TagId
+			|| Input.ProcessTagSlot.Lifecycle != Output.ProcessTagSlot.Lifecycle)
+		{
+			const FString OutputTag = Output.ProcessTagSlot.TagId.IsNone()
+				? TEXT("Cleared")
+				: Output.ProcessTagSlot.TagId.ToString();
+			Changes.Add(FString::Printf(TEXT("Tag %s"), *OutputTag));
+		}
+		if (Input.FuelImprintSlot.ImprintId != Output.FuelImprintSlot.ImprintId)
+		{
+			const FString OutputImprint = Output.FuelImprintSlot.ImprintId.IsNone()
+				? TEXT("Cleared")
+				: Output.FuelImprintSlot.ImprintId.ToString();
+			Changes.Add(FString::Printf(TEXT("Imprint %s"), *OutputImprint));
+		}
+
+		return Changes.IsEmpty()
+			? TEXT("STATE / TAG  |  No change")
+			: FString::Printf(TEXT("STATE / TAG  |  %s"), *FString::Join(Changes, TEXT("  /  ")));
+	}
+
 	FString BuildInlineResourceSummary(const FSRResourceInstance& ResourceInstance)
 	{
 		FString Summary = BuildResourceDisplayName(ResourceInstance);
-		Summary += FString::Printf(TEXT("  Energy Total: %s"), *FormatFacilityEnergyDisplayValue(ResourceInstance.EnergyValue));
+		const FString EnergyText = FormatFacilityEnergyDisplayValue(ResolveDisplayedEnergy(ResourceInstance));
+		Summary += UsesResourceV2Display()
+			? FString::Printf(TEXT("  Energy: %s"), *EnergyText)
+			: FString::Printf(TEXT("  Energy Total: %s"), *EnergyText);
 		return Summary;
 	}
 
@@ -887,13 +1214,37 @@ namespace
 		FSRResourceDepositInstance ResourceDeposit;
 		if (!FacilityNetwork->GetFacilityMiningTarget(OccupantId, ResourceDeposit))
 		{
-			return TEXT("Mining Target\nNo adjacent deposit");
+			FSRFacilityInstance FacilityInstance;
+			USRStructureInstanceManagerComponent* StructureManager =
+				IsValid(FacilityNetwork->GetOwner())
+					? FacilityNetwork->GetOwner()->FindComponentByClass<USRStructureInstanceManagerComponent>()
+					: nullptr;
+			if (!FacilityNetwork->GetFacilityInstance(OccupantId, FacilityInstance)
+				|| FacilityInstance.MiningTargetDepositOccupantId.IsNone()
+				|| !IsValid(StructureManager)
+				|| !StructureManager->GetResourceDepositInstance(
+					FacilityInstance.MiningTargetDepositOccupantId,
+					ResourceDeposit))
+			{
+				return TEXT("Mining Target\nNo adjacent deposit");
+			}
 		}
 
+		const FString RemainingText = FSRResourceDepositAmountModel::IsInfinite(
+			ResourceDeposit.TotalAmount)
+			? TEXT("Infinite")
+			: ResourceDeposit.RemainingAmount > 0
+				? FString::Printf(
+					TEXT("%d / %d"),
+					ResourceDeposit.RemainingAmount,
+					ResourceDeposit.TotalAmount)
+				: FString::Printf(TEXT("DEPLETED / %d"), ResourceDeposit.TotalAmount);
+
 		return FString::Printf(
-			TEXT("Mining Target\nDeposit: %s\nResource: %s\nRemaining: Infinite"),
+			TEXT("Mining Target\nDeposit: %s\nResource: %s\nRemaining: %s"),
 			ResourceDeposit.StructureId.IsNone() ? *ResourceDeposit.OccupantId.ToString() : *ResourceDeposit.StructureId.ToString(),
-			*BuildResourceDataAssetDisplayName(ResourceDeposit.ResourceDataAsset.Get()));
+			*BuildResourceDataAssetDisplayName(ResourceDeposit.ResourceDataAsset.Get()),
+			*RemainingText);
 	}
 
 	bool HasAvailableInputPortCapacity(const FSRFacilityInstance& FacilityInstance)
@@ -1265,11 +1616,119 @@ namespace
 		return AppendConditions(EffectSummary);
 	}
 
-	FString BuildEffectsSummary(const USRFacilityDataAsset* FacilityDataAsset)
+	FString BuildEffectsSummary(const FSRFacilityInstance& FacilityInstance, UWorld* World)
 	{
+		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 		if (!IsValid(FacilityDataAsset))
 		{
 			return TEXT("Effects\nNone");
+		}
+		if (FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(FacilityDataAsset))
+		{
+			FString FailureReason;
+			if (!FSRStellarFuelFabricator::ValidateFacilityDefinition(FacilityDataAsset, FailureReason))
+			{
+				return FString::Printf(TEXT("Stellar Fuel Fabricator V2\nBlocked: %s"), *FailureReason);
+			}
+
+			const FSRStellarFuelFabricationRulesV2& Rules =
+				FacilityDataAsset->ResourceV2Synthesis.StellarFuelRules;
+			return FString::Printf(
+				TEXT("Stellar Fuel Fabricator V2\n")
+				TEXT("- Input: exactly five Resource V2 Cards\n")
+				TEXT("- Final formula: A + B * C (multiplication occurs here only)\n")
+				TEXT("- Full House: B %+.1f, C %+.1f\n")
+				TEXT("- Twin Seal: B %+.1f each valid Card Key\n")
+				TEXT("- Topology Seal: B %+.1f, one per batch\n")
+				TEXT("- Prismatic Catalyst: C %+.1f, one per batch\n")
+				TEXT("Legacy Effects inactive"),
+				Rules.FullHouseBonus.B,
+				Rules.FullHouseBonus.C,
+				Rules.TwinSealEnergyB,
+				Rules.TopologySealEnergyB,
+				Rules.PrismaticCatalystC);
+		}
+		if (FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(FacilityDataAsset))
+		{
+			FString FailureReason;
+			if (!FSROperationalEconomyProcessor::ValidateFacilityDefinition(FacilityDataAsset, FailureReason))
+			{
+				return FString::Printf(TEXT("Operational Economy V2\nBlocked: %s"), *FailureReason);
+			}
+			return FacilityDataAsset->ResourceV2Synthesis.SynthesisRole
+				== ESRFacilitySynthesisRoleV2::IndustrialSupplyFabricator
+				? TEXT("Supply Fabricator V2\n- 1 Common Ore + 1 Biomass Feedstock\n- Output: 2 Industrial Supply\n- Cycle: 30s | Operational Load: 4\nLegacy Effects inactive")
+				: TEXT("Service Core V2\n- Consumes 1 Industrial Supply / 30s\n- Supplied: +18 Operational Capacity\n- Buffer: 4 units / 120s\nLegacy Effects inactive");
+		}
+		if (FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(FacilityDataAsset))
+		{
+			FString FailureReason;
+			if (!FSRFacilityResourceV2Processor::ValidateProcessDefinition(FacilityDataAsset, FailureReason))
+			{
+				return FString::Printf(TEXT("Resource V2 Process\nBlocked: %s"), *FailureReason);
+			}
+			if (const USRAugmentSubsystem* AugmentSubsystem =
+				World ? World->GetSubsystem<USRAugmentSubsystem>() : nullptr)
+			{
+				if (!AugmentSubsystem->IsFacilityRecipeUnlockedV2(FacilityInstance, FailureReason))
+				{
+					return FString::Printf(TEXT("Resource V2 Recipe\nLocked: %s"), *FailureReason);
+				}
+			}
+
+			const FSRFacilityProcessDefinitionV2& Definition = FacilityDataAsset->ResourceV2Process;
+			const FString FamilyLabel = Definition.AcceptedFamily == ESRResourceFamily::None
+				? TEXT("Any Card")
+				: GetResourceV2FamilyLabel(Definition.AcceptedFamily);
+			switch (Definition.ProcessRole)
+			{
+			case ESRFacilityProcessRoleV2::ApplyProcessTag:
+			{
+				const FName RecipeId =
+					FSRFacilityResourceV2Processor::ResolveProcessTagRecipeId(FacilityInstance);
+				return FString::Printf(
+					TEXT("Resource V2 Tag Imprinter\n- Tag: %s\n- Family: %s\n- Energy: unchanged\n- Family/process/location history: unchanged\nLegacy Effects inactive"),
+					*GetResourceV2RecipeDisplayName(RecipeId),
+					*FamilyLabel);
+			}
+			case ESRFacilityProcessRoleV2::ApplyFuelImprint:
+			{
+				const FName RecipeId =
+					FSRFacilityResourceV2Processor::ResolveFuelImprintRecipeId(FacilityInstance);
+				return FString::Printf(
+					TEXT("Resource V2 Fuel Imprinter\n- Imprint: %s\n- Family: %s\n- Energy: unchanged\n- Family/process/location history: unchanged\nLegacy Effects inactive"),
+					*GetResourceV2RecipeDisplayName(RecipeId),
+					*FamilyLabel);
+			}
+			case ESRFacilityProcessRoleV2::ClearProcessTag:
+				return FString::Printf(
+					TEXT("Resource V2 Tag Scrubber\n- Family: %s\n- Process Tag Slot: clear\n- Energy and Family State: unchanged\n- Process/location history: unchanged\nLegacy Effects inactive"),
+					*FamilyLabel);
+			case ESRFacilityProcessRoleV2::FamilyProcess:
+			default:
+			{
+				const USRSimulationSettings* Settings = GetDefault<USRSimulationSettings>();
+				const float ResistanceScale = IsValid(Settings)
+					? Settings->RefinementResistanceEnergyScaleV2
+					: 40.0f;
+				const FString CycleRule = Definition.FamilyAction == ESRResourceFamilyAction::Anneal
+					? TEXT("Recovery cycle; clears Metal Work Strain, Tempered, and Fatigued; Refinement Resistance ignored")
+					: FMath::IsNearlyZero(Definition.FacilityEnergyDelta)
+						? TEXT("Zero-Energy Family action; Refinement Resistance ignored")
+						: FString::Printf(
+						TEXT("Energy-changing cycle uses x(1 + max(0, Current - Seed) / %.1f)"),
+						ResistanceScale);
+				return FString::Printf(
+					TEXT("Resource V2 Additive Process\n- Archetype: %s\n- Family: %s\n- Action: %s\n- Energy: %+.1f additive\n- Base Cycle: %.2fs\n- Timing: %s\n- Temperature: current Cell\nLegacy Effects inactive"),
+					*Definition.ProcessArchetype.ToString(),
+					*FamilyLabel,
+					*StaticEnum<ESRResourceFamilyAction>()->GetDisplayNameTextByValue(
+						static_cast<int64>(Definition.FamilyAction)).ToString(),
+					Definition.FacilityEnergyDelta,
+					FacilityDataAsset->BaseProcessSeconds,
+					*CycleRule);
+			}
+			}
 		}
 
 		FString Summary = TEXT("Effects / Tags");
@@ -1299,7 +1758,7 @@ namespace
 		return FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(FacilityInstance);
 	}
 
-	bool CanToggleProcess(const FSRFacilityInstance& FacilityInstance, FString& OutReason)
+	bool CanToggleProcess(const FSRFacilityInstance& FacilityInstance, UWorld* World, FString& OutReason)
 	{
 		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 		if (!IsValid(FacilityDataAsset))
@@ -1307,10 +1766,47 @@ namespace
 			OutReason = TEXT("Invalid facility");
 			return false;
 		}
+		const bool bUsesResourceV2Process =
+			FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(FacilityDataAsset);
+		const bool bUsesStellarFuelFabricatorV2 =
+			FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(FacilityDataAsset);
+		const bool bUsesOperationalEconomyV2 =
+			FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(FacilityDataAsset);
+		const bool bUsesResourceV2 = bUsesResourceV2Process
+			|| bUsesStellarFuelFabricatorV2
+			|| bUsesOperationalEconomyV2;
+		if (bUsesResourceV2)
+		{
+			FString DefinitionFailure;
+			const bool bDefinitionValid = bUsesStellarFuelFabricatorV2
+				? FSRStellarFuelFabricator::ValidateFacilityDefinition(FacilityDataAsset, DefinitionFailure)
+				: bUsesOperationalEconomyV2
+					? FSROperationalEconomyProcessor::ValidateFacilityDefinition(FacilityDataAsset, DefinitionFailure)
+					: FSRFacilityResourceV2Processor::ValidateProcessDefinition(FacilityDataAsset, DefinitionFailure);
+			if (!bDefinitionValid)
+			{
+				OutReason = FString::Printf(TEXT("Blocked: %s"), *DefinitionFailure);
+				return false;
+			}
+			if (bUsesResourceV2Process)
+			{
+				if (const USRAugmentSubsystem* AugmentSubsystem =
+					World ? World->GetSubsystem<USRAugmentSubsystem>() : nullptr)
+				{
+					if (!AugmentSubsystem->IsFacilityRecipeUnlockedV2(FacilityInstance, DefinitionFailure))
+					{
+						OutReason = FString::Printf(TEXT("Locked: %s"), *DefinitionFailure);
+						return false;
+					}
+				}
+			}
+		}
 
 		const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
 			StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, FacilityInstance.ProcessingInventory);
-		const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
+		const ESRFacilityTemperatureState EffectiveTemperatureState = bUsesResourceV2
+			? FacilityInstance.TemperatureState
+			: ProcessContext.EffectiveTemperatureState;
 		if (EffectiveTemperatureState == ESRFacilityTemperatureState::Frozen
 			|| EffectiveTemperatureState == ESRFacilityTemperatureState::Overheated)
 		{
@@ -1321,6 +1817,27 @@ namespace
 		if (EffectiveTemperatureState != FacilityInstance.TemperatureState)
 		{
 			OutReason = FString::Printf(TEXT("Ready as %s"), GetFacilityTemperatureLabel(EffectiveTemperatureState));
+			return true;
+		}
+		if (bUsesResourceV2)
+		{
+			if (bUsesStellarFuelFabricatorV2)
+			{
+				OutReason = TEXT("Ready: five-Card Stellar Fuel fabrication");
+				return true;
+			}
+			if (bUsesOperationalEconomyV2)
+			{
+				OutReason = FacilityDataAsset->ResourceV2Synthesis.SynthesisRole
+					== ESRFacilitySynthesisRoleV2::ServiceCore
+					? TEXT("Ready: supplied Service Core")
+					: TEXT("Ready: Industrial Supply fabrication");
+				return true;
+			}
+			OutReason = FString::Printf(
+				TEXT("Ready: %s (%s)"),
+				*FacilityDataAsset->ResourceV2Process.ProcessArchetype.ToString(),
+				GetFacilityTemperatureLabel(EffectiveTemperatureState));
 			return true;
 		}
 
@@ -1481,39 +1998,70 @@ namespace
 		const FSRResourceInstance* ResourceInstance = PortInventory.Inventory.IsEmpty()
 			? nullptr
 			: &PortInventory.Inventory[0];
+		const FSRResourceGlyphPresentation GlyphPresentation = ResourceInstance
+			? FSRResourceGlyphPresentationBuilder::Build(*ResourceInstance)
+			: FSRResourceGlyphPresentation();
+		const bool bHasResource = GlyphPresentation.bHasResource && SlotStackCount > 0;
 
-		FString TopLeft = BuildInventoryCardPortLabel(PortInventory, SlotIndex, FallbackLabel);
-		FString TopRight = FString::Printf(TEXT("%d/%d"), SlotStackCount, Capacity);
-		FString Center = TEXT("Empty");
-		FString BottomLeft;
-		FString BottomRight;
-		FLinearColor CardColor = FLinearColor(0.145f, 0.170f, 0.190f, 0.98f);
-		FLinearColor MainTextColor = FLinearColor(0.90f, 0.94f, 0.96f, 1.0f);
-
-		if (ResourceInstance && !ResourceInstance->ResourceId.IsNone())
+		UVerticalBox* CardBox = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(),
+			NAME_None);
+		UTextBlock* HeaderTextBlock = ConstructTextBlock(
+			WidgetTree,
+			NAME_None,
+			8,
+			AccentColor);
+		HeaderTextBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("%s  %d/%d"),
+			*BuildInventoryCardPortLabel(PortInventory, SlotIndex, FallbackLabel),
+			SlotStackCount,
+			Capacity)));
+		HeaderTextBlock->SetAutoWrapText(false);
+		if (UVerticalBoxSlot* HeaderSlot = CardBox->AddChildToVerticalBox(HeaderTextBlock))
 		{
-			Center = BuildResourceDisplayName(*ResourceInstance);
-			CardColor = FLinearColor(0.125f, 0.175f, 0.160f, 0.98f);
-			TopLeft = BuildResourceTagCardLabel(*ResourceInstance);
-			TopRight = FString::Printf(TEXT("E:%s"), *FormatFacilityEnergyDisplayValue(ResourceInstance->EnergyValue));
-			BottomLeft = FString::Printf(TEXT("L:%d"), ResourceInstance->RemainingProcessLimit);
-			BottomRight = FString::Printf(TEXT("%d/%d"), SlotStackCount, Capacity);
+			HeaderSlot->SetPadding(FMargin(2.0f, 0.0f, 2.0f, 4.0f));
+			HeaderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 		}
 
-		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
-		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(5.0f, 4.0f), FVector2D(42.0f, 16.0f), TopLeft.Len() > 8 ? 7 : 8, AccentColor);
-		AddInventoryCardText(WidgetTree, CardCanvas, TopRight, FVector2D(40.0f, 4.0f), FVector2D(38.0f, 16.0f), 8, AccentColor, ETextJustify::Right);
-		AddInventoryCardText(WidgetTree, CardCanvas, Center, FVector2D(5.0f, 28.0f), FVector2D(74.0f, 22.0f), 10, MainTextColor, ETextJustify::Center);
-		AddInventoryCardText(WidgetTree, CardCanvas, BottomLeft, FVector2D(5.0f, 60.0f), FVector2D(34.0f, 16.0f), 8, MainTextColor);
-		AddInventoryCardText(WidgetTree, CardCanvas, BottomRight, FVector2D(38.0f, 60.0f), FVector2D(40.0f, 16.0f), 8, MainTextColor, ETextJustify::Right);
+		USRResourceGlyphWidget* ResourceGlyph =
+			WidgetTree->ConstructWidget<USRResourceGlyphWidget>(
+				USRResourceGlyphWidget::StaticClass(),
+				NAME_None);
+		ResourceGlyph->SetGlyphMode(ESRResourceGlyphMode::Detailed);
+		ResourceGlyph->SetPresentation(bHasResource
+			? GlyphPresentation
+			: FSRResourceGlyphPresentation());
+		ResourceGlyph->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (UVerticalBoxSlot* GlyphSlot = CardBox->AddChildToVerticalBox(ResourceGlyph))
+		{
+			GlyphSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			GlyphSlot->SetVerticalAlignment(VAlign_Center);
+		}
 
 		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		CardSizeBox->SetWidthOverride(84.0f);
-		CardSizeBox->SetHeightOverride(78.0f);
-		CardSizeBox->AddChild(CardCanvas);
+		CardSizeBox->SetWidthOverride(176.0f);
+		CardSizeBox->SetHeightOverride(94.0f);
+		CardSizeBox->AddChild(CardBox);
 
-		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, CardColor, FMargin(0.0f));
-		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, InnerBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(3.0f));
+		const ESRUIVisualState CardState = bHasResource
+			? ESRUIVisualState::Info
+			: ESRUIVisualState::Disabled;
+		UBorder* InnerBorder = ConstructSectionBorder(
+			WidgetTree,
+			NAME_None,
+			CardSizeBox,
+			USRUIThemeLibrary::ResolveStatePalette(CardState).SurfaceColor,
+			FMargin(5.0f, 4.0f));
+		UBorder* OuterBorder = ConstructSectionBorder(
+			WidgetTree,
+			NAME_None,
+			InnerBorder,
+			bHasResource ? GlyphPresentation.FamilyAccentColor : AccentColor,
+			FMargin(2.0f));
+		if (bHasResource)
+		{
+			OuterBorder->SetToolTipText(GlyphPresentation.ToolTipText);
+		}
 		AddWidgetToInventoryGrid(WidgetTree, SlotBox, OuterBorder, SlotIndex);
 	}
 
@@ -1528,35 +2076,32 @@ namespace
 			return;
 		}
 
-		const bool bHasResource = !ResourceInstance.ResourceId.IsNone();
-		const FString TopLeft = bHasResource ? BuildResourceTagCardLabel(ResourceInstance) : TEXT("-");
-		const FString TopRight = bHasResource
-			? FString::Printf(TEXT("E:%s"), *FormatFacilityEnergyDisplayValue(ResourceInstance.EnergyValue))
-			: TEXT("-");
-		const FString Center = bHasResource ? BuildResourceDisplayName(ResourceInstance) : TEXT("Empty");
-		const FString BottomLeft = bHasResource
-			? FString::Printf(TEXT("L:%d"), ResourceInstance.RemainingProcessLimit)
-			: FString();
-		const FString BottomRight = bHasResource ? TEXT("Energy") : FString();
-		const FLinearColor CardColor = !bHasResource
-			? FLinearColor(0.145f, 0.170f, 0.190f, 0.98f)
-			: FLinearColor(0.125f, 0.175f, 0.160f, 0.98f);
-		const FLinearColor MainTextColor = FLinearColor(0.90f, 0.94f, 0.96f, 1.0f);
-
-		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
-		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(7.0f, 5.0f), FVector2D(60.0f, 18.0f), TopLeft.Len() > 9 ? 8 : 9, AccentColor);
-		AddInventoryCardText(WidgetTree, CardCanvas, TopRight, FVector2D(58.0f, 5.0f), FVector2D(46.0f, 18.0f), 9, AccentColor, ETextJustify::Right);
-		AddInventoryCardText(WidgetTree, CardCanvas, Center, FVector2D(8.0f, 34.0f), FVector2D(96.0f, 24.0f), 12, MainTextColor, ETextJustify::Center);
-		AddInventoryCardText(WidgetTree, CardCanvas, BottomLeft, FVector2D(7.0f, 68.0f), FVector2D(54.0f, 18.0f), 9, MainTextColor);
-		AddInventoryCardText(WidgetTree, CardCanvas, BottomRight, FVector2D(43.0f, 68.0f), FVector2D(61.0f, 18.0f), 9, MainTextColor, ETextJustify::Right);
+		const FSRResourceGlyphPresentation GlyphPresentation =
+			FSRResourceGlyphPresentationBuilder::Build(ResourceInstance);
+		const bool bHasResource = GlyphPresentation.bHasResource;
+		USRResourceGlyphWidget* ResourceGlyph =
+			WidgetTree->ConstructWidget<USRResourceGlyphWidget>(
+				USRResourceGlyphWidget::StaticClass(),
+				NAME_None);
+		ResourceGlyph->SetGlyphMode(ESRResourceGlyphMode::Detailed);
+		ResourceGlyph->SetPresentation(GlyphPresentation);
+		ResourceGlyph->SetVisibility(ESlateVisibility::HitTestInvisible);
 
 		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		CardSizeBox->SetWidthOverride(112.0f);
-		CardSizeBox->SetHeightOverride(90.0f);
-		CardSizeBox->AddChild(CardCanvas);
+		CardSizeBox->SetWidthOverride(206.0f);
+		CardSizeBox->SetHeightOverride(76.0f);
+		CardSizeBox->AddChild(ResourceGlyph);
 
-		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, CardColor, FMargin(0.0f));
-		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, InnerBorder, FLinearColor(0.005f, 0.006f, 0.007f, 1.0f), FMargin(3.0f));
+		UBorder* OuterBorder = ConstructSectionBorder(
+			WidgetTree,
+			NAME_None,
+			CardSizeBox,
+			bHasResource ? GlyphPresentation.FamilyAccentColor : AccentColor,
+			FMargin(2.0f));
+		if (bHasResource)
+		{
+			OuterBorder->SetToolTipText(GlyphPresentation.ToolTipText);
+		}
 		if (UHorizontalBoxSlot* Slot = SlotBox->AddChildToHorizontalBox(OuterBorder))
 		{
 			Slot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
@@ -1727,46 +2272,6 @@ namespace
 		Button->OnClicked.AddDynamic(Action, &USRFacilityInputSlotDebugAction::HandleClicked);
 	}
 
-	void AddHubDestinationButton(
-		UWidgetTree* WidgetTree,
-		UHorizontalBox* ButtonBox,
-		USRFacilityControlWidget* OwnerWidget,
-		TArray<TObjectPtr<USRHubRouteDestinationAction>>& OutActions,
-		const FSRSpaceLogisticsHubEndpoint& DestinationHub,
-		const FString& Label,
-		bool bSelected,
-		bool bEnabled)
-	{
-		if (!WidgetTree || !ButtonBox || !OwnerWidget)
-		{
-			return;
-		}
-
-		UButton* Button = ConstructDebugInputButton(WidgetTree, NAME_None, FText::FromString(Label));
-		Button->SetBackgroundColor(bSelected
-			? FLinearColor(0.095f, 0.220f, 0.180f, 0.95f)
-			: bEnabled
-			? FLinearColor(0.105f, 0.165f, 0.210f, 0.95f)
-			: FLinearColor(0.060f, 0.066f, 0.072f, 0.95f));
-		Button->SetIsEnabled(bEnabled);
-
-		USRHubRouteDestinationAction* Action = NewObject<USRHubRouteDestinationAction>(OwnerWidget);
-		Action->Initialize(OwnerWidget, DestinationHub, Button);
-		OutActions.Add(Action);
-		Button->OnClicked.AddDynamic(Action, &USRHubRouteDestinationAction::HandleClicked);
-
-		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
-		ButtonSizeBox->SetWidthOverride(176.0f);
-		ButtonSizeBox->SetHeightOverride(64.0f);
-		ButtonSizeBox->AddChild(Button);
-
-		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
-		{
-			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
-			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-		}
-	}
-
 	void AddHubRouteLaunchButton(
 		UWidgetTree* WidgetTree,
 		UHorizontalBox* ButtonBox,
@@ -1783,7 +2288,7 @@ namespace
 		UButton* Button = ConstructDebugInputButton(
 			WidgetTree,
 			NAME_None,
-			NSLOCTEXT("StarRoversFacilityControl", "HubRouteLaunchButton", "Launch\nRoute"));
+			NSLOCTEXT("StarRoversFacilityControl", "HubRouteLaunchButton", "Create\nRoute"));
 		Button->SetBackgroundColor(bEnabled
 			? FLinearColor(0.070f, 0.180f, 0.115f, 0.95f)
 			: FLinearColor(0.060f, 0.066f, 0.072f, 0.95f));
@@ -1894,11 +2399,15 @@ namespace
 		UButton* Button = ConstructDebugInputButton(
 			WidgetTree,
 			NAME_None,
-			NSLOCTEXT("StarRoversFacilityControl", "HubStarFuelMissileLaunchButton", "Launch\nMissile"));
+			NSLOCTEXT("StarRoversFacilityControl", "HubStarFuelMissileLaunchButton", "Missile\nAuto Slots"));
 		Button->SetBackgroundColor(bEnabled
 			? FLinearColor(0.185f, 0.095f, 0.070f, 0.95f)
 			: FLinearColor(0.060f, 0.066f, 0.072f, 0.95f));
 		Button->SetIsEnabled(bEnabled);
+		Button->SetToolTipText(NSLOCTEXT(
+			"StarRoversFacilityControl",
+			"HubStarFuelMissileAutoLaunchTooltip",
+			"Select an input slot whose positive-Energy Stellar Fuel should launch automatically."));
 
 		USRHubStarFuelMissileLaunchAction* Action = NewObject<USRHubStarFuelMissileLaunchAction>(OwnerWidget);
 		Action->Initialize(OwnerWidget, Button);
@@ -1933,7 +2442,7 @@ namespace
 		UButton* Button = ConstructDebugInputButton(
 			WidgetTree,
 			NAME_None,
-			FText::FromString(FString::Printf(TEXT("Set\nx%d"), FMath::Max(1, NewMaxCargoStackCount))));
+			FText::FromString(FString::Printf(TEXT("Stack Limit\nx%d"), FMath::Max(1, NewMaxCargoStackCount))));
 		Button->SetBackgroundColor(FLinearColor(0.080f, 0.130f, 0.165f, 0.95f));
 
 		USRHubRouteSettingAction* Action = NewObject<USRHubRouteSettingAction>(OwnerWidget);
@@ -1946,6 +2455,99 @@ namespace
 		ButtonSizeBox->SetHeightOverride(54.0f);
 		ButtonSizeBox->AddChild(Button);
 
+		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
+		{
+			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddHubRouteProfileButton(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ButtonBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubRouteSettingAction>>& OutActions,
+		FName RouteId,
+		ESRSpaceLogisticsRouteProfileV2 NewRouteProfile,
+		bool bEnabled)
+	{
+		if (!WidgetTree || !ButtonBox || !OwnerWidget || RouteId.IsNone())
+		{
+			return;
+		}
+
+		const FSRSpaceLogisticsRouteProfileRulesV2 Rules =
+			FSRFleetCapacityV2::GetRouteProfileRules(NewRouteProfile);
+		UButton* Button = ConstructDebugInputButton(
+			WidgetTree,
+			NAME_None,
+			FText::FromString(FString::Printf(
+				TEXT("Profile\n%s"),
+				*GetHubRouteProfileShortLabel(Rules.Profile))));
+		Button->SetBackgroundColor(bEnabled
+			? FLinearColor(0.075f, 0.145f, 0.175f, 0.95f)
+			: FLinearColor(0.060f, 0.066f, 0.072f, 0.95f));
+		Button->SetIsEnabled(bEnabled);
+		Button->SetToolTipText(FText::FromString(FString::Printf(
+			TEXT("Set %s: %s. Cargo %d, Fleet Load %d (%.1f cargo/load). Profiles can only change while docked with no onboard cargo."),
+			*Rules.DisplayName.ToString(),
+			*Rules.CargoContractText.ToString(),
+			Rules.CargoCapacity,
+			Rules.FleetLoad,
+			FSRFleetCapacityV2::ResolveMaximumCargoPerFleetLoad(Rules.Profile))));
+
+		USRHubRouteSettingAction* Action = NewObject<USRHubRouteSettingAction>(OwnerWidget);
+		Action->InitializeRouteProfile(OwnerWidget, RouteId, Rules.Profile, Button);
+		OutActions.Add(Action);
+		Button->OnClicked.AddDynamic(Action, &USRHubRouteSettingAction::HandleClicked);
+
+		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		ButtonSizeBox->SetWidthOverride(96.0f);
+		ButtonSizeBox->SetHeightOverride(54.0f);
+		ButtonSizeBox->AddChild(Button);
+		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
+		{
+			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+
+	void AddHubRouteConditionedModuleButton(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ButtonBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubRouteSettingAction>>& OutActions,
+		FName RouteId,
+		ESRConditionedTransitModuleV2 NewModule,
+		bool bEnabled)
+	{
+		if (!WidgetTree || !ButtonBox || !OwnerWidget || RouteId.IsNone())
+		{
+			return;
+		}
+
+		const FSRConditionedTransitModuleRulesV2 Rules = FSRConditionedTransitV2::GetModuleRules(NewModule);
+		UButton* Button = ConstructDebugInputButton(
+			WidgetTree,
+			NAME_None,
+			FText::FromString(FString::Printf(
+				TEXT("Hold Module\n%s"),
+				*GetConditionedTransitModuleShortLabel(Rules.Module))));
+		Button->SetBackgroundColor(bEnabled
+			? FLinearColor(0.105f, 0.125f, 0.205f, 0.95f)
+			: FLinearColor(0.060f, 0.066f, 0.072f, 0.95f));
+		Button->SetIsEnabled(bEnabled);
+		Button->SetToolTipText(Rules.PreviewText);
+
+		USRHubRouteSettingAction* Action = NewObject<USRHubRouteSettingAction>(OwnerWidget);
+		Action->InitializeConditionedTransitModule(OwnerWidget, RouteId, Rules.Module, Button);
+		OutActions.Add(Action);
+		Button->OnClicked.AddDynamic(Action, &USRHubRouteSettingAction::HandleClicked);
+
+		USizeBox* ButtonSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		ButtonSizeBox->SetWidthOverride(112.0f);
+		ButtonSizeBox->SetHeightOverride(54.0f);
+		ButtonSizeBox->AddChild(Button);
 		if (UHorizontalBoxSlot* ButtonSlot = ButtonBox->AddChildToHorizontalBox(ButtonSizeBox))
 		{
 			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
@@ -1970,8 +2572,8 @@ namespace
 			WidgetTree,
 			NAME_None,
 			bNewReturnEmptyWhenNoCargo
-				? NSLOCTEXT("StarRoversFacilityControl", "HubRouteReturnEmptyOnButton", "Set\nON")
-				: NSLOCTEXT("StarRoversFacilityControl", "HubRouteReturnEmptyOffButton", "Set\nOFF"));
+				? NSLOCTEXT("StarRoversFacilityControl", "HubRouteReturnEmptyOnButton", "Empty Return\nON")
+				: NSLOCTEXT("StarRoversFacilityControl", "HubRouteReturnEmptyOffButton", "Empty Return\nOFF"));
 		Button->SetBackgroundColor(bNewReturnEmptyWhenNoCargo
 			? FLinearColor(0.070f, 0.145f, 0.105f, 0.95f)
 			: FLinearColor(0.145f, 0.105f, 0.070f, 0.95f));
@@ -2054,7 +2656,10 @@ namespace
 		const FSRResourceInstance* ResourceInstance = PortInventory.Inventory.IsEmpty()
 			? nullptr
 			: &PortInventory.Inventory[0];
-		const bool bHasResource = ResourceInstance && !ResourceInstance->ResourceId.IsNone();
+		const FSRResourceGlyphPresentation GlyphPresentation = ResourceInstance
+			? FSRResourceGlyphPresentationBuilder::Build(*ResourceInstance)
+			: FSRResourceGlyphPresentation();
+		const bool bHasResource = GlyphPresentation.bHasResource && SlotStackCount > 0;
 		const bool bHasCapacity = SlotStackCount < Capacity;
 		FString PortLabel = BuildInventoryCardPortLabel(PortInventory, InputPortIndex, FallbackLabel);
 		if (bAutoMissileLaunchEnabled)
@@ -2065,10 +2670,11 @@ namespace
 		{
 			PortLabel += TEXT(" [?]");
 		}
-		const FString ResourceText = bHasResource
-			? BuildCompactResourceSummary(ResourceInstance)
-			: FString(TEXT("Empty"));
-		const FString Text = FString::Printf(TEXT("%s  %d/%d\n%s"), *PortLabel, SlotStackCount, Capacity, *ResourceText);
+		const FString Text = FString::Printf(
+			TEXT("%s  %d/%d"),
+			*PortLabel,
+			SlotStackCount,
+			Capacity);
 		const FLinearColor CardColor = bAutoMissileLaunchEnabled
 			? FLinearColor(0.190f, 0.115f, 0.065f, 0.98f)
 			: (bHasResource
@@ -2086,8 +2692,24 @@ namespace
 		SlotTextBlock->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* TextSlot = CardBox->AddChildToVerticalBox(SlotTextBlock))
 		{
-			TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 5.0f));
-			TextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+			TextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+
+		USRResourceGlyphWidget* ResourceGlyph =
+			WidgetTree->ConstructWidget<USRResourceGlyphWidget>(
+				USRResourceGlyphWidget::StaticClass(),
+				NAME_None);
+		ResourceGlyph->SetGlyphMode(ESRResourceGlyphMode::Detailed);
+		ResourceGlyph->SetPresentation(bHasResource
+			? GlyphPresentation
+			: FSRResourceGlyphPresentation());
+		ResourceGlyph->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (UVerticalBoxSlot* GlyphSlot = CardBox->AddChildToVerticalBox(ResourceGlyph))
+		{
+			GlyphSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 5.0f));
+			GlyphSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			GlyphSlot->SetVerticalAlignment(VAlign_Center);
 		}
 
 		UHorizontalBox* ButtonRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
@@ -2115,6 +2737,7 @@ namespace
 			CandidateResource.EnergyValue = ButtonSpec.EnergyValue;
 			CandidateResource.RemainingProcessLimit = ButtonSpec.RemainingProcessLimit;
 			CandidateResource.StackCount = 1;
+			StarRovers::Resources::SynchronizeLegacyRuntimeStateToResourceV2(CandidateResource);
 
 			UButton* Button = ConstructDebugInputButton(WidgetTree, NAME_None, ButtonSpec.Label);
 			Button->SetIsEnabled(StarRovers::FacilityResources::CanInventorySlotAcceptResource(PortInventory, CandidateResource));
@@ -2131,8 +2754,8 @@ namespace
 		}
 
 		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		CardSizeBox->SetWidthOverride(84.0f);
-		CardSizeBox->SetHeightOverride(98.0f);
+		CardSizeBox->SetWidthOverride(176.0f);
+		CardSizeBox->SetHeightOverride(132.0f);
 		CardSizeBox->AddChild(CardBox);
 
 		UBorder* SlotBorder = ConstructSectionBorder(
@@ -2142,6 +2765,10 @@ namespace
 			bHasCapacity ? CardColor : FLinearColor(0.060f, 0.070f, 0.082f, 0.98f),
 			FMargin(5.0f, 3.0f));
 		UBorder* OuterBorder = ConstructSectionBorder(WidgetTree, NAME_None, SlotBorder, OuterBorderColor, FMargin(2.0f));
+		if (bHasResource)
+		{
+			OuterBorder->SetToolTipText(GlyphPresentation.ToolTipText);
+		}
 		if (OwnerWidget && InputPortIndex != INDEX_NONE)
 		{
 			USRHubAutoMissileInventorySlotAction* AutoMissileAction = NewObject<USRHubAutoMissileInventorySlotAction>(OwnerWidget);
@@ -2149,6 +2776,140 @@ namespace
 			OutAutoMissileActions.Add(AutoMissileAction);
 		}
 		AddWidgetToInventoryGrid(WidgetTree, SlotBox, OuterBorder, InputPortIndex);
+	}
+
+	UHorizontalBox* AddHubRouteCard(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* CardBox,
+		USRFacilityControlWidget* OwnerWidget,
+		TArray<TObjectPtr<USRHubRouteDestinationAction>>& OutDestinationActions,
+		const FSRSpaceLogisticsHubEndpoint& DestinationHub,
+		const FSRHubRouteCardPresentation& Presentation,
+		bool bShowActions)
+	{
+		if (!WidgetTree || !CardBox || !OwnerWidget || !DestinationHub.IsValid())
+		{
+			return nullptr;
+		}
+
+		USRThemedCardWidget* Card = WidgetTree->ConstructWidget<USRThemedCardWidget>(
+			USRThemedCardWidget::StaticClass(),
+			NAME_None);
+		Card->SetVisualState(Presentation.VisualState);
+		Card->SetCardPadding(FMargin(8.0f, 7.0f));
+
+		UVerticalBox* ContentBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), NAME_None);
+		Card->SetContent(ContentBox);
+
+		UButton* LaneButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), NAME_None);
+		const FSRUIStatePalette CardPalette = USRUIThemeLibrary::ResolveStatePalette(Presentation.VisualState);
+		LaneButton->SetBackgroundColor(CardPalette.SurfaceColor);
+		LaneButton->SetToolTipText(FText::Format(
+			NSLOCTEXT("StarRoversFacilityControl", "HubRouteSelectTooltip", "Select lane: {0}"),
+			Presentation.LaneTitle));
+		UTextBlock* LaneTextBlock = ConstructTextBlock(
+			WidgetTree,
+			NAME_None,
+			10,
+			CardPalette.PrimaryTextColor);
+		LaneTextBlock->SetText(FText::Format(
+			NSLOCTEXT("StarRoversFacilityControl", "HubRouteLaneLabel", "{0}  |  {1}"),
+			Presentation.DirectionLabel,
+			Presentation.LaneTitle));
+		LaneTextBlock->SetAutoWrapText(false);
+		LaneButton->AddChild(LaneTextBlock);
+		if (UVerticalBoxSlot* HeaderSlot = ContentBox->AddChildToVerticalBox(LaneButton))
+		{
+			HeaderSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+			HeaderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+
+		USRHubRouteDestinationAction* DestinationAction = NewObject<USRHubRouteDestinationAction>(OwnerWidget);
+		DestinationAction->Initialize(OwnerWidget, DestinationHub, LaneButton);
+		OutDestinationActions.Add(DestinationAction);
+		LaneButton->OnClicked.AddDynamic(DestinationAction, &USRHubRouteDestinationAction::HandleClicked);
+
+		USRStatusBadgeWidget* StatusBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+			USRStatusBadgeWidget::StaticClass(),
+			NAME_None);
+		StatusBadge->SetBadge(Presentation.StatusLabel, Presentation.VisualState);
+		if (UVerticalBoxSlot* StatusSlot = ContentBox->AddChildToVerticalBox(StatusBadge))
+		{
+			StatusSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+			StatusSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+
+		auto AddDetailLine = [WidgetTree, ContentBox](const FText& Text, const FLinearColor& Color)
+		{
+			UTextBlock* DetailTextBlock = ConstructTextBlock(WidgetTree, NAME_None, 8, Color);
+			DetailTextBlock->SetText(Text);
+			DetailTextBlock->SetAutoWrapText(false);
+			DetailTextBlock->SetToolTipText(Text);
+			if (UVerticalBoxSlot* DetailSlot = ContentBox->AddChildToVerticalBox(DetailTextBlock))
+			{
+				DetailSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 2.0f));
+				DetailSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			}
+		};
+		AddDetailLine(Presentation.PhaseDetail, CardPalette.PrimaryTextColor);
+
+		if (Presentation.bShowProgress)
+		{
+			UProgressBar* ProgressBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), NAME_None);
+			ProgressBar->SetPercent(Presentation.ProgressRatio);
+			ProgressBar->SetFillColorAndOpacity(CardPalette.AccentColor);
+			if (UVerticalBoxSlot* ProgressSlot = ContentBox->AddChildToVerticalBox(ProgressBar))
+			{
+				ProgressSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+				ProgressSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			}
+		}
+
+		if (Presentation.bShowCargoGlyph)
+		{
+			USRResourceGlyphWidget* CargoGlyph =
+				WidgetTree->ConstructWidget<USRResourceGlyphWidget>(
+					USRResourceGlyphWidget::StaticClass(),
+					NAME_None);
+			CargoGlyph->SetGlyphMode(ESRResourceGlyphMode::Detailed);
+			CargoGlyph->SetPresentation(Presentation.CargoGlyph);
+			CargoGlyph->SetVisibility(ESlateVisibility::HitTestInvisible);
+			if (UVerticalBoxSlot* GlyphSlot = ContentBox->AddChildToVerticalBox(CargoGlyph))
+			{
+				GlyphSlot->SetPadding(FMargin(0.0f, 1.0f, 0.0f, 3.0f));
+				GlyphSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			}
+		}
+
+		AddDetailLine(Presentation.CargoDetail, CardPalette.SecondaryTextColor);
+		AddDetailLine(Presentation.ProfileDetail, CardPalette.SecondaryTextColor);
+		AddDetailLine(Presentation.ModuleDetail, CardPalette.SecondaryTextColor);
+
+		UHorizontalBox* ActionRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), NAME_None);
+		if (bShowActions)
+		{
+			UScrollBox* ActionScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), NAME_None);
+			ActionScrollBox->SetOrientation(Orient_Horizontal);
+			ActionScrollBox->AddChild(ActionRow);
+			if (UVerticalBoxSlot* ActionSlot = ContentBox->AddChildToVerticalBox(ActionScrollBox))
+			{
+				ActionSlot->SetPadding(FMargin(0.0f, 3.0f, 0.0f, 0.0f));
+				ActionSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			}
+		}
+
+		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		CardSizeBox->SetWidthOverride(382.0f);
+		CardSizeBox->SetHeightOverride(
+			(bShowActions ? 190.0f : 148.0f)
+			+ (Presentation.bShowCargoGlyph ? 42.0f : 0.0f));
+		CardSizeBox->AddChild(Card);
+		if (UHorizontalBoxSlot* CardSlot = CardBox->AddChildToHorizontalBox(CardSizeBox))
+		{
+			CardSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+			CardSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+		return ActionRow;
 	}
 
 	FSRResourceInstance MakeDebugEnergyResource(FName ResourceId, double EnergyValue, int32 RemainingProcessLimit)
@@ -2161,6 +2922,7 @@ namespace
 		ResourceInstance.ProcessCount = 0;
 		ResourceInstance.EnergyChangeCount = 0;
 		ResourceInstance.StackCount = 1;
+		StarRovers::Resources::SynchronizeLegacyRuntimeStateToResourceV2(ResourceInstance);
 		return ResourceInstance;
 	}
 }
@@ -2389,6 +3151,8 @@ void USRHubRouteSettingAction::InitializeMaxCargoStackCount(
 	bSetMaxCargoStackCount = true;
 	bSetReturnEmptyWhenNoCargo = false;
 	bSetCargoResourceId = false;
+	bSetRouteProfile = false;
+	bSetConditionedTransitModule = false;
 	Button = InButton;
 }
 
@@ -2404,6 +3168,8 @@ void USRHubRouteSettingAction::InitializeReturnEmptyWhenNoCargo(
 	bSetMaxCargoStackCount = false;
 	bSetReturnEmptyWhenNoCargo = true;
 	bSetCargoResourceId = false;
+	bSetRouteProfile = false;
+	bSetConditionedTransitModule = false;
 	Button = InButton;
 }
 
@@ -2419,19 +3185,59 @@ void USRHubRouteSettingAction::InitializeCargoResourceId(
 	bSetMaxCargoStackCount = false;
 	bSetReturnEmptyWhenNoCargo = false;
 	bSetCargoResourceId = true;
+	bSetRouteProfile = false;
+	bSetConditionedTransitModule = false;
+	Button = InButton;
+}
+
+void USRHubRouteSettingAction::InitializeRouteProfile(
+	USRFacilityControlWidget* InOwnerWidget,
+	FName InRouteId,
+	ESRSpaceLogisticsRouteProfileV2 InRouteProfile,
+	UButton* InButton)
+{
+	OwnerWidget = InOwnerWidget;
+	RouteId = InRouteId;
+	RouteProfile = InRouteProfile;
+	bSetMaxCargoStackCount = false;
+	bSetReturnEmptyWhenNoCargo = false;
+	bSetCargoResourceId = false;
+	bSetRouteProfile = true;
+	bSetConditionedTransitModule = false;
+	Button = InButton;
+}
+
+void USRHubRouteSettingAction::InitializeConditionedTransitModule(
+	USRFacilityControlWidget* InOwnerWidget,
+	FName InRouteId,
+	ESRConditionedTransitModuleV2 InModule,
+	UButton* InButton)
+{
+	OwnerWidget = InOwnerWidget;
+	RouteId = InRouteId;
+	ConditionedTransitModule = InModule;
+	bSetMaxCargoStackCount = false;
+	bSetReturnEmptyWhenNoCargo = false;
+	bSetCargoResourceId = false;
+	bSetRouteProfile = false;
+	bSetConditionedTransitModule = true;
 	Button = InButton;
 }
 
 void USRHubRouteSettingAction::HandleClicked()
 {
-	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteSetting OnClicked RouteId=%s SetStack=%s Stack=%d SetReturnEmpty=%s ReturnEmpty=%s SetCargoResource=%s CargoResourceId=%s"),
+	SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl HubRouteSetting OnClicked RouteId=%s SetStack=%s Stack=%d SetReturnEmpty=%s ReturnEmpty=%s SetCargoResource=%s CargoResourceId=%s SetProfile=%s Profile=%d SetModule=%s Module=%d"),
 		*RouteId.ToString(),
 		bSetMaxCargoStackCount ? TEXT("true") : TEXT("false"),
 		MaxCargoStackCount,
 		bSetReturnEmptyWhenNoCargo ? TEXT("true") : TEXT("false"),
 		bReturnEmptyWhenNoCargo ? TEXT("true") : TEXT("false"),
 		bSetCargoResourceId ? TEXT("true") : TEXT("false"),
-		CargoResourceId.IsNone() ? TEXT("Any") : *CargoResourceId.ToString());
+		CargoResourceId.IsNone() ? TEXT("Any") : *CargoResourceId.ToString(),
+		bSetRouteProfile ? TEXT("true") : TEXT("false"),
+		static_cast<int32>(RouteProfile),
+		bSetConditionedTransitModule ? TEXT("true") : TEXT("false"),
+		static_cast<int32>(ConditionedTransitModule));
 
 	if (!IsValid(OwnerWidget))
 	{
@@ -2449,6 +3255,14 @@ void USRHubRouteSettingAction::HandleClicked()
 	else if (bSetCargoResourceId)
 	{
 		OwnerWidget->SetHubRouteCargoResourceId(RouteId, CargoResourceId);
+	}
+	else if (bSetRouteProfile)
+	{
+		OwnerWidget->SetHubRouteProfile(RouteId, RouteProfile);
+	}
+	else if (bSetConditionedTransitModule)
+	{
+		OwnerWidget->SetHubRouteConditionedTransitModule(RouteId, ConditionedTransitModule);
 	}
 }
 
@@ -2620,6 +3434,24 @@ bool USRFacilityControlWidget::TryHandleFacilityControlPointerClick()
 		SR_LOG(UIClickTrace, LogTemp, Log, TEXT("SR UI Click Trace: FacilityControl manual click resolved ProcessCheckBox bNewChecked=%s"),
 			bNewChecked ? TEXT("true") : TEXT("false"));
 		HandleProcessCheckStateChanged(bNewChecked);
+		return true;
+	}
+
+	if (IsWidgetUnderScreenPosition(OperationalPriorityButton, ScreenPosition)
+		&& OperationalPriorityButton->GetIsEnabled())
+	{
+		SR_LOG(UIClickTrace, LogTemp, Log,
+			TEXT("SR UI Click Trace: FacilityControl manual click resolved OperationalPriorityButton"));
+		HandleCycleOperationalPriorityClicked();
+		return true;
+	}
+
+	if (IsWidgetUnderScreenPosition(ResourceV2RecipeButton, ScreenPosition)
+		&& ResourceV2RecipeButton->GetIsEnabled())
+	{
+		SR_LOG(UIClickTrace, LogTemp, Log,
+			TEXT("SR UI Click Trace: FacilityControl manual click resolved ResourceV2RecipeButton"));
+		HandleCycleResourceV2RecipeClicked();
 		return true;
 	}
 
@@ -2810,12 +3642,24 @@ bool USRFacilityControlWidget::SelectRouteDestinationHubEndpoint(const FSRSpaceL
 		RefreshControlText();
 		return false;
 	}
+	TArray<FSRSpaceLogisticsHubRoute> ExistingRoutes;
+	SpaceLogisticsSubsystem->GetHubRoutes(ExistingRoutes);
+	const bool bExistingLane = ExistingRoutes.ContainsByPredicate(
+		[&SourceHub, &DestinationHub](const FSRSpaceLogisticsHubRoute& Route)
+		{
+			return !Route.bDebugLocalOrbit
+				&& DoesHubRouteConnectEndpoints(Route, SourceHub, DestinationHub);
+		});
 
 	SelectedHubRouteDestination = DestinationHub;
 	bHasSelectedHubRouteDestination = true;
-	LastHubRouteStatus = FString::Printf(
-		TEXT("Destination selected: %s. Press Launch Route."),
-		*BuildCelestialBodyDisplayName(DestinationHub.BodyActor.Get()));
+	LastHubRouteStatus = bExistingLane
+		? FString::Printf(
+			TEXT("Lane selected: %s. Configure it on the expanded Route card."),
+			*BuildCelestialBodyDisplayName(DestinationHub.BodyActor.Get()))
+		: FString::Printf(
+			TEXT("Destination selected: %s. Press Create Route."),
+			*BuildCelestialBodyDisplayName(DestinationHub.BodyActor.Get()));
 	HubRoutePanelSignature.Reset();
 	RefreshControlText();
 	return true;
@@ -2853,7 +3697,10 @@ bool USRFacilityControlWidget::CreateRouteToHubEndpoint(const FSRSpaceLogisticsH
 		DestinationHub,
 		RouteId,
 		true,
-		1);
+		UsesResourceV2Display()
+			? FSRFleetCapacityV2::GetRouteProfileRules(
+				ESRSpaceLogisticsRouteProfileV2::NeutralShuttle).CargoCapacity
+			: 1);
 	LastHubRouteStatus = bCreated
 		? FString::Printf(TEXT("Route created: %s"), *RouteId.ToString())
 		: TEXT("Route failed: endpoint invalid or route already exists.");
@@ -3112,6 +3959,88 @@ bool USRFacilityControlWidget::SetHubRouteCargoResourceId(FName RouteId, FName C
 	return bUpdated;
 }
 
+bool USRFacilityControlWidget::SetHubRouteProfile(
+	FName RouteId,
+	ESRSpaceLogisticsRouteProfileV2 RouteProfile)
+{
+	if (RouteId.IsNone())
+	{
+		LastHubRouteStatus = TEXT("Profile update failed: invalid route.");
+		RefreshControlText();
+		return false;
+	}
+
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = GetSpaceLogisticsSubsystem();
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		LastHubRouteStatus = TEXT("Profile update failed: logistics subsystem unavailable.");
+		RefreshControlText();
+		return false;
+	}
+
+	const FSRSpaceLogisticsRouteProfileRulesV2 Rules =
+		FSRFleetCapacityV2::GetRouteProfileRules(RouteProfile);
+	if (!SpaceLogisticsSubsystem->IsHubRouteProfileUnlocked(Rules.Profile))
+	{
+		LastHubRouteStatus = FString::Printf(
+			TEXT("Profile locked: select an Augment Package that grants %s first."),
+			*Rules.DisplayName.ToString());
+		HubRoutePanelSignature.Reset();
+		RefreshControlText();
+		return false;
+	}
+	const bool bUpdated = SpaceLogisticsSubsystem->SetHubRouteProfile(RouteId, Rules.Profile);
+	LastHubRouteStatus = bUpdated
+		? FString::Printf(
+			TEXT("Route profile: %s (Cargo %d / Fleet Load %d)"),
+			*Rules.DisplayName.ToString(),
+			Rules.CargoCapacity,
+			Rules.FleetLoad)
+		: FString::Printf(
+			TEXT("Profile update failed: dock the empty route first (%s)."),
+			*RouteId.ToString());
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return bUpdated;
+}
+
+bool USRFacilityControlWidget::SetHubRouteConditionedTransitModule(
+	FName RouteId,
+	ESRConditionedTransitModuleV2 ConditionedTransitModule)
+{
+	if (RouteId.IsNone())
+	{
+		LastHubRouteStatus = TEXT("Hold module update failed: invalid route.");
+		RefreshControlText();
+		return false;
+	}
+
+	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = GetSpaceLogisticsSubsystem();
+	if (!IsValid(SpaceLogisticsSubsystem))
+	{
+		LastHubRouteStatus = TEXT("Hold module update failed: logistics subsystem unavailable.");
+		RefreshControlText();
+		return false;
+	}
+
+	const FSRConditionedTransitModuleRulesV2 Rules =
+		FSRConditionedTransitV2::GetModuleRules(ConditionedTransitModule);
+	const bool bUpdated = SpaceLogisticsSubsystem->SetHubRouteConditionedTransitModule(
+		RouteId,
+		Rules.Module);
+	LastHubRouteStatus = bUpdated
+		? FString::Printf(
+			TEXT("Conditioned Hold module: %s | %s"),
+			*Rules.DisplayName.ToString(),
+			*Rules.PreviewText.ToString())
+		: FString::Printf(
+			TEXT("Hold module update failed: unlock its Augment and dock the empty Conditioned Hold first (%s)."),
+			*RouteId.ToString());
+	HubRoutePanelSignature.Reset();
+	RefreshControlText();
+	return bUpdated;
+}
+
 USRFacilityNetworkComponent* USRFacilityControlWidget::GetFocusedFacilityNetwork() const
 {
 	AActor* Actor = FocusedActor.Get();
@@ -3160,6 +4089,46 @@ void USRFacilityControlWidget::HandleProcessCheckStateChanged(bool bIsChecked)
 	{
 		FacilityNetwork->SetFacilityProcessEnabled(FocusedOccupantId, bIsChecked);
 	}
+	RefreshControlText();
+}
+
+void USRFacilityControlWidget::HandleCycleResourceV2RecipeClicked()
+{
+	SR_LOG(UIClickTrace, LogTemp, Log,
+		TEXT("SR UI Click Trace: FacilityControl ResourceV2RecipeButton OnClicked"));
+
+	if (USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork())
+	{
+		FacilityNetwork->CycleFacilityResourceV2Recipe(FocusedOccupantId);
+	}
+	RefreshControlText();
+}
+
+void USRFacilityControlWidget::HandleCycleOperationalPriorityClicked()
+{
+	FSRFacilityInstance FacilityInstance;
+	USRFacilityNetworkComponent* FacilityNetwork = GetFocusedFacilityNetwork();
+	if (!IsValid(FacilityNetwork)
+		|| !FacilityNetwork->GetFacilityInstance(FocusedOccupantId, FacilityInstance))
+	{
+		return;
+	}
+
+	ESROperationalPriorityV2 NextPriority = ESROperationalPriorityV2::Normal;
+	switch (FacilityInstance.OperationalPriority)
+	{
+	case ESROperationalPriorityV2::Normal:
+		NextPriority = ESROperationalPriorityV2::Background;
+		break;
+	case ESROperationalPriorityV2::Background:
+		NextPriority = ESROperationalPriorityV2::Critical;
+		break;
+	case ESROperationalPriorityV2::Critical:
+	default:
+		NextPriority = ESROperationalPriorityV2::Normal;
+		break;
+	}
+	FacilityNetwork->SetFacilityOperationalPriority(FocusedOccupantId, NextPriority);
 	RefreshControlText();
 }
 
@@ -3253,17 +4222,31 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 
 	if (WidgetTree->RootWidget)
 	{
+		PanelScaleBox = Cast<UScaleBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlPanelScaleBox"))));
+		PanelDesignSizeBox = Cast<USizeBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlPanelDesignSizeBox"))));
 		PanelBorder = Cast<UBorder>(WidgetTree->FindWidget(FName(TEXT("FacilityControlPanelBorder"))));
 		TitleTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlTitleTextBlock"))));
+		FacilityStatusBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("FacilityControlStatusBadge"))));
 		CloseButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlCloseButton"))));
 		ProcessCheckBox = Cast<UCheckBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessCheckBox"))));
 		ProcessStatusTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessStatusTextBlock"))));
+		OperationalPriorityButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOperationalPriorityButton"))));
+		OperationalPriorityTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOperationalPriorityTextBlock"))));
+		ResourceV2RecipeButton = Cast<UButton>(WidgetTree->FindWidget(FName(TEXT("FacilityControlResourceV2RecipeButton"))));
+		ResourceV2RecipeTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlResourceV2RecipeTextBlock"))));
 		InputResourceTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputResourceTextBlock"))));
+		InputStageBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputStageBadge"))));
 		InputResourceSlotBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputResourceSlotBox"))));
 		EffectsTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlEffectsTextBlock"))));
+		ProcessStageBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessStageBadge"))));
+		EnergyTransitionTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlEnergyTransitionTextBlock"))));
+		StateTransitionTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlStateTransitionTextBlock"))));
 		ProcessProgressBar = Cast<UProgressBar>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessProgressBar"))));
 		ProcessTimeTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessTimeTextBlock"))));
 		OutputPreviewTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputPreviewTextBlock"))));
+		OutputStageBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputStageBadge"))));
+		InputToProcessArrowTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputToProcessArrowTextBlock"))));
+		ProcessToOutputArrowTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessToOutputArrowTextBlock"))));
 		OutputResourceSlotBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputResourceSlotBox"))));
 		InputInventoryTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputInventoryTextBlock"))));
 		InputInventorySlotBox = Cast<UVerticalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputInventorySlotBox"))));
@@ -3276,25 +4259,55 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		DeliverCheckBox = Cast<UCheckBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDeliverCheckBox"))));
 		DeliverStatusTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlDeliverStatusTextBlock"))));
 		HubRouteTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubRouteTextBlock"))));
+		HubRoutePanelBorder = Cast<UBorder>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubRouteBorder"))));
+		HubNetworkStatusBadge = Cast<USRStatusBadgeWidget>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubNetworkStatusBadge"))));
+		HubFleetInfoCard = Cast<USRInfoCardWidget>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubFleetInfoCard"))));
+		HubQueueInfoCard = Cast<USRInfoCardWidget>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubQueueInfoCard"))));
+		HubMissileInfoCard = Cast<USRInfoCardWidget>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubMissileInfoCard"))));
+		HubUtilityButtonBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubUtilityButtonBox"))));
 		HubDestinationButtonBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubDestinationButtonBox"))));
 		HubRouteStatusTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlHubRouteStatusTextBlock"))));
-		return;
+		if (PanelScaleBox && PanelDesignSizeBox && PanelBorder)
+		{
+			return;
+		}
+
+		// Configured Blueprint widgets can retain an older fixed-size root.
+		// Replace that tree with the complete responsive native inspector so
+		// runtime behavior does not depend on manually resaving every asset.
+		WidgetTree->RootWidget = nullptr;
 	}
 
 	UCanvasPanel* RootCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("FacilityControlCanvasPanel"));
 	WidgetTree->RootWidget = RootCanvas;
 	RootCanvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
-	PanelBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("FacilityControlPanelBorder"));
-	PanelBorder->SetPadding(FMargin(16.0f));
-	PanelBorder->SetBrushColor(FLinearColor(0.025f, 0.032f, 0.040f, 0.96f));
-	if (UCanvasPanelSlot* PanelSlot = RootCanvas->AddChildToCanvas(PanelBorder))
+	PanelScaleBox = WidgetTree->ConstructWidget<UScaleBox>(
+		UScaleBox::StaticClass(),
+		TEXT("FacilityControlPanelScaleBox"));
+	PanelScaleBox->SetStretch(EStretch::ScaleToFit);
+	PanelScaleBox->SetStretchDirection(EStretchDirection::DownOnly);
+	if (UCanvasPanelSlot* PanelScaleCanvasSlot = RootCanvas->AddChildToCanvas(PanelScaleBox))
 	{
-		PanelSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
-		PanelSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-		PanelSlot->SetPosition(FVector2D(0.0f, 18.0f));
-		PanelSlot->SetSize(FVector2D(920.0f, 780.0f));
+		PanelScaleCanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+		PanelScaleCanvasSlot->SetOffsets(FMargin(FSRUILayoutPolicy::DefaultSafeMargin));
 	}
+
+	PanelDesignSizeBox = WidgetTree->ConstructWidget<USizeBox>(
+		USizeBox::StaticClass(),
+		TEXT("FacilityControlPanelDesignSizeBox"));
+	PanelDesignSizeBox->SetWidthOverride(920.0f);
+	PanelDesignSizeBox->SetHeightOverride(660.0f);
+	if (UScaleBoxSlot* DesignSlot = Cast<UScaleBoxSlot>(PanelScaleBox->AddChild(PanelDesignSizeBox)))
+	{
+		DesignSlot->SetHorizontalAlignment(HAlign_Center);
+		DesignSlot->SetVerticalAlignment(VAlign_Center);
+	}
+
+	PanelBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("FacilityControlPanelBorder"));
+	PanelBorder->SetPadding(FMargin(USRUIThemeLibrary::ResolveSpacing(4)));
+	PanelBorder->SetBrushColor(USRUIThemeLibrary::GetThemeSettings()->PanelColor);
+	PanelDesignSizeBox->AddChild(PanelBorder);
 
 	UCanvasPanel* PanelCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("FacilityControlPanelCanvas"));
 	PanelCanvas->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
@@ -3308,10 +4321,22 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 			WidgetTree,
 			TEXT("FacilityControlTitleBorder"),
 			TitleTextBlock,
-			FLinearColor(0.055f, 0.070f, 0.085f, 0.98f),
+			USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Neutral).SurfaceColor,
 			FMargin(12.0f, 8.0f)),
 		FVector2D(16.0f, 12.0f),
-		FVector2D(816.0f, 56.0f));
+		FVector2D(630.0f, 56.0f));
+
+	FacilityStatusBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+		USRStatusBadgeWidget::StaticClass(),
+		TEXT("FacilityControlStatusBadge"));
+	FacilityStatusBadge->SetBadge(
+		NSLOCTEXT("StarRoversFacilityControl", "DefaultFacilityStatus", "STANDBY"),
+		ESRUIVisualState::Neutral);
+	AddWidgetToCanvas(
+		PanelCanvas,
+		FacilityStatusBadge,
+		FVector2D(662.0f, 21.0f),
+		FVector2D(170.0f, 38.0f));
 
 	CloseButton = ConstructDebugInputButton(
 		WidgetTree,
@@ -3339,7 +4364,52 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		FVector2D(308.0f, 82.0f),
 		FVector2D(264.0f, 62.0f));
 
+	OperationalPriorityButton = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(),
+		TEXT("FacilityControlOperationalPriorityButton"));
+	OperationalPriorityButton->SetBackgroundColor(FLinearColor(0.17f, 0.14f, 0.26f, 0.96f));
+	OperationalPriorityTextBlock = ConstructTextBlock(
+		WidgetTree,
+		TEXT("FacilityControlOperationalPriorityTextBlock"),
+		11,
+		FLinearColor(0.92f, 0.88f, 1.0f, 1.0f));
+	OperationalPriorityTextBlock->SetJustification(ETextJustify::Center);
+	OperationalPriorityButton->AddChild(OperationalPriorityTextBlock);
+	AddWidgetToCanvas(
+		PanelCanvas,
+		OperationalPriorityButton,
+		FVector2D(18.0f, 82.0f),
+		FVector2D(266.0f, 62.0f));
+
+	ResourceV2RecipeButton = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(),
+		TEXT("FacilityControlResourceV2RecipeButton"));
+	ResourceV2RecipeButton->SetBackgroundColor(FLinearColor(0.10f, 0.24f, 0.30f, 0.96f));
+	ResourceV2RecipeTextBlock = ConstructTextBlock(
+		WidgetTree,
+		TEXT("FacilityControlResourceV2RecipeTextBlock"),
+		12,
+		FLinearColor(0.82f, 0.96f, 1.0f, 1.0f));
+	ResourceV2RecipeTextBlock->SetJustification(ETextJustify::Center);
+	ResourceV2RecipeButton->AddChild(ResourceV2RecipeTextBlock);
+	AddWidgetToCanvas(
+		PanelCanvas,
+		ResourceV2RecipeButton,
+		FVector2D(596.0f, 82.0f),
+		FVector2D(266.0f, 62.0f));
+
 	UVerticalBox* InputResourceSectionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlInputResourceSectionBox"));
+	InputStageBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+		USRStatusBadgeWidget::StaticClass(),
+		TEXT("FacilityControlInputStageBadge"));
+	InputStageBadge->SetBadge(
+		NSLOCTEXT("StarRoversFacilityControl", "InputStageBadge", "1  INPUT"),
+		ESRUIVisualState::Info);
+	if (UVerticalBoxSlot* InputStageBadgeSlot = InputResourceSectionBox->AddChildToVerticalBox(InputStageBadge))
+	{
+		InputStageBadgeSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 5.0f));
+		InputStageBadgeSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
 	InputResourceTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlInputResourceTextBlock"), 13, FLinearColor(0.80f, 0.88f, 1.0f, 1.0f));
 	if (UVerticalBoxSlot* InputResourceTitleSlot = InputResourceSectionBox->AddChildToVerticalBox(InputResourceTextBlock))
 	{
@@ -3355,8 +4425,56 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		InputResourceSlotBoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
 
-	EffectsTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlEffectsTextBlock"), 13, FLinearColor(0.96f, 0.90f, 0.72f, 1.0f));
+	UVerticalBox* ProcessResourceSectionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlProcessResourceSectionBox"));
+	ProcessStageBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+		USRStatusBadgeWidget::StaticClass(),
+		TEXT("FacilityControlProcessStageBadge"));
+	ProcessStageBadge->SetBadge(
+		NSLOCTEXT("StarRoversFacilityControl", "ProcessStageBadge", "2  PROCESS"),
+		ESRUIVisualState::Neutral);
+	if (UVerticalBoxSlot* ProcessStageBadgeSlot = ProcessResourceSectionBox->AddChildToVerticalBox(ProcessStageBadge))
+	{
+		ProcessStageBadgeSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 5.0f));
+		ProcessStageBadgeSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
+	EffectsTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlEffectsTextBlock"), 10, FLinearColor(0.96f, 0.90f, 0.72f, 1.0f));
+	if (UVerticalBoxSlot* RuleSlot = ProcessResourceSectionBox->AddChildToVerticalBox(EffectsTextBlock))
+	{
+		RuleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		RuleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
+	EnergyTransitionTextBlock = ConstructTextBlock(
+		WidgetTree,
+		TEXT("FacilityControlEnergyTransitionTextBlock"),
+		10,
+		USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Positive).PrimaryTextColor);
+	if (UVerticalBoxSlot* EnergySlot = ProcessResourceSectionBox->AddChildToVerticalBox(EnergyTransitionTextBlock))
+	{
+		EnergySlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+		EnergySlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
+	StateTransitionTextBlock = ConstructTextBlock(
+		WidgetTree,
+		TEXT("FacilityControlStateTransitionTextBlock"),
+		9,
+		USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Info).SecondaryTextColor);
+	if (UVerticalBoxSlot* StateSlot = ProcessResourceSectionBox->AddChildToVerticalBox(StateTransitionTextBlock))
+	{
+		StateSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		StateSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
 	UVerticalBox* OutputResourceSectionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlOutputResourceSectionBox"));
+	OutputStageBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+		USRStatusBadgeWidget::StaticClass(),
+		TEXT("FacilityControlOutputStageBadge"));
+	OutputStageBadge->SetBadge(
+		NSLOCTEXT("StarRoversFacilityControl", "OutputStageBadge", "3  OUTPUT"),
+		ESRUIVisualState::Neutral);
+	if (UVerticalBoxSlot* OutputStageBadgeSlot = OutputResourceSectionBox->AddChildToVerticalBox(OutputStageBadge))
+	{
+		OutputStageBadgeSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 5.0f));
+		OutputStageBadgeSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
 	OutputPreviewTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlOutputPreviewTextBlock"), 13, FLinearColor(0.78f, 1.0f, 0.86f, 1.0f));
 	if (UVerticalBoxSlot* OutputResourceTitleSlot = OutputResourceSectionBox->AddChildToVerticalBox(OutputPreviewTextBlock))
 	{
@@ -3379,14 +4497,32 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		FVector2D(266.0f, 190.0f));
 	AddWidgetToCanvas(
 		PanelCanvas,
-		ConstructSectionBorder(WidgetTree, TEXT("FacilityControlEffectsBorder"), EffectsTextBlock, FLinearColor(0.085f, 0.080f, 0.060f, 0.96f)),
+		ConstructSectionBorder(WidgetTree, TEXT("FacilityControlEffectsBorder"), ProcessResourceSectionBox, FLinearColor(0.085f, 0.080f, 0.060f, 0.96f)),
 		FVector2D(308.0f, 166.0f),
-		FVector2D(264.0f, 122.0f));
+		FVector2D(264.0f, 190.0f));
 	AddWidgetToCanvas(
 		PanelCanvas,
 		ConstructSectionBorder(WidgetTree, TEXT("FacilityControlOutputPreviewBorder"), OutputResourceSectionBox),
 		FVector2D(596.0f, 166.0f),
 		FVector2D(266.0f, 190.0f));
+
+	InputToProcessArrowTextBlock = ConstructTextBlock(
+		WidgetTree,
+		TEXT("FacilityControlInputToProcessArrowTextBlock"),
+		20,
+		USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Info).AccentColor);
+	InputToProcessArrowTextBlock->SetText(FText::FromString(TEXT(">")));
+	InputToProcessArrowTextBlock->SetJustification(ETextJustify::Center);
+	AddWidgetToCanvas(PanelCanvas, InputToProcessArrowTextBlock, FVector2D(284.0f, 232.0f), FVector2D(24.0f, 32.0f));
+
+	ProcessToOutputArrowTextBlock = ConstructTextBlock(
+		WidgetTree,
+		TEXT("FacilityControlProcessToOutputArrowTextBlock"),
+		20,
+		USRUIThemeLibrary::ResolveStatePalette(ESRUIVisualState::Info).AccentColor);
+	ProcessToOutputArrowTextBlock->SetText(FText::FromString(TEXT(">")));
+	ProcessToOutputArrowTextBlock->SetJustification(ETextJustify::Center);
+	AddWidgetToCanvas(PanelCanvas, ProcessToOutputArrowTextBlock, FVector2D(572.0f, 232.0f), FVector2D(24.0f, 32.0f));
 
 	ProcessProgressBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("FacilityControlProcessProgressBar"));
 	ProcessProgressBar->SetFillColorAndOpacity(FLinearColor(0.40f, 0.72f, 1.0f, 1.0f));
@@ -3398,16 +4534,11 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 	ProcessTimeTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlProcessTimeTextBlock"), 12, FLinearColor(0.82f, 0.84f, 0.86f, 1.0f));
 	ProcessTimeTextBlock->SetJustification(ETextJustify::Center);
 	ProgressBox->AddChildToVerticalBox(ProcessTimeTextBlock);
-	AddWidgetToCanvas(
-		PanelCanvas,
-		ConstructSectionBorder(
-			WidgetTree,
-			TEXT("FacilityControlProgressBorder"),
-			ProgressBox,
-			FLinearColor(0.060f, 0.073f, 0.088f, 0.96f),
-			FMargin(10.0f, 9.0f)),
-		FVector2D(332.0f, 306.0f),
-		FVector2D(216.0f, 58.0f));
+	if (UVerticalBoxSlot* ProcessProgressSlot = ProcessResourceSectionBox->AddChildToVerticalBox(ProgressBox))
+	{
+		ProcessProgressSlot->SetPadding(FMargin(0.0f, 2.0f, 0.0f, 0.0f));
+		ProcessProgressSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
 
 	UVerticalBox* InputInventorySectionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlInputInventorySectionBox"));
 	InputInventoryTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlInputInventoryTextBlock"), 12, FLinearColor(0.82f, 0.88f, 1.0f, 1.0f));
@@ -3536,15 +4667,76 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		FVector2D(254.0f, 58.0f));
 
 	UVerticalBox* HubRouteSectionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlHubRouteSectionBox"));
+	UHorizontalBox* HubHeaderRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FacilityControlHubHeaderRow"));
+	HubNetworkStatusBadge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+		USRStatusBadgeWidget::StaticClass(),
+		TEXT("FacilityControlHubNetworkStatusBadge"));
+	HubNetworkStatusBadge->SetBadge(
+		NSLOCTEXT("StarRoversFacilityControl", "HubNetworkDefaultStatus", "LOGISTICS"),
+		ESRUIVisualState::Neutral);
+	if (UHorizontalBoxSlot* NetworkStatusSlot = HubHeaderRow->AddChildToHorizontalBox(HubNetworkStatusBadge))
+	{
+		NetworkStatusSlot->SetPadding(FMargin(0.0f, 0.0f, 10.0f, 0.0f));
+		NetworkStatusSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
 	HubRouteTextBlock = ConstructTextBlock(
 		WidgetTree,
 		TEXT("FacilityControlHubRouteTextBlock"),
 		12,
 		FLinearColor(0.78f, 0.92f, 1.0f, 1.0f));
-	if (UVerticalBoxSlot* HubRouteTitleSlot = HubRouteSectionBox->AddChildToVerticalBox(HubRouteTextBlock))
+	HubRouteTextBlock->SetAutoWrapText(false);
+	if (UHorizontalBoxSlot* HubTitleSlot = HubHeaderRow->AddChildToHorizontalBox(HubRouteTextBlock))
+	{
+		HubTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+	if (UVerticalBoxSlot* HubRouteTitleSlot = HubRouteSectionBox->AddChildToVerticalBox(HubHeaderRow))
 	{
 		HubRouteTitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
 		HubRouteTitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
+
+	UHorizontalBox* HubMetricRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FacilityControlHubMetricRow"));
+	auto AddHubMetricCard = [this, HubMetricRow](TObjectPtr<USRInfoCardWidget>& OutCard, const TCHAR* WidgetName, const FText& Title)
+	{
+		OutCard = WidgetTree->ConstructWidget<USRInfoCardWidget>(USRInfoCardWidget::StaticClass(), FName(WidgetName));
+		OutCard->SetCardData(Title, FText::FromString(TEXT("-")), FText::GetEmpty(), ESRUIVisualState::Neutral);
+		USizeBox* MetricSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+		MetricSizeBox->SetWidthOverride(214.0f);
+		MetricSizeBox->SetHeightOverride(80.0f);
+		MetricSizeBox->AddChild(OutCard);
+		if (UHorizontalBoxSlot* MetricSlot = HubMetricRow->AddChildToHorizontalBox(MetricSizeBox))
+		{
+			MetricSlot->SetPadding(FMargin(0.0f, 0.0f, 7.0f, 0.0f));
+			MetricSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	};
+	AddHubMetricCard(
+		HubFleetInfoCard,
+		TEXT("FacilityControlHubFleetInfoCard"),
+		NSLOCTEXT("StarRoversFacilityControl", "HubFleetMetricTitle", "FLEET LOAD"));
+	AddHubMetricCard(
+		HubQueueInfoCard,
+		TEXT("FacilityControlHubQueueInfoCard"),
+		NSLOCTEXT("StarRoversFacilityControl", "HubQueueMetricTitle", "DEPARTURE QUEUE"));
+	AddHubMetricCard(
+		HubMissileInfoCard,
+		TEXT("FacilityControlHubMissileInfoCard"),
+		NSLOCTEXT("StarRoversFacilityControl", "HubMissileMetricTitle", "MISSILES IN FLIGHT"));
+
+	HubUtilityButtonBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FacilityControlHubUtilityButtonBox"));
+	USizeBox* HubUtilitySizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), NAME_None);
+	HubUtilitySizeBox->SetWidthOverride(130.0f);
+	HubUtilitySizeBox->SetHeightOverride(80.0f);
+	HubUtilitySizeBox->AddChild(HubUtilityButtonBox);
+	if (UHorizontalBoxSlot* UtilitySlot = HubMetricRow->AddChildToHorizontalBox(HubUtilitySizeBox))
+	{
+		UtilitySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		UtilitySlot->SetVerticalAlignment(VAlign_Center);
+	}
+	if (UVerticalBoxSlot* MetricsSlot = HubRouteSectionBox->AddChildToVerticalBox(HubMetricRow))
+	{
+		MetricsSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 7.0f));
+		MetricsSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 	}
 
 	UScrollBox* HubDestinationScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("FacilityControlHubDestinationScrollBox"));
@@ -3564,16 +4756,18 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		FLinearColor(0.82f, 0.86f, 0.90f, 1.0f));
 	HubRouteStatusTextBlock->SetAutoWrapText(false);
 	HubRouteSectionBox->AddChildToVerticalBox(HubRouteStatusTextBlock);
+	HubRoutePanelBorder = ConstructSectionBorder(
+		WidgetTree,
+		TEXT("FacilityControlHubRouteBorder"),
+		HubRouteSectionBox,
+		FLinearColor(0.050f, 0.072f, 0.090f, 0.96f),
+		FMargin(10.0f, 8.0f));
+	HubRoutePanelBorder->SetVisibility(ESlateVisibility::Collapsed);
 	AddWidgetToCanvas(
 		PanelCanvas,
-		ConstructSectionBorder(
-			WidgetTree,
-			TEXT("FacilityControlHubRouteBorder"),
-			HubRouteSectionBox,
-			FLinearColor(0.050f, 0.072f, 0.090f, 0.96f),
-			FMargin(10.0f, 8.0f)),
+		HubRoutePanelBorder,
 		FVector2D(18.0f, 622.0f),
-		FVector2D(844.0f, 134.0f));
+		FVector2D(844.0f, 364.0f));
 }
 
 void USRFacilityControlWidget::BindControlHandlers()
@@ -3587,6 +4781,16 @@ void USRFacilityControlWidget::BindControlHandlers()
 	{
 		ProcessCheckBox->OnCheckStateChanged.RemoveDynamic(this, &USRFacilityControlWidget::HandleProcessCheckStateChanged);
 		ProcessCheckBox->OnCheckStateChanged.AddDynamic(this, &USRFacilityControlWidget::HandleProcessCheckStateChanged);
+	}
+	if (ResourceV2RecipeButton)
+	{
+		ResourceV2RecipeButton->OnClicked.RemoveDynamic(this, &USRFacilityControlWidget::HandleCycleResourceV2RecipeClicked);
+		ResourceV2RecipeButton->OnClicked.AddDynamic(this, &USRFacilityControlWidget::HandleCycleResourceV2RecipeClicked);
+	}
+	if (OperationalPriorityButton)
+	{
+		OperationalPriorityButton->OnClicked.RemoveDynamic(this, &USRFacilityControlWidget::HandleCycleOperationalPriorityClicked);
+		OperationalPriorityButton->OnClicked.AddDynamic(this, &USRFacilityControlWidget::HandleCycleOperationalPriorityClicked);
 	}
 	if (DeliverCheckBox)
 	{
@@ -3888,10 +5092,28 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 	{
 		return;
 	}
+	auto SetHubLayoutActive = [this](bool bActive)
+	{
+		if (HubRoutePanelBorder)
+		{
+			HubRoutePanelBorder->SetVisibility(
+				bActive ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+		}
+		if (PanelBorder)
+		{
+			if (UCanvasPanelSlot* PanelSlot = Cast<UCanvasPanelSlot>(PanelBorder->Slot))
+			{
+				PanelSlot->SetSize(bActive
+					? FVector2D(920.0f, 1030.0f)
+					: FVector2D(920.0f, 660.0f));
+			}
+		}
+	};
 
 	const bool bIsHubFacility = IsValid(FacilityNetwork) && FacilityNetwork->IsHubFacility(FacilityInstance.OccupantId);
 	if (!bIsHubFacility)
 	{
+		SetHubLayoutActive(false);
 		HubRouteTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesUnavailableTitle", "Hub Routes"));
 		HubRouteStatusTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesUnavailableStatus", "Only Hub facilities can launch spaceships."));
 		if (HubRoutePanelSignature != TEXT("NotHub"))
@@ -3906,15 +5128,29 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 				HubStarFuelMissileLaunchActions,
 				HubRouteSettingActions);
 		}
+		if (HubUtilityButtonBox)
+		{
+			HubUtilityButtonBox->ClearChildren();
+		}
 		return;
 	}
+	SetHubLayoutActive(true);
 
 	UWorld* World = GetWorld();
+	const USRAugmentSubsystem* AugmentSubsystem = IsValid(World)
+		? World->GetSubsystem<USRAugmentSubsystem>()
+		: nullptr;
 	USRSpaceLogisticsSubsystem* SpaceLogisticsSubsystem = IsValid(World)
 		? World->GetSubsystem<USRSpaceLogisticsSubsystem>()
 		: nullptr;
 	if (!IsValid(SpaceLogisticsSubsystem))
 	{
+		if (HubNetworkStatusBadge)
+		{
+			HubNetworkStatusBadge->SetBadge(
+				NSLOCTEXT("StarRoversFacilityControl", "HubLogisticsOffline", "LOGISTICS OFFLINE"),
+				ESRUIVisualState::Danger);
+		}
 		HubRouteTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesNoSubsystemTitle", "Hub Routes"));
 		HubRouteStatusTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesNoSubsystemStatus", "Logistics subsystem unavailable."));
 		if (HubRoutePanelSignature != TEXT("NoSubsystem"))
@@ -3929,12 +5165,22 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 				HubStarFuelMissileLaunchActions,
 				HubRouteSettingActions);
 		}
+		if (HubUtilityButtonBox)
+		{
+			HubUtilityButtonBox->ClearChildren();
+		}
 		return;
 	}
 
 	FSRSpaceLogisticsHubEndpoint SourceHub;
 	if (!SpaceLogisticsSubsystem->GetHubEndpoint(FocusedActor.Get(), FocusedOccupantId, SourceHub))
 	{
+		if (HubNetworkStatusBadge)
+		{
+			HubNetworkStatusBadge->SetBadge(
+				NSLOCTEXT("StarRoversFacilityControl", "HubEndpointOffline", "ENDPOINT OFFLINE"),
+				ESRUIVisualState::Danger);
+		}
 		HubRouteTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesNoEndpointTitle", "Hub Routes"));
 		HubRouteStatusTextBlock->SetText(NSLOCTEXT("StarRoversFacilityControl", "HubRoutesNoEndpointStatus", "Source Hub endpoint not found."));
 		if (HubRoutePanelSignature != TEXT("NoSourceEndpoint"))
@@ -3949,14 +5195,59 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 				HubStarFuelMissileLaunchActions,
 				HubRouteSettingActions);
 		}
+		if (HubUtilityButtonBox)
+		{
+			HubUtilityButtonBox->ClearChildren();
+		}
 		return;
 	}
 
 	TArray<FSRSpaceLogisticsHubEndpoint> HubEndpoints;
 	SpaceLogisticsSubsystem->GetHubEndpoints(HubEndpoints);
+	HubEndpoints.Sort([World](
+		const FSRSpaceLogisticsHubEndpoint& Left,
+		const FSRSpaceLogisticsHubEndpoint& Right)
+	{
+		auto ResolveEndpointOrder = [World](const FSRSpaceLogisticsHubEndpoint& Endpoint)
+		{
+			if (USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(Endpoint.BodyActor.Get()))
+			{
+				return 0;
+			}
+			bool bIsSatellite = false;
+			const int32 OrbitOrdinal = ResolveStarOrbitOrdinal(Endpoint.BodyActor.Get(), World, bIsSatellite);
+			return OrbitOrdinal == INDEX_NONE
+				? MAX_int32
+				: OrbitOrdinal * 2 + (bIsSatellite ? 1 : 0);
+		};
+		const int32 LeftOrder = ResolveEndpointOrder(Left);
+		const int32 RightOrder = ResolveEndpointOrder(Right);
+		if (LeftOrder != RightOrder)
+		{
+			return LeftOrder < RightOrder;
+		}
+		const FString LeftBodyName = BuildCelestialBodyDisplayName(Left.BodyActor.Get());
+		const FString RightBodyName = BuildCelestialBodyDisplayName(Right.BodyActor.Get());
+		const int32 BodyNameComparison = LeftBodyName.Compare(RightBodyName, ESearchCase::IgnoreCase);
+		return BodyNameComparison != 0
+			? BodyNameComparison < 0
+			: Left.HubOccupantId.LexicalLess(Right.HubOccupantId);
+	});
 
 	TArray<FSRSpaceLogisticsHubRoute> HubRoutes;
 	SpaceLogisticsSubsystem->GetHubRoutes(HubRoutes);
+	const FSRFleetCapacityReportV2 FleetCapacityReport =
+		SpaceLogisticsSubsystem->GetHubFleetCapacityReport(SourceHub);
+	int32 UnlockedConditionedModuleMask = 0;
+	TArray<ESRConditionedTransitModuleV2> ConditionedModules;
+	FSRConditionedTransitV2::GetConditionedModules(ConditionedModules);
+	for (const ESRConditionedTransitModuleV2 Module : ConditionedModules)
+	{
+		if (IsConditionedTransitModuleUnlocked(Module, AugmentSubsystem))
+		{
+			UnlockedConditionedModuleMask |= 1 << static_cast<uint8>(Module);
+		}
+	}
 
 	TArray<FSRSpaceLogisticsStarFuelMissile> StarFuelMissiles;
 	SpaceLogisticsSubsystem->GetStarFuelMissiles(StarFuelMissiles);
@@ -4023,29 +5314,92 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 			LastHubRouteStatus.Reset();
 		}
 	}
+	const FSRSpaceLogisticsHubRoute* SelectedConnectedRoute = nullptr;
+	if (bHasSelectedHubRouteDestination)
+	{
+		for (const FSRSpaceLogisticsHubRoute& HubRoute : HubRoutes)
+		{
+			if (!HubRoute.bDebugLocalOrbit
+				&& DoesHubRouteConnectEndpoints(HubRoute, SourceHub, SelectedHubRouteDestination))
+			{
+				SelectedConnectedRoute = &HubRoute;
+				break;
+			}
+		}
+	}
 
+	FSRHubNetworkPresentationInput NetworkPresentationInput;
+	NetworkPresentationInput.bLogisticsAvailable = true;
+	NetworkPresentationInput.FleetCapacity = FleetCapacityReport;
+	NetworkPresentationInput.DestinationCount = DestinationCount;
+	NetworkPresentationInput.ConnectedRouteCount = ConnectedRouteCount;
+	NetworkPresentationInput.ActiveMissileCount = ActiveMissileCount;
+	NetworkPresentationInput.AutoLaunchSlotCount = AutoLaunchInputPortIndices.Num();
+	const FSRHubNetworkPresentation NetworkPresentation =
+		FSRHubRoutePresentationBuilder::BuildNetwork(NetworkPresentationInput);
+	const FString SourceBodyName = BuildCelestialBodyDisplayName(SourceHub.BodyActor.Get());
 	HubRouteTextBlock->SetText(FText::FromString(FString::Printf(
-		TEXT("Hub Routes (%d active, %d missiles, %d auto)"),
+		TEXT("INTERBODY LOGISTICS  |  Source: %s  |  %d active lane%s"),
+		*SourceBodyName,
 		ConnectedRouteCount,
-		ActiveMissileCount,
-		AutoLaunchInputPortIndices.Num())));
+		ConnectedRouteCount == 1 ? TEXT("") : TEXT("s"))));
+	if (HubNetworkStatusBadge)
+	{
+		HubNetworkStatusBadge->SetBadge(NetworkPresentation.StatusLabel, NetworkPresentation.VisualState);
+	}
+	if (HubFleetInfoCard)
+	{
+		HubFleetInfoCard->SetCardData(
+			NSLOCTEXT("StarRoversFacilityControl", "HubFleetRuntimeTitle", "FLEET LOAD"),
+			NetworkPresentation.FleetValue,
+			NetworkPresentation.FleetDetail,
+			NetworkPresentation.VisualState);
+	}
+	if (HubQueueInfoCard)
+	{
+		HubQueueInfoCard->SetCardData(
+			NSLOCTEXT("StarRoversFacilityControl", "HubQueueRuntimeTitle", "DEPARTURE QUEUE"),
+			NetworkPresentation.QueueValue,
+			NetworkPresentation.QueueDetail,
+			FleetCapacityReport.QueuedDepartureCount > 0
+				? ESRUIVisualState::Warning
+				: ESRUIVisualState::Info);
+	}
+	if (HubMissileInfoCard)
+	{
+		HubMissileInfoCard->SetCardData(
+			NSLOCTEXT("StarRoversFacilityControl", "HubMissileRuntimeTitle", "MISSILES IN FLIGHT"),
+			NetworkPresentation.MissileValue,
+			NetworkPresentation.MissileDetail,
+			ActiveMissileCount > 0 ? ESRUIVisualState::Positive : ESRUIVisualState::Neutral);
+	}
 	const FString StatusText = !LastHubRouteStatus.IsEmpty()
 		? LastHubRouteStatus
 		: (bSelectingHubStarFuelMissileAutoLaunchSlot
 			? FString(TEXT("Select an input inventory slot to toggle missile auto-launch."))
 			: (bHasSelectedHubRouteDestination
-				? FString::Printf(TEXT("Destination selected: %s. Press Launch Route."), *BuildCelestialBodyDisplayName(SelectedHubRouteDestination.BodyActor.Get()))
-				: FString::Printf(
-					TEXT("%s"),
-					AutoLaunchInputPortIndices.Num() > 0
-						? TEXT("Missile auto-launch linked. Cargo entering linked slots will launch.")
-						: (DestinationCount > 0
-							? TEXT("Select destination Hub or link missile auto-launch.")
-							: TEXT("No destination Hub available.")))));
+				? (SelectedConnectedRoute
+					? FString::Printf(
+						TEXT("Lane selected: %s. Route controls are available on the selected card."),
+						*BuildCelestialBodyDisplayName(SelectedHubRouteDestination.BodyActor.Get()))
+					: FString::Printf(
+						TEXT("Destination selected: %s. Press Create Route."),
+						*BuildCelestialBodyDisplayName(SelectedHubRouteDestination.BodyActor.Get())))
+				: (FleetCapacityReport.bRulesActive && FleetCapacityReport.QueuedDepartureCount > 0
+					? FString::Printf(
+						TEXT("Fleet Capacity full: %d departure(s) queued; cargo remains in the Hub Export Buffer."),
+						FleetCapacityReport.QueuedDepartureCount)
+					: FString::Printf(
+						TEXT("%s"),
+						AutoLaunchInputPortIndices.Num() > 0
+							? TEXT("Missile auto-launch linked. Cargo entering linked slots will launch.")
+							: (DestinationCount > 0
+								? TEXT("Select destination Hub or link missile auto-launch.")
+								: TEXT("No destination Hub available."))))));
 	HubRouteStatusTextBlock->SetText(FText::FromString(StatusText));
 
 	FString NewSignature = FString::Printf(
-		TEXT("Hub:%s:%s:%d:%d:%d:%d:%d:%d:%s:Selected:%s:%s"),
+		TEXT("Hub:%s:%s:%d:%d:%d:%d:%d:%d:Fleet:%d:%d:%d:%d:Modules:%d:%s:Selected:%s:%s"),
 		*GetNameSafe(SourceHub.BodyActor.Get()),
 		*SourceHub.HubOccupantId.ToString(),
 		DestinationCount,
@@ -4054,6 +5408,11 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		AutoLaunchInputPortIndices.Num(),
 		bSelectingHubStarFuelMissileAutoLaunchSlot ? 1 : 0,
 		StarFuelMissileCargoStackCount,
+		FleetCapacityReport.ReservedLoad,
+		FleetCapacityReport.TotalCapacity,
+		FleetCapacityReport.QueuedDepartureCount,
+		FleetCapacityReport.ActiveFleetBerthCount,
+		UnlockedConditionedModuleMask,
 		*StatusText,
 		bHasSelectedHubRouteDestination ? *GetNameSafe(SelectedHubRouteDestination.BodyActor.Get()) : TEXT("None"),
 		bHasSelectedHubRouteDestination ? *SelectedHubRouteDestination.HubOccupantId.ToString() : TEXT("None"));
@@ -4090,13 +5449,29 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		}
 
 		NewSignature += FString::Printf(
-			TEXT("|Route:%s:%d:%d:%d:%d:%s"),
+			TEXT("|Route:%s:%d:%d:%d:%d:%s:%d:%d:%lld:%d:%d:%d"),
 			*HubRoute.RouteId.ToString(),
 			static_cast<int32>(HubRoute.Phase),
 			HubRoute.bDebugLocalOrbit ? 1 : 0,
 			HubRoute.MaxCargoStackCount,
 			HubRoute.bReturnEmptyWhenNoCargo ? 1 : 0,
-			*HubRoute.CargoResourceId.ToString());
+			*HubRoute.CargoResourceId.ToString(),
+			static_cast<int32>(HubRoute.RouteProfile),
+			static_cast<int32>(HubRoute.ConditionedTransitModule),
+			HubRoute.FleetDepartureQueueSequence,
+			HubRoute.FleetQueuePosition,
+			FMath::FloorToInt(HubRoute.ConditioningProgressSeconds),
+			FMath::CeilToInt(HubRoute.ConditioningDurationSeconds));
+		// Route cards are rebuilt in 5% travel increments. This keeps progress legible
+		// without reallocating a multi-card hierarchy every frame.
+		NewSignature += FString::Printf(
+			TEXT(":Live:%d:%d:%d:%s:%d:%.1f"),
+			HubRoute.bEnabled ? 1 : 0,
+			static_cast<int32>(HubRoute.CurrentDockSide),
+			FMath::FloorToInt(FMath::Clamp(HubRoute.TravelProgressRatio, 0.0f, 1.0f) * 20.0f),
+			*HubRoute.Cargo.ResourceId.ToString(),
+			HubRoute.Cargo.StackCount,
+			ResolveDisplayedEnergy(HubRoute.Cargo));
 	}
 
 	if (HubRoutePanelSignature == NewSignature)
@@ -4113,15 +5488,19 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 		HubRouteDebugOrbitActions,
 		HubStarFuelMissileLaunchActions,
 		HubRouteSettingActions);
+	if (HubUtilityButtonBox)
+	{
+		HubUtilityButtonBox->ClearChildren();
+	}
 	HubRouteDestinationActions.Reserve(DestinationCount);
 	HubRouteLaunchActions.Reserve(bHasSelectedHubRouteDestination ? 1 : 0);
 	HubRouteRemovalActions.Reserve(ConnectedRouteCount);
 	HubStarFuelMissileLaunchActions.Reserve(1);
-	HubRouteSettingActions.Reserve(ConnectedRouteCount * (AvailableCargoResourceIds.Num() + 3));
+	HubRouteSettingActions.Reserve(ConnectedRouteCount * (AvailableCargoResourceIds.Num() + 5));
 
 	AddHubStarFuelMissileLaunchButton(
 		WidgetTree,
-		HubDestinationButtonBox,
+		HubUtilityButtonBox,
 		this,
 		HubStarFuelMissileLaunchActions,
 		bCanConfigureStarFuelMissileAutoLaunch);
@@ -4150,39 +5529,118 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 
 		const bool bSelectedDestination = bHasSelectedHubRouteDestination
 			&& AreHubEndpointKeysEqual(HubEndpoint, SelectedHubRouteDestination);
-		const FString ButtonLabel = BuildHubEndpointUILabel(HubEndpoint, World);
-		AddHubDestinationButton(
+		FSRHubRouteCardPresentationInput CardInput;
+		CardInput.bHasRoute = ExistingRoute != nullptr;
+		CardInput.bSelected = bSelectedDestination;
+		if (ExistingRoute)
+		{
+			CardInput.bSelectedHubIsSource = AreHubEndpointKeysEqual(ExistingRoute->SourceHub, SourceHub);
+			CardInput.SourceName = BuildHubEndpointUILabel(ExistingRoute->SourceHub);
+			CardInput.DestinationName = BuildHubEndpointUILabel(ExistingRoute->DestinationHub);
+			CardInput.RouteId = ExistingRoute->RouteId;
+			CardInput.bEnabled = ExistingRoute->bEnabled;
+			CardInput.bReturnEmptyWhenNoCargo = ExistingRoute->bReturnEmptyWhenNoCargo;
+			CardInput.MaxCargoStackCount = ExistingRoute->MaxCargoStackCount;
+			CardInput.CargoResourceId = ExistingRoute->CargoResourceId;
+			CardInput.RouteProfile = ExistingRoute->RouteProfile;
+			CardInput.ConditionedTransitModule = ExistingRoute->ConditionedTransitModule;
+			CardInput.Phase = ExistingRoute->Phase;
+			CardInput.CurrentDockSide = ExistingRoute->CurrentDockSide;
+			CardInput.FleetQueuePosition = ExistingRoute->FleetQueuePosition;
+			CardInput.TravelProgressSeconds = ExistingRoute->TravelProgressSeconds;
+			CardInput.TravelDurationSeconds = ExistingRoute->TravelDurationSeconds;
+			CardInput.TravelProgressRatio = ExistingRoute->TravelProgressRatio;
+			CardInput.ConditioningProgressSeconds = ExistingRoute->ConditioningProgressSeconds;
+			CardInput.ConditioningDurationSeconds = ExistingRoute->ConditioningDurationSeconds;
+			CardInput.Cargo = ExistingRoute->Cargo;
+		}
+		else
+		{
+			CardInput.bSelectedHubIsSource = true;
+			CardInput.SourceName = BuildHubEndpointUILabel(SourceHub);
+			CardInput.DestinationName = BuildHubEndpointUILabel(HubEndpoint);
+		}
+
+		FSRHubRouteCardPresentation CardPresentation =
+			FSRHubRoutePresentationBuilder::BuildRoute(CardInput);
+		if (ExistingRoute
+			&& ExistingRoute->RouteProfile == ESRSpaceLogisticsRouteProfileV2::ConditionedHold)
+		{
+			CardPresentation.ModuleDetail = FText::FromString(
+				BuildConditionedTransitPreviewLabel(*ExistingRoute, AugmentSubsystem));
+		}
+		UHorizontalBox* RouteActionRow = AddHubRouteCard(
 			WidgetTree,
 			HubDestinationButtonBox,
 			this,
 			HubRouteDestinationActions,
 			HubEndpoint,
-			ButtonLabel,
-			bSelectedDestination,
-			ExistingRoute == nullptr);
+			CardPresentation,
+			bSelectedDestination);
 		if (bSelectedDestination && !ExistingRoute)
 		{
 			AddHubRouteLaunchButton(
 				WidgetTree,
-				HubDestinationButtonBox,
+				RouteActionRow,
 				this,
 				HubRouteLaunchActions,
 				HubEndpoint,
 				true);
 		}
-		if (ExistingRoute)
+		if (ExistingRoute && bSelectedDestination && RouteActionRow)
 		{
-			const int32 NextMaxCargoStackCount = ExistingRoute->MaxCargoStackCount <= 1 ? 5 : 1;
+			const FSRSpaceLogisticsRouteProfileRulesV2 ExistingRules =
+				FSRFleetCapacityV2::GetRouteProfileRules(ExistingRoute->RouteProfile);
+			if (FleetCapacityReport.bRulesActive)
+			{
+				const ESRSpaceLogisticsRouteProfileV2 NextProfile =
+					ResolveNextUnlockedRouteProfile(
+						ExistingRules.Profile,
+						SpaceLogisticsSubsystem);
+				const bool bProfileChangeAllowed = ExistingRoute->Phase != ESRSpaceLogisticsHubRoutePhase::TravelingToDestination
+					&& ExistingRoute->Phase != ESRSpaceLogisticsHubRoutePhase::TravelingToSource
+					&& (ExistingRoute->Cargo.ResourceId.IsNone() || ExistingRoute->Cargo.StackCount <= 0)
+					&& NextProfile != ExistingRules.Profile;
+				AddHubRouteProfileButton(
+					WidgetTree,
+					RouteActionRow,
+					this,
+					HubRouteSettingActions,
+					ExistingRoute->RouteId,
+					NextProfile,
+					bProfileChangeAllowed);
+				if (ExistingRules.Profile == ESRSpaceLogisticsRouteProfileV2::ConditionedHold)
+				{
+					const ESRConditionedTransitModuleV2 NextModule =
+						ResolveNextUnlockedConditionedTransitModule(
+							ExistingRoute->ConditionedTransitModule,
+							AugmentSubsystem);
+					AddHubRouteConditionedModuleButton(
+						WidgetTree,
+						RouteActionRow,
+						this,
+						HubRouteSettingActions,
+						ExistingRoute->RouteId,
+						NextModule,
+						bProfileChangeAllowed && NextModule != ExistingRoute->ConditionedTransitModule);
+				}
+			}
+			const int32 ProfileCargoCapacity = FleetCapacityReport.bRulesActive
+				? ExistingRules.CargoCapacity
+				: 5;
+			const int32 NextMaxCargoStackCount = ExistingRoute->MaxCargoStackCount < ProfileCargoCapacity
+				? ProfileCargoCapacity
+				: 1;
 			AddHubRouteMaxCargoStackCountButton(
 				WidgetTree,
-				HubDestinationButtonBox,
+				RouteActionRow,
 				this,
 				HubRouteSettingActions,
 				ExistingRoute->RouteId,
 				NextMaxCargoStackCount);
 			AddHubRouteReturnEmptyButton(
 				WidgetTree,
-				HubDestinationButtonBox,
+				RouteActionRow,
 				this,
 				HubRouteSettingActions,
 				ExistingRoute->RouteId,
@@ -4191,7 +5649,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 			{
 				AddHubRouteCargoResourceButton(
 					WidgetTree,
-					HubDestinationButtonBox,
+					RouteActionRow,
 					this,
 					HubRouteSettingActions,
 					ExistingRoute->RouteId,
@@ -4206,7 +5664,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 
 				AddHubRouteCargoResourceButton(
 					WidgetTree,
-					HubDestinationButtonBox,
+					RouteActionRow,
 					this,
 					HubRouteSettingActions,
 					ExistingRoute->RouteId,
@@ -4214,7 +5672,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 			}
 			AddHubRouteRemoveButton(
 				WidgetTree,
-				HubDestinationButtonBox,
+				RouteActionRow,
 				this,
 				HubRouteRemovalActions,
 				ExistingRoute->RouteId);
@@ -4278,6 +5736,14 @@ void USRFacilityControlWidget::RefreshControlText()
 		{
 			HubRouteStatusTextBlock->SetText(FText::GetEmpty());
 		}
+		if (ResourceV2RecipeButton)
+		{
+			ResourceV2RecipeButton->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (OperationalPriorityButton)
+		{
+			OperationalPriorityButton->SetVisibility(ESlateVisibility::Collapsed);
+		}
 		SetVisibility(ESlateVisibility::Collapsed);
 		return;
 	}
@@ -4301,12 +5767,44 @@ void USRFacilityControlWidget::RefreshControlText()
 	const float ProgressRatio = ProcessSeconds > 0.0f
 		? FMath::Clamp(FacilityInstance.ProcessProgressSeconds / ProcessSeconds, 0.0f, 1.0f)
 		: 0.0f;
+	const FSRRefinementResistanceResultV2 RefinementResistance =
+		FSRFacilityProcessingRuleEvaluator::ResolveRefinementResistance(FacilityInstance);
+	const FString RefinementTimingStatus =
+		FacilityInstance.bProcessing && FacilityInstance.bHasResolvedProcessSeconds
+		? FString::Printf(TEXT("\nCycle: %.2fs [start snapshot]"), ProcessSeconds)
+		: RefinementResistance.bApplied
+			? FString::Printf(
+			TEXT("\nRefinement: %.2fs base x %.2f = %.2fs (above Seed %.1f Energy)"),
+			RefinementResistance.BaseProcessSeconds,
+			RefinementResistance.CycleMultiplier,
+			RefinementResistance.EffectiveProcessSeconds,
+			RefinementResistance.RefinementEnergy)
+			: FString();
 
 	FString ProcessReason;
-	bool bCanToggleProcess = CanToggleProcess(FacilityInstance, ProcessReason);
+	bool bCanToggleProcess = CanToggleProcess(FacilityInstance, GetWorld(), ProcessReason);
 	const bool bHasOutputConveyor = FacilityNetwork->HasConnectedConveyorForFacilityPort(FocusedOccupantId, ESRFacilityPortKind::Output);
 	const bool bCanDebugAddInput = HasAvailableInputPortCapacity(FacilityInstance);
+	FName SelectedRecipeId;
+	TArray<FName> AvailableRecipeIds;
+	FString RecipeFailureReason;
+	const bool bHasRecipeSelector = FacilityNetwork->GetFacilityResourceV2RecipeState(
+		FocusedOccupantId,
+		SelectedRecipeId,
+		AvailableRecipeIds,
+		RecipeFailureReason);
+	const bool bSelectedRecipeUnlocked = AvailableRecipeIds.Contains(SelectedRecipeId);
+	const bool bRecipeChangeSafe = !FacilityInstance.bProcessing
+		&& FacilityInstance.ProcessingInventory.IsEmpty();
+	const bool bCanCycleRecipe = bHasRecipeSelector
+		&& !AvailableRecipeIds.IsEmpty()
+		&& bRecipeChangeSafe
+		&& (!bSelectedRecipeUnlocked || AvailableRecipeIds.Num() > 1);
 	const bool bIsMiningFacility = IsValid(FacilityDataAsset) && FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine;
+	const bool bShowsOperationalCapacity = UsesResourceV2Display()
+		&& IsValid(FacilityDataAsset)
+		&& FacilityDataAsset->FacilityKind == ESRFacilityKind::Standard;
+	const FSROperationalCapacityReportV2 CapacityReport = FacilityNetwork->GetOperationalCapacityReport();
 	FSRResourceDepositInstance MiningTarget;
 	const bool bHasMiningTarget = bIsMiningFacility && FacilityNetwork->GetFacilityMiningTarget(FocusedOccupantId, MiningTarget);
 	if (bIsMiningFacility && !bHasMiningTarget)
@@ -4315,11 +5813,86 @@ void USRFacilityControlWidget::RefreshControlText()
 		ProcessReason = TEXT("No adjacent deposit");
 	}
 
+	const FFacilityInspectorPreviewSnapshot InspectorPreview =
+		BuildFacilityInspectorPreviewSnapshot(FacilityNetwork, FacilityInstance, ProgressRatio);
+	const bool bUsesFinalFuelFormula = IsValid(FacilityDataAsset)
+		&& FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(FacilityDataAsset);
+	FSRStellarFuelBatchStatusV2 StellarFuelBatchStatus;
+	const bool bHasStellarFuelBatchStatus = bUsesFinalFuelFormula
+		&& FSRStellarFuelBatchPlanner::TryBuildStatus(
+			FacilityInstance,
+			StarRovers::Resources::ResolveCelestialBodyResourceId(FacilityNetwork->GetOwner()),
+			StellarFuelBatchStatus);
+	FSRFacilityInspectorPresentationInput InspectorInput;
+	InspectorInput.bProcessEnabled = FacilityInstance.bProcessEnabled;
+	InspectorInput.bCanOperate = bCanToggleProcess;
+	InspectorInput.bIsMiningFacility = bIsMiningFacility;
+	InspectorInput.bProcessing = FacilityInstance.bProcessing;
+	InspectorInput.bOutputBlocked = InspectorPreview.bOutputBlocked;
+	InspectorInput.bPreviewResolved = InspectorPreview.bPreviewResolved;
+	InspectorInput.bUsesFinalFuelFormula = bUsesFinalFuelFormula;
+	InspectorInput.bUsesStellarFuelBatch = bHasStellarFuelBatchStatus;
+	if (bHasStellarFuelBatchStatus)
+	{
+		InspectorInput.StellarFuelBatchState = StellarFuelBatchStatus.State;
+		InspectorInput.StellarFuelValidCardCount = StellarFuelBatchStatus.ValidCardCount;
+		InspectorInput.StellarFuelRequiredCardCount = StellarFuelBatchStatus.RequiredCardCount;
+		InspectorInput.StellarFuelBatchSummary = StellarFuelBatchStatus.Summary;
+		InspectorInput.StellarFuelBatchDetail = StellarFuelBatchStatus.Detail;
+	}
+	InspectorInput.InputResourceCount = InspectorPreview.Inputs.Num();
+	InspectorInput.OutputResourceCount = InspectorPreview.Outputs.Num();
+	InspectorInput.ProgressRatio = ProgressRatio;
+	InspectorInput.ProcessSeconds = ProcessSeconds;
+	InspectorInput.OperationalSpeedFactor = FacilityInstance.OperationalSpeedFactor;
+	InspectorInput.OperationReason = ProcessReason;
+	InspectorInput.ProcessRuleSummary = BuildConciseProcessRuleSummary(FacilityInstance);
+	InspectorInput.FormulaSummary = FString::Join(InspectorPreview.EnergyFormulaTexts, TEXT("\n\n"));
+	InspectorInput.StateTransitionSummary = BuildInspectorStateTransitionSummary(
+		InspectorPreview.Inputs,
+		InspectorPreview.Outputs,
+		bUsesFinalFuelFormula);
+	InspectorInput.bHasEnergyTransition = !InspectorPreview.Inputs.IsEmpty()
+		&& !InspectorPreview.Outputs.IsEmpty();
+	for (const FSRResourceInstance& InputResource : InspectorPreview.Inputs)
+	{
+		InspectorInput.InputEnergy += ResolveDisplayedEnergy(InputResource);
+	}
+	if (!InspectorPreview.Outputs.IsEmpty())
+	{
+		InspectorInput.OutputEnergy = ResolveDisplayedEnergy(InspectorPreview.Outputs[0]);
+	}
+	const FSRFacilityInspectorPresentation InspectorPresentation =
+		FSRFacilityInspectorPresentationBuilder::Build(InspectorInput);
+
 	bUpdatingControls = true;
 	if (ProcessCheckBox)
 	{
 		ProcessCheckBox->SetIsChecked(FacilityInstance.bProcessEnabled);
 		ProcessCheckBox->SetIsEnabled(bCanToggleProcess);
+	}
+	if (ResourceV2RecipeButton)
+	{
+		ResourceV2RecipeButton->SetVisibility(
+			bHasRecipeSelector ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		ResourceV2RecipeButton->SetIsEnabled(bCanCycleRecipe);
+		FString RecipeToolTip;
+		if (bHasRecipeSelector)
+		{
+			RecipeToolTip = RecipeFailureReason.IsEmpty()
+				? TEXT("Cycle through recipes unlocked by Technology and Augment Packages.")
+				: RecipeFailureReason;
+		}
+		ResourceV2RecipeButton->SetToolTipText(FText::FromString(RecipeToolTip));
+	}
+	if (OperationalPriorityButton)
+	{
+		OperationalPriorityButton->SetVisibility(
+			bShowsOperationalCapacity ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		OperationalPriorityButton->SetIsEnabled(
+			bShowsOperationalCapacity && FacilityDataAsset->OperationalLoad > 0);
+		OperationalPriorityButton->SetToolTipText(FText::FromString(
+			TEXT("Cycle Normal -> Background -> Critical. Over-capacity slows the lower tiers proportionally; it never destroys or rejects work.")));
 	}
 	if (DeliverCheckBox)
 	{
@@ -4352,17 +5925,79 @@ void USRFacilityControlWidget::RefreshControlText()
 			*FocusedOccupantId.ToString(),
 			GetFacilityTemperatureLabel(FacilityInstance.TemperatureState))));
 	}
+	if (FacilityStatusBadge)
+	{
+		FacilityStatusBadge->SetBadge(
+			InspectorPresentation.StatusLabel,
+			InspectorPresentation.StatusVisualState);
+		FacilityStatusBadge->SetToolTipText(InspectorPresentation.StatusDetail);
+	}
 	if (ProcessStatusTextBlock)
 	{
 		ProcessStatusTextBlock->SetText(FText::FromString(FString::Printf(
-			TEXT("Process: %s  %s"),
+			TEXT("Automation: %s\n%s%s"),
 			FacilityInstance.bProcessEnabled ? TEXT("ON") : TEXT("OFF"),
-			*ProcessReason)));
+			*InspectorPresentation.StatusDetail.ToString(),
+			*RefinementTimingStatus)));
+	}
+	if (ResourceV2RecipeTextBlock)
+	{
+		if (bHasRecipeSelector)
+		{
+			FString AccessLabel;
+			if (bSelectedRecipeUnlocked)
+			{
+				AccessLabel = AvailableRecipeIds.Num() > 1
+					? FString::Printf(TEXT("%d unlocked | click to cycle"), AvailableRecipeIds.Num())
+					: TEXT("Technology/Package recipe ready");
+			}
+			else
+			{
+				AccessLabel = AvailableRecipeIds.IsEmpty()
+					? TEXT("Locked | choose an Augment Package")
+					: TEXT("Locked | click to select available recipe");
+			}
+			ResourceV2RecipeTextBlock->SetText(FText::FromString(FString::Printf(
+				TEXT("Recipe: %s\n%s"),
+				*GetResourceV2RecipeDisplayName(SelectedRecipeId),
+				*AccessLabel)));
+		}
+		else
+		{
+			ResourceV2RecipeTextBlock->SetText(FText::GetEmpty());
+		}
+	}
+	if (OperationalPriorityTextBlock && bShowsOperationalCapacity)
+	{
+		const FString PriorityLabel = StaticEnum<ESROperationalPriorityV2>()
+			->GetDisplayNameTextByValue(static_cast<int64>(FacilityInstance.OperationalPriority))
+			.ToString();
+		OperationalPriorityTextBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("Priority: %s | Load %d | Speed %.0f%%\nBody: Demand %d / Capacity %d | Cores %d"),
+			*PriorityLabel,
+			FacilityDataAsset->OperationalLoad,
+			FacilityInstance.OperationalSpeedFactor * 100.0f,
+			CapacityReport.TotalDemand,
+			CapacityReport.TotalCapacity,
+			CapacityReport.ActiveServiceCoreCount)));
 	}
 	RefreshInputResourceSlots(FacilityNetwork, FacilityInstance);
 	if (EffectsTextBlock)
 	{
-		EffectsTextBlock->SetText(FText::FromString(BuildEffectsSummary(FacilityDataAsset)));
+		EffectsTextBlock->SetText(InspectorPresentation.ProcessRule);
+		EffectsTextBlock->SetToolTipText(FText::FromString(BuildEffectsSummary(FacilityInstance, GetWorld())));
+	}
+	if (EnergyTransitionTextBlock)
+	{
+		EnergyTransitionTextBlock->SetText(InspectorPresentation.EnergyTransition);
+		EnergyTransitionTextBlock->SetToolTipText(FText::FromString(
+			InspectorInput.FormulaSummary.IsEmpty()
+				? InspectorPresentation.EnergyTransition.ToString()
+				: InspectorInput.FormulaSummary));
+	}
+	if (StateTransitionTextBlock)
+	{
+		StateTransitionTextBlock->SetText(InspectorPresentation.StateTransition);
 	}
 	if (ProcessProgressBar)
 	{
@@ -4376,6 +6011,34 @@ void USRFacilityControlWidget::RefreshControlText()
 			ProcessSeconds)));
 	}
 	RefreshOutputResourceSlots(FacilityNetwork, FacilityInstance);
+	if (InputStageBadge)
+	{
+		InputStageBadge->SetBadge(
+			NSLOCTEXT("StarRoversFacilityControl", "InputStageRuntimeBadge", "1  INPUT"),
+			InspectorPresentation.InputVisualState);
+	}
+	if (ProcessStageBadge)
+	{
+		ProcessStageBadge->SetBadge(
+			FText::Format(
+				NSLOCTEXT("StarRoversFacilityControl", "ProcessStageRuntimeBadge", "2  PROCESS  |  {0}"),
+				InspectorPresentation.StatusLabel),
+			InspectorPresentation.ProcessVisualState);
+	}
+	if (OutputStageBadge)
+	{
+		OutputStageBadge->SetBadge(
+			NSLOCTEXT("StarRoversFacilityControl", "OutputStageRuntimeBadge", "3  OUTPUT"),
+			InspectorPresentation.OutputVisualState);
+	}
+	if (InputResourceTextBlock)
+	{
+		InputResourceTextBlock->SetText(InspectorPresentation.InputCaption);
+	}
+	if (OutputPreviewTextBlock)
+	{
+		OutputPreviewTextBlock->SetText(InspectorPresentation.OutputCaption);
+	}
 	if (InputInventoryTextBlock)
 	{
 		InputInventoryTextBlock->SetText(FText::FromString(

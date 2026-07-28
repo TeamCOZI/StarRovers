@@ -6,6 +6,38 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSRGameCycleAdvancedSignature, int32, CurrentCycleIndex);
 
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRTimeControlSaveData
+{
+	GENERATED_BODY()
+
+	static constexpr int32 InitialVersion = 1;
+	static constexpr int32 CurrentVersion = InitialVersion;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Simulation|Save")
+	int32 Version = CurrentVersion;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Simulation|Save")
+	float TimeScale = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Simulation|Save")
+	float SecondsPerPeriod = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Simulation|Save")
+	float CycleProgressSeconds = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Simulation|Save")
+	int32 CurrentCycleIndex = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Simulation|Save")
+	bool bSimulationPaused = false;
+
+	bool IsSupportedVersion() const
+	{
+		return Version >= InitialVersion && Version <= CurrentVersion;
+	}
+};
+
 UCLASS()
 class STARROVERS_API USRTimeControlSubsystem : public UTickableWorldSubsystem
 {
@@ -63,6 +95,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Simulation")
 	float GetCycleProgressRatio() const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Simulation|Save")
+	void ExportSaveData(FSRTimeControlSaveData& OutSaveData) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Simulation|Save")
+	bool ImportSaveData(const FSRTimeControlSaveData& SaveData, FString& OutFailureReason);
 
 private:
 	UPROPERTY(Transient)

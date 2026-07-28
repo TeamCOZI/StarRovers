@@ -25,6 +25,9 @@ struct STARROVERS_API FSRProfileNaturalStructureSpawnRule
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "MaxCount", ClampMin = "0"))
 	int32 MaxCount = 8;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "MinimumGuaranteedCount", ClampMin = "0", ToolTip = "Ignores the random spawn roll after the normal pass until this many structures have been placed, while still respecting valid cells and spacing. Zero disables the guarantee."))
+	int32 MinimumGuaranteedCount = 0;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "MinCellSpacing", ClampMin = "0"))
 	int32 MinCellSpacing = 2;
 };
@@ -45,6 +48,9 @@ struct STARROVERS_API FSRNaturalStructureSpawnRuleOverride
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "MaxCount", ClampMin = "0"))
 	int32 MaxCount = 8;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "MinimumGuaranteedCount", ClampMin = "0", ToolTip = "Overrides the profile minimum guarantee. The value is clamped to MaxCount when MaxCount is non-zero."))
+	int32 MinimumGuaranteedCount = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "MinCellSpacing", ClampMin = "0"))
 	int32 MinCellSpacing = 2;

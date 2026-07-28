@@ -50,6 +50,7 @@ void FSRPlayerControllerLifecycle::InitializeWidgets(ASRPlayerController& Player
 	PlayerController.CreateOverviewWidget();
 	PlayerController.RefreshOverviewWidget();
 	PlayerController.CreateTimeControlWidget();
+	PlayerController.CreatePlayerGuidanceWidget();
 	PlayerController.CreateAugmentChoiceWidget();
 	PlayerController.BindAugmentSubsystem();
 	PlayerController.RegisterAvailableStructuresForAugments();

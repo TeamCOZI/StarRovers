@@ -1,5 +1,7 @@
 #include "Automation/SRFacilityDataAsset.h"
 
+#include "Automation/SRResourceSystemContent.h"
+
 USRFacilityDataAsset::USRFacilityDataAsset()
 {
 	FacilityKind = ESRFacilityKind::Standard;
@@ -23,5 +25,24 @@ void USRFacilityDataAsset::PostLoad()
 	if (OutputInventory.SlotCapacity == 8 && OutputCapacity != 8)
 	{
 		OutputInventory.SlotCapacity = FMath::Max(1, OutputCapacity);
+	}
+}
+
+bool USRFacilityDataAsset::UsesResourceV2Definition() const
+{
+	return FacilityDefinitionVersion >= StarRovers::Facilities::CurrentFacilityDefinitionVersion;
+}
+
+void USRFacilityDataAsset::ApplyResourceV2Preset()
+{
+	if (ResourceV2Preset == ESRFacilityContentPresetV2::Custom)
+	{
+		return;
+	}
+
+	Modify();
+	if (FSRResourceSystemContent::ApplyFacilityPreset(*this, ResourceV2Preset))
+	{
+		MarkPackageDirty();
 	}
 }

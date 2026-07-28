@@ -3,6 +3,7 @@
 #include "Assembly/SRAssemblyConstructionReplacement.h"
 #include "Assembly/SRAssemblyPreviewState.h"
 #include "Assembly/SRAssemblyPreviewMaterial.h"
+#include "Assembly/SRAssemblyStructurePlacementPreview.h"
 #include "Conveyor/SRConveyorNetworkComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -50,14 +51,11 @@ namespace StarRovers::Assembly
 			return ESRAssemblyStructureGhostPreviewUpdateResult::DestroyPreview;
 		}
 
-		const int32 FootprintCellsX = StarRovers::Structure::GetRotatedFootprintCellsX(StructureData, RotationSteps);
-		const int32 FootprintCellsY = StarRovers::Structure::GetRotatedFootprintCellsY(StructureData, RotationSteps);
-
-		TArray<FSRPlanetSurfaceGridCellId> FootprintCellIds;
-		if (!HoveredSurfaceGrid->GetFootprintCellIds(HoveredCell.CellId, FootprintCellsX, FootprintCellsY, FootprintCellIds))
-		{
-			return ESRAssemblyStructureGhostPreviewUpdateResult::DestroyPreview;
-		}
+		FSRStructurePlacementEvaluation PlacementEvaluation =
+			FSRAssemblyStructurePlacementPreviewEvaluator::Evaluate(
+				HoveredSurfaceGrid,
+				StructureDataAsset,
+				RotationSteps);
 
 		AActor* SurfaceOwner = HoveredSurfaceGrid->GetOwner();
 		USRStructureInstanceManagerComponent* StructureInstanceManager = IsValid(SurfaceOwner)
@@ -66,16 +64,7 @@ namespace StarRovers::Assembly
 		USRConveyorNetworkComponent* ConveyorNetwork = IsValid(SurfaceOwner)
 			? SurfaceOwner->FindComponentByClass<USRConveyorNetworkComponent>()
 			: nullptr;
-		ConstructionReplacement::FSRConstructionReplacementTargets ReplacementTargets;
-		const bool bCanBuildOverCells = IsValid(StructureInstanceManager)
-			? ConstructionReplacement::CanBuildOverCellsForStructureConstruction(
-				HoveredSurfaceGrid,
-				StructureInstanceManager,
-				ConveyorNetwork,
-				FootprintCellIds,
-				ReplacementTargets)
-			: HoveredSurfaceGrid->CanOccupyCells(FootprintCellIds);
-		if (!bCanBuildOverCells)
+		if (!PlacementEvaluation.Preview.bCanPlace)
 		{
 			if (IsValid(StructureInstanceManager))
 			{
@@ -83,8 +72,18 @@ namespace StarRovers::Assembly
 			}
 			HoveredSurfaceGrid->ClearConstructionReplacementPreviewCells();
 			ConveyorPreview.ClearBulkDeletionPreview();
-			return ESRAssemblyStructureGhostPreviewUpdateResult::DestroyPreview;
+			StructurePreview.SetInvalidPlacementPreview(
+				HoveredSurfaceGrid,
+				PlacementEvaluation.FootprintCellIds);
+			return ESRAssemblyStructureGhostPreviewUpdateResult::BlockedPreview;
 		}
+		StructurePreview.ClearInvalidPlacementPreview();
+
+		ConstructionReplacement::FSRConstructionReplacementTargets ReplacementTargets;
+		ReplacementTargets.StructureOccupantIds = MoveTemp(PlacementEvaluation.ReplacementStructureIds);
+		ReplacementTargets.ConveyorCellIds = MoveTemp(PlacementEvaluation.ReplacementConveyorCellIds);
+		ReplacementTargets.ConveyorBeltPaths = MoveTemp(PlacementEvaluation.ReplacementConveyorBeltPaths);
+		const TArray<FSRPlanetSurfaceGridCellId>& FootprintCellIds = PlacementEvaluation.FootprintCellIds;
 		if (IsValid(StructureInstanceManager))
 		{
 			StructureInstanceManager->SetConstructionReplacementPreviewedStructures(ReplacementTargets.StructureOccupantIds);
@@ -120,7 +119,8 @@ namespace StarRovers::Assembly
 			GhostTransform,
 			AdditionalYawDegrees))
 		{
-			return ESRAssemblyStructureGhostPreviewUpdateResult::DestroyPreview;
+			StructurePreview.SetInvalidPlacementPreview(HoveredSurfaceGrid, FootprintCellIds);
+			return ESRAssemblyStructureGhostPreviewUpdateResult::BlockedPreview;
 		}
 
 		UMaterialInterface* PreviewMaterial = ReplacementTargets.HasAny()
@@ -137,7 +137,8 @@ namespace StarRovers::Assembly
 			PreviewCellInfo,
 			PreviewMaterial))
 		{
-			return ESRAssemblyStructureGhostPreviewUpdateResult::NoChange;
+			StructurePreview.SetInvalidPlacementPreview(HoveredSurfaceGrid, FootprintCellIds);
+			return ESRAssemblyStructureGhostPreviewUpdateResult::BlockedPreview;
 		}
 
 		StructurePreview.UpdateGhostPortPreview(HoveredSurfaceGrid, StructureData, FootprintCellIds, RotationSteps);

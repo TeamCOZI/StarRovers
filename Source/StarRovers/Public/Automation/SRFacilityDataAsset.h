@@ -2,8 +2,16 @@
 
 #include "CoreMinimal.h"
 #include "Automation/SRResourceDataAsset.h"
+#include "Automation/SROperationalCapacityTypes.h"
+#include "Automation/SRStellarFuelTypes.h"
 #include "Engine/DataAsset.h"
 #include "SRFacilityDataAsset.generated.h"
+
+namespace StarRovers::Facilities
+{
+	inline constexpr int32 LegacyFacilityDefinitionVersion = 1;
+	inline constexpr int32 CurrentFacilityDefinitionVersion = 2;
+}
 
 UENUM(BlueprintType)
 enum class ESRFacilityKind : uint8
@@ -45,6 +53,74 @@ enum class ESRFacilityPortKind : uint8
 {
 	Input UMETA(DisplayName = "Input"),
 	Output UMETA(DisplayName = "Output"),
+};
+
+UENUM(BlueprintType)
+enum class ESRFacilityProcessRoleV2 : uint8
+{
+	FamilyProcess UMETA(DisplayName = "Family Process"),
+	ApplyProcessTag UMETA(DisplayName = "Apply Process Tag"),
+	ApplyFuelImprint UMETA(DisplayName = "Apply Fuel Imprint"),
+	ClearProcessTag UMETA(DisplayName = "Clear Process Tag"),
+};
+
+/**
+ * The glanceable job a processing facility performs inside a Family line.
+ * This is presentation and balance metadata; Family State authority remains in
+ * the processing Kernel.
+ */
+UENUM(BlueprintType)
+enum class ESRFacilityLineRoleV2 : uint8
+{
+	None UMETA(DisplayName = "None"),
+	UniversalBridge UMETA(DisplayName = "Universal Bridge"),
+	Primer UMETA(DisplayName = "Primer"),
+	Payoff UMETA(DisplayName = "Payoff"),
+	Repeater UMETA(DisplayName = "Repeater"),
+	Recovery UMETA(DisplayName = "Recovery"),
+	Burst UMETA(DisplayName = "Burst"),
+	Stabilizer UMETA(DisplayName = "Stabilizer"),
+	Sacrifice UMETA(DisplayName = "Sacrifice"),
+};
+
+UENUM(BlueprintType)
+enum class ESRFacilitySynthesisRoleV2 : uint8
+{
+	None UMETA(DisplayName = "None"),
+	StellarFuelFabricator UMETA(DisplayName = "Stellar Fuel Fabricator"),
+	IndustrialSupplyFabricator UMETA(DisplayName = "Industrial Supply Fabricator"),
+	ServiceCore UMETA(DisplayName = "Service Core"),
+	FleetBerth UMETA(DisplayName = "Fleet Berth"),
+};
+
+// Resource V2 reference content. Mining and later infrastructure systems keep
+// their dedicated migration phases.
+UENUM(BlueprintType)
+enum class ESRFacilityContentPresetV2 : uint8
+{
+	Custom UMETA(DisplayName = "Custom"),
+	PulseProcessor UMETA(DisplayName = "Pulse Processor"),
+	CompressionMill UMETA(DisplayName = "Compression Mill"),
+	TagImprinter UMETA(DisplayName = "Tag Imprinter"),
+	FuelImprinter UMETA(DisplayName = "Fuel Imprinter"),
+	TagScrubber UMETA(DisplayName = "Tag Scrubber"),
+	InductionForge UMETA(DisplayName = "Induction Forge"),
+	CryoPress UMETA(DisplayName = "Cryo Press"),
+	ResonanceMill UMETA(DisplayName = "Resonance Mill"),
+	FacetShifter UMETA(DisplayName = "Facet Shifter"),
+	GrowthVat UMETA(DisplayName = "Growth Vat"),
+	EnzymeLoom UMETA(DisplayName = "Enzyme Loom"),
+	SporePress UMETA(DisplayName = "Spore Press"),
+	ArcAmplifier UMETA(DisplayName = "Arc Amplifier"),
+	GroundingCoil UMETA(DisplayName = "Grounding Coil"),
+	NullSink UMETA(DisplayName = "Null Sink"),
+	EchoChamber UMETA(DisplayName = "Echo Chamber"),
+	StellarFuelFabricator UMETA(DisplayName = "Stellar Fuel Fabricator"),
+	SupplyFabricator UMETA(DisplayName = "Supply Fabricator"),
+	ServiceCore UMETA(DisplayName = "Service Core"),
+	FleetBerth UMETA(DisplayName = "Fleet Berth"),
+	// Appended to preserve serialized values of the existing presets.
+	AnnealingChamber UMETA(DisplayName = "Annealing Chamber"),
 };
 
 UENUM(BlueprintType)
@@ -384,6 +460,59 @@ struct STARROVERS_API FSRFacilityInventorySpec
 	int32 SlotCapacity = 8;
 };
 
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRFacilityProcessDefinitionV2
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility V2|Process")
+	ESRFacilityProcessRoleV2 ProcessRole = ESRFacilityProcessRoleV2::FamilyProcess;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility V2|Process", meta = (
+		EditCondition = "ProcessRole == ESRFacilityProcessRoleV2::FamilyProcess",
+		EditConditionHides))
+	ESRFacilityLineRoleV2 LineRole = ESRFacilityLineRoleV2::None;
+
+	// Stable mechanical identity. Repeating the same archetype drives Family history such as Metal Fatigue.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility V2|Process")
+	FName ProcessArchetype = NAME_None;
+
+	// None means that any Card Family may enter. Family-specific facilities set this explicitly.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility V2|Process")
+	ESRResourceFamily AcceptedFamily = ESRResourceFamily::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility V2|Process")
+	ESRResourceFamilyAction FamilyAction = ESRResourceFamilyAction::None;
+
+	// Normal processing is additive. Multipliers are reserved for the Stellar Fuel Fabricator.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility V2|Process", meta = (DisplayName = "Facility Energy Delta"))
+	double FacilityEnergyDelta = 0.0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility V2|Process", meta = (
+		EditCondition = "ProcessRole == ESRFacilityProcessRoleV2::ApplyProcessTag",
+		EditConditionHides))
+	FName ProcessTagId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility V2|Process", meta = (
+		EditCondition = "ProcessRole == ESRFacilityProcessRoleV2::ApplyFuelImprint",
+		EditConditionHides))
+	FName FuelImprintId = NAME_None;
+};
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRFacilitySynthesisDefinitionV2
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility V2|Synthesis")
+	ESRFacilitySynthesisRoleV2 SynthesisRole = ESRFacilitySynthesisRoleV2::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility V2|Synthesis", meta = (
+		EditCondition = "SynthesisRole == ESRFacilitySynthesisRoleV2::StellarFuelFabricator",
+		EditConditionHides))
+	FSRStellarFuelFabricationRulesV2 StellarFuelRules;
+};
+
 UCLASS(BlueprintType)
 class STARROVERS_API USRFacilityDataAsset : public UDataAsset
 {
@@ -393,6 +522,13 @@ public:
 	USRFacilityDataAsset();
 
 	virtual void PostLoad() override;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility V2")
+	bool UsesResourceV2Definition() const;
+
+	// Explicit authoring action. Selecting a preset alone never mutates an asset.
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "StarRovers|Facility V2|Authoring")
+	void ApplyResourceV2Preset();
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "FacilityKind"))
 	ESRFacilityKind FacilityKind = ESRFacilityKind::Standard;
@@ -405,6 +541,46 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "BaseProcessSeconds", ClampMin = "0.01"))
 	float BaseProcessSeconds = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility V2|Operational Capacity", meta = (
+		DisplayName = "Operational Load",
+		ClampMin = "0",
+		EditCondition = "FacilityDefinitionVersion >= 2",
+		EditConditionHides))
+	int32 OperationalLoad = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility V2|Operational Capacity", meta = (
+		DisplayName = "Default Operational Priority",
+		EditCondition = "FacilityDefinitionVersion >= 2",
+		EditConditionHides))
+	ESROperationalPriorityV2 DefaultOperationalPriority = ESROperationalPriorityV2::Normal;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility V2|Migration", meta = (
+		DisplayName = "Facility Definition Version",
+		ClampMin = "1",
+		ClampMax = "2",
+		ToolTip = "Existing assets remain version 1. Set a migrated Resource V2 processing facility to version 2."))
+	int32 FacilityDefinitionVersion = StarRovers::Facilities::LegacyFacilityDefinitionVersion;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility V2|Authoring", meta = (
+		DisplayName = "Facility V2 Preset",
+		ToolTip = "Choose a Resource V2 processing, synthesis, or infrastructure preset, then run Apply Resource V2 Preset. Custom leaves all fields unchanged."))
+	ESRFacilityContentPresetV2 ResourceV2Preset = ESRFacilityContentPresetV2::Custom;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility V2|Authoring")
+	FName ResourceV2ContentId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility V2", meta = (
+		DisplayName = "Resource V2 Process",
+		EditCondition = "FacilityDefinitionVersion >= 2 && FacilityKind == ESRFacilityKind::Standard && OperationKind == ESRFacilityOperationKind::Process",
+		EditConditionHides))
+	FSRFacilityProcessDefinitionV2 ResourceV2Process;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility V2", meta = (
+		DisplayName = "Resource V2 Synthesis",
+		EditCondition = "FacilityDefinitionVersion >= 2 && FacilityKind == ESRFacilityKind::Standard && OperationKind == ESRFacilityOperationKind::Synthesize",
+		EditConditionHides))
+	FSRFacilitySynthesisDefinitionV2 ResourceV2Synthesis;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Facility|Inventory", meta = (DisplayName = "InputInventory"))
 	FSRFacilityInventorySpec InputInventory;

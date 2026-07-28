@@ -5,6 +5,7 @@
 #include "Camera/SRCameraPawn.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "UI/SRFocusedHubShortcutWidget.h"
 
@@ -48,7 +49,7 @@ namespace
 		return Left.OccupantId.LexicalLess(Right.OccupantId);
 	}
 
-	void ApplySelectedHubSurfacePreview(
+	void ApplySelectedStructureSurfacePreview(
 		USRPlanetSurfaceGrid* SurfaceGrid,
 		const FSRFocusedSurfaceStructureInfo& StructureInfo)
 	{
@@ -151,20 +152,66 @@ void ASRPlayerController::HandleFocusedHubShortcutRequested(const FSRFocusedHubS
 	{
 		return;
 	}
+	RequestFacilityFocus(BodyActor, HubInfo.OccupantId, true);
+}
+
+bool ASRPlayerController::RequestFacilityFocus(
+	AActor* BodyActor,
+	FName OccupantId,
+	bool bCenterSurface)
+{
+	if (!IsValid(BodyActor) || OccupantId.IsNone())
+	{
+		return false;
+	}
+
+	USRFacilityNetworkComponent* FacilityNetwork =
+		BodyActor->FindComponentByClass<USRFacilityNetworkComponent>();
+	FSRFacilityInstance FacilityInstance;
+	if (!IsValid(FacilityNetwork)
+		|| !FacilityNetwork->GetFacilityInstance(OccupantId, FacilityInstance))
+	{
+		return false;
+	}
+	return RequestSurfaceStructureFocus(BodyActor, OccupantId, bCenterSurface);
+}
+
+bool ASRPlayerController::RequestSurfaceStructureFocus(
+	AActor* BodyActor,
+	FName OccupantId,
+	bool bCenterSurface)
+{
+	if (!IsValid(BodyActor) || OccupantId.IsNone())
+	{
+		return false;
+	}
+
+	USRPlanetSurfaceGrid* SurfaceGrid =
+		BodyActor->FindComponentByClass<USRPlanetSurfaceGrid>();
+	USRStructureInstanceManagerComponent* StructureManager =
+		BodyActor->FindComponentByClass<USRStructureInstanceManagerComponent>();
+	FSRPlacedStructureInstance PlacedStructure;
+	if (!IsValid(SurfaceGrid)
+		|| !IsValid(StructureManager)
+		|| !StructureManager->GetPlacedStructure(OccupantId, PlacedStructure))
+	{
+		return false;
+	}
 
 	RuntimeState.bPendingInitialPrimaryStarFocus = false;
-	RequestFocusActor(BodyActor, false);
-
-	USRPlanetSurfaceGrid* SurfaceGrid = BodyActor->FindComponentByClass<USRPlanetSurfaceGrid>();
-	if (!IsValid(SurfaceGrid))
+	// Reapplying a surface target after entering Assembly mode must not rebuild
+	// the selected actor's focus info. That rebuild intentionally clears the
+	// selected surface structure and would make a direct command lose its
+	// deposit marker as soon as the Build Dock selects an option.
+	if (SelectedActor != BodyActor)
 	{
-		return;
+		RequestFocusActor(BodyActor, false);
 	}
 
 	FSRPlanetSurfaceGridCell OriginCell;
-	if (!SurfaceGrid->GetCellById(HubInfo.OriginCellId, OriginCell))
+	if (!SurfaceGrid->GetCellById(PlacedStructure.OriginCellId, OriginCell))
 	{
-		return;
+		return false;
 	}
 
 	FSRFocusedSurfaceStructureInfo StructureInfo;
@@ -174,29 +221,36 @@ void ASRPlayerController::HandleFocusedHubShortcutRequested(const FSRFocusedHubS
 		OriginCell,
 		StructureInfo))
 	{
-		return;
+		return false;
 	}
 
-	ApplySelectedHubSurfacePreview(SurfaceGrid, StructureInfo);
+	ApplySelectedStructureSurfacePreview(SurfaceGrid, StructureInfo);
 	SetSelectedActorSurfaceStructureInfo(BodyActor, StructureInfo);
 
 	FSRPlanetSurfaceGridCellInfo OriginCellInfo;
-	if (!SurfaceGrid->GetCellInfoById(HubInfo.OriginCellId, OriginCellInfo))
+	if (!SurfaceGrid->GetCellInfoById(PlacedStructure.OriginCellId, OriginCellInfo))
 	{
-		return;
+		return false;
 	}
 
-	if (ASRCameraPawn* CameraPawn = Cast<ASRCameraPawn>(GetPawn()))
+	if (bCenterSurface)
 	{
-		const FVector BodyCenter = BodyActor->GetActorLocation();
-		const FVector SurfaceDirection = OriginCellInfo.WorldCenter - BodyCenter;
-		const float SurfaceRadius = SurfaceDirection.Size();
-		const FVector ActorLocalSurfaceDirection = BodyActor->GetActorTransform()
-			.InverseTransformVectorNoScale(SurfaceDirection)
-			.GetSafeNormal();
-		if (!ActorLocalSurfaceDirection.IsNearlyZero() && SurfaceRadius > KINDA_SMALL_NUMBER)
+		if (ASRCameraPawn* CameraPawn = Cast<ASRCameraPawn>(GetPawn()))
 		{
-			CameraPawn->CenterFocusedSurfaceActorLocalDirection(ActorLocalSurfaceDirection, SurfaceRadius, false);
+			const FVector BodyCenter = BodyActor->GetActorLocation();
+			const FVector SurfaceDirection = OriginCellInfo.WorldCenter - BodyCenter;
+			const float SurfaceRadius = SurfaceDirection.Size();
+			const FVector ActorLocalSurfaceDirection = BodyActor->GetActorTransform()
+				.InverseTransformVectorNoScale(SurfaceDirection)
+				.GetSafeNormal();
+			if (!ActorLocalSurfaceDirection.IsNearlyZero() && SurfaceRadius > KINDA_SMALL_NUMBER)
+			{
+				CameraPawn->CenterFocusedSurfaceActorLocalDirection(
+					ActorLocalSurfaceDirection,
+					SurfaceRadius,
+					false);
+			}
 		}
 	}
+	return true;
 }

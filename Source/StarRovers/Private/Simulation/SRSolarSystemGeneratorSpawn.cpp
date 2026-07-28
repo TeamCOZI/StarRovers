@@ -1,5 +1,6 @@
 #include "Simulation/SRSolarSystemGenerator.h"
 
+#include "Simulation/SRPlanetEnvironmentSelection.h"
 #include "Simulation/SRSolarSystemGeneratorPipeline.h"
 
 #include "Celestial/SRMoonDataAsset.h"
@@ -37,7 +38,9 @@ ASRCelestialBody* ASRSolarSystemGenerator::SpawnPrimaryStar(FRandomStream& Rando
 	StarCelestialBodyRequest.BodyData.InitialAngle = 0.0f;
 	if (ShouldRandomizeBodyGenerationSeed(StarCelestialBodyRequest.BodyData))
 	{
-		ApplyResolvedGenerationSeed(StarCelestialBodyRequest.BodyData, CreateRuntimeRandomGenerationSeed());
+		ApplyResolvedGenerationSeed(
+			StarCelestialBodyRequest.BodyData,
+			RandomStream.RandRange(1, TNumericLimits<int32>::Max() - 1));
 	}
 
 	return SpawnOrbitingBody(ResolvedPrimaryStarClass, StarCelestialBodyRequest, nullptr);
@@ -112,9 +115,9 @@ void ASRSolarSystemGenerator::BuildOrbitingBodyRequests(
 	{
 		CandidateCelestialBodies[Index].BodyData.OrbitRadius = PackedOrbitRadii[Index];
 		CandidateCelestialBodies[Index].BodyData.InitialAngle = RandomStream.FRandRange(0.0f, 360.0f);
-		const int32 ResolvedGenerationSeed = ShouldRandomizeBodyGenerationSeed(CandidateCelestialBodies[Index].BodyData)
-			? CreateRuntimeRandomGenerationSeed()
-			: RandomStream.RandRange(1, TNumericLimits<int32>::Max() - 1);
+		// A randomized child seed is still derived from the root stream. This keeps
+		// different runs varied while making an explicit Solar System seed replayable.
+		const int32 ResolvedGenerationSeed = RandomStream.RandRange(1, TNumericLimits<int32>::Max() - 1);
 		ApplyResolvedGenerationSeed(CandidateCelestialBodies[Index].BodyData, ResolvedGenerationSeed);
 	}
 
@@ -266,9 +269,69 @@ void ASRSolarSystemGenerator::SpawnPlanets(ASRCelestialBody* ParentStar, const U
 		return;
 	}
 
-	for (int32 PlanetIndex = 0; PlanetIndex < RequestedPlanetCount; ++PlanetIndex)
+	TArray<const USRPlanetDataAsset*> PlanetEnvironmentCandidates;
+	PlanetEnvironmentCandidates.Reserve(PlanetDataAssets.Num());
+	for (const TObjectPtr<USRPlanetDataAsset>& PlanetDataAsset : PlanetDataAssets)
 	{
-		const USRPlanetDataAsset* SelectedPlanetData = ResolveRandomDataAssetStrict(PlanetDataAssets, RandomStream, TEXT("planet"));
+		PlanetEnvironmentCandidates.Add(PlanetDataAsset.Get());
+	}
+	TArray<const USRPlanetDataAsset*> SelectedPlanetEnvironments;
+	FSRPlanetEnvironmentSelectionReport SelectionReport;
+	FSRPlanetEnvironmentSelector::SelectWithResourceCoverage(
+		PlanetEnvironmentCandidates,
+		RequestedPlanetCount,
+		MinimumUniquePlanetTypes,
+		RequiredSystemResourceRuleIds,
+		RandomStream,
+		SelectedPlanetEnvironments,
+		SelectionReport);
+	if (SelectedPlanetEnvironments.Num() != RequestedPlanetCount)
+	{
+		SR_LOG(SolarSystem, LogTemp, Error,
+			TEXT("Solar system generation requested %d planets but only selected %d from %d enabled environment assets."),
+			RequestedPlanetCount,
+			SelectedPlanetEnvironments.Num(),
+			PlanetEnvironmentCandidates.Num());
+		return;
+	}
+	if (!SelectionReport.bResourceCoverageSatisfied)
+	{
+		TArray<FString> MissingRuleNames;
+		for (const FName MissingRuleId : SelectionReport.MissingResourceRuleIds)
+		{
+			MissingRuleNames.Add(MissingRuleId.ToString());
+		}
+		MissingRuleNames.Sort();
+		SR_LOG(SolarSystem, LogTemp, Error,
+			TEXT("Solar system environment catalog cannot satisfy required resource coverage. Missing=%s"),
+			*FString::Join(MissingRuleNames, TEXT(", ")));
+	}
+	else
+	{
+		TArray<FString> EnvironmentSummaries;
+		for (const USRPlanetDataAsset* SelectedPlanet : SelectedPlanetEnvironments)
+		{
+			TSet<FName> ResourceRuleIds;
+			FSRPlanetEnvironmentSelector::GetEnabledResourceRuleIds(SelectedPlanet, ResourceRuleIds);
+			TArray<FString> ResourceNames;
+			for (const FName ResourceRuleId : ResourceRuleIds)
+			{
+				ResourceNames.Add(ResourceRuleId.ToString().Replace(TEXT("ResourceV2."), TEXT("")));
+			}
+			ResourceNames.Sort();
+			EnvironmentSummaries.Add(FString::Printf(
+				TEXT("%s[%s]"),
+				IsValid(SelectedPlanet) ? *SelectedPlanet->VariableName.ToString() : TEXT("Invalid"),
+				*FString::Join(ResourceNames, TEXT("/"))));
+		}
+		SR_LOG(SolarSystem, LogTemp, Display,
+			TEXT("Selected resource-complete planet portfolio: %s"),
+			*FString::Join(EnvironmentSummaries, TEXT(", ")));
+	}
+
+	for (int32 PlanetIndex = 0; PlanetIndex < SelectedPlanetEnvironments.Num(); ++PlanetIndex)
+	{
+		const USRPlanetDataAsset* SelectedPlanetData = SelectedPlanetEnvironments[PlanetIndex];
 		if (!IsValid(SelectedPlanetData))
 		{
 			return;

@@ -3,10 +3,12 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "UI/SRCelestialBodyFocusInfo.h"
+#include "UI/SRCelestialBodyOperationsSummary.h"
 #include "SRCelestialBodyFocusInfoWidget.generated.h"
 
 class UBorder;
 class UButton;
+class UProgressBar;
 class UScrollBox;
 class USizeBox;
 class UTextBlock;
@@ -50,6 +52,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Input")
 	bool IsPointerOverFocusInfoUI() const;
 
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Body Operations")
+	FSRCelestialBodyOperationsSummary GetBodyOperationsSummary() const;
+
 	FSRStarRoversAssemblyModeRequestedSignature& OnAssemblyModeRequested();
 
 protected:
@@ -84,6 +89,42 @@ protected:
 	TObjectPtr<UScrollBox> HoveredCellScrollBox;
 
 	UPROPERTY(Transient)
+	TObjectPtr<USizeBox> BodyOperationsContainer;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> BodyOperationsBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> BodyOperationsTitleTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> OperationalLoadTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UProgressBar> OperationalLoadProgressBar;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> OperationalStatusTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ResourceReserveTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> CapacityBreakdownTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FacilitySummaryTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> PrioritySpeedTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FleetSummaryTextBlock;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> LogisticsSummaryTextBlock;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UButton> AssemblyModeButton;
 
 	UPROPERTY(Transient)
@@ -94,13 +135,19 @@ private:
 	void HandleAssemblyModeButtonClicked();
 
 	void BuildFocusInfoWidgetTree();
+	void EnsureBodyOperationsPanel(UWidget* BodyOperationsPanelParent);
 	void EnsureHoveredCellTextBlock(UWidget* HoveredCellTextBlockParent);
 	void EnsureAssemblyModeButton(UWidget* AssemblyModeButtonParent);
 	void BindAssemblyModeButtonHandler();
 	bool RefreshStarFuelInfoFromFocusedActor();
+	bool RefreshBodyOperationsSummary(bool bForceRefresh = false);
+	void RefreshBodyOperationsPanel();
 	void RefreshFocusInfoText();
 	void RefreshAssemblyModeButton();
 	bool IsScreenPositionOverFocusInfoUI(const FVector2D& ScreenPosition) const;
 
 	FSRStarRoversAssemblyModeRequestedSignature AssemblyModeRequestedEvent;
+	FSRCelestialBodyOperationsSummary BodyOperationsSummary;
+	float BodyOperationsRefreshAccumulator = 0.0f;
+	FString BodyOperationsPanelSignature;
 };

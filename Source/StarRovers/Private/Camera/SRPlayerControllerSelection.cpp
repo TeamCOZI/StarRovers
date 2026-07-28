@@ -1,9 +1,15 @@
 #include "Camera/SRPlayerController.h"
 
+#include "Assembly/SRAssemblyComponent.h"
+#include "Assembly/SRAssemblyStructurePlacementPreview.h"
+#include "Automation/SRFacilityDataAsset.h"
 #include "Camera/SRCameraPawn.h"
 #include "Celestial/SRStar.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
+#include "Structure/SRStructureDataAsset.h"
+#include "Structure/SRStructureInstanceManagerComponent.h"
+#include "Surface/SRPlanetSurfaceGrid.h"
 #include "SRPlayerControllerFocusInfoState.h"
 #include "SRPlayerControllerSurfaceSelectionState.h"
 
@@ -48,6 +54,7 @@ void ASRPlayerController::SetHoveredSurfaceCellInfo(bool bHasHoveredSurfaceCell,
 		return;
 	}
 
+	RefreshMiningResourceDepositHighlights();
 	FSRPlayerControllerFocusInfoState::ApplyToFocusInfoWidget(
 		SelectedActorFocusInfo,
 		IsAssemblyModeActive(),
@@ -67,6 +74,7 @@ void ASRPlayerController::SetSelectedSurfaceStructureInfo(bool bHasSelectedSurfa
 		return;
 	}
 
+	RefreshMiningResourceDepositHighlights();
 	FSRPlayerControllerFocusInfoState::ApplyToFocusInfoWidget(
 		SelectedActorFocusInfo,
 		IsAssemblyModeActive(),
@@ -95,12 +103,86 @@ void ASRPlayerController::SetSelectedActorSurfaceStructureInfo(AActor* NewSelect
 		SelectedActor,
 		SelectedActorFocusInfo,
 		SelectedSurfaceStructureInfo);
+	RefreshMiningResourceDepositHighlights();
 	FSRPlayerControllerFocusInfoState::ApplyToFocusInfoWidget(
 		SelectedActorFocusInfo,
 		IsAssemblyModeActive(),
 		FocusInfoWidget,
 		true);
 	RefreshFacilityControlWidget();
+}
+
+void ASRPlayerController::RefreshMiningResourceDepositHighlights()
+{
+	AActor* SurfaceActor = SelectedActor;
+	if (!IsValid(SurfaceActor))
+	{
+		return;
+	}
+
+	USRStructureInstanceManagerComponent* StructureManager =
+		SurfaceActor->FindComponentByClass<USRStructureInstanceManagerComponent>();
+	if (!IsValid(StructureManager))
+	{
+		return;
+	}
+
+	USRPlanetSurfaceGrid* SurfaceGrid =
+		USRCelestialBodyRuntimeLibrary::FindPlanetSurfaceGrid(SurfaceActor);
+	if (!IsValid(SurfaceGrid))
+	{
+		StructureManager->ClearMiningResourceDepositHighlights();
+		return;
+	}
+
+	const auto IsMiningStructure = [](const USRStructureDataAsset* StructureDataAsset)
+	{
+		if (!IsValid(StructureDataAsset))
+		{
+			return false;
+		}
+
+		const FSRStructureData StructureData = StructureDataAsset->BuildData();
+		const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
+		return IsValid(FacilityDataAsset)
+			&& FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine;
+	};
+
+	TArray<FSRPlanetSurfaceGridCellId> MinerFootprintCellIds;
+	bool bMiningSelectionActive = false;
+	if (SelectedActorFocusInfo.bHasSelectedSurfaceStructure
+		&& SelectedActorFocusInfo.SelectedSurfaceStructureInfo.bIsValid
+		&& IsMiningStructure(
+			SelectedActorFocusInfo.SelectedSurfaceStructureInfo.StructureDataAsset.Get()))
+	{
+		bMiningSelectionActive = true;
+		MinerFootprintCellIds =
+			SelectedActorFocusInfo.SelectedSurfaceStructureInfo.FootprintCellIds;
+	}
+	else if (IsAssemblyModeActive()
+		&& bHasSelectedStructureBuildId
+		&& IsMiningStructure(SelectedStructureDataAsset))
+	{
+		bMiningSelectionActive = true;
+		const int32 PlacementRotationSteps = AssemblyComponent
+			? AssemblyComponent->GetStructurePlacementRotationSteps()
+			: 0;
+		MinerFootprintCellIds = FSRAssemblyStructurePlacementPreviewEvaluator::Evaluate(
+			SurfaceGrid,
+			SelectedStructureDataAsset,
+			PlacementRotationSteps).FootprintCellIds;
+	}
+
+	if (bMiningSelectionActive)
+	{
+		StructureManager->SetMiningResourceDepositHighlights(
+			SurfaceGrid,
+			MinerFootprintCellIds);
+	}
+	else
+	{
+		StructureManager->ClearMiningResourceDepositHighlights(SurfaceGrid);
+	}
 }
 
 USRCelestialBodyRegistrySubsystem* ASRPlayerController::GetCelestialBodyRegistry() const
@@ -277,7 +359,7 @@ void ASRPlayerController::BindPrimaryStarGameOver(AActor* PrimaryStarActor)
 	ASRStar* PrimaryStar = Cast<ASRStar>(PrimaryStarActor);
 	if (BoundGameOverStar == PrimaryStar)
 	{
-		if (IsValid(PrimaryStar) && PrimaryStar->HasTriggeredSupernovaGameOver())
+		if (IsValid(PrimaryStar) && PrimaryStar->HasStellarRunEnded())
 		{
 			ShowGameOverScreen(PrimaryStar);
 		}
@@ -286,7 +368,7 @@ void ASRPlayerController::BindPrimaryStarGameOver(AActor* PrimaryStarActor)
 
 	if (IsValid(BoundGameOverStar))
 	{
-		BoundGameOverStar->OnStellarSupernovaGameOver.RemoveDynamic(this, &ASRPlayerController::HandlePrimaryStarGameOver);
+		BoundGameOverStar->OnStellarRunCompleted.RemoveDynamic(this, &ASRPlayerController::HandlePrimaryStarGameOver);
 	}
 
 	BoundGameOverStar = PrimaryStar;
@@ -295,9 +377,9 @@ void ASRPlayerController::BindPrimaryStarGameOver(AActor* PrimaryStarActor)
 		return;
 	}
 
-	BoundGameOverStar->OnStellarSupernovaGameOver.RemoveDynamic(this, &ASRPlayerController::HandlePrimaryStarGameOver);
-	BoundGameOverStar->OnStellarSupernovaGameOver.AddDynamic(this, &ASRPlayerController::HandlePrimaryStarGameOver);
-	if (BoundGameOverStar->HasTriggeredSupernovaGameOver())
+	BoundGameOverStar->OnStellarRunCompleted.RemoveDynamic(this, &ASRPlayerController::HandlePrimaryStarGameOver);
+	BoundGameOverStar->OnStellarRunCompleted.AddDynamic(this, &ASRPlayerController::HandlePrimaryStarGameOver);
+	if (BoundGameOverStar->HasStellarRunEnded())
 	{
 		ShowGameOverScreen(BoundGameOverStar);
 	}
@@ -336,6 +418,7 @@ void ASRPlayerController::UpdateSelection(AActor* NewSelectedActor)
 	}
 	else
 	{
+		RefreshMiningResourceDepositHighlights();
 		RefreshFacilityControlWidget();
 	}
 	RefreshOverviewWidget();

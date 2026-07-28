@@ -71,6 +71,27 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 	bool bUseStaticMeshMaterials,
 	int32 PlacementRotationSteps)
 {
+	return TryPlaceStructureOnSurfaceGridWithOccupantId(
+		SurfaceGrid,
+		TargetCellId,
+		StructureDataAsset,
+		NAME_None,
+		OutOccupantId,
+		bNaturalStructure,
+		bUseStaticMeshMaterials,
+		PlacementRotationSteps);
+}
+
+bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGridWithOccupantId(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const FSRPlanetSurfaceGridCellId& TargetCellId,
+	USRStructureDataAsset* StructureDataAsset,
+	FName RequestedOccupantId,
+	FName& OutOccupantId,
+	bool bNaturalStructure,
+	bool bUseStaticMeshMaterials,
+	int32 PlacementRotationSteps)
+{
 	OutOccupantId = NAME_None;
 	if (!IsValid(SurfaceGrid) || !IsValid(StructureDataAsset))
 	{
@@ -122,7 +143,17 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 		return false;
 	}
 
-	const FName OccupantId = MakeOccupantId(TargetCellId, StructureData.StructureId, NextStructureInstanceSequence++);
+	const FName OccupantId = RequestedOccupantId.IsNone()
+		? MakeOccupantId(
+			TargetCellId,
+			StructureData.StructureId,
+			NextStructureInstanceSequence++)
+		: RequestedOccupantId;
+	if (OccupantId.IsNone() || PlacedStructuresByOccupantId.Contains(OccupantId))
+	{
+		VisualGroup.Component->RemoveInstance(InstanceIndex);
+		return false;
+	}
 	if (!SurfaceGrid->SetCellsOccupied(FootprintCellIds, true, OccupantId))
 	{
 		VisualGroup.Component->RemoveInstance(InstanceIndex);
@@ -618,6 +649,20 @@ FName USRStructureInstanceManagerComponent::MakeVisualKey(
 	{
 		MaterialPath = StructureData.DeleteMaterial->GetPathName();
 	}
+	else if (VisualOverride == ESRStructureVisualOverride::MiningDeposit)
+	{
+		UMaterialInterface* HighlightMaterial = IsValid(StructureData.GhostMaterial.Get())
+			? StructureData.GhostMaterial.Get()
+			: StructureData.CopyPlaceableMaterial.Get();
+		MaterialPath = IsValid(HighlightMaterial) ? HighlightMaterial->GetPathName() : FString(TEXT("None"));
+	}
+	else if (VisualOverride == ESRStructureVisualOverride::MiningTarget)
+	{
+		UMaterialInterface* TargetMaterial = IsValid(StructureData.CopyPlaceableMaterial.Get())
+			? StructureData.CopyPlaceableMaterial.Get()
+			: StructureData.GhostMaterial.Get();
+		MaterialPath = IsValid(TargetMaterial) ? TargetMaterial->GetPathName() : FString(TEXT("None"));
+	}
 	else if (bUseStaticMeshMaterials)
 	{
 		MaterialPath = FString(TEXT("StaticMeshMaterials"));
@@ -728,6 +773,18 @@ USRStructureInstanceManagerComponent::FSRStructureVisualGroup& USRStructureInsta
 	{
 		OverrideMaterial = StructureData.DeleteMaterial.Get();
 	}
+	else if (VisualOverride == ESRStructureVisualOverride::MiningDeposit)
+	{
+		OverrideMaterial = IsValid(StructureData.GhostMaterial.Get())
+			? StructureData.GhostMaterial.Get()
+			: StructureData.CopyPlaceableMaterial.Get();
+	}
+	else if (VisualOverride == ESRStructureVisualOverride::MiningTarget)
+	{
+		OverrideMaterial = IsValid(StructureData.CopyPlaceableMaterial.Get())
+			? StructureData.CopyPlaceableMaterial.Get()
+			: StructureData.GhostMaterial.Get();
+	}
 
 	if (IsValid(OverrideMaterial))
 	{
@@ -776,6 +833,16 @@ USRStructureInstanceManagerComponent::ESRStructureVisualOverride USRStructureIns
 		|| GhostedStructureOccupantIds.Contains(OccupantId))
 	{
 		return ESRStructureVisualOverride::Ghost;
+	}
+
+	if (MiningTargetResourceDepositOccupantId == OccupantId)
+	{
+		return ESRStructureVisualOverride::MiningTarget;
+	}
+
+	if (MiningHighlightedResourceDepositOccupantIds.Contains(OccupantId))
+	{
+		return ESRStructureVisualOverride::MiningDeposit;
 	}
 
 	return ESRStructureVisualOverride::None;
@@ -841,6 +908,11 @@ void USRStructureInstanceManagerComponent::RemoveStructuresByOccupantIds(USRPlan
 		GhostedStructureOccupantIds.Remove(OccupantId);
 		DeletePreviewedStructureOccupantIds.Remove(OccupantId);
 		ConstructionReplacementPreviewedStructureOccupantIds.Remove(OccupantId);
+		MiningHighlightedResourceDepositOccupantIds.Remove(OccupantId);
+		if (MiningTargetResourceDepositOccupantId == OccupantId)
+		{
+			MiningTargetResourceDepositOccupantId = NAME_None;
+		}
 		ResourceDepositsByOccupantId.Remove(OccupantId);
 		ClearedCellIds.Append(RemovedStructure.FootprintCellIds);
 		RemovedOccupantIdsByVisualKey.FindOrAdd(RemovedStructure.VisualKey).Add(OccupantId);

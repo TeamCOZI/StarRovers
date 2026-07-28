@@ -11,7 +11,7 @@
 - 항성 연료 제작기에서만 한 번 곱연산한다.
 - 가공 횟수 제한은 없다.
 
-규칙의 본문은 [ResourceSystemDesign.md](ResourceSystemDesign.md)와 [AutomationLineProgressionDesign.md](AutomationLineProgressionDesign.md)에 있다. 이 문서의 시험 수치를 변경해도 시스템 원칙이 자동으로 바뀌는 것은 아니다.
+규칙의 본문은 [ResourceSystemDesign.md](ResourceSystemDesign.md)와 [AutomationLineProgressionDesign.md](AutomationLineProgressionDesign.md)에 있다. 현재 Family Facility 역할과 처리량 기준은 [FamilyFacilityBalanceImplementation.md](FamilyFacilityBalanceImplementation.md)에 고정한다. 이 문서의 시험 수치를 변경해도 시스템 원칙이 자동으로 바뀌는 것은 아니다.
 
 ## 2. 기준 Run
 
@@ -71,13 +71,35 @@ R2, B2, G4, Y4, R4
 
 | Family | 긍정 State 기준값 | 부정 State 기준값 | 권장 주기 |
 |---|---|---|---|
-| Metal | Tempered가 유효 Cold 가공에 `+5` | 같은 Archetype 세 번째부터 Fatigued `-8` | Hot -> Cold, Archetype 교대 |
+| Metal | Tempered가 유효 Cold 가공에 `+5` | Anneal 이후 세 번째 Metal 가공부터 Fatigued `-8`, Anneal까지 지속 | Forge -> Cryo Press -> Anneal |
 | Crystal | 같은 Archetype 두 번째·세 번째에 Resonant `+4` | 네 번째 이후 Fractured `-10` | A -> A -> A -> B -> B -> B |
 | Organic | 다음 일반 가공에 Matured `+6` | Growth 없이 두 번째 일반 가공부터 Depleted `-7` | Growth -> Process |
 | Plasma | 다음 연속 Amplification에 Energized `+5` | Discharge 전 세 번째 이후 Overloaded `-10` | Amplify -> Amplify -> Discharge |
 | Void | 다음 증가에 `실제 희생 Energy * 2`, 최대 `+8`의 Echoing | Sacrifice 없는 두 번째 증가부터 Collapsed `-8` | Sacrifice -> Gain |
 
 Void의 `실제 희생 Energy`는 0 Clamp를 적용한 뒤, Tag 보너스를 더하기 전에 기록한다. 따라서 Energy가 0인 자원을 희생해 무료 Echo 보너스를 만들 수 없다.
+
+### 2.4 Refinement Resistance 기준값
+
+일반 Energy 변화 Family 가공의 Cycle은 다음과 같다.
+
+~~~text
+Refinement = max(0, Current Energy - Seed Energy)
+Effective Cycle = Base Cycle * (1 + Refinement / 40)
+~~~
+
+채굴, Tag/Fuel Imprint, Tag Scrub, Metal Anneal, Industrial Supply 계열, 항성 연료 제작기는 제외한다. Conditioned Transit의 도착 가공도 시설 Cycle 대신 이동 시간과 Fleet Load를 비용으로 사용하므로 현재 저항 대상이 아니다. Energy 결과는 여전히 합연산이며 가공 횟수 제한은 없다.
+
+Tag가 없는 Star Iron Prototype은 다음 시간을 사용한다.
+
+| 입력 Energy | 작업 | 기본 Cycle | 유효 Cycle |
+|---:|---|---:|---:|
+| 5 | Forge | 4.0초 | 4.0초 |
+| 9 | Cryo Press | 4.0초 | 4.4초 |
+| 17 | Forge | 4.0초 | 5.2초 |
+| 21 | Cryo Press | 4.0초 | 5.6초 |
+
+저항은 같은 카드의 뒤쪽 직렬 설비를 느리게 만든다. 별도 카드가 흐르는 병렬 Lane은 각자의 Energy로 계산하므로 Capacity와 물류를 지불하는 정상적인 처리량 확장으로 남는다.
 
 ## 3. 기준 운영 Economy
 
@@ -112,6 +134,19 @@ Speed Factor = 45 / 60 = 0.75
 
 Supply Fabricator, 복구용 Route 하나, 항성 연료 제작기는 Critical로 설정할 수 있다. 선택적 장거리 가공 Loop는 보통 Normal 또는 Background로 둔다.
 
+#### 운영 현황 UI
+
+Operational Capacity를 특정 설비를 선택해야만 확인하는 구조는 대규모 다천체 Run에서 병목 발견이 늦다. 현재 Runtime UI는 다음 두 단계로 표시한다.
+
+- 좌측 천체 목록의 행성·위성 Row에는 `L 현재 Load/Capacity` 배지가 항상 붙는다. 80% 미만은 정상, 80% 이상은 주의, 정확히 가득 찬 상태와 초과 상태는 별도로 색을 구분한다.
+- 행성 또는 위성을 선택하면 Focus Info에 `OPERATIONS` 카드가 열린다. Load 막대와 여유/초과량, `Base + supplied Service Core + Augment` Capacity 출처, 등록·Enabled·Processing·Throttled 설비 수, Critical/Normal/Background별 Demand와 실제 Speed를 함께 표시한다.
+- 같은 카드에서 해당 천체의 Hub 전체 Fleet Load/Capacity, Available, Queue, 연결 Route, Blocked Route, 보급 중인 Fleet Berth, 발사 중인 항성 연료 Missile을 확인한다.
+- Hub가 여러 개면 합계만 보고 개별 병목을 놓치지 않도록 가장 높은 사용률의 `Busiest Hub` Load/Capacity도 표시한다. Fleet Capacity 자체는 여전히 Hub별로 독립적이다.
+- `Load`는 설치된 설비의 정적 합이 아니다. 현재 실제로 처리 중이며 진행 가능한 설비만 Demand를 사용하고, 입력을 기다리거나 Idle인 설비는 Capacity를 소비하지 않는다는 설명을 Tooltip에 명시한다.
+- 천체 목록은 물류를 제외한 경량 집계를 0.5초마다 갱신하고, 선택 천체 상세 카드도 0.5초마다 갱신한다. 경량 Facility Counter API는 Inventory를 복사하지 않는다.
+
+항성처럼 Facility Network가 없는 천체에는 오해를 부르는 `0/0` 배지나 빈 운영 카드를 표시하지 않는다.
+
 ### 3.2 Industrial Supply
 
 Industrial Supply는 연료 카드가 아닌 `Utility` 물자다.
@@ -138,15 +173,25 @@ Prototype 기준값:
 | Hub당 무료 Fleet Capacity | 8 |
 | 보급 중인 Fleet Berth 하나의 Capacity | +8 |
 | Fleet Berth 소비량 | 60초당 Industrial Supply 1 |
+| Fleet Berth 내부 비축량 | 240초 |
 
-| Route 설정 | 화물 역할 | Cargo 수 | 각 종점의 Fleet Load |
+| Route 설정 | 화물 역할 | Cargo 수 | 출발 중 Fleet Load |
 |---|---|---:|---:|
-| Card Courier | 완성된 동질 카드 | 8 | 2 |
-| Neutral Shuttle | Raw 또는 Intermediate Cargo | 8 | 2 |
-| Bulk Raw Hold | Raw 동질 Cargo | 16 | 3 |
-| Conditioned Hold | 이동 중 Family Action 수행 | 4 | 3 |
+| Card Courier | 가공 여부와 무관한 Card 전용 고효율 운송 | 12 | 2 |
+| Neutral Shuttle | 모든 Cargo를 받는 호환·복구 운송 | 8 | 2 |
+| Bulk Raw Hold | Utility 또는 아직 가공·State·Tag·Imprint가 없는 Card | 16 | 3 |
+| Conditioned Hold | 구체 Hold Module의 이동 중 Family Action을 위한 선체 | 4 | 3 |
 
 Fleet Load가 Capacity를 넘으면 이후 출발이 보이는 Queue에서 대기한다. Cargo는 Export Buffer에 안전하게 남는다.
+
+구현 판정:
+
+- Fleet Load는 활성 Route가 영구 점유하지 않는다. 해당 Hub에서 출발한 편이 목적 Hub의 Unload 단계에 도달할 때까지 예약한다.
+- Cargo가 존재하는지 먼저 비파괴적으로 확인하고, Capacity와 오래된 Queue Ticket 우선권을 통과한 뒤에만 Export Buffer에서 적재한다.
+- Card Courier와 Conditioned Hold는 Card만 허용한다. Bulk Raw Hold는 Utility와 `ProcessCount == 0`, `EnergyChangeCount == 0`, State·Tag·Imprint가 모두 비어 있는 가공 전 Card를 허용한다. Transit 이력만으로는 Raw 자격을 잃지 않는다. Neutral Shuttle은 Legacy 이관과 복구 Line을 위해 모든 Cargo를 허용한다.
+- Neutral Shuttle과 Card Courier는 Technology로 항상 해금된다. Bulk Raw Hold는 Central Convergence가, Conditioned Hold는 Deep-Space Tempering·Bio-Ark Freight·Grounded Transit 중 하나가 해금한다. Hub UI는 현재 Run에서 해금된 Profile만 순환한다.
+- 공급 중인 Fleet Berth는 가장 가까운 같은 천체 Hub 하나에만 +8을 제공한다. Hub가 하나라면 해당 천체의 모든 Berth가 그 Hub를 지원한다.
+- Star Fuel Missile, Debug Orbit, Cargo 대기편은 Fleet Capacity를 사용하지 않는다.
 
 ## 4. 구체적인 Facility 목록
 
@@ -155,32 +200,33 @@ Fleet Load가 Capacity를 넘으면 이후 출발이 보이는 Queue에서 대�
 | Facility | 주 행동 | Energy 규칙 | Cycle | Operational Load | 접근 방식 |
 |---|---|---|---:|---:|---|
 | Universal Extractor | 채굴 | Seed Energy 상태의 Instance 생성 | 4초 | 2 | 시작 |
-| Pulse Processor | Pulse 가공 | `+3` | 3초 | 2 | 시작 |
-| Compression Mill | Compression 가공 | `+4` | 4초 | 3 | 시작 |
+| Pulse Processor | Universal Bridge | `+1`, 긍정 Family Merit 사용 불가 | 2초 | 1 | 시작 |
+| Compression Mill | Universal Bridge | `+3`, 긍정 Family Merit 사용 불가 | 5초 | 3 | 시작 |
 | Tag Imprinter | Process Tag 적용 | `+0`, Family 이력 진행 없음 | 2초 | 1 | Tag와 함께 확정 제공 |
 | Fuel Imprinter | Fuel Imprint 적용 | `+0`, Family 이력 진행 없음 | 2초 | 1 | Tag와 함께 확정 제공 |
 | Tag Scrubber | Tag 제거 | `+0`, Family State 해제 없음 | 2초 | 1 | Tag와 함께 확정 제공 |
 | Supply Fabricator | Utility 생산 | Industrial Supply 생산 | 30초 | 4 | 확장 전에 확정 제공 |
-| Service Core | Capacity 확장 | 보급 중 천체 Capacity `+18` | Passive | 0 | 확장 전에 확정 제공 |
+| Service Core | Capacity 확장 | Industrial Supply 1개/30초를 소비하며 보급 중 천체 Capacity `+18` | 30초 | 0 | 확장 전에 확정 제공 |
 | 항성 연료 제작기 | 최종 합성 | `A + B * C`를 한 번 판정 | 10초 | 6 | 확정 진행 |
 
-두 시작 Processor는 안전하지만 Family 전용 Facility보다 효율이 낮다. 특화 District나 Route가 막혔을 때에도 대체 Line을 만들 수 있게 한다.
+두 시작 Processor는 특화 District나 Route가 막혔을 때 Line을 이어 주는 Bridge다. 부정 State 압력은 진행하지만 긍정 Family Merit를 활성화하거나 소비하지 못하므로 Family 전용 Facility의 대체 최적해가 되지 않는다.
 
 ### 4.2 Family Facility
 
-| Facility | Family | Archetype 또는 Action | 기본 Energy 변화 | Cycle | Load | 추가 규칙 |
-|---|---|---|---:|---:|---:|---|
-| Induction Forge | Metal | Forge, Hot | +4 | 4초 | 3 | Hot 기록 |
-| Cryo Press | Metal | Press, Cold | +3 | 4초 | 3 | Tempered 완성 가능 |
-| Resonance Mill | Crystal | Resonance | +3 | 3초 | 반복으로 Resonant 활성화 |
-| Facet Shifter | Crystal | Facet | +2 | 3초 | Archetype 변경 및 Fractured 해제 |
-| Growth Vat | Organic | Growth Cycle | +0 | 6초 | Matured 활성화 및 Depleted 해제 |
-| Enzyme Loom | Organic | Loom | +3 | 3초 | 일반 가공 |
-| Spore Press | Organic | Press | +4 | 4초 | 느리지만 강한 일반 가공 |
-| Arc Amplifier | Plasma | Amplification | +4 | 2초 | Energized·Overloaded 주기 진행 |
-| Grounding Coil | Plasma | Discharge | +1 | 2초 | Energized·Overloaded 해제 |
-| Null Sink | Void | Void Sacrifice | 최대 -3 | 2초 | 실제 희생량 기록 및 Echoing 활성화 |
-| Echo Chamber | Void | Energy Gain | +4 | 4초 | Echoing 보너스 소비 |
+| Facility | Family | Line Role | Archetype 또는 Action | 기본 Energy 변화 | Cycle | Load | 추가 규칙 |
+|---|---|---|---|---:|---:|---:|---|
+| Induction Forge | Metal | Primer | Forge, Hot | +4 | 4초 | 3 | Hot 기록 |
+| Cryo Press | Metal | Payoff | Press, Cold | +3 | 4초 | 3 | Tempered 완성 가능 |
+| Annealing Chamber | Metal | Recovery | Anneal, Normal | +0 | 6초 | 2 | Tempered·Fatigued 해제, Work Strain 0; 저항 제외 |
+| Resonance Mill | Crystal | Repeater | Resonance | +3 | 3초 | 2 | 반복으로 Resonant 활성화 |
+| Facet Shifter | Crystal | Recovery | Facet | +2 | 3초 | 2 | Archetype 변경 및 Fractured 해제 |
+| Growth Vat | Organic | Primer | Growth Cycle | +0 | 5초 | 1 | Matured 활성화 및 Depleted 해제 |
+| Enzyme Loom | Organic | Payoff | Loom | +2 | 2초 | 2 | 빠른 처리량 |
+| Spore Press | Organic | Payoff | Press | +5 | 5초 | 1 | 느리지만 높은 카드당 Energy와 Load 효율 |
+| Arc Amplifier | Plasma | Burst | Amplification | +4 | 2초 | 5 | Energized·Overloaded 주기 진행 |
+| Grounding Coil | Plasma | Stabilizer | Discharge | +1 | 3초 | 1 | Energized·Overloaded 해제 |
+| Null Sink | Void | Sacrifice | Void Sacrifice | 최대 -3 | 2초 | 1 | 실제 희생량 기록 및 Echoing 활성화 |
+| Echo Chamber | Void | Payoff | Energy Gain | +5 | 5초 | 3 | Echoing 보너스 소비 |
 
 올바른 Family 주기는 순이득이지만 Reset Action이 무료는 아니다. Line을 늘릴수록 더 많은 활성 Facility, Cycle Time, 지원 Capacity가 필요하다.
 
@@ -199,6 +245,8 @@ Fleet Load가 Capacity를 넘으면 이후 출발이 보이는 Queue에서 대�
 | Grounding Hold | Grounded Transit Augment | Capacity 4, 도착 시 기본 `+1` Discharge |
 
 일반 Hold는 State 중립이다. Conditioned Hold는 Preview, Load 계산, 자원 이력에 명시적인 가공 단계로 나타난다.
+
+현재 Runtime에서는 세 Hold가 Facility가 아니라 Route Module로 구현되어 있다. 각 Module은 위 표의 Augment가 해금하며, Conditioned Hold Profile에 빈 우주선이 정박했을 때 Hub UI에서 장착한다. 운송 완료 시 먼저 Transit 이력을 한 번 기록하고 공용 Resource Processing Kernel로 표의 가공 Event를 한 번만 실행한다. Module이 없거나 잠겨 있거나 Family가 맞지 않으면 자원은 가공되지 않으며 일반 운송처럼 보존된다. 물류 Save Schema 4는 선택 Module을 저장하고 Schema 1~3 Route를 Module `None`으로 이관한다.
 
 ## 5. 구체적인 Tag 목록
 
@@ -260,11 +308,29 @@ Slot 제한에는 실제 비용이 있다. Topology Seal과 Catalyst를 사용�
 | Convergence Protocol | Macro Doctrine | Convergence Seal과 동기화된 Completed Card Manifest | 분산 카드 생산 |
 | Central Convergence | Macro Doctrine | Landing Charge, Foundry Seal, Bulk Raw Hold | 중앙 공장 |
 | Pilgrim Circuit | Macro Doctrine | Pilgrim Charge, Pilgrim Seal, 방문 천체 Preview | 순차 천체 간 가공 |
-| Deep-Space Tempering | Engine | Cryogenic Hold | 다중 천체 Metal |
-| Bio-Ark Freight | Engine | Bio-Culture Hold | 다중 천체 Organic |
-| Grounded Transit | Engine | Grounding Hold | 다중 천체 Plasma |
+| Deep-Space Tempering | Engine | Conditioned Hold Profile + Cryogenic Hold Module | 다중 천체 Metal |
+| Bio-Ark Freight | Engine | Conditioned Hold Profile + Bio-Culture Hold Module | 다중 천체 Organic |
+| Grounded Transit | Engine | Conditioned Hold Profile + Grounding Hold Module | 다중 천체 Plasma |
 
 Offer는 고립된 해금이 아니라 Package다. 예를 들어 Central Convergence는 Landing Charge 적용 Recipe, 유효 Trigger, Raw 수입을 가능하게 하는 Cargo Module, 최종 Payoff를 함께 제공한다.
+
+### 6.1 Imprinter 운용 예시
+
+Tag Imprinter와 Fuel Imprinter는 설치 인스턴스마다 현재 Recipe를 하나 선택한다.
+
+~~~text
+Technology 시작
+Tag Imprinter A: Crosslink 사용 가능
+Fuel Imprinter B: 사용 가능한 Recipe 없음, Package 대기
+
+State Resonator 선택 후
+Tag Imprinter A: Crosslink <-> Overtone 전환 가능
+
+Full-House Matrix 선택 후
+Fuel Imprinter B: Twin Seal 선택 가능
+~~~
+
+전환은 설비가 가공 중이 아니고 Processing Inventory가 비어 있을 때만 가능하다. 선택한 Package가 생산 중인 카드의 결과를 소급해서 바꾸지 않으며, 잠긴 Recipe는 입력을 소비하기 전에 차단된다.
 
 ## 7. 배치 A: 분산형 카드 생산
 
@@ -281,11 +347,11 @@ Offer는 고립된 해금이 아니라 Package다. 예를 들어 Central Converg
 
 | 카드 | 합연산 과정 | 완성 Current Energy |
 |---|---|---:|
-| Helios Iron R2 | `5 -> Forge +4 = 9 -> Cryo +(3+5 Tempered+5 Overtone) = 22 -> Forge +4 = 26 -> Cryo +(3+5) = 34` | 34 |
+| Helios Iron R2 | `5 -> Forge +4 = 9 -> Cryo +(3+5 Tempered+5 Overtone) = 22 -> Anneal = 22 -> Forge +4 = 26 -> Cryo +(3+5) = 34` | 34 |
 | Echo Quartz B2 | `4 -> Mill +3 = 7 -> Mill +(3+4 Resonant+5 Overtone) = 19 -> Mill +(3+4) = 26 -> Shifter +2 = 28 -> Shifter +(2+4) = 34 -> Shifter +(2+4) = 40` | 40 |
-| Verdant Spore G4 | `3 -> Growth +5 Overtone = 8 -> Loom +(3+6 Matured) = 17 -> Growth = 17 -> Loom +(3+6) = 26 -> Growth = 26 -> Press +(4+6) = 36` | 36 |
+| Verdant Spore G4 | `3 -> Growth +5 Overtone = 8 -> Loom +(2+6 Matured) = 16 -> Growth = 16 -> Loom +(2+6) = 24 -> Growth = 24 -> Press +(5+6) = 35` | 35 |
 | Aurora Plasma Y4 | `6 -> Amplifier +(4+5 Overtone) = 15 -> Amplifier +(4+5 Energized) = 24 -> Ground +1 = 25 -> Amplifier +4 = 29 -> Amplifier +(4+5) = 38 -> Ground +1 = 39` | 39 |
-| Null Pearl R4 | `2 -> Sink에서 실제 -2, 이후 Overtone +5 = 5 -> Echo +(4+4) = 13 -> Sink -3 = 10 -> Echo +(4+6) = 20 -> Sink -3 = 17 -> Echo +(4+6) = 27` | 27 |
+| Null Pearl R4 | `2 -> Sink에서 실제 -2, 이후 Overtone +5 = 5 -> Echo +(5+4) = 14 -> Sink -3 = 11 -> Echo +(5+6) = 22 -> Sink -3 = 19 -> Echo +(5+6) = 30` | 30 |
 
 첫 Void 희생은 Overtone 판정 전에 자원이 Energy 2만 가지고 있었으므로 3이 아니라 2를 기록한다.
 
@@ -295,25 +361,26 @@ Offer는 고립된 해금이 아니라 Package다. 예를 들어 Central Converg
 
 | 천체 Line | Load 계산 | Demand | 무료 Capacity | Service Core |
 |---|---|---:|---:|---:|
-| Cinder Metal | `Extractor 2 + Tag 1 + Forge 2개 6 + Cryo Press 2개 6 + Fuel Imprinter 1` | 16 | 30 | 0 |
+| Cinder Metal | `Extractor 2 + Tag 1 + Forge 2개 6 + Cryo Press 2개 6 + Anneal 2 + Fuel Imprinter 1` | 18 | 30 | 0 |
 | Prism Crystal | `Extractor 2 + Tag 1 + Mill 3개 6 + Shifter 3개 6 + Fuel Imprinter 1` | 16 | 30 | 0 |
-| Viridia Organic | `Extractor 2 + Tag 1 + Vat 3개 6 + Loom 2개 4 + Press 3 + Fuel Imprinter 1` | 17 | 30 | 0 |
-| Tempest Plasma | `Extractor 2 + Tag 1 + Amplifier 4개 16 + Coil 2개 4 + Fuel Imprinter 1` | 24 | 30 | 0 |
-| Nadir Void | `Extractor 2 + Tag 1 + Sink 3개 6 + Chamber 3개 9 + Fuel Imprinter 1` | 19 | 30 | 0 |
+| Viridia Organic | `Extractor 2 + Tag 1 + Vat 3개 3 + Loom 2개 4 + Press 1 + Fuel Imprinter 1` | 12 | 30 | 0 |
+| Tempest Plasma | `Extractor 2 + Tag 1 + Amplifier 4개 20 + Coil 2개 2 + Fuel Imprinter 1` | 26 | 30 | 0 |
+| Nadir Void | `Extractor 2 + Tag 1 + Sink 3개 3 + Chamber 3개 9 + Fuel Imprinter 1` | 16 | 30 | 0 |
 | Concord 조립 | `Supply Fabricator 4 + 항성 연료 제작기 6` | 10 | 30 | 0 |
 
-Concord에는 Card Courier Route 5개가 들어온다. 전체 Fleet Load가 10이므로 무료 Fleet Capacity 8에 보급 중인 Fleet Berth 하나를 추가해 16으로 확장한다. 각 산지 Hub는 Load 2 Route 하나만 담당한다.
+Concord에는 Card Courier Route 5개가 들어온다. 다섯 편이 Unload 후 동시에 빈 배로 귀환하면 Concord의 출발 Fleet Load가 최대 10이 되므로, 무료 Fleet Capacity 8에 보급 중인 Fleet Berth 하나를 추가해 16으로 확장한다. 각 산지 Hub는 카드 출발 시 Load 2 Route 하나만 담당한다. Berth가 끊겨도 카드는 사라지지 않고 일부 빈 배 귀환만 Ticket 순서로 대기한다.
 
 ### 7.4 상세 Network 그림
 
 ```mermaid
 flowchart TB
-    subgraph Cinder["Cinder - Metal - Load 16 / Capacity 30"]
+    subgraph Cinder["Cinder - Metal - Load 18 / Capacity 30"]
         direction LR
         M0["Helios Iron<br/>R2 / Seed 5"] --> M1["Overtone"]
         M1 --> M2["Forge<br/>5 -> 9"]
         M2 --> M3["Cryo Press<br/>9 -> 22"]
-        M3 --> M4["Forge<br/>22 -> 26"]
+        M3 --> MA["Anneal<br/>Work Strain 0"]
+        MA --> M4["Forge<br/>22 -> 26"]
         M4 --> M5["Cryo Press<br/>26 -> 34<br/>Twin Seal"]
     end
 
@@ -324,31 +391,31 @@ flowchart TB
         C2 --> C3["Shifter 3연속<br/>26 -> 40<br/>Twin Seal"]
     end
 
-    subgraph Viridia["Viridia - Organic - Load 17 / Capacity 30"]
+    subgraph Viridia["Viridia - Organic - Load 12 / Capacity 30"]
         direction LR
         O0["Verdant Spore<br/>G4 / Seed 3"] --> O1["Overtone"]
-        O1 --> O2["Growth와 가공<br/>3 Cycle<br/>3 -> 36<br/>Twin Seal"]
+        O1 --> O2["Growth와 가공<br/>3 Cycle<br/>3 -> 35<br/>Twin Seal"]
     end
 
-    subgraph Tempest["Tempest - Plasma - Load 24 / Capacity 30"]
+    subgraph Tempest["Tempest - Plasma - Load 26 / Capacity 30"]
         direction LR
         P0["Aurora Plasma<br/>Y4 / Seed 6"] --> P1["Overtone"]
         P1 --> P2["Amp, Amp, Ground<br/>2 Burst<br/>6 -> 39<br/>Convergence Seal"]
     end
 
-    subgraph Nadir["Nadir - Void - Load 19 / Capacity 30"]
+    subgraph Nadir["Nadir - Void - Load 16 / Capacity 30"]
         direction LR
         V0["Null Pearl<br/>R4 / Seed 2"] --> V1["Overtone"]
-        V1 --> V2["Sacrifice와 Echo<br/>3 Cycle<br/>2 -> 27<br/>Prismatic Catalyst"]
+        V1 --> V2["Sacrifice와 Echo<br/>3 Cycle<br/>2 -> 30<br/>Prismatic Catalyst"]
     end
 
     subgraph Concord["Concord - 조립 및 발사"]
         H["수입 Hub와 Manifest Router"]
         H --> S1["연료 Slot 1: R2 / E34"]
         H --> S2["연료 Slot 2: B2 / E40"]
-        H --> S3["연료 Slot 3: G4 / E36"]
+        H --> S3["연료 Slot 3: G4 / E35"]
         H --> S4["연료 Slot 4: Y4 / E39"]
-        H --> S5["연료 Slot 5: R4 / E27"]
+        H --> S5["연료 Slot 5: R4 / E30"]
         S1 --> F["항성 연료 제작기"]
         S2 --> F
         S3 --> F
@@ -356,7 +423,7 @@ flowchart TB
         S5 --> F
         IS["Supply Fabricator"] -.->|"Industrial Supply"| FB["Fleet Berth"]
         FB -.->|"Fleet Capacity 8 -> 16"| H
-        F --> R["Full House + Prismatic<br/>연료 Energy 1180"]
+        F --> R["Full House + Prismatic<br/>연료 Energy 1190"]
         R --> L["Star Fuel Missile"]
     end
 
@@ -370,22 +437,22 @@ flowchart TB
 ### 7.5 최종 연료 계산
 
 ~~~text
-입력 Energy 합 = 34 + 40 + 36 + 39 + 27
-                = 176
+입력 Energy 합 = 34 + 40 + 35 + 39 + 30
+                = 178
 
-B = 입력 Energy 176
+B = 입력 Energy 178
   + Full House B 30
   + Twin Seal 3개 18
   + Convergence Seal 12
-  = 236
+  = 238
 
 C = 기본값 1
   + Full House C 3
   + Prismatic Catalyst 1
   = 5
 
-항성 연료 Energy = 0 + 236 * 5
-                  = 1,180
+항성 연료 Energy = 0 + 238 * 5
+                  = 1,190
 ~~~
 
 이 배치는 여러 천체의 무료 Capacity를 이용하는 것이 주된 장점이다. 대신 카드 Route 5개의 동기화가 필요하고 여러 천체에 장애 지점이 분산된다.
@@ -404,11 +471,11 @@ C = 기본값 1
 
 | Origin Route | Concord District |
 |---|---|
-| Cinder `Helios Iron R2 / E5` -> Bulk Raw Hold | Landing Charge -> Forge -> Cryo -> Forge -> Cryo -> Foundry Card `E34` |
+| Cinder `Helios Iron R2 / E5` -> Bulk Raw Hold | Landing Charge -> Forge -> Cryo -> Anneal -> Forge -> Cryo -> Foundry Card `E34` |
 | Prism `Echo Quartz B2 / E4` -> Bulk Raw Hold | Landing Charge -> Mill x3 -> Shifter x3 -> Foundry Card `E40` |
-| Viridia `Verdant Spore G4 / E3` -> Bulk Raw Hold | Landing Charge -> Growth/Loom -> Growth/Loom -> Growth/Press -> Foundry Card `E36` |
+| Viridia `Verdant Spore G4 / E3` -> Bulk Raw Hold | Landing Charge -> Growth/Loom -> Growth/Loom -> Growth/Press -> Foundry Card `E35` |
 | Tempest `Aurora Plasma Y4 / E6` -> Bulk Raw Hold | Landing Charge -> Amp/Amp/Ground x2 -> Foundry Card `E39` |
-| Nadir `Null Pearl R4 / E2` -> Bulk Raw Hold | Landing Charge -> Sink/Echo x3 -> Foundry Card `E27` |
+| Nadir `Null Pearl R4 / E2` -> Bulk Raw Hold | Landing Charge -> Sink/Echo x3 -> Foundry Card `E30` |
 
 Landing Charge가 카드마다 한 번 `+5`를 주어 분산형의 Overtone과 같은 총량을 만든다. Family 가공 순서와 완성 Current Energy는 같지만 작업 장소가 바뀐다.
 
@@ -418,20 +485,20 @@ Landing Charge가 카드마다 한 번 `+5`를 주어 분산형의 Overtone과 �
 
 | Concord District | Demand |
 |---|---:|
-| Metal 가공과 Imprinter 2종 | 14 |
+| Metal 가공, Anneal과 Imprinter 2종 | 16 |
 | Crystal 가공과 Imprinter 2종 | 14 |
-| Organic 가공과 Imprinter 2종 | 15 |
-| Plasma 가공과 Imprinter 2종 | 22 |
-| Void 가공과 Imprinter 2종 | 17 |
+| Organic 가공과 Imprinter 2종 | 10 |
+| Plasma 가공과 Imprinter 2종 | 24 |
+| Void 가공과 Imprinter 2종 | 14 |
 | 항성 연료 제작기 | 6 |
 | Supply Fabricator 3개 | 12 |
-| 합계 | 100 |
+| 합계 | 96 |
 
 Service Core 4개가 제공하는 Capacity:
 
 ~~~text
 사용 가능 Capacity = 30 + 4 * 18 = 102
-여유 Capacity = 102 - 100 = 2
+여유 Capacity = 102 - 96 = 6
 ~~~
 
 Core 4개는 30초당 Industrial Supply 4를 소비한다. Supply Fabricator 3개가 30초당 6을 생산하므로 Fleet Berth 소비량까지 감당할 수 있다.
@@ -440,11 +507,11 @@ Core가 3개뿐이라면:
 
 ~~~text
 사용 가능 Capacity = 84
-Demand = 100
-우선순위를 무시한 Speed Factor = 84 / 100 = 0.84
+Demand = 96
+우선순위를 무시한 Speed Factor = 84 / 96 = 0.875
 ~~~
 
-Network는 정지하지 않고 약 84% 속도로 계속 작동한다. 우선순위를 사용하면 Supply Fabricator와 항성 연료 제작기는 Critical 몫을 유지하고 선택적 가공 Loop가 더 많이 감속한다.
+Network는 정지하지 않고 약 87.5% 속도로 계속 작동한다. 우선순위를 사용하면 Supply Fabricator와 항성 연료 제작기는 Critical 몫을 유지하고 선택적 가공 Loop가 더 많이 감속한다.
 
 Bulk Raw Route 5개가 Concord에서 Fleet Load 15를 사용한다. Fleet Berth 하나가 Hub Capacity를 8에서 16으로 높인다.
 
@@ -458,11 +525,11 @@ flowchart LR
     P["Tempest<br/>Raw Y4 / E6"] -->|"Bulk Raw"| H
     V["Nadir<br/>Raw R4 / E2"] -->|"Bulk Raw"| H
 
-    H --> MD["Metal District<br/>Landing + Hot/Cold<br/>E34"]
+    H --> MD["Metal District<br/>Landing + Hot/Cold + Anneal<br/>E34"]
     H --> CD["Crystal District<br/>Landing + 3/3 Block<br/>E40"]
-    H --> OD["Organic District<br/>Landing + Growth Cycle<br/>E36"]
+    H --> OD["Organic District<br/>Landing + Growth Cycle<br/>E35"]
     H --> PD["Plasma District<br/>Landing + Burst<br/>E39"]
-    H --> VD["Void District<br/>Landing + Echo Cycle<br/>E27"]
+    H --> VD["Void District<br/>Landing + Echo Cycle<br/>E30"]
 
     MD --> W["Card Warehouse 5개"]
     CD --> W
@@ -472,7 +539,7 @@ flowchart LR
 
     SF["Supply Fabricator 3개"] --> SC["Service Core 4개<br/>Capacity 30 -> 102"]
     SC -.->|"Operational Capacity"| MD
-    W --> F["항성 연료 제작기<br/>Foundry Seal<br/>연료 Energy 1180"]
+    W --> F["항성 연료 제작기<br/>Foundry Seal<br/>연료 Energy 1190"]
     F --> L["Star Fuel Missile"]
 ```
 
@@ -481,9 +548,9 @@ flowchart LR
 Energy 합, 족보 보너스, Imprint B 보너스, Catalyst 보너스가 분산형과 같다.
 
 ~~~text
-B = 176 + 30 + 30 = 236
+B = 178 + 30 + 30 = 238
 C = 1 + 3 + 1 = 5
-항성 연료 Energy = 1,180
+항성 연료 Energy = 1,190
 ~~~
 
 중앙집중형은 관리가 간단하고 Buffer를 공유하며 Bulk Raw Cargo와 높은 처리량 상한을 얻는다. 그 대신 Service Core 4개, 지속적인 Industrial Supply Line, 하나의 큰 장애 범위를 감수한다.
@@ -499,7 +566,7 @@ C = 1 + 3 + 1 = 5
 - Full-House Matrix
 - Prismatic Focus
 
-모든 자원은 Origin에서 Pilgrim Charge를 받는다. 각 자원은 다른 천체에서 유효 가공을 적어도 한 번 완료한다. Conditioned Hold는 실제 가공 단계이며 Card Courier의 절반만 운반한다.
+모든 자원은 Origin에서 Pilgrim Charge를 받는다. 각 자원은 다른 천체에서 유효 가공을 적어도 한 번 완료한다. Conditioned Hold는 실제 가공 단계이며 Card Courier의 1/3만 운반한다.
 
 ### 9.2 정확한 다중 천체 Line
 
@@ -516,6 +583,7 @@ Cinder -> Prism:
     +3 Cold +5 Tempered +6 Pilgrim = 23
 
 Prism:
+    -> Annealing Chamber: Energy 23, Work Strain 0
     -> Induction Forge: +4 = 27
 
 Prism -> Concord:
@@ -554,19 +622,19 @@ Viridia -> Concord:
     Neutral Shuttle
 
 Concord:
-    -> Enzyme Loom: +3 +6 Matured +6 Pilgrim = 18
+    -> Enzyme Loom: +2 +6 Matured +6 Pilgrim = 17
 
 Concord -> Viridia:
     Bio-Culture Hold: Growth Cycle
 
 Viridia:
-    -> Spore Press: +4 +6 Matured = 28
+    -> Spore Press: +5 +6 Matured = 28
 
 Viridia -> Concord:
     Bio-Culture Hold: Growth Cycle
 
 Concord:
-    -> Enzyme Loom: +3 +6 Matured = 37
+    -> Enzyme Loom: +2 +6 Matured = 36
 ~~~
 
 #### Aurora Plasma Y4
@@ -600,11 +668,11 @@ Nadir -> Concord:
     Neutral Shuttle
 
 Concord:
-    -> Echo Chamber: +4 +4 Echo +6 Pilgrim = 14
-    -> Null Sink: -3 = 11
-    -> Echo Chamber: +4 +6 Echo = 21
-    -> Null Sink: -3 = 18
-    -> Echo Chamber: +4 +6 Echo = 28
+    -> Echo Chamber: +5 +4 Echo +6 Pilgrim = 15
+    -> Null Sink: -3 = 12
+    -> Echo Chamber: +5 +6 Echo = 23
+    -> Null Sink: -3 = 20
+    -> Echo Chamber: +5 +6 Echo = 31
 ~~~
 
 완성 Energy:
@@ -613,10 +681,10 @@ Concord:
 |---|---:|
 | Helios Iron R2 | 35 |
 | Echo Quartz B2 | 41 |
-| Verdant Spore G4 | 37 |
+| Verdant Spore G4 | 36 |
 | Aurora Plasma Y4 | 40 |
-| Null Pearl R4 | 28 |
-| 합계 | 181 |
+| Null Pearl R4 | 31 |
+| 합계 | 183 |
 
 카드 3장은 Twin Seal, 1장은 Pilgrim Seal, 1장은 Prismatic Catalyst를 받는다.
 
@@ -624,18 +692,18 @@ Concord:
 
 ```mermaid
 flowchart TB
-    M0["Cinder Metal<br/>Seed 5 -> Hot 9"] -->|"Cryogenic Hold"| M1["Prism<br/>Cold + Pilgrim 23<br/>Hot 27"]
+    M0["Cinder Metal<br/>Seed 5 -> Hot 9"] -->|"Cryogenic Hold"| M1["Prism<br/>Cold + Pilgrim 23<br/>Anneal + Hot 27"]
     M1 -->|"Cryogenic Hold"| MC["Concord R2 / E35"]
 
     C0["Prism Crystal<br/>Seed 4 -> Mill Block 21"] -->|"Neutral Shuttle"| CC["Concord<br/>Shifter Block + Pilgrim<br/>B2 / E41"]
 
-    O0["Viridia Organic<br/>Seed 3 -> Growth"] -->|"Neutral Shuttle"| O1["Concord<br/>Loom + Pilgrim / E18"]
+    O0["Viridia Organic<br/>Seed 3 -> Growth"] -->|"Neutral Shuttle"| O1["Concord<br/>Loom + Pilgrim / E17"]
     O1 -->|"Bio-Culture Hold"| O2["Viridia<br/>Press / E28"]
-    O2 -->|"Bio-Culture Hold"| OC["Concord<br/>Loom / G4 / E37"]
+    O2 -->|"Bio-Culture Hold"| OC["Concord<br/>Loom / G4 / E36"]
 
     P0["Tempest Plasma<br/>Seed 6 -> Amp Burst 19"] -->|"Grounding Hold"| PC["Concord<br/>Ground + Pilgrim<br/>Amp Burst와 Ground<br/>Y4 / E40"]
 
-    V0["Nadir Void<br/>Seed 2 -> Sacrifice 0"] -->|"Neutral Shuttle"| VC["Concord<br/>Echo + Pilgrim<br/>추가 Cycle 2회<br/>R4 / E28"]
+    V0["Nadir Void<br/>Seed 2 -> Sacrifice 0"] -->|"Neutral Shuttle"| VC["Concord<br/>Echo + Pilgrim<br/>추가 Cycle 2회<br/>R4 / E31"]
 
     MC --> F["항성 연료 제작기"]
     CC --> F
@@ -643,13 +711,13 @@ flowchart TB
     PC --> F
     VC --> F
     SC["Service Core 1개<br/>Capacity 30 -> 48"] -.->|"마무리 District 지원"| F
-    F --> OUT["Pilgrim Full House<br/>연료 Energy 1205"]
+    F --> OUT["Pilgrim Full House<br/>연료 Energy 1215"]
     OUT --> L["Star Fuel Missile"]
 ```
 
 ### 9.4 Capacity와 Route 검사
 
-Concord의 마무리 District와 항성 연료 제작기는 최대 Demand 44를 사용한다. Supply Fabricator 하나가 4를 추가하여 총 48이 된다. Service Core 하나가 Capacity를 30에서 48로 높인다.
+Concord의 마무리 District와 항성 연료 제작기는 최대 Demand 43을 사용한다. Supply Fabricator 하나가 4를 추가하여 총 47이 된다. Service Core 하나가 Capacity를 30에서 48로 높인다.
 
 카드 5개는 연료 Batch 하나당 천체 간 Route 구간 8개를 사용한다.
 
@@ -669,22 +737,22 @@ Concord의 활성 Route 종점은 Fleet Load 18을 예약한다. Fleet Berth 두
 ### 9.5 최종 연료 계산
 
 ~~~text
-입력 Energy 합 = 35 + 41 + 37 + 40 + 28
-                = 181
+입력 Energy 합 = 35 + 41 + 36 + 40 + 31
+                = 183
 
-B = 입력 Energy 181
+B = 입력 Energy 183
   + Full House B 30
   + Twin Seal 3개 18
   + Pilgrim Seal 12
-  = 241
+  = 243
 
 C = 기본값 1
   + Full House C 3
   + Prismatic Catalyst 1
   = 5
 
-항성 연료 Energy = 0 + 241 * 5
-                  = 1,205
+항성 연료 Energy = 0 + 243 * 5
+                  = 1,215
 ~~~
 
 Pilgrim Charge는 각 카드에 Overtone 또는 Landing Charge보다 Energy 1을 더 준다. 최종 곱연산 이후 연료 Energy가 총 25 높아진다. 이 Premium은 Route 구간 3개 추가, 더 작은 Conditioned Hold, 긴 지연, 높은 Schedule 복잡도의 대가다.
@@ -693,7 +761,7 @@ Pilgrim Charge는 각 카드에 Overtone 또는 Landing Charge보다 Energy 1을
 
 | 항목 | 분산형 카드 생산 | 중앙집중형 공장 | 순차형 Circuit |
 |---|---|---|---|
-| 최종 연료 Energy | 1,180 | 1,180 | 1,205 |
+| 최종 연료 Energy | 1,190 | 1,190 | 1,215 |
 | 주 Process Tag | Overtone | Landing Charge | Pilgrim Charge |
 | Topology Seal | Convergence | Foundry | Pilgrim |
 | 주 조립 천체의 Service Core | 0 | 4 | 1 |
@@ -738,6 +806,39 @@ Pilgrim Charge는 각 카드에 Overtone 또는 Landing Charge보다 Energy 1을
 7. Twin Seal 3개 + Topology Seal 1개 + Catalyst 1개가 실제 선택인가, 자동으로 풀리는 정답인가?
 8. Conditioned Hold가 이동에 붙은 무료 보너스가 아니라 보이는 Line 단계처럼 느껴지는가?
 9. 항성 연료 제작기의 10초 Cycle이 의도한 전역 Bottleneck이 되는가, 아니면 상류 차이를 가려버리는가?
-10. 전역 UI가 지역 지도 5개를 열지 않고도 `176 -> B236 -> C5 -> 1,180` 계산을 설명할 수 있는가?
+10. 전역 UI가 지역 지도 5개를 열지 않고도 `178 -> B238 -> C5 -> 1,190` 계산을 설명할 수 있는가?
+11. 짧은 Route의 Conditioned Hold 반복이 Refinement Resistance를 우회하는 최적해가 되지 않는가?
+12. 한 천체에 64개가 넘는 Facility가 있을 때 모든 Line이 공정하게 Tick을 받는가?
 
 세 배치를 결정적인 Spreadsheet 또는 Headless Simulation에서 재현할 수 있게 된 뒤 수치를 조정한다.
+
+## 13. 구현 검증 상태
+
+기능 계약 측면에서 다음 질문은 구현으로 닫혔다.
+
+- 64개 초과 Facility는 안정적인 Round-robin Scheduler로 모두 진행한다.
+- Conditioned Hold는 `6/8/4초` 기본 체류와 Refinement Resistance를 사용하며 체류 중 Fleet 예약을 유지한다.
+- 실제 V2 Resource/Facility/Structure/Deposit Asset이 존재하고 PlayerController 건설 목록에 21개 Facility가 노출된다.
+- Helios Iron 채굴 결과와 authored Forge/Press/Fabricator를 잇는 Full House Vertical Slice가 자동화 테스트를 통과한다.
+- 진행 중 Facility와 Conditioned Route는 Save/Load 후 입력, Recipe, Priority, Clock Snapshot과 진행도를 보존한다.
+
+5장 Batch 예약과 오염 알림은 Phase 19에서 구현했다. 정상 1~4장은 수집 중으로 표시되고, 완성 Batch는 족보·B/C·최종 Energy를 소비 전에 보여 주며, 잘못된 입력은 비파괴적으로 거부한다. 세부 계약은 [StellarFuelBatchSafetyImplementation.md](StellarFuelBatchSafetyImplementation.md)를 따른다.
+
+여전히 질문으로 남는 항목은 수치 체감과 최종 조작 UX다. 특히 세 Topology의 실제 분당 연료량, 행성별 Deposit 분산, Structure 고유 외형, 수동 PIE 배선·회수 조작감은 플레이테스트로 판단한다.
+
+## 14. 유한 광맥을 적용한 기준선
+
+Card 5종의 광맥 하나는 각각 120개다. 따라서 기본 Full House Line 한 개는 120 Batch, 20분의 제작 시간을 가진다.
+
+~~~text
+05:30 첫 기본 연료 도착
+25:20 마지막 기본 연료 도착
+26:47 기본 Line만 유지하면 패배
+
+25:00 추가 광맥 세트의 최적화 Line 시작
+25:39 승리
+~~~
+
+이 수치는 한 광맥 세트가 학습과 회복을 보장하되, 기본 Line을 복제하거나 효율을 높이지 않고 영구 생존시키지 않는 기준이다. 일찍 Fuel Imprint 최적화를 완성한 플레이어는 같은 자원으로 더 멀리 갈 수 있으며, 늦은 플레이어는 다음 광맥과 천체 간 공급망으로 복구할 수 있다.
+
+자세한 Reserve 계산, UI와 Telemetry 계약은 [FiniteResourceEconomyBalanceImplementation.md](FiniteResourceEconomyBalanceImplementation.md)를 따른다.

@@ -1,5 +1,6 @@
 #include "SRFacilityDirectInventoryRouter.h"
 
+#include "SRFacilityInputAcceptancePolicy.h"
 #include "SRFacilityResourceOperations.h"
 #include "SRFacilityPortInventoryBuilder.h"
 
@@ -74,6 +75,10 @@ bool FSRFacilityDirectInventoryRouter::TryAddInputResource(
 	FSRFacilityInventoryTransferResult* OutTransferResult)
 {
 	ResetTransferResult(OutTransferResult);
+	if (!FSRFacilityInputAcceptancePolicy::CanAcceptResource(FacilityInstance, ResourceInstance))
+	{
+		return false;
+	}
 
 	FSRFacilityPortInventory* InputPortInventory = FindInputPortInventoryForDirectAdd(FacilityInstance, ResourceInstance);
 	if (!InputPortInventory)
@@ -112,6 +117,10 @@ bool FSRFacilityDirectInventoryRouter::TryAddInputResourceToPort(
 	FSRFacilityInventoryTransferResult* OutTransferResult)
 {
 	ResetTransferResult(OutTransferResult);
+	if (!FSRFacilityInputAcceptancePolicy::CanAcceptResource(FacilityInstance, ResourceInstance))
+	{
+		return false;
+	}
 
 	FSRFacilityPortInventory* InputPortInventory = FacilityInstance.InputPortInventories.IsValidIndex(InputPortIndex)
 		? &FacilityInstance.InputPortInventories[InputPortIndex]

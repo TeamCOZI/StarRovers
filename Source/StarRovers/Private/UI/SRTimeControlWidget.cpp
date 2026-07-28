@@ -3,14 +3,17 @@
 #include "Blueprint/WidgetTree.h"
 #include "Camera/SRPlayerController.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
-#include "Celestial/SRStar.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/ProgressBar.h"
+#include "Components/ScaleBox.h"
+#include "Components/ScaleBoxSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/SizeBoxSlot.h"
 #include "Components/TextBlock.h"
@@ -18,10 +21,12 @@
 #include "Fonts/SlateFontInfo.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
-#include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Simulation/SRTimeControlSubsystem.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "Styling/SlateColor.h"
+#include "UI/SRStellarSurvivalPresentation.h"
+#include "UI/SRUIComponents.h"
+#include "UI/SRUITheme.h"
 #include "Utility/SRLog.h"
 
 namespace
@@ -563,41 +568,36 @@ namespace
 		}
 	}
 
-	bool TryGetPrimaryStarFuelState(const UWorld* World, FSRStellarFuelState& OutFuelState)
+	USRStatusBadgeWidget* AddSurvivalRailBadge(
+		UWidgetTree* WidgetTree,
+		UHorizontalBox* ParentHorizontalBox,
+		const FName WidgetName,
+		const FText& InitialText)
 	{
-		if (!World)
+		if (!WidgetTree || !ParentHorizontalBox)
 		{
-			return false;
+			return nullptr;
 		}
 
-		const USRCelestialBodyRegistrySubsystem* RegistrySubsystem = World->GetSubsystem<USRCelestialBodyRegistrySubsystem>();
-		if (!IsValid(RegistrySubsystem))
+		USRStatusBadgeWidget* Badge = WidgetTree->ConstructWidget<USRStatusBadgeWidget>(
+			USRStatusBadgeWidget::StaticClass(),
+			WidgetName);
+		if (!Badge)
 		{
-			return false;
+			return nullptr;
 		}
 
-		const ASRStar* PrimaryStar = Cast<ASRStar>(RegistrySubsystem->GetPrimaryStarActor());
-		if (!IsValid(PrimaryStar))
+		Badge->SetBadge(InitialText, ESRUIVisualState::Disabled);
+		if (UHorizontalBoxSlot* BadgeSlot = ParentHorizontalBox->AddChildToHorizontalBox(Badge))
 		{
-			return false;
+			BadgeSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			BadgeSlot->SetHorizontalAlignment(HAlign_Fill);
+			BadgeSlot->SetVerticalAlignment(VAlign_Center);
+			BadgeSlot->SetPadding(FMargin(2.0f, 0.0f));
 		}
-
-		OutFuelState = PrimaryStar->GetStellarFuelState();
-		return true;
+		return Badge;
 	}
 
-	FString FormatStarFuelAmount(double FuelAmount)
-	{
-		return FString::Printf(TEXT("%.0f"), FMath::Max(0.0, FuelAmount));
-	}
-
-	FString BuildStarFuelText(const FSRStellarFuelState& FuelState)
-	{
-		return FString::Printf(
-			TEXT("%s / %s"),
-			*FormatStarFuelAmount(FuelState.StoredFuel),
-			*FormatStarFuelAmount(FuelState.InitialStageFuel));
-	}
 }
 
 TSharedRef<SWidget> USRTimeControlWidget::RebuildWidget()
@@ -872,6 +872,63 @@ void USRTimeControlWidget::BuildTimeControlWidgetTree()
 			FuelSupplyProgressTextSlot->SetAlignment(FVector2D(0.0f, 0.0f));
 			FuelSupplyProgressTextSlot->SetOffsets(FMargin(0.0f));
 		}
+		FuelSupplyProgressTextSizeBox->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	StellarSurvivalRailScaleBox = WidgetTree->ConstructWidget<UScaleBox>(
+		UScaleBox::StaticClass(),
+		TEXT("StellarSurvivalRailScaleBox"));
+	StellarSurvivalRailHorizontalBox = WidgetTree->ConstructWidget<UHorizontalBox>(
+		UHorizontalBox::StaticClass(),
+		TEXT("StellarSurvivalRailHorizontalBox"));
+	if (StellarSurvivalRailScaleBox && StellarSurvivalRailHorizontalBox)
+	{
+		StellarSurvivalRailScaleBox->SetStretch(EStretch::ScaleToFit);
+		StellarSurvivalRailScaleBox->SetStretchDirection(EStretchDirection::DownOnly);
+		StellarSurvivalRailScaleBox->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		StellarSurvivalRailScaleBox->AddChild(StellarSurvivalRailHorizontalBox);
+		if (UScaleBoxSlot* RailContentSlot = Cast<UScaleBoxSlot>(StellarSurvivalRailHorizontalBox->Slot))
+		{
+			RailContentSlot->SetHorizontalAlignment(HAlign_Fill);
+			RailContentSlot->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UCanvasPanelSlot* RailSlot = FuelSupplyProgressContainer->AddChildToCanvas(StellarSurvivalRailScaleBox))
+		{
+			RailSlot->SetAnchors(FAnchors(0.0f, 0.02f, 1.0f, 0.70f));
+			RailSlot->SetAlignment(FVector2D::ZeroVector);
+			RailSlot->SetOffsets(FMargin(0.0f));
+		}
+
+		StellarSurvivalTimeBadge = AddSurvivalRailBadge(
+			WidgetTree,
+			StellarSurvivalRailHorizontalBox,
+			TEXT("StellarSurvivalTimeBadge"),
+			NSLOCTEXT("StarRoversSurvivalRail", "InitialSurvival", "별 대기"));
+		StellarObjectiveBadge = AddSurvivalRailBadge(
+			WidgetTree,
+			StellarSurvivalRailHorizontalBox,
+			TEXT("StellarObjectiveBadge"),
+			NSLOCTEXT("StarRoversSurvivalRail", "InitialObjective", "목표 --"));
+		StellarIncomeBadge = AddSurvivalRailBadge(
+			WidgetTree,
+			StellarSurvivalRailHorizontalBox,
+			TEXT("StellarIncomeBadge"),
+			NSLOCTEXT("StarRoversSurvivalRail", "InitialIncome", "유입 --"));
+		StellarConsumptionBadge = AddSurvivalRailBadge(
+			WidgetTree,
+			StellarSurvivalRailHorizontalBox,
+			TEXT("StellarConsumptionBadge"),
+			NSLOCTEXT("StarRoversSurvivalRail", "InitialConsumption", "소비 --"));
+		StellarNetBadge = AddSurvivalRailBadge(
+			WidgetTree,
+			StellarSurvivalRailHorizontalBox,
+			TEXT("StellarNetBadge"),
+			NSLOCTEXT("StarRoversSurvivalRail", "InitialNet", "수지 --"));
+		StellarInboundBadge = AddSurvivalRailBadge(
+			WidgetTree,
+			StellarSurvivalRailHorizontalBox,
+			TEXT("StellarInboundBadge"),
+			NSLOCTEXT("StarRoversSurvivalRail", "InitialInbound", "도착 --"));
 	}
 
 	CycleProgressContainer = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("CycleProgressContainer"));
@@ -1190,15 +1247,15 @@ void USRTimeControlWidget::RefreshProgressState()
 {
 	const USRTimeControlSubsystem* TimeControlSubsystem = GetTimeControlSubsystem();
 	const bool bHasTimeControlSubsystem = IsValid(TimeControlSubsystem);
-	FSRStellarFuelState PrimaryStarFuelState;
-	const bool bHasPrimaryStarFuelState = TryGetPrimaryStarFuelState(GetWorld(), PrimaryStarFuelState);
-	const double MaxStarFuel = bHasPrimaryStarFuelState ? FMath::Max(0.0, PrimaryStarFuelState.InitialStageFuel) : 0.0;
-	const float FuelSupplyProgressRatio = MaxStarFuel > UE_DOUBLE_SMALL_NUMBER
-		? FMath::Clamp(static_cast<float>(PrimaryStarFuelState.StoredFuel / MaxStarFuel), 0.0f, 1.0f)
-		: 0.0f;
-	const FString FuelSupplyTextString = bHasPrimaryStarFuelState
-		? BuildStarFuelText(PrimaryStarFuelState)
-		: FString(TEXT("0 / 0"));
+	FSRStellarSurvivalSnapshot SurvivalSnapshot;
+	FSRStellarSurvivalPresentationBuilder::TryBuildWorldSnapshot(GetWorld(), SurvivalSnapshot);
+	const FSRStellarSurvivalPresentation SurvivalPresentation =
+		FSRStellarSurvivalPresentationBuilder::BuildPresentation(SurvivalSnapshot);
+	const float FuelSupplyProgressRatio = SurvivalSnapshot.FuelProgressRatio;
+	const FString FuelSupplyTextString = FString::Printf(
+		TEXT("%.0f / %.0f"),
+		SurvivalSnapshot.StoredFuel,
+		SurvivalSnapshot.ReferenceFuelCapacity);
 	const float CycleProgressRatio = bHasTimeControlSubsystem ? TimeControlSubsystem->GetCycleProgressRatio() : 0.0f;
 	const int32 CurrentCycleIndex = bHasTimeControlSubsystem ? TimeControlSubsystem->GetCurrentCycleIndex() : 0;
 
@@ -1207,11 +1264,57 @@ void USRTimeControlWidget::RefreshProgressState()
 		FuelSupplyProgressBar->SetPercent(FuelSupplyProgressRatio);
 		LastFuelSupplyProgressRatio = FuelSupplyProgressRatio;
 	}
+	if (FuelSupplyProgressBar)
+	{
+		FuelSupplyProgressBar->SetFillColorAndOpacity(
+			USRUIThemeLibrary::ResolveStatePalette(SurvivalPresentation.SurvivalVisualState).AccentColor);
+		FuelSupplyProgressBar->SetToolTipText(SurvivalPresentation.DetailToolTipText);
+	}
 
 	if (FuelSupplyProgressTextBlock && LastFuelSupplyTextString != FuelSupplyTextString)
 	{
 		FuelSupplyProgressTextBlock->SetText(FText::FromString(FuelSupplyTextString));
 		LastFuelSupplyTextString = FuelSupplyTextString;
+	}
+	if (StellarSurvivalTimeBadge)
+	{
+		StellarSurvivalTimeBadge->SetBadge(
+			SurvivalPresentation.SurvivalText,
+			SurvivalPresentation.SurvivalVisualState);
+	}
+	if (StellarObjectiveBadge)
+	{
+		StellarObjectiveBadge->SetBadge(
+			SurvivalPresentation.ObjectiveText,
+			SurvivalPresentation.ObjectiveVisualState);
+	}
+	if (StellarIncomeBadge)
+	{
+		StellarIncomeBadge->SetBadge(
+			SurvivalPresentation.IncomeText,
+			SurvivalPresentation.IncomeVisualState);
+	}
+	if (StellarConsumptionBadge)
+	{
+		StellarConsumptionBadge->SetBadge(
+			SurvivalPresentation.ConsumptionText,
+			SurvivalPresentation.ConsumptionVisualState);
+	}
+	if (StellarNetBadge)
+	{
+		StellarNetBadge->SetBadge(
+			SurvivalPresentation.NetText,
+			SurvivalPresentation.NetVisualState);
+	}
+	if (StellarInboundBadge)
+	{
+		StellarInboundBadge->SetBadge(
+			SurvivalPresentation.InboundText,
+			SurvivalPresentation.InboundVisualState);
+	}
+	if (StellarSurvivalRailScaleBox)
+	{
+		StellarSurvivalRailScaleBox->SetToolTipText(SurvivalPresentation.DetailToolTipText);
 	}
 
 	if (CycleProgressBar && !FMath::IsNearlyEqual(LastCycleProgressRatio, CycleProgressRatio, 0.0001f))
@@ -1220,9 +1323,14 @@ void USRTimeControlWidget::RefreshProgressState()
 		LastCycleProgressRatio = CycleProgressRatio;
 	}
 
-	if (CycleCountTextBlock && LastCycleIndex != CurrentCycleIndex)
+	const FString CycleSummaryTextString = SurvivalPresentation.CycleText.ToString();
+	if (CycleCountTextBlock && LastCycleSummaryTextString != CycleSummaryTextString)
 	{
-		CycleCountTextBlock->SetText(FText::FromString(FString::Printf(TEXT("%d\uC8FC\uAE30"), CurrentCycleIndex)));
+		CycleCountTextBlock->SetText(SurvivalPresentation.CycleText);
+		CycleCountTextBlock->SetColorAndOpacity(FSlateColor(
+			USRUIThemeLibrary::ResolveStatePalette(SurvivalPresentation.CycleVisualState).PrimaryTextColor));
+		CycleCountTextBlock->SetToolTipText(SurvivalPresentation.DetailToolTipText);
+		LastCycleSummaryTextString = CycleSummaryTextString;
 		LastCycleIndex = CurrentCycleIndex;
 	}
 }
@@ -1500,24 +1608,39 @@ void USRTimeControlWidget::SynchronizeTopBarLayout()
 		}
 	};
 
-	auto ApplyProgressBarLayout = [SafeProgressBarHeightRatio](UProgressBar* ProgressBar)
+	const float CompactProgressBarHeight = FMath::Clamp(
+		SafeProgressBarHeightRatio * 0.34f,
+		0.04f,
+		0.16f);
+	auto ApplyProgressBarLayout = [CompactProgressBarHeight](
+		UProgressBar* ProgressBar,
+		float BottomAnchor)
 	{
 		if (ProgressBar)
 		{
 			if (UCanvasPanelSlot* ProgressBarSlot = Cast<UCanvasPanelSlot>(ProgressBar->Slot))
 			{
-				const float ProgressBarTop = (1.0f - SafeProgressBarHeightRatio) * 0.5f;
-				const float ProgressBarBottom = ProgressBarTop + SafeProgressBarHeightRatio;
+				const float ProgressBarBottom = FMath::Clamp(BottomAnchor, 0.0f, 1.0f);
+				const float ProgressBarTop = FMath::Max(0.0f, ProgressBarBottom - CompactProgressBarHeight);
 				ProgressBarSlot->SetAnchors(FAnchors(0.0f, ProgressBarTop, 1.0f, ProgressBarBottom));
 				ProgressBarSlot->SetOffsets(FMargin(0.0f));
 			}
 		}
 	};
 
-	ApplyTopCenterContainerLayout(FuelSupplyProgressContainer, 0.0f, 0.5f);
-	ApplyTopCenterContainerLayout(CycleProgressContainer, 0.5f, 1.0f);
-	ApplyProgressBarLayout(FuelSupplyProgressBar);
-	ApplyProgressBarLayout(CycleProgressBar);
+	ApplyTopCenterContainerLayout(FuelSupplyProgressContainer, 0.0f, 1.0f);
+	ApplyTopCenterContainerLayout(CycleProgressContainer, 0.0f, 1.0f);
+	ApplyProgressBarLayout(FuelSupplyProgressBar, 0.84f);
+	ApplyProgressBarLayout(CycleProgressBar, 1.0f);
+
+	if (StellarSurvivalRailScaleBox)
+	{
+		if (UCanvasPanelSlot* RailSlot = Cast<UCanvasPanelSlot>(StellarSurvivalRailScaleBox->Slot))
+		{
+			RailSlot->SetAnchors(FAnchors(0.0f, 0.02f, 1.0f, 0.70f));
+			RailSlot->SetOffsets(FMargin(0.0f));
+		}
+	}
 
 	if (CycleCountTextSizeBox)
 	{
@@ -1539,7 +1662,7 @@ void USRTimeControlWidget::SynchronizeTopBarLayout()
 		}
 
 		FSlateFontInfo CycleCountFont = CycleCountTextBlock->GetFont();
-		CycleCountFont.Size = FMath::Max(10, FMath::RoundToInt(CycleCountHeight * 0.56f));
+		CycleCountFont.Size = FMath::Clamp(FMath::RoundToInt(CycleCountHeight * 0.42f), 10, 16);
 		CycleCountTextBlock->SetFont(CycleCountFont);
 	}
 

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Automation/SRFacilityNetworkRuntimeState.h"
+#include "Automation/SRFacilityNetworkSaveData.h"
 #include "Automation/SRFacilityRuntimeData.h"
 #include "Components/SceneComponent.h"
 #include "SRFacilityNetworkComponent.generated.h"
@@ -9,6 +10,13 @@
 class USRPlanetSurfaceGrid;
 class USRResourceDataAsset;
 class USRStructureDataAsset;
+class USRFacilityNetworkComponent;
+
+DECLARE_MULTICAST_DELEGATE_ThreeParams(
+	FSRFacilityResourceProducedSignature,
+	USRFacilityNetworkComponent*,
+	FName,
+	const FSRResourceInstance&);
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
 class STARROVERS_API USRFacilityNetworkComponent : public USceneComponent
@@ -95,6 +103,31 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility")
 	bool SetFacilityProcessEnabled(FName OccupantId, bool bEnabled);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Operational Capacity")
+	bool SetFacilityOperationalPriority(FName OccupantId, ESROperationalPriorityV2 Priority);
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Operational Capacity")
+	FSROperationalCapacityReportV2 GetOperationalCapacityReport() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Operational Capacity")
+	FSROperationalFacilityStatusCountsV2 GetOperationalFacilityStatusCounts() const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Operational Capacity")
+	FSROperationalCapacityReportV2 RefreshOperationalCapacity();
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Resource V2 Recipe")
+	bool GetFacilityResourceV2RecipeState(
+		FName OccupantId,
+		FName& OutSelectedRecipeId,
+		TArray<FName>& OutAvailableRecipeIds,
+		FString& OutFailureReason) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Resource V2 Recipe")
+	bool SetFacilityResourceV2Recipe(FName OccupantId, FName RecipeId);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Resource V2 Recipe")
+	bool CycleFacilityResourceV2Recipe(FName OccupantId);
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility")
 	bool SetFacilityDeliverEnabled(FName OccupantId, bool bEnabled);
 
@@ -141,6 +174,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Debug")
 	void GetRegisteredFacilityOccupantIds(TArray<FName>& OutOccupantIds) const;
 
+	/** Native runtime signal used by Run milestones and read-only telemetry. */
+	FSRFacilityResourceProducedSignature& OnResourceProduced();
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
 	bool DebugAddInputResourceFromDataAsset(
 		FName OccupantId,
@@ -156,6 +192,36 @@ public:
 		int32 StackCount = 1);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
+	bool DebugAddResourceV2Card(
+		FName OccupantId,
+		FName ResourceId,
+		ESRResourceFamily Family,
+		double CurrentEnergy,
+		ESRResourceSpectrum Spectrum,
+		int32 Grade = 1,
+		int32 StackCount = 1);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
+	bool DebugAddReferenceResourceV2Card(
+		FName OccupantId,
+		ESRResourceContentPresetV2 ResourcePreset,
+		FName OriginBodyId = NAME_None,
+		int32 StackCount = 1);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
+	bool DebugAddReferenceResourceV2(
+		FName OccupantId,
+		ESRResourceContentPresetV2 ResourcePreset,
+		FName OriginBodyId = NAME_None,
+		int32 StackCount = 1);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
+	bool DebugAddReferenceStellarFuelBatchV2(
+		FName OccupantId,
+		ESRStellarFuelReferenceTopologyV2 Topology = ESRStellarFuelReferenceTopologyV2::DistributedConvergence,
+		FName FabricatorBodyId = NAME_None);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
 	bool DebugStepFacilities(float DeltaTime = 1.0f, int32 StepCount = 1);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
@@ -167,6 +233,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
 	int32 DebugApplyGameCyclesToResources(int32 CycleCount = 1);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Save")
+	void ExportSaveData(FSRFacilityNetworkSaveData& OutSaveData) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Save")
+	bool ImportSaveData(const FSRFacilityNetworkSaveData& SaveData);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -174,7 +246,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "bAutoProcessFacilities"))
 	bool bAutoProcessFacilities = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "MaxFacilitiesProcessedPerTick", ClampMin = "1"))
+	// Legacy property name retained for authored asset compatibility. This now
+	// caps expensive start/completion transitions; active clocks all advance.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility", meta = (DisplayName = "MaxFacilityTransitionsPerTick", ClampMin = "1", ToolTip = "Maximum facility start/completion transitions per tick. Active process clocks are not capped."))
 	int32 MaxFacilitiesProcessedPerTick = 64;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Facility|Debug", meta = (DisplayName = "bLogFacilityNetworkEvents"))
@@ -194,4 +268,6 @@ private:
 
 	UPROPERTY(Transient)
 	FSRFacilityNetworkRuntimeState RuntimeState;
+
+	FSRFacilityResourceProducedSignature ResourceProducedEvent;
 };

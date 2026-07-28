@@ -13,11 +13,16 @@ namespace
 	{
 		FacilityInstance.bProcessing = false;
 		FacilityInstance.ProcessProgressSeconds = 0.0f;
+		FSRFacilityProcessingRuleEvaluator::ClearProcessSecondsSnapshot(FacilityInstance);
 	}
 
 	void ResetMiningState(FSRFacilityInstance& FacilityInstance)
 	{
 		FacilityInstance.MiningTargetDepositOccupantId = NAME_None;
+		// Mining inventory is only a preview/reservation of the target Card.
+		// If a finite deposit is exhausted by another Miner, it must not survive
+		// as a phantom input after the target becomes invalid.
+		FacilityInstance.ProcessingInventory.Reset();
 		ResetMiningProgressState(FacilityInstance);
 	}
 }

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Automation/SRFacilityDataAsset.h"
 #include "Automation/SRFacilityRuntimeData.h"
+#include "Automation/SRResourceInstanceOperations.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 
 namespace StarRovers::FacilityResources
@@ -23,9 +24,27 @@ namespace StarRovers::FacilityResources
 
 	inline FString BuildResourceDebugString(const FSRResourceInstance& ResourceInstance)
 	{
+		const UEnum* ResourceClassEnum = StaticEnum<ESRResourceClass>();
+		const UEnum* ResourceFamilyEnum = StaticEnum<ESRResourceFamily>();
+		const UEnum* ResourceSpectrumEnum = StaticEnum<ESRResourceSpectrum>();
+		const UEnum* SlotLifecycleEnum = StaticEnum<ESRResourceSlotLifecycle>();
 		return FString::Printf(
-			TEXT("ResourceId=%s Energy=%.3f RemainingProcessLimit=%d ProcessCount=%d EnergyChangeCount=%d StackCount=%d Tags=%d"),
+			TEXT("ResourceId=%s Schema=%d Class=%s Family=%s CurrentEnergy=%.3f Seed=%s Spectrum=%s Grade=%d StateFlags=0x%X ProcessTag=%s/%s/%d Imprint=%s LegacyEnergy=%.3f RemainingProcessLimit=%d ProcessCount=%d EnergyChangeCount=%d StackCount=%d LegacyTags=%d"),
 			*ResourceInstance.ResourceId.ToString(),
+			ResourceInstance.ResourceSchemaVersion,
+			ResourceClassEnum ? *ResourceClassEnum->GetNameStringByValue(static_cast<int64>(ResourceInstance.ResourceClass)) : TEXT("Unknown"),
+			ResourceFamilyEnum ? *ResourceFamilyEnum->GetNameStringByValue(static_cast<int64>(ResourceInstance.Family)) : TEXT("None"),
+			ResourceInstance.CurrentEnergy,
+			ResourceInstance.bHasSeedEnergySnapshot
+				? *FString::Printf(TEXT("%.3f"), ResourceInstance.SeedEnergySnapshot)
+				: TEXT("Unset"),
+			ResourceSpectrumEnum ? *ResourceSpectrumEnum->GetNameStringByValue(static_cast<int64>(ResourceInstance.Spectrum)) : TEXT("None"),
+			ResourceInstance.Grade,
+			ResourceInstance.ActiveFamilyStateFlags,
+			*ResourceInstance.ProcessTagSlot.TagId.ToString(),
+			SlotLifecycleEnum ? *SlotLifecycleEnum->GetNameStringByValue(static_cast<int64>(ResourceInstance.ProcessTagSlot.Lifecycle)) : TEXT("Unknown"),
+			ResourceInstance.ProcessTagSlot.RemainingTriggers,
+			*ResourceInstance.FuelImprintSlot.ImprintId.ToString(),
 			ResourceInstance.EnergyValue,
 			ResourceInstance.RemainingProcessLimit,
 			ResourceInstance.ProcessCount,
@@ -96,11 +115,14 @@ namespace StarRovers::FacilityResources
 			&& Left.RemainingProcessLimit == Right.RemainingProcessLimit
 			&& Left.ProcessCount == Right.ProcessCount
 			&& Left.EnergyChangeCount == Right.EnergyChangeCount
-			&& AreResourceTagStacksEquivalent(Left.Tags, Right.Tags);
+			&& AreResourceTagStacksEquivalent(Left.Tags, Right.Tags)
+			&& StarRovers::Resources::AreResourceV2RuntimeFieldsEquivalent(Left, Right);
 	}
 
 	inline bool CanInventorySlotAcceptResource(const FSRFacilityPortInventory& PortInventory, const FSRResourceInstance& ResourceInstance)
 	{
+		FSRResourceInstance NormalizedResource = ResourceInstance;
+		StarRovers::Resources::UpgradeResourceInstanceToCurrentSchema(NormalizedResource);
 		const int32 ExistingStackCount = GetInventorySlotStackCount(PortInventory);
 		if (ExistingStackCount >= FMath::Max(1, PortInventory.Capacity))
 		{
@@ -112,13 +134,15 @@ namespace StarRovers::FacilityResources
 			return true;
 		}
 
-		return AreResourceInstancesStackEquivalent(PortInventory.Inventory[0], ResourceInstance);
+		return AreResourceInstancesStackEquivalent(PortInventory.Inventory[0], NormalizedResource);
 	}
 
 	inline int32 TryAddResourceToInventorySlot(FSRFacilityPortInventory& PortInventory, const FSRResourceInstance& ResourceInstance)
 	{
-		const int32 ResourceStackCount = GetResourceStackCount(ResourceInstance);
-		if (ResourceInstance.ResourceId.IsNone() || ResourceStackCount <= 0 || !CanInventorySlotAcceptResource(PortInventory, ResourceInstance))
+		FSRResourceInstance NormalizedResource = ResourceInstance;
+		StarRovers::Resources::UpgradeResourceInstanceToCurrentSchema(NormalizedResource);
+		const int32 ResourceStackCount = GetResourceStackCount(NormalizedResource);
+		if (NormalizedResource.ResourceId.IsNone() || ResourceStackCount <= 0 || !CanInventorySlotAcceptResource(PortInventory, NormalizedResource))
 		{
 			return 0;
 		}
@@ -133,7 +157,7 @@ namespace StarRovers::FacilityResources
 
 		if (ExistingStackCount <= 0 || PortInventory.Inventory.IsEmpty())
 		{
-			FSRResourceInstance StoredResource = ResourceInstance;
+			FSRResourceInstance StoredResource = NormalizedResource;
 			StoredResource.StackCount = AddedStackCount;
 			PortInventory.Inventory.Reset();
 			PortInventory.Inventory.Add(StoredResource);

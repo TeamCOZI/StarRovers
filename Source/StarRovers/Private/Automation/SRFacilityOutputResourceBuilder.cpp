@@ -1,6 +1,9 @@
 #include "SRFacilityOutputResourceBuilder.h"
 
 #include "Automation/SRFacilityDataAsset.h"
+#include "Automation/SRFacilityResourceV2Processor.h"
+#include "Automation/SROperationalEconomyProcessor.h"
+#include "Automation/SRStellarFuelFabricator.h"
 #include "SRFacilityEffectConditionEvaluator.h"
 #include "SRFacilityProcessContextResolver.h"
 #include "SRFacilityResourceOperations.h"
@@ -1212,6 +1215,11 @@ namespace
 			PreparedResource.Resource.EnergyChangeCount = FMath::Max(0, FormulaState.EnergyChangeCount);
 			PreparedResource.Resource.ProcessCount = FMath::Max(0, PreparedResource.Resource.ProcessCount)
 				+ FMath::Max(0, PreparedResource.CompletedProcessCountIncrement);
+			StarRovers::Resources::SynchronizeLegacyRuntimeStateToResourceV2(PreparedResource.Resource);
+		}
+		for (FSRResourceInstance& AdditionalOutput : AdditionalOutputs)
+		{
+			StarRovers::Resources::SynchronizeLegacyRuntimeStateToResourceV2(AdditionalOutput);
 		}
 
 		const int32 PrimaryOutputCount = bHasPrimaryResource
@@ -1237,6 +1245,111 @@ namespace
 			OutEnergyFormulaTexts->Append(AdditionalFormulaTexts);
 		}
 	}
+
+	void BuildResourceV2Output(
+		const FSRFacilityInstance& FacilityInstance,
+		const FSRResourceInstance& InputResource,
+		TArray<FSRResourceInstance>& OutOutputResources,
+		int32* OutPrimaryOutputCount,
+		FSRResourceInstance* OutBaselinePrimaryResource,
+		TArray<FString>* OutEnergyFormulaTexts,
+		FSRResourceProcessResult* OutResourceV2ProcessResult,
+		FName ProcessingBodyId)
+	{
+		if (OutBaselinePrimaryResource)
+		{
+			*OutBaselinePrimaryResource = InputResource;
+		}
+
+		const FSRFacilityResourceV2Evaluation Evaluation = FSRFacilityResourceV2Processor::Evaluate(
+			FacilityInstance,
+			InputResource,
+			ProcessingBodyId);
+		if (OutResourceV2ProcessResult)
+		{
+			*OutResourceV2ProcessResult = Evaluation.ResourceProcessResult;
+		}
+		if (!Evaluation.IsSuccess() || FacilityInstance.OutputPortInventories.IsEmpty())
+		{
+			return;
+		}
+
+		FSRResourceInstance OutputResource = Evaluation.ResourceProcessResult.OutputResource;
+		OutputResource.StackCount = 1;
+		OutOutputResources.Add(OutputResource);
+		if (OutPrimaryOutputCount)
+		{
+			*OutPrimaryOutputCount = 1;
+		}
+		if (OutEnergyFormulaTexts)
+		{
+			OutEnergyFormulaTexts->Add(FSRFacilityResourceV2Processor::BuildPreviewSummary(Evaluation));
+		}
+	}
+
+	void BuildStellarFuelV2Output(
+		const FSRFacilityInstance& FacilityInstance,
+		const TArray<FSRResourceInstance>& InputResources,
+		TArray<FSRResourceInstance>& OutOutputResources,
+		int32* OutPrimaryOutputCount,
+		TArray<FString>* OutEnergyFormulaTexts,
+		FSRStellarFuelFabricationResultV2* OutStellarFuelFabricationResult,
+		FName ProcessingBodyId)
+	{
+		const FSRStellarFuelFabricationResultV2 Evaluation = FSRStellarFuelFabricator::Evaluate(
+			FacilityInstance,
+			InputResources,
+			ProcessingBodyId);
+		if (OutStellarFuelFabricationResult)
+		{
+			*OutStellarFuelFabricationResult = Evaluation;
+		}
+		if (!Evaluation.IsSuccess() || FacilityInstance.OutputPortInventories.IsEmpty())
+		{
+			return;
+		}
+
+		OutOutputResources.Add(Evaluation.OutputFuel);
+		if (OutPrimaryOutputCount)
+		{
+			*OutPrimaryOutputCount = 1;
+		}
+		if (OutEnergyFormulaTexts)
+		{
+			OutEnergyFormulaTexts->Add(FSRStellarFuelFabricator::BuildPreviewSummary(Evaluation));
+		}
+	}
+
+	void BuildOperationalEconomyV2Output(
+		const FSRFacilityInstance& FacilityInstance,
+		const TArray<FSRResourceInstance>& InputResources,
+		TArray<FSRResourceInstance>& OutOutputResources,
+		int32* OutPrimaryOutputCount,
+		TArray<FString>* OutEnergyFormulaTexts)
+	{
+		const FSROperationalEconomyEvaluationV2 Evaluation =
+			FSROperationalEconomyProcessor::Evaluate(FacilityInstance, InputResources);
+		if (!Evaluation.IsSuccess())
+		{
+			return;
+		}
+
+		if (!Evaluation.OutputResources.IsEmpty()
+			&& FacilityInstance.OutputPortInventories.IsEmpty())
+		{
+			return;
+		}
+		OutOutputResources = Evaluation.OutputResources;
+		if (OutPrimaryOutputCount)
+		{
+			*OutPrimaryOutputCount = OutOutputResources.IsEmpty() ? 0 : 1;
+		}
+		if (OutEnergyFormulaTexts)
+		{
+			OutEnergyFormulaTexts->Add(
+				FSROperationalEconomyProcessor::BuildPreviewSummary(Evaluation));
+		}
+	}
 }
 
 bool FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(
@@ -1259,6 +1372,33 @@ bool FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(
 	if (InputResources.IsEmpty())
 	{
 		return false;
+	}
+	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Process
+		&& FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(FacilityDataAsset))
+	{
+		if (InputResources.Num() != 1)
+		{
+			return false;
+		}
+
+		FSRFacilityInstance PreviewFacility;
+		PreviewFacility.FacilityDataAsset = const_cast<USRFacilityDataAsset*>(FacilityDataAsset);
+		PreviewFacility.TemperatureState = TemperatureState;
+		return FSRFacilityResourceV2Processor::Evaluate(PreviewFacility, InputResources[0]).IsSuccess();
+	}
+	if (FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(FacilityDataAsset))
+	{
+		FSRFacilityInstance PreviewFacility;
+		PreviewFacility.FacilityDataAsset = const_cast<USRFacilityDataAsset*>(FacilityDataAsset);
+		PreviewFacility.TemperatureState = TemperatureState;
+		return FSRStellarFuelFabricator::Evaluate(PreviewFacility, InputResources).IsSuccess();
+	}
+	if (FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(FacilityDataAsset))
+	{
+		FSRFacilityInstance PreviewFacility;
+		PreviewFacility.FacilityDataAsset = const_cast<USRFacilityDataAsset*>(FacilityDataAsset);
+		PreviewFacility.TemperatureState = TemperatureState;
+		return FSROperationalEconomyProcessor::Evaluate(PreviewFacility, InputResources).IsSuccess();
 	}
 
 	const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
@@ -1284,6 +1424,19 @@ bool FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(
 int32 FSRFacilityOutputResourceBuilder::CountProducedOutputResources(
 	const USRFacilityDataAsset* FacilityDataAsset)
 {
+	if (FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(FacilityDataAsset))
+	{
+		return 0;
+	}
+	if (FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(FacilityDataAsset))
+	{
+		return 0;
+	}
+	if (FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(FacilityDataAsset))
+	{
+		return 0;
+	}
+
 	const int32 InputCount = IsValid(FacilityDataAsset)
 		? FMath::Max(0, FacilityDataAsset->InputInventory.SlotCount)
 		: 0;
@@ -1293,6 +1446,44 @@ int32 FSRFacilityOutputResourceBuilder::CountProducedOutputResources(
 int32 FSRFacilityOutputResourceBuilder::ResolvePrimaryOutputCount(
 	const FSRFacilityInstance& FacilityInstance)
 {
+	if (FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(
+		FacilityInstance.FacilityDataAsset.Get()))
+	{
+		FString DefinitionFailure;
+		return !FacilityInstance.OutputPortInventories.IsEmpty()
+			&& FSRFacilityResourceV2Processor::ValidateProcessDefinition(
+				FacilityInstance.FacilityDataAsset.Get(),
+				DefinitionFailure)
+			? 1
+			: 0;
+	}
+	if (FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(
+		FacilityInstance.FacilityDataAsset.Get()))
+	{
+		FString DefinitionFailure;
+		return !FacilityInstance.OutputPortInventories.IsEmpty()
+			&& FSRStellarFuelFabricator::ValidateFacilityDefinition(
+				FacilityInstance.FacilityDataAsset.Get(),
+				DefinitionFailure)
+			? 1
+			: 0;
+	}
+	if (FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(
+		FacilityInstance.FacilityDataAsset.Get()))
+	{
+		FString DefinitionFailure;
+		if (!FSROperationalEconomyProcessor::ValidateFacilityDefinition(
+			FacilityInstance.FacilityDataAsset.Get(),
+			DefinitionFailure))
+		{
+			return 0;
+		}
+		return FSROperationalEconomyProcessor::AllowsEmptyOutput(
+			FacilityInstance.FacilityDataAsset.Get())
+			? 0
+			: (!FacilityInstance.OutputPortInventories.IsEmpty() ? 1 : 0);
+	}
+
 	return IsValid(FacilityInstance.FacilityDataAsset.Get())
 		&& !FacilityInstance.OutputPortInventories.IsEmpty()
 		&& !RemovesPrimaryOutput(FacilityInstance.FacilityDataAsset.Get())
@@ -1303,6 +1494,22 @@ int32 FSRFacilityOutputResourceBuilder::ResolvePrimaryOutputCount(
 int32 FSRFacilityOutputResourceBuilder::ResolveRequiredOutputSlots(
 	const FSRFacilityInstance& FacilityInstance)
 {
+	if (FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(
+		FacilityInstance.FacilityDataAsset.Get()))
+	{
+		return ResolvePrimaryOutputCount(FacilityInstance);
+	}
+	if (FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(
+		FacilityInstance.FacilityDataAsset.Get()))
+	{
+		return ResolvePrimaryOutputCount(FacilityInstance);
+	}
+	if (FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(
+		FacilityInstance.FacilityDataAsset.Get()))
+	{
+		return ResolvePrimaryOutputCount(FacilityInstance);
+	}
+
 	return ResolvePrimaryOutputCount(FacilityInstance)
 		+ CountAdditionalOutputs(
 			FacilityInstance.FacilityDataAsset.Get(),
@@ -1312,6 +1519,23 @@ int32 FSRFacilityOutputResourceBuilder::ResolveRequiredOutputSlots(
 bool FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(
 	const FSRFacilityInstance& FacilityInstance)
 {
+	if (FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(
+		FacilityInstance.FacilityDataAsset.Get()))
+	{
+		return false;
+	}
+	if (FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(
+		FacilityInstance.FacilityDataAsset.Get()))
+	{
+		return false;
+	}
+	if (FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(
+		FacilityInstance.FacilityDataAsset.Get()))
+	{
+		return FSROperationalEconomyProcessor::AllowsEmptyOutput(
+			FacilityInstance.FacilityDataAsset.Get());
+	}
+
 	return RemovesPrimaryOutput(FacilityInstance.FacilityDataAsset.Get())
 		&& CountAdditionalOutputs(
 			FacilityInstance.FacilityDataAsset.Get(),
@@ -1324,7 +1548,10 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 	TArray<FSRResourceInstance>& OutOutputResources,
 	int32* OutPrimaryOutputCount,
 	FSRResourceInstance* OutBaselinePrimaryResource,
-	TArray<FString>* OutEnergyFormulaTexts)
+	TArray<FString>* OutEnergyFormulaTexts,
+	FSRResourceProcessResult* OutResourceV2ProcessResult,
+	FSRStellarFuelFabricationResultV2* OutStellarFuelFabricationResult,
+	FName ProcessingBodyId)
 {
 	OutOutputResources.Reset();
 	if (OutPrimaryOutputCount)
@@ -1339,10 +1566,54 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResources(
 	{
 		OutEnergyFormulaTexts->Reset();
 	}
+	if (OutResourceV2ProcessResult)
+	{
+		*OutResourceV2ProcessResult = FSRResourceProcessResult();
+	}
+	if (OutStellarFuelFabricationResult)
+	{
+		*OutStellarFuelFabricationResult = FSRStellarFuelFabricationResultV2();
+	}
 
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	if (!DoesInputSetMatchOperation(FacilityDataAsset, InputResources, FacilityInstance.TemperatureState))
 	{
+		return;
+	}
+	if (FSRStellarFuelFabricator::ShouldRouteThroughResourceV2(FacilityDataAsset))
+	{
+		BuildStellarFuelV2Output(
+			FacilityInstance,
+			InputResources,
+			OutOutputResources,
+			OutPrimaryOutputCount,
+			OutEnergyFormulaTexts,
+			OutStellarFuelFabricationResult,
+			ProcessingBodyId);
+		return;
+	}
+	if (FSROperationalEconomyProcessor::ShouldRouteThroughResourceV2(FacilityDataAsset))
+	{
+		BuildOperationalEconomyV2Output(
+			FacilityInstance,
+			InputResources,
+			OutOutputResources,
+			OutPrimaryOutputCount,
+			OutEnergyFormulaTexts);
+		return;
+	}
+	if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Process
+		&& FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(FacilityDataAsset))
+	{
+		BuildResourceV2Output(
+			FacilityInstance,
+			InputResources[0],
+			OutOutputResources,
+			OutPrimaryOutputCount,
+			OutBaselinePrimaryResource,
+			OutEnergyFormulaTexts,
+			OutResourceV2ProcessResult,
+			ProcessingBodyId);
 		return;
 	}
 
@@ -1372,7 +1643,9 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 	TArray<FSRResourceInstance>& OutOutputResources,
 	int32* OutPrimaryOutputCount,
 	FSRResourceInstance* OutBaselinePrimaryResource,
-	TArray<FString>* OutEnergyFormulaTexts)
+	TArray<FString>* OutEnergyFormulaTexts,
+	FSRResourceProcessResult* OutResourceV2ProcessResult,
+	FName ProcessingBodyId)
 {
 	OutOutputResources.Reset();
 	if (OutPrimaryOutputCount)
@@ -1387,8 +1660,27 @@ void FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 	{
 		OutEnergyFormulaTexts->Reset();
 	}
+	if (OutResourceV2ProcessResult)
+	{
+		*OutResourceV2ProcessResult = FSRResourceProcessResult();
+	}
 	if (!IsValid(FacilityInstance.FacilityDataAsset.Get()) || PrimaryResource.ResourceId.IsNone())
 	{
+		return;
+	}
+	if (FacilityInstance.FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Process
+		&& FSRFacilityResourceV2Processor::ShouldRouteStandardProcessThroughResourceV2(
+			FacilityInstance.FacilityDataAsset.Get()))
+	{
+		BuildResourceV2Output(
+			FacilityInstance,
+			PrimaryResource,
+			OutOutputResources,
+			OutPrimaryOutputCount,
+			OutBaselinePrimaryResource,
+			OutEnergyFormulaTexts,
+			OutResourceV2ProcessResult,
+			ProcessingBodyId);
 		return;
 	}
 

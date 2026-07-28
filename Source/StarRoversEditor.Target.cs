@@ -6,7 +6,7 @@ public class StarRoversEditorTarget : TargetRules
     public StarRoversEditorTarget(TargetInfo Target) : base(Target)
     {
         Type = TargetType.Editor;
-        DefaultBuildSettings = BuildSettingsVersion.V6;
+        DefaultBuildSettings = BuildSettingsVersion.V7;
         IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
         bOverrideBuildEnvironment = true;
         // UE 5.7 engine SharedPCH headers emit deprecation warnings with VS 2026.

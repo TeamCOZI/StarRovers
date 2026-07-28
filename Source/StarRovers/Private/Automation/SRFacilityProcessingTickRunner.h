@@ -10,7 +10,9 @@ public:
 	static int32 ProcessFacilities(
 		FSRFacilityNetworkRuntimeState& RuntimeState,
 		float DeltaTime,
-		int32 MaxFacilitiesProcessed,
+		int32 MaxFacilityTransitions,
 		TFunctionRef<bool(FSRFacilityInstance&)> TryStartProcessing,
+		TFunctionRef<void()> RefreshOperationalCapacity,
+		TFunctionRef<float(const FSRFacilityInstance&)> ResolveOperationalSpeedFactor,
 		TFunctionRef<bool(FSRFacilityInstance&)> TryCompleteProcessing);
 };
