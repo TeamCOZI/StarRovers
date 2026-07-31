@@ -129,3 +129,42 @@ struct STARROVERS_API FSRConveyorBeltPath
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor", meta = (DisplayName = "StructureDataAsset"))
 	TObjectPtr<USRStructureDataAsset> StructureDataAsset = nullptr;
 };
+
+namespace StarRovers::Save::Conveyor
+{
+	inline constexpr int32 CurrentVersion = 1;
+	inline bool IsSupportedVersion(int32 Version) { return Version == CurrentVersion; }
+}
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRConveyorSegmentFlowSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Conveyor")
+	FSRConveyorLaneKey Lane;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Conveyor")
+	int32 NextOutputDirectionIndex = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Conveyor")
+	int32 NextInputDirectionIndex = 0;
+};
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRConveyorNetworkSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Conveyor")
+	int32 Version = StarRovers::Save::Conveyor::CurrentVersion;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Conveyor")
+	TArray<FSRConveyorBeltPath> BeltPaths;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Conveyor")
+	TArray<FSRConveyorItem> Items;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Conveyor")
+	TArray<FSRConveyorSegmentFlowSaveData> SegmentFlows;
+};

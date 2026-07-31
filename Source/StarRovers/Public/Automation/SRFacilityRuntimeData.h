@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Automation/SRFacilityDataAsset.h"
+#include "Pattern/SRPatternEnvironmentResolver.h"
+#include "Simulation/SRRunModifierTypes.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Structure/SRStructureInstanceManagerComponent.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
@@ -29,18 +31,6 @@ struct STARROVERS_API FSRFacilityPortInventory
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "Inventory"))
 	TArray<FSRResourceInstance> Inventory;
-};
-
-USTRUCT(BlueprintType)
-struct STARROVERS_API FSRFacilityCellTemperatureAdjustment
-{
-	GENERATED_BODY()
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "CellId"))
-	FSRPlanetSurfaceGridCellId CellId;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "TemperatureStepDelta"))
-	int32 TemperatureStepDelta = 0;
 };
 
 USTRUCT(BlueprintType)
@@ -81,9 +71,6 @@ struct STARROVERS_API FSRFacilityInstance
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility|Hub", meta = (DisplayName = "StarFuelMissileAutoLaunchInputPortIndices"))
 	TArray<int32> StarFuelMissileAutoLaunchInputPortIndices;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "CellTemperatureAdjustments"))
-	TArray<FSRFacilityCellTemperatureAdjustment> CellTemperatureAdjustments;
-
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "ProcessingInventory"))
 	TArray<FSRResourceInstance> ProcessingInventory;
 
@@ -92,6 +79,14 @@ struct STARROVERS_API FSRFacilityInstance
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "TemperatureState"))
 	ESRFacilityTemperatureState TemperatureState = ESRFacilityTemperatureState::Normal;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility|Pattern", meta = (DisplayName = "PatternEnvironment"))
+	FSRPatternEnvironmentSpec PatternEnvironment;
+
+	// Snapshotted when a batch starts. Runtime completion and its preview use the
+	// same revision even if a Technology, Augment, or Trial changes mid-process.
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility|Run Modifier", meta = (DisplayName = "RunModifierContext"))
+	FSRRunModifierContext RunModifierContext;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "ProcessProgressSeconds"))
 	float ProcessProgressSeconds = 0.0f;
@@ -104,4 +99,22 @@ struct STARROVERS_API FSRFacilityInstance
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Facility", meta = (DisplayName = "bDeliverEnabled"))
 	bool bDeliverEnabled = true;
+};
+
+namespace StarRovers::Save::FacilityNetwork
+{
+	inline constexpr int32 CurrentVersion = 2;
+	inline bool IsSupportedVersion(int32 Version) { return Version == CurrentVersion; }
+}
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRFacilityNetworkSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Facility")
+	int32 Version = StarRovers::Save::FacilityNetwork::CurrentVersion;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Facility")
+	TArray<FSRFacilityInstance> Facilities;
 };

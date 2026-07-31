@@ -8,7 +8,7 @@ namespace
 
 	bool IsResourceDepositMineable(const FSRResourceDepositInstance& ResourceDeposit)
 	{
-		return IsValid(ResourceDeposit.ResourceDataAsset.Get());
+		return ResourceDeposit.CanHarvestResource();
 	}
 
 	void AppendNeighborCellIds(
@@ -32,6 +32,59 @@ namespace
 		OutNeighborCellIds.Add(Neighbors.NegativeV);
 		OutNeighborCellIds.Add(Neighbors.PositiveV);
 	}
+}
+
+bool FSRResourceDepositInstance::IsPatternSourceValid() const
+{
+	return IsValid(ResourceDataAsset.Get())
+		&& !ResourceId.IsNone()
+		&& !SourcePatternId.IsNone()
+		&& SourcePattern.IsCanonical()
+		&& !SourcePattern.IsEmpty();
+}
+
+bool FSRResourceDepositInstance::CanHarvestResource() const
+{
+	return IsPatternSourceValid() && RemainingAmount > 0;
+}
+
+FSRResourceInstance FSRResourceDepositInstance::BuildResourceInstance(FName ResourceInstanceId) const
+{
+	if (!IsPatternSourceValid())
+	{
+		return FSRResourceInstance();
+	}
+
+	FSRResourceInstance Result = ResourceDataAsset->BuildInstanceFromPattern(
+		SourcePattern,
+		SourcePatternSeed,
+		SourcePatternId);
+	Result.ResourceInstanceId = ResourceInstanceId;
+	Result.StackCount = 1;
+	return Result;
+}
+
+bool FSRResourceDepositInstance::TryHarvestResource(
+	FName ResourceInstanceId,
+	FSRResourceInstance& OutResourceInstance)
+{
+	OutResourceInstance = FSRResourceInstance();
+	if (!CanHarvestResource())
+	{
+		return false;
+	}
+
+	OutResourceInstance = BuildResourceInstance(ResourceInstanceId);
+	if (OutResourceInstance.ResourceId.IsNone())
+	{
+		return false;
+	}
+
+	if (RemainingAmount != InfiniteResourceDepositAmount)
+	{
+		RemainingAmount = FMath::Max(0, RemainingAmount - 1);
+	}
+	return true;
 }
 
 bool USRStructureInstanceManagerComponent::GetResourceDepositInstance(
@@ -112,12 +165,15 @@ bool USRStructureInstanceManagerComponent::TryHarvestResourceDeposit(
 		return false;
 	}
 
-	OutResourceInstance = ResourceDeposit->ResourceDataAsset->BuildDefaultInstance();
-	OutResourceInstance.ResourceInstanceId = FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits));
-	OutResourceInstance.StackCount = 1;
+	if (!ResourceDeposit->TryHarvestResource(
+		FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits)),
+		OutResourceInstance))
+	{
+		return false;
+	}
 
 	OutUpdatedResourceDeposit = *ResourceDeposit;
-	return !OutResourceInstance.ResourceId.IsNone();
+	return true;
 }
 
 void USRStructureInstanceManagerComponent::RegisterResourceDeposit(
@@ -137,7 +193,23 @@ void USRStructureInstanceManagerComponent::RegisterResourceDeposit(
 	ResourceDeposit.StructureId = PlacedStructure.StructureId;
 	ResourceDeposit.ResourceDataAsset = StructureData.DepositResourceDataAsset;
 	ResourceDeposit.ResourceId = StructureData.DepositResourceDataAsset->ResourceId;
-	ResourceDeposit.TotalAmount = InfiniteResourceDepositAmount;
-	ResourceDeposit.RemainingAmount = InfiniteResourceDepositAmount;
+	const FString OwnerIdentity = IsValid(GetOwner())
+		? GetOwner()->GetPathName()
+		: FString(TEXT("NoOwner"));
+	ResourceDeposit.SourcePatternId = FName(*FString::Printf(
+		TEXT("%s|%s"),
+		*OwnerIdentity,
+		*PlacedStructure.OccupantId.ToString()));
+	ResourceDeposit.SourcePatternSeed = StarRovers::ResourcePatterns::MakeStableSourcePatternSeed(
+		ResourceDeposit.SourcePatternId,
+		ResourceDeposit.ResourceId,
+		StructureData.DepositResourceDataAsset->SourcePatternSeedSalt);
+	StructureData.DepositResourceDataAsset->TryGenerateSourcePattern(
+		ResourceDeposit.SourcePatternSeed,
+		ResourceDeposit.SourcePattern);
+	ResourceDeposit.TotalAmount = StructureData.DepositTotalAmount > 0
+		? StructureData.DepositTotalAmount
+		: InfiniteResourceDepositAmount;
+	ResourceDeposit.RemainingAmount = ResourceDeposit.TotalAmount;
 	ResourceDepositsByOccupantId.Add(ResourceDeposit.OccupantId, ResourceDeposit);
 }

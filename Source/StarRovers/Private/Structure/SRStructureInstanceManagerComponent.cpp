@@ -71,8 +71,31 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 	bool bUseStaticMeshMaterials,
 	int32 PlacementRotationSteps)
 {
+	return TryPlaceStructureOnSurfaceGridInternal(
+		SurfaceGrid,
+		TargetCellId,
+		StructureDataAsset,
+		OutOccupantId,
+		bNaturalStructure,
+		bUseStaticMeshMaterials,
+		PlacementRotationSteps,
+		NAME_None);
+}
+
+bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGridInternal(
+	USRPlanetSurfaceGrid* SurfaceGrid,
+	const FSRPlanetSurfaceGridCellId& TargetCellId,
+	USRStructureDataAsset* StructureDataAsset,
+	FName& OutOccupantId,
+	bool bNaturalStructure,
+	bool bUseStaticMeshMaterials,
+	int32 PlacementRotationSteps,
+	FName ForcedOccupantId)
+{
 	OutOccupantId = NAME_None;
-	if (!IsValid(SurfaceGrid) || !IsValid(StructureDataAsset))
+	if (!IsValid(SurfaceGrid)
+		|| !IsValid(StructureDataAsset)
+		|| (!ForcedOccupantId.IsNone() && PlacedStructuresByOccupantId.Contains(ForcedOccupantId)))
 	{
 		return false;
 	}
@@ -122,7 +145,9 @@ bool USRStructureInstanceManagerComponent::TryPlaceStructureOnSurfaceGrid(
 		return false;
 	}
 
-	const FName OccupantId = MakeOccupantId(TargetCellId, StructureData.StructureId, NextStructureInstanceSequence++);
+	const FName OccupantId = ForcedOccupantId.IsNone()
+		? MakeOccupantId(TargetCellId, StructureData.StructureId, NextStructureInstanceSequence++)
+		: ForcedOccupantId;
 	if (!SurfaceGrid->SetCellsOccupied(FootprintCellIds, true, OccupantId))
 	{
 		VisualGroup.Component->RemoveInstance(InstanceIndex);

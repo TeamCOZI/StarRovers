@@ -12,11 +12,11 @@ namespace StarRovers::Conveyor
 		float DefaultLayerHeight = 0.0f;
 		float BeltSurfaceOffset = 0.0f;
 		float ItemLabelHeightOffset = 0.0f;
-		float ItemEnergyLabelWorldSize = 1.0f;
-		float ItemEnergyLabelMaxScale = 1.0f;
-		FLinearColor ItemEnergyLowColor = FLinearColor::White;
-		FLinearColor ItemEnergyHighColor = FLinearColor::White;
-		FLinearColor ItemEnergyNegativeColor = FLinearColor::White;
+		float ItemPatternLabelWorldSize = 1.0f;
+		float ItemPatternLabelMaxScale = 1.0f;
+		FLinearColor ItemPatternSparseColor = FLinearColor::White;
+		FLinearColor ItemPatternDenseColor = FLinearColor::White;
+		FLinearColor ItemPatternSpecialColor = FLinearColor::White;
 	};
 
 	struct STARROVERS_API FSRConveyorItemLabelResolver

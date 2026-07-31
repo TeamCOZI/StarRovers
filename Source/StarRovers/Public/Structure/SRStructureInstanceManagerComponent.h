@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Automation/SRResourceDataAsset.h"
 #include "Components/SceneComponent.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
@@ -64,11 +65,76 @@ struct STARROVERS_API FSRResourceDepositInstance
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "ResourceId"))
 	FName ResourceId = NAME_None;
 
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "SourcePatternId"))
+	FName SourcePatternId = NAME_None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "SourcePatternSeed"))
+	int32 SourcePatternSeed = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "SourcePattern"))
+	FSRPattern SourcePattern;
+
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "TotalAmount"))
 	int32 TotalAmount = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Resource Deposit", meta = (DisplayName = "RemainingAmount"))
 	int32 RemainingAmount = 0;
+
+	bool IsPatternSourceValid() const;
+	bool CanHarvestResource() const;
+	FSRResourceInstance BuildResourceInstance(FName ResourceInstanceId = NAME_None) const;
+	bool TryHarvestResource(FName ResourceInstanceId, FSRResourceInstance& OutResourceInstance);
+};
+
+namespace StarRovers::Save::Structures
+{
+	inline constexpr int32 CurrentVersion = 1;
+	inline bool IsSupportedVersion(int32 Version) { return Version == CurrentVersion; }
+}
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRPlacedStructureSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	FName OccupantId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	FSRPlanetSurfaceGridCellId OriginCellId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	int32 PlacementRotationSteps = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	TObjectPtr<USRStructureDataAsset> StructureDataAsset = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	bool bNaturalStructure = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	bool bUseStaticMeshMaterials = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	bool bHasResourceDeposit = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	FSRResourceDepositInstance ResourceDeposit;
+};
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRStructureManagerSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	int32 Version = StarRovers::Save::Structures::CurrentVersion;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	int32 NextStructureInstanceSequence = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Structure")
+	TArray<FSRPlacedStructureSaveData> Structures;
 };
 
 UCLASS(ClassGroup = (StarRovers), Blueprintable, meta = (BlueprintSpawnableComponent))
@@ -158,6 +224,17 @@ public:
 		FSRResourceInstance& OutResourceInstance,
 		FSRResourceDepositInstance& OutUpdatedResourceDeposit);
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Save|Structure")
+	void ExportSaveData(FSRStructureManagerSaveData& OutSaveData) const;
+
+	bool CanImportSaveData(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRStructureManagerSaveData& SaveData,
+		FString& OutFailureReason) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Save|Structure")
+	bool ImportSaveData(USRPlanetSurfaceGrid* SurfaceGrid, const FSRStructureManagerSaveData& SaveData);
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Structure|Name Label", meta = (DisplayName = "bShowStructureNameLabels"))
 	bool bShowStructureNameLabels;
@@ -195,6 +272,16 @@ private:
 	static FName MakeVisualKey(USRStructureDataAsset* StructureDataAsset, bool bUseStaticMeshMaterials, ESRStructureVisualOverride VisualOverride);
 	static FName MakeOccupantId(const FSRPlanetSurfaceGridCellId& CellId, FName StructureId, int32 SequenceNumber);
 	static FTransform BuildInstanceWorldTransform(const FTransform& PlacementTransform, const FSRStructureData& StructureData);
+	bool TryPlaceStructureOnSurfaceGridInternal(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRPlanetSurfaceGridCellId& TargetCellId,
+		USRStructureDataAsset* StructureDataAsset,
+		FName& OutOccupantId,
+		bool bNaturalStructure,
+		bool bUseStaticMeshMaterials,
+		int32 PlacementRotationSteps,
+		FName ForcedOccupantId);
+	bool ApplySaveDataUnchecked(USRPlanetSurfaceGrid* SurfaceGrid, const FSRStructureManagerSaveData& SaveData);
 
 	FSRStructureVisualGroup& FindOrCreateVisualGroup(USRStructureDataAsset* StructureDataAsset, FName VisualKey, bool bUseStaticMeshMaterials, ESRStructureVisualOverride VisualOverride = ESRStructureVisualOverride::None);
 	bool IsDeletePreviewTarget(FName OccupantId) const;

@@ -52,9 +52,9 @@ public:
 		bool bReturnEmptyWhenNoCargo,
 		TArray<FSRSpaceLogisticsHubRoute>& HubRoutes);
 
-	static bool SetHubRouteCargoResourceId(
+	static bool SetHubRouteCargoFilter(
 		FName RouteId,
-		FName CargoResourceId,
+		const FSRPatternRoutingFilter& CargoFilter,
 		TArray<FSRSpaceLogisticsHubRoute>& HubRoutes);
 
 	static void ClearHubRoutes(

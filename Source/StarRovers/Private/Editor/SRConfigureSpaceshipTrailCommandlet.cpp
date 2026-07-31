@@ -19,7 +19,6 @@
 #include "NiagaraNodeFunctionCall.h"
 #include "NiagaraNodeInput.h"
 #include "NiagaraNodeOutput.h"
-#include "NiagaraNodeParameterMapGet.h"
 #include "NiagaraRendererProperties.h"
 #include "NiagaraRibbonRendererProperties.h"
 #include "NiagaraScript.h"
@@ -34,6 +33,7 @@ namespace
 {
 	const FName NiagaraDynamicAddPinSubCategory(TEXT("DynamicAddPin"));
 	const FName NiagaraParameterPinSubCategory(TEXT("ParameterPin"));
+	const FName NiagaraParameterMapGetClassName(TEXT("NiagaraNodeParameterMapGet"));
 	const FName TrailMaterialUserParameter(TEXT("User.TrailMaterial"));
 	const FName TrailWidthUserParameter(TEXT("User.TrailWidth"));
 	constexpr float DefaultTrailWidth = 300.0f;
@@ -241,7 +241,12 @@ namespace
 		}
 	}
 
-	UEdGraphPin* FindOutputPinByName(UNiagaraNodeParameterMapGet& GetNode, const FName& PinName)
+	bool IsParameterMapGetNode(const UNiagaraNode* Node)
+	{
+		return Node && Node->GetClass()->GetFName() == NiagaraParameterMapGetClassName;
+	}
+
+	UEdGraphPin* FindOutputPinByName(UNiagaraNode& GetNode, const FName& PinName)
 	{
 		TArray<UEdGraphPin*> OutputPins;
 		GetNode.GetOutputPins(OutputPins);
@@ -260,7 +265,7 @@ namespace
 		return nullptr;
 	}
 
-	UEdGraphPin* FindDefaultInputPinForType(UNiagaraNodeParameterMapGet& GetNode, const FNiagaraTypeDefinition& ExpectedType)
+	UEdGraphPin* FindDefaultInputPinForType(UNiagaraNode& GetNode, const FNiagaraTypeDefinition& ExpectedType)
 	{
 		TArray<UEdGraphPin*> InputPins;
 		GetNode.GetInputPins(InputPins);
@@ -288,7 +293,7 @@ namespace
 		return nullptr;
 	}
 
-	UEdGraphPin* CreateParameterMapGetOutputPin(UNiagaraNodeParameterMapGet& GetNode, const FNiagaraVariable& Variable)
+	UEdGraphPin* CreateParameterMapGetOutputPin(UNiagaraNode& GetNode, const FNiagaraVariable& Variable)
 	{
 		GetNode.Modify();
 		FEdGraphPinType PinType = UEdGraphSchema_Niagara::TypeDefinitionToPinType(Variable.GetType());
@@ -306,7 +311,7 @@ namespace
 		return NewPin;
 	}
 
-	bool IsBeginDefaultsGetNode(const UNiagaraNodeParameterMapGet& GetNode)
+	bool IsBeginDefaultsGetNode(const UNiagaraNode& GetNode)
 	{
 		const UEdGraphPin* InputPin = GetNode.GetInputPin(0);
 		if (!InputPin)
@@ -326,21 +331,21 @@ namespace
 		return false;
 	}
 
-	UNiagaraNodeParameterMapGet* FindBeginDefaultsGetNode(UNiagaraGraph& Graph, UNiagaraNodeParameterMapGet* DirectValueGetNode)
+	UNiagaraNode* FindBeginDefaultsGetNode(UNiagaraGraph& Graph, UNiagaraNode* DirectValueGetNode)
 	{
-		TArray<UNiagaraNodeParameterMapGet*> GetNodes;
+		TArray<UNiagaraNode*> GetNodes;
 		Graph.GetNodesOfClass(GetNodes);
-		for (UNiagaraNodeParameterMapGet* GetNode : GetNodes)
+		for (UNiagaraNode* GetNode : GetNodes)
 		{
-			if (GetNode && GetNode != DirectValueGetNode && IsBeginDefaultsGetNode(*GetNode))
+			if (IsParameterMapGetNode(GetNode) && GetNode != DirectValueGetNode && IsBeginDefaultsGetNode(*GetNode))
 			{
 				return GetNode;
 			}
 		}
 
-		for (UNiagaraNodeParameterMapGet* GetNode : GetNodes)
+		for (UNiagaraNode* GetNode : GetNodes)
 		{
-			if (GetNode && GetNode != DirectValueGetNode)
+			if (IsParameterMapGetNode(GetNode) && GetNode != DirectValueGetNode)
 			{
 				return GetNode;
 			}
@@ -363,14 +368,14 @@ namespace
 
 		const FNiagaraParameterHandle TargetHandle(TargetVariable.GetName());
 		const FName ModuleTargetName(*FString::Printf(TEXT("Module.%s"), *TargetHandle.GetParameterHandleString().ToString()));
-		UNiagaraNodeParameterMapGet* DirectValueGetNode = nullptr;
+		UNiagaraNode* DirectValueGetNode = nullptr;
 		UEdGraphPin* DirectValueOutputPin = nullptr;
 
-		TArray<UNiagaraNodeParameterMapGet*> GetNodes;
+		TArray<UNiagaraNode*> GetNodes;
 		AssignmentGraph->GetNodesOfClass(GetNodes);
-		for (UNiagaraNodeParameterMapGet* GetNode : GetNodes)
+		for (UNiagaraNode* GetNode : GetNodes)
 		{
-			UEdGraphPin* OutputPin = GetNode ? FindOutputPinByName(*GetNode, ModuleTargetName) : nullptr;
+			UEdGraphPin* OutputPin = IsParameterMapGetNode(GetNode) ? FindOutputPinByName(*GetNode, ModuleTargetName) : nullptr;
 			if (OutputPin)
 			{
 				DirectValueGetNode = GetNode;
@@ -385,7 +390,7 @@ namespace
 		}
 
 		UEdGraphPin* TargetDefaultPin = FindDefaultInputPinForType(*DirectValueGetNode, TargetVariable.GetType());
-		UNiagaraNodeParameterMapGet* BeginDefaultsGetNode = FindBeginDefaultsGetNode(*AssignmentGraph, DirectValueGetNode);
+		UNiagaraNode* BeginDefaultsGetNode = FindBeginDefaultsGetNode(*AssignmentGraph, DirectValueGetNode);
 		if (!TargetDefaultPin || !BeginDefaultsGetNode)
 		{
 			return false;

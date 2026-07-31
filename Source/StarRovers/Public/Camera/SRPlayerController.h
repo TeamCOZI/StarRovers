@@ -19,6 +19,7 @@ class USRFacilityControlWidget;
 class USRGameOverWidget;
 class USRStructureSelectionWidget;
 class USRStructureDataAsset;
+class USRStellarContractHUDWidget;
 class USRTimeControlWidget;
 class ASRStar;
 class ASRCameraPawn;
@@ -125,10 +126,20 @@ public:
     USRGameOverWidget* GetGameOverWidget() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
+    USRStellarContractHUDWidget* GetStellarContractHUDWidget() const;
+
+    UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     bool IsPointerOverFacilityControlWidget() const;
 
     UFUNCTION(BlueprintPure, Category = "StarRovers|UI")
     bool IsPointerOverBlockingUI() const;
+
+#if WITH_EDITOR
+    void ConfigureAvailableStructureDataAssetsForEditor(
+        const FSRAvailableStructureDataAssetCategories& InAvailableStructureDataAssets);
+
+    const FSRAvailableStructureDataAssetCategories& GetAvailableStructureDataAssetsForEditor() const;
+#endif
 
     UFUNCTION(BlueprintCallable, Category = "StarRovers|UI")
     void ClearFacilityFocus();
@@ -290,6 +301,12 @@ protected:
     UPROPERTY()
     TObjectPtr<USRGameOverWidget> GameOverWidget;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|UI", meta = (DisplayName = "StellarContractHUDWidgetClass"))
+    TSubclassOf<USRStellarContractHUDWidget> StellarContractHUDWidgetClass;
+
+    UPROPERTY()
+    TObjectPtr<USRStellarContractHUDWidget> StellarContractHUDWidget;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|UI", meta = (DisplayName = "WidgetLayerOrder", ToolTip = "Index 0 is the bottom UI layer. Later entries are drawn and hit-tested above earlier entries."))
     TArray<ESRPlayerUILayer> WidgetLayerOrder;
 
@@ -366,6 +383,7 @@ private:
     void BuildFocusedHubShortcutInfos(TArray<FSRFocusedHubShortcutInfo>& OutHubInfos) const;
     void HandleFocusedHubShortcutRequested(const FSRFocusedHubShortcutInfo& HubInfo);
     void CreateGameOverWidget();
+    void CreateStellarContractHUDWidget();
     void BindPrimaryStarGameOver(AActor* PrimaryStarActor);
     void ShowGameOverScreen(ASRStar* Star);
     UFUNCTION()

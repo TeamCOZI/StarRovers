@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Automation/SRFacilityDataAsset.h"
+#include "Simulation/SRRunModifierDataAssets.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "SRAugmentSubsystem.generated.h"
 
@@ -12,8 +12,8 @@ struct STARROVERS_API FSRAugmentChoice
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Augment", meta = (DisplayName = "StructureId"))
-	FName StructureId = NAME_None;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Augment", meta = (DisplayName = "AugmentId"))
+	FName AugmentId = NAME_None;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Augment", meta = (DisplayName = "DisplayName"))
 	FText DisplayName;
@@ -21,11 +21,47 @@ struct STARROVERS_API FSRAugmentChoice
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Augment", meta = (DisplayName = "Description"))
 	FText Description;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Augment", meta = (DisplayName = "StructureDataAsset"))
-	TObjectPtr<USRStructureDataAsset> StructureDataAsset = nullptr;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Augment", meta = (DisplayName = "AugmentDataAsset"))
+	TObjectPtr<USRRunAugmentDataAsset> AugmentDataAsset = nullptr;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Augment", meta = (DisplayName = "Rarity"))
-	ESRFacilityRarity Rarity = ESRFacilityRarity::Basic;
+	ESRRunAugmentRarity Rarity = ESRRunAugmentRarity::Common;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Augment", meta = (DisplayName = "OfferRole"))
+	ESRRunAugmentOfferRole OfferRole = ESRRunAugmentOfferRole::Immediate;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Augment", meta = (DisplayName = "CurrentStacks"))
+	int32 CurrentStacks = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Augment", meta = (DisplayName = "MaximumStacks"))
+	int32 MaximumStacks = 1;
+};
+
+namespace StarRovers::Save::AugmentOffer
+{
+	inline constexpr int32 CurrentVersion = 1;
+	inline bool IsSupportedVersion(int32 Version) { return Version == CurrentVersion; }
+}
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSRAugmentOfferSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Augment")
+	int32 Version = StarRovers::Save::AugmentOffer::CurrentVersion;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Augment")
+	TArray<FName> OfferedAugmentIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Augment")
+	int32 OfferCycleIndex = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Augment")
+	float EpicPityBonusChancePercent = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Augment")
+	bool bPausedSimulationForOffer = false;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSRAugmentChoicesReadySignature, const TArray<FSRAugmentChoice>&, Choices, int32, CycleIndex);
@@ -54,16 +90,16 @@ public:
 	void RegisterStructureDataAssets(const TArray<USRStructureDataAsset*>& StructureDataAssets);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Augment")
+	void RegisterAugmentDataAssets(const TArray<USRRunAugmentDataAsset*>& AugmentDataAssets);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Augment")
 	void GenerateAugmentChoices(int32 CycleIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Augment")
 	bool SelectAugmentChoiceByIndex(int32 ChoiceIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Augment")
-	bool SelectAugmentChoiceByStructureId(FName StructureId);
-
-	UFUNCTION(BlueprintCallable, Category = "StarRovers|Augment")
-	bool UnlockStructure(USRStructureDataAsset* StructureDataAsset);
+	bool SelectAugmentChoiceByAugmentId(FName AugmentId);
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Augment")
 	bool IsStructureUnlocked(const USRStructureDataAsset* StructureDataAsset) const;
@@ -85,6 +121,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Augment")
 	float GetHighTechBonusChancePercent() const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Save|Augment")
+	void ExportSaveData(FSRAugmentOfferSaveData& OutSaveData) const;
+
+	bool CanImportSaveData(const FSRAugmentOfferSaveData& SaveData, FString& OutFailureReason) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Save|Augment")
+	bool ImportSaveData(const FSRAugmentOfferSaveData& SaveData);
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Augment", meta = (DisplayName = "AugmentIntervalCycles", ClampMin = "1"))
@@ -118,15 +162,18 @@ private:
 	UFUNCTION()
 	void HandleGameCycleAdvanced(int32 CurrentCycleIndex);
 
+	UFUNCTION()
+	void HandleTechnologyUnlocked(FName TechnologyId);
+
 	void BindTimeControlSubsystem();
 	void UnbindTimeControlSubsystem();
-	TArray<USRStructureDataAsset*> GetEligibleAugmentCandidates() const;
+	TArray<USRRunAugmentDataAsset*> GetEligibleAugmentCandidates() const;
 	bool IsStructureUnlockControlled(const USRStructureDataAsset* StructureDataAsset) const;
 	bool IsDebugUnlockableFacility(const USRStructureDataAsset* StructureDataAsset) const;
-	bool IsAugmentCandidate(const USRStructureDataAsset* StructureDataAsset) const;
-	bool DrawCandidateIndex(const TArray<USRStructureDataAsset*>& Candidates, FRandomStream& RandomStream, int32& OutCandidateIndex) const;
-	FSRAugmentChoice BuildAugmentChoice(USRStructureDataAsset* StructureDataAsset) const;
-	void UpdateHighTechBonusAfterOffer(const TArray<USRStructureDataAsset*>& InitialCandidates, const TArray<FSRAugmentChoice>& GeneratedChoices);
+	bool IsAugmentCandidate(const USRRunAugmentDataAsset* AugmentDataAsset) const;
+	bool DrawCandidateIndex(const TArray<USRRunAugmentDataAsset*>& Candidates, FRandomStream& RandomStream, int32& OutCandidateIndex) const;
+	FSRAugmentChoice BuildAugmentChoice(USRRunAugmentDataAsset* AugmentDataAsset) const;
+	void UpdateHighTechBonusAfterOffer(const TArray<USRRunAugmentDataAsset*>& InitialCandidates, const TArray<FSRAugmentChoice>& GeneratedChoices);
 	void ClearPendingAugmentChoice();
 	void ResumeSimulationAfterChoiceIfNeeded();
 
@@ -148,5 +195,5 @@ private:
 	UPROPERTY(Transient)
 	bool bPausedSimulationForCurrentChoice = false;
 
-	bool bDebugUnlockAllFacilitiesWithoutAugments = false;
+	bool bDebugUnlockAllFacilitiesWithoutTechnology = false;
 };

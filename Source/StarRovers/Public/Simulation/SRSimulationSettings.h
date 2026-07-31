@@ -4,6 +4,10 @@
 #include "Engine/DeveloperSettings.h"
 #include "SRSimulationSettings.generated.h"
 
+class USRRunAugmentDataAsset;
+class USRTechnologyDataAsset;
+class USRTrialDataAsset;
+
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "Star Rovers Simulation"))
 class STARROVERS_API USRSimulationSettings : public UDeveloperSettings
 {
@@ -40,6 +44,15 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Augment", meta = (DisplayName = "Augment Random Seed"))
 	int32 AugmentRandomSeed = 47219;
 
-	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Debug", meta = (DisplayName = "Unlock All Facilities Without Augments", ToolTip = "Treats every buildable facility structure as unlocked without selecting augments. Intended for editor/debug playtests."))
-	bool bDebugUnlockAllFacilitiesWithoutAugments = false;
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Run Modifiers", meta = (DisplayName = "Technology Data Assets"))
+	TArray<TSoftObjectPtr<USRTechnologyDataAsset>> TechnologyDataAssets;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Run Modifiers", meta = (DisplayName = "Augment Data Assets"))
+	TArray<TSoftObjectPtr<USRRunAugmentDataAsset>> RunAugmentDataAssets;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Run Modifiers", meta = (DisplayName = "Trial Data Assets"))
+	TArray<TSoftObjectPtr<USRTrialDataAsset>> TrialDataAssets;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Debug", meta = (DisplayName = "Unlock All Facilities Without Technology", ToolTip = "Treats every buildable facility structure as unlocked without Technology progression. Intended for editor/debug playtests."))
+	bool bDebugUnlockAllFacilitiesWithoutTechnology = false;
 };

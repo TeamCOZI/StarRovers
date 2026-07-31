@@ -17,6 +17,7 @@
 #include "Fonts/SlateFontInfo.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Styling/SlateColor.h"
+#include "UI/SRPatternGridWidget.h"
 
 namespace
 {
@@ -148,43 +149,96 @@ namespace
 		}
 	}
 
-	FString BuildFocusedStarFuelSummary(const FSRFocusedStarFuelInfo& FuelInfo)
+	const TCHAR* GetPatternHandRarityLabel(ESRPatternHandRarity Rarity)
 	{
-		return FString::Printf(
-			TEXT("Stellar Evolution\nStage: %s\nFuel: %.2f / %.2f\nCurrent Decrease/sec: %.2f\nInitial Decrease/sec: %.2f\nNext Multiplier: %.2fx\nRateCycleIndex: %d\nLastSecond: %s\nLastSecondIndex: %d\nLast Decrease: %.2f\nConsumed: %.2f\nOverkill: %.2f\nGameOver: %s"),
-			GetStellarEvolutionStageLabel(FuelInfo.EvolutionStage),
-			FuelInfo.StoredFuel,
-			FuelInfo.InitialStageFuel,
-			FuelInfo.RequiredFuelPerCycle,
-			FuelInfo.InitialFuelDecreasePerSecond,
-			FuelInfo.RequirementGrowthPerCycle,
-			FuelInfo.LastFuelDecreaseRateCycleIndex,
-			FuelInfo.bLastSecondSurvived ? TEXT("Survived") : TEXT("Depleted"),
-			FuelInfo.LastSettledSecondIndex,
-			FuelInfo.LastSecondFuelDecrease,
-			FuelInfo.LastSecondFuelConsumed,
-			FuelInfo.LastSecondFuelDeficit,
-			FuelInfo.bSupernovaGameOver ? TEXT("Yes") : TEXT("No"));
+		switch (Rarity)
+		{
+		case ESRPatternHandRarity::Common: return TEXT("Common");
+		case ESRPatternHandRarity::Uncommon: return TEXT("Uncommon");
+		case ESRPatternHandRarity::Rare: return TEXT("Rare");
+		case ESRPatternHandRarity::Epic: return TEXT("Epic");
+		case ESRPatternHandRarity::Legendary: return TEXT("Legendary");
+		default: return TEXT("Unknown");
+		}
 	}
 
-	bool AreFocusedStarFuelInfosEqual(const FSRFocusedStarFuelInfo& Left, const FSRFocusedStarFuelInfo& Right)
+	FString BuildFocusedStellarContractSummary(const FSRFocusedStellarContractInfo& ContractInfo)
+	{
+		const FSRStellarPatternContract& Contract = ContractInfo.Contract;
+		const FSRStellarContractState& State = ContractInfo.State;
+		FString Summary = FString::Printf(
+			TEXT("Stellar Pattern Contract\nStage: %s\nContract: %s\nCycle: %d\nScore: %lld / %lld (Base %lld + Bonus %lld)\nPatterns: %lld accepted, %lld rejected\nStellar Health: %.2f / %.2f\nDemand Mask: %d / 25 cells\nBase per Pattern: %d\nRequirement Growth: +%d / Cycle\nGame Over: %s"),
+			GetStellarEvolutionStageLabel(State.EvolutionStage),
+			*Contract.ContractId.ToString(),
+			State.ActiveCycleIndex,
+			State.CurrentCycleScore,
+			State.RequiredScoreThisCycle,
+			State.CurrentCycleBaseScore,
+			State.CurrentCycleBonusScore,
+			State.SubmittedPatternCount,
+			State.RejectedPatternCount,
+			State.CurrentStellarHealth,
+			State.MaximumStellarHealth,
+			Contract.RequiredMask.GetActiveCellCount(),
+			Contract.BaseScorePerPattern,
+			Contract.RequiredScoreGrowthPerCycle,
+			State.bSupernovaGameOver ? TEXT("Yes") : TEXT("No"));
+
+		if (State.LastSubmission.bPatternValid)
+		{
+			Summary += FString::Printf(
+				TEXT("\n\nLast Submission\nDemand: %s\nScore: %lld (Base %d + Bonus %lld)"),
+				State.LastSubmission.bMatchesDemand ? TEXT("Matched") : TEXT("Rejected"),
+				State.LastSubmission.TotalScore,
+				State.LastSubmission.BaseScorePerPattern,
+				State.LastSubmission.BonusScorePerPattern);
+			for (const FSRPatternHandMatch& Match : State.LastSubmission.HandMatches)
+			{
+				Summary += FString::Printf(
+					TEXT("\n- %s [%s] +%d"),
+					Match.DisplayName.IsEmpty() ? *Match.RuleId.ToString() : *Match.DisplayName.ToString(),
+					GetPatternHandRarityLabel(Match.Rarity),
+					Match.BonusScore);
+			}
+		}
+
+		if (!Contract.BonusRules.IsEmpty())
+		{
+			Summary += TEXT("\n\nAvailable Bonus Hands");
+			for (const FSRPatternHandRule& Rule : Contract.BonusRules)
+			{
+				Summary += FString::Printf(
+					TEXT("\n- %s [%s] +%d"),
+					Rule.DisplayName.IsEmpty() ? *Rule.RuleId.ToString() : *Rule.DisplayName.ToString(),
+					GetPatternHandRarityLabel(Rule.Rarity),
+					Rule.BonusScore);
+			}
+		}
+		return Summary;
+	}
+
+	bool AreFocusedStellarContractInfosEqual(
+		const FSRFocusedStellarContractInfo& Left,
+		const FSRFocusedStellarContractInfo& Right)
 	{
 		return Left.bIsValid == Right.bIsValid
-			&& Left.EvolutionStage == Right.EvolutionStage
-			&& FMath::IsNearlyEqual(Left.StoredFuel, Right.StoredFuel)
-			&& FMath::IsNearlyEqual(Left.InitialStageFuel, Right.InitialStageFuel)
-			&& FMath::IsNearlyEqual(Left.InitialFuelDecreasePerSecond, Right.InitialFuelDecreasePerSecond)
-			&& FMath::IsNearlyEqual(Left.RequiredFuelPerCycle, Right.RequiredFuelPerCycle)
-			&& FMath::IsNearlyEqual(Left.RequirementGrowthPerCycle, Right.RequirementGrowthPerCycle)
-			&& Left.LastFuelDecreaseRateCycleIndex == Right.LastFuelDecreaseRateCycleIndex
-			&& FMath::IsNearlyEqual(Left.RedGiantPressure, Right.RedGiantPressure)
-			&& FMath::IsNearlyEqual(Left.RedGiantPressurePerMissingFuel, Right.RedGiantPressurePerMissingFuel)
-			&& Left.LastSettledSecondIndex == Right.LastSettledSecondIndex
-			&& FMath::IsNearlyEqual(Left.LastSecondFuelConsumed, Right.LastSecondFuelConsumed)
-			&& FMath::IsNearlyEqual(Left.LastSecondFuelDecrease, Right.LastSecondFuelDecrease)
-			&& FMath::IsNearlyEqual(Left.LastSecondFuelDeficit, Right.LastSecondFuelDeficit)
-			&& Left.bLastSecondSurvived == Right.bLastSecondSurvived
-			&& Left.bSupernovaGameOver == Right.bSupernovaGameOver;
+			&& Left.Contract.ContractId == Right.Contract.ContractId
+			&& Left.Contract.RequiredPattern == Right.Contract.RequiredPattern
+			&& Left.Contract.RequiredMask == Right.Contract.RequiredMask
+			&& Left.Contract.BonusRules.Num() == Right.Contract.BonusRules.Num()
+			&& Left.State.EvolutionStage == Right.State.EvolutionStage
+			&& Left.State.ActiveCycleIndex == Right.State.ActiveCycleIndex
+			&& Left.State.RequiredScoreThisCycle == Right.State.RequiredScoreThisCycle
+			&& Left.State.CurrentCycleScore == Right.State.CurrentCycleScore
+			&& Left.State.CurrentCycleBaseScore == Right.State.CurrentCycleBaseScore
+			&& Left.State.CurrentCycleBonusScore == Right.State.CurrentCycleBonusScore
+			&& Left.State.SubmittedPatternCount == Right.State.SubmittedPatternCount
+			&& Left.State.RejectedPatternCount == Right.State.RejectedPatternCount
+			&& FMath::IsNearlyEqual(Left.State.CurrentStellarHealth, Right.State.CurrentStellarHealth)
+			&& Left.State.LastSubmission.TotalScore == Right.State.LastSubmission.TotalScore
+			&& Left.State.LastSubmission.HandMatches.Num() == Right.State.LastSubmission.HandMatches.Num()
+			&& Left.State.LastCycleSettlement.CycleIndex == Right.State.LastCycleSettlement.CycleIndex
+			&& Left.State.bSupernovaGameOver == Right.State.bSupernovaGameOver;
 	}
 
 	constexpr float FocusDetailsBoxWidth = 360.0f;
@@ -229,7 +283,7 @@ void USRCelestialBodyFocusInfoWidget::NativeTick(const FGeometry& MyGeometry, fl
 		return;
 	}
 
-	if (RefreshStarFuelInfoFromFocusedActor())
+	if (RefreshStellarContractInfoFromFocusedActor())
 	{
 		RefreshFocusInfoText();
 	}
@@ -421,6 +475,18 @@ void USRCelestialBodyFocusInfoWidget::EnsureHoveredCellTextBlock(UWidget* Hovere
 		HoveredCellTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HoveredCellTextBlock"));
 	}
 
+	if (!StellarDemandPatternGrid)
+	{
+		StellarDemandPatternGrid = Cast<USRPatternGridWidget>(WidgetTree->FindWidget(FName(TEXT("StellarDemandPatternGrid"))));
+	}
+	if (!StellarDemandPatternGrid)
+	{
+		StellarDemandPatternGrid = WidgetTree->ConstructWidget<USRPatternGridWidget>(
+			USRPatternGridWidget::StaticClass(),
+			TEXT("StellarDemandPatternGrid"));
+		StellarDemandPatternGrid->SetCellSize(28.0f);
+	}
+
 	if (!HoveredCellTextBlock || !HoveredCellContainer || !HoveredCellScrollBox)
 	{
 		return;
@@ -455,6 +521,14 @@ void USRCelestialBodyFocusInfoWidget::EnsureHoveredCellTextBlock(UWidget* Hovere
 	if (HoveredCellTextBlock->GetParent() != HoveredCellScrollBox)
 	{
 		HoveredCellScrollBox->AddChild(HoveredCellTextBlock);
+	}
+	if (StellarDemandPatternGrid && StellarDemandPatternGrid->GetParent() != HoveredCellScrollBox)
+	{
+		if (StellarDemandPatternGrid->GetParent())
+		{
+			StellarDemandPatternGrid->GetParent()->RemoveChild(StellarDemandPatternGrid);
+		}
+		HoveredCellScrollBox->AddChild(StellarDemandPatternGrid);
 	}
 
 	if (HoveredCellContainer->GetParent())
@@ -578,9 +652,9 @@ void USRCelestialBodyFocusInfoWidget::BindAssemblyModeButtonHandler()
 	}
 }
 
-bool USRCelestialBodyFocusInfoWidget::RefreshStarFuelInfoFromFocusedActor()
+bool USRCelestialBodyFocusInfoWidget::RefreshStellarContractInfoFromFocusedActor()
 {
-	if (!bHasFocusInfo || !FocusInfo.bHasStarFuelInfo || !IsValid(FocusInfo.Actor))
+	if (!bHasFocusInfo || !FocusInfo.bHasStellarContractInfo || !IsValid(FocusInfo.Actor))
 	{
 		return false;
 	}
@@ -591,31 +665,16 @@ bool USRCelestialBodyFocusInfoWidget::RefreshStarFuelInfoFromFocusedActor()
 		return false;
 	}
 
-	const FSRStellarFuelState FuelState = Star->GetStellarFuelState();
-	FSRFocusedStarFuelInfo NewFuelInfo;
-	NewFuelInfo.bIsValid = true;
-	NewFuelInfo.EvolutionStage = FuelState.EvolutionStage;
-	NewFuelInfo.StoredFuel = FuelState.StoredFuel;
-	NewFuelInfo.InitialStageFuel = FuelState.InitialStageFuel;
-	NewFuelInfo.InitialFuelDecreasePerSecond = FuelState.InitialFuelDecreasePerSecond;
-	NewFuelInfo.RequiredFuelPerCycle = FuelState.RequiredFuelPerCycle;
-	NewFuelInfo.RequirementGrowthPerCycle = FuelState.RequirementGrowthPerCycle;
-	NewFuelInfo.LastFuelDecreaseRateCycleIndex = FuelState.LastFuelDecreaseRateCycleIndex;
-	NewFuelInfo.RedGiantPressure = FuelState.RedGiantPressure;
-	NewFuelInfo.RedGiantPressurePerMissingFuel = FuelState.RedGiantPressurePerMissingFuel;
-	NewFuelInfo.LastSettledSecondIndex = FuelState.LastSettledSecondIndex;
-	NewFuelInfo.LastSecondFuelConsumed = FuelState.LastSecondFuelConsumed;
-	NewFuelInfo.LastSecondFuelDecrease = FuelState.LastSecondFuelDecrease;
-	NewFuelInfo.LastSecondFuelDeficit = FuelState.LastSecondFuelDeficit;
-	NewFuelInfo.bLastSecondSurvived = FuelState.bLastSecondSurvived;
-	NewFuelInfo.bSupernovaGameOver = FuelState.bSupernovaGameOver;
-
-	if (AreFocusedStarFuelInfosEqual(FocusInfo.StarFuelInfo, NewFuelInfo))
+	FSRFocusedStellarContractInfo NewContractInfo;
+	NewContractInfo.bIsValid = true;
+	NewContractInfo.Contract = Star->GetStellarPatternContract();
+	NewContractInfo.State = Star->GetStellarContractState();
+	if (AreFocusedStellarContractInfosEqual(FocusInfo.StellarContractInfo, NewContractInfo))
 	{
 		return false;
 	}
 
-	FocusInfo.StarFuelInfo = NewFuelInfo;
+	FocusInfo.StellarContractInfo = MoveTemp(NewContractInfo);
 	return true;
 }
 
@@ -630,18 +689,34 @@ void USRCelestialBodyFocusInfoWidget::RefreshFocusInfoText()
 		);
 	}
 
+	const bool bHasStellarContractDetails = FocusInfo.bHasStellarContractInfo
+		&& FocusInfo.StellarContractInfo.bIsValid;
+	if (StellarDemandPatternGrid)
+	{
+		if (bHasFocusInfo && bHasStellarContractDetails)
+		{
+			StellarDemandPatternGrid->SetPatternAndMask(
+				FocusInfo.StellarContractInfo.Contract.RequiredPattern,
+				FocusInfo.StellarContractInfo.Contract.RequiredMask);
+			StellarDemandPatternGrid->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		}
+		else
+		{
+			StellarDemandPatternGrid->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
 	if (HoveredCellTextBlock)
 	{
 		const bool bHasSelectedNonFacilityStructure = FocusInfo.bHasSelectedSurfaceStructure
 			&& !FocusInfo.SelectedSurfaceStructureInfo.bHasFacilityRuntimeInfo;
 		const bool bHasSurfaceFocusDetails = bAssemblyModeActive && (FocusInfo.bHasHoveredSurfaceCell || bHasSelectedNonFacilityStructure);
-		const bool bHasStarFuelDetails = FocusInfo.bHasStarFuelInfo && FocusInfo.StarFuelInfo.bIsValid;
-		if (bHasFocusInfo && (bHasSurfaceFocusDetails || bHasStarFuelDetails))
+		if (bHasFocusInfo && (bHasSurfaceFocusDetails || bHasStellarContractDetails))
 		{
 			FString CellText;
-			if (bHasStarFuelDetails)
+			if (bHasStellarContractDetails)
 			{
-				CellText += BuildFocusedStarFuelSummary(FocusInfo.StarFuelInfo);
+				CellText += BuildFocusedStellarContractSummary(FocusInfo.StellarContractInfo);
 			}
 
 			if (bAssemblyModeActive && FocusInfo.bHasHoveredSurfaceCell)

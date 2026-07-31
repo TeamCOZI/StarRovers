@@ -1,33 +1,26 @@
 #include "Simulation/SRAugmentSubsystem.h"
 
-#include "Utility/SRLog.h"
+#include "Simulation/SRRunModifierSubsystem.h"
 #include "Simulation/SRSimulationSettings.h"
 #include "Simulation/SRTimeControlSubsystem.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "Utility/SRLog.h"
 
 namespace
 {
-	bool HasRarity(const TArray<USRStructureDataAsset*>& Candidates, ESRFacilityRarity Rarity)
+	bool HasRarity(const TArray<USRRunAugmentDataAsset*>& Candidates, ESRRunAugmentRarity Rarity)
 	{
-		for (const USRStructureDataAsset* StructureDataAsset : Candidates)
+		for (const USRRunAugmentDataAsset* Candidate : Candidates)
 		{
-			if (!IsValid(StructureDataAsset))
-			{
-				continue;
-			}
-
-			const FSRStructureData StructureData = StructureDataAsset->BuildData();
-			const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
-			if (IsValid(FacilityDataAsset) && FacilityDataAsset->Rarity == Rarity)
+			if (IsValid(Candidate) && Candidate->Rarity == Rarity)
 			{
 				return true;
 			}
 		}
-
 		return false;
 	}
 
-	bool HasRarity(const TArray<FSRAugmentChoice>& Choices, ESRFacilityRarity Rarity)
+	bool HasRarity(const TArray<FSRAugmentChoice>& Choices, ESRRunAugmentRarity Rarity)
 	{
 		for (const FSRAugmentChoice& Choice : Choices)
 		{
@@ -36,15 +29,26 @@ namespace
 				return true;
 			}
 		}
-
 		return false;
+	}
+
+	ESRRunAugmentOfferRole ResolveOfferRole(int32 ChoiceIndex)
+	{
+		switch (ChoiceIndex % 3)
+		{
+		case 0:
+			return ESRRunAugmentOfferRole::Immediate;
+		case 1:
+			return ESRRunAugmentOfferRole::Synergy;
+		default:
+			return ESRRunAugmentOfferRole::Pivot;
+		}
 	}
 }
 
 void USRAugmentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-
 	if (const USRSimulationSettings* SimulationSettings = GetDefault<USRSimulationSettings>())
 	{
 		AugmentIntervalCycles = FMath::Max(1, SimulationSettings->AugmentIntervalCycles);
@@ -56,17 +60,26 @@ void USRAugmentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		HighTechPityCapPercent = FMath::Clamp(SimulationSettings->AugmentHighTechPityCapPercent, 0.0f, 100.0f);
 		bPauseSimulationDuringChoice = SimulationSettings->bPauseSimulationDuringAugmentChoice;
 		AugmentRandomSeed = SimulationSettings->AugmentRandomSeed;
-		bDebugUnlockAllFacilitiesWithoutAugments = SimulationSettings->bDebugUnlockAllFacilitiesWithoutAugments;
+		bDebugUnlockAllFacilitiesWithoutTechnology = SimulationSettings->bDebugUnlockAllFacilitiesWithoutTechnology;
 	}
 
+	Collection.InitializeDependency(USRRunModifierSubsystem::StaticClass());
 	Collection.InitializeDependency(USRTimeControlSubsystem::StaticClass());
 	BindTimeControlSubsystem();
+	if (USRRunModifierSubsystem* RunModifierSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr)
+	{
+		RunModifierSubsystem->OnTechnologyUnlocked.RemoveDynamic(this, &USRAugmentSubsystem::HandleTechnologyUnlocked);
+		RunModifierSubsystem->OnTechnologyUnlocked.AddDynamic(this, &USRAugmentSubsystem::HandleTechnologyUnlocked);
+	}
 }
 
 void USRAugmentSubsystem::Deinitialize()
 {
 	UnbindTimeControlSubsystem();
-
+	if (USRRunModifierSubsystem* RunModifierSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr)
+	{
+		RunModifierSubsystem->OnTechnologyUnlocked.RemoveDynamic(this, &USRAugmentSubsystem::HandleTechnologyUnlocked);
+	}
 	Super::Deinitialize();
 }
 
@@ -74,47 +87,29 @@ void USRAugmentSubsystem::RegisterStructureDataAssets(const TArray<USRStructureD
 {
 	bool bRegisteredAny = false;
 	bool bUnlockedAny = false;
-
 	TSet<FName> RegisteredStructureIds;
-	RegisteredStructureIds.Reserve(RegisteredStructureDataAssets.Num() + StructureDataAssets.Num());
-	for (const USRStructureDataAsset* RegisteredStructureDataAsset : RegisteredStructureDataAssets)
+	for (const USRStructureDataAsset* Registered : RegisteredStructureDataAssets)
 	{
-		if (!IsValid(RegisteredStructureDataAsset))
+		if (IsValid(Registered))
 		{
-			continue;
-		}
-
-		const FSRStructureData StructureData = RegisteredStructureDataAsset->BuildData();
-		if (!StructureData.StructureId.IsNone())
-		{
-			RegisteredStructureIds.Add(StructureData.StructureId);
+			RegisteredStructureIds.Add(Registered->BuildData().StructureId);
 		}
 	}
 
-	RegisteredStructureDataAssets.Reserve(RegisteredStructureDataAssets.Num() + StructureDataAssets.Num());
 	for (USRStructureDataAsset* StructureDataAsset : StructureDataAssets)
 	{
 		if (!IsValid(StructureDataAsset))
 		{
 			continue;
 		}
-
 		const FSRStructureData StructureData = StructureDataAsset->BuildData();
-		if (StructureData.StructureId.IsNone())
+		if (StructureData.StructureId.IsNone() || RegisteredStructureIds.Contains(StructureData.StructureId))
 		{
 			continue;
 		}
-
-		bool bAlreadyRegistered = false;
-		RegisteredStructureIds.Add(StructureData.StructureId, &bAlreadyRegistered);
-		if (bAlreadyRegistered)
-		{
-			continue;
-		}
-
+		RegisteredStructureIds.Add(StructureData.StructureId);
 		RegisteredStructureDataAssets.Add(StructureDataAsset);
 		bRegisteredAny = true;
-
 		if (StructureData.bAvailableForConstruction
 			&& !StructureData.bIsResourceDeposit
 			&& !IsStructureUnlockControlled(StructureDataAsset))
@@ -127,12 +122,19 @@ void USRAugmentSubsystem::RegisterStructureDataAssets(const TArray<USRStructureD
 
 	if (bRegisteredAny)
 	{
-		SR_LOG(Augment, LogTemp, Log, TEXT("USRAugmentSubsystem registered %d structure data assets."), RegisteredStructureDataAssets.Num());
+		SR_LOG(Augment, LogTemp, Log, TEXT("USRAugmentSubsystem registered %d structure data assets for Technology unlock checks."), RegisteredStructureDataAssets.Num());
 	}
-
-	if (bUnlockedAny || (bRegisteredAny && bDebugUnlockAllFacilitiesWithoutAugments))
+	if (bUnlockedAny || (bRegisteredAny && bDebugUnlockAllFacilitiesWithoutTechnology))
 	{
 		OnUnlockedStructuresChanged.Broadcast();
+	}
+}
+
+void USRAugmentSubsystem::RegisterAugmentDataAssets(const TArray<USRRunAugmentDataAsset*>& AugmentDataAssets)
+{
+	if (USRRunModifierSubsystem* RunModifierSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr)
+	{
+		RunModifierSubsystem->RegisterAugmentDataAssets(AugmentDataAssets);
 	}
 }
 
@@ -143,40 +145,47 @@ void USRAugmentSubsystem::GenerateAugmentChoices(int32 CycleIndex)
 		return;
 	}
 
-	TArray<USRStructureDataAsset*> InitialCandidates = GetEligibleAugmentCandidates();
+	TArray<USRRunAugmentDataAsset*> InitialCandidates = GetEligibleAugmentCandidates();
 	if (InitialCandidates.IsEmpty())
 	{
-		SR_LOG(Augment, LogTemp, Warning, TEXT("USRAugmentSubsystem could not generate augment choices for cycle %d because no eligible structure candidates remain."), CycleIndex);
+		SR_LOG(Augment, LogTemp, Warning, TEXT("No eligible true Augment Data Assets are registered for cycle %d."), CycleIndex);
 		return;
 	}
 
-	TArray<USRStructureDataAsset*> RemainingCandidates = InitialCandidates;
+	TArray<USRRunAugmentDataAsset*> RemainingCandidates = InitialCandidates;
 	TArray<FSRAugmentChoice> GeneratedChoices;
 	const int32 SafeChoicesPerOffer = FMath::Max(1, ChoicesPerOffer);
 	GeneratedChoices.Reserve(FMath::Min(SafeChoicesPerOffer, RemainingCandidates.Num()));
-
-	const int32 Seed = HashCombineFast(
-		GetTypeHash(AugmentRandomSeed),
-		HashCombineFast(GetTypeHash(CycleIndex), GetTypeHash(UnlockedStructureIds.Num())));
+	const USRRunModifierSubsystem* RunModifierSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr;
+	const int32 AppliedStackCount = IsValid(RunModifierSubsystem) ? RunModifierSubsystem->GetTotalAugmentStackCount() : 0;
+	const int32 Seed = HashCombineFast(GetTypeHash(AugmentRandomSeed), HashCombineFast(GetTypeHash(CycleIndex), GetTypeHash(AppliedStackCount)));
 	FRandomStream RandomStream(Seed);
 
 	for (int32 ChoiceIndex = 0; ChoiceIndex < SafeChoicesPerOffer && !RemainingCandidates.IsEmpty(); ++ChoiceIndex)
 	{
+		const ESRRunAugmentOfferRole DesiredRole = ResolveOfferRole(ChoiceIndex);
+		TArray<USRRunAugmentDataAsset*> RoleCandidates;
+		for (USRRunAugmentDataAsset* Candidate : RemainingCandidates)
+		{
+			if (IsValid(Candidate) && Candidate->OfferRole == DesiredRole)
+			{
+				RoleCandidates.Add(Candidate);
+			}
+		}
+		const TArray<USRRunAugmentDataAsset*>& DrawCandidates = RoleCandidates.IsEmpty() ? RemainingCandidates : RoleCandidates;
 		int32 CandidateIndex = INDEX_NONE;
-		if (!DrawCandidateIndex(RemainingCandidates, RandomStream, CandidateIndex) || !RemainingCandidates.IsValidIndex(CandidateIndex))
+		if (!DrawCandidateIndex(DrawCandidates, RandomStream, CandidateIndex) || !DrawCandidates.IsValidIndex(CandidateIndex))
 		{
 			break;
 		}
 
-		USRStructureDataAsset* SelectedStructureDataAsset = RemainingCandidates[CandidateIndex];
-		RemainingCandidates.RemoveAtSwap(CandidateIndex, 1, EAllowShrinking::No);
-
-		if (IsValid(SelectedStructureDataAsset))
+		USRRunAugmentDataAsset* SelectedAugment = DrawCandidates[CandidateIndex];
+		RemainingCandidates.RemoveSingleSwap(SelectedAugment, EAllowShrinking::No);
+		if (IsValid(SelectedAugment))
 		{
-			GeneratedChoices.Add(BuildAugmentChoice(SelectedStructureDataAsset));
+			GeneratedChoices.Add(BuildAugmentChoice(SelectedAugment));
 		}
 	}
-
 	if (GeneratedChoices.IsEmpty())
 	{
 		return;
@@ -185,11 +194,6 @@ void USRAugmentSubsystem::GenerateAugmentChoices(int32 CycleIndex)
 	UpdateHighTechBonusAfterOffer(InitialCandidates, GeneratedChoices);
 	CurrentChoices = MoveTemp(GeneratedChoices);
 	CurrentAugmentChoiceCycleIndex = CycleIndex;
-	SR_LOG(Augment, LogTemp, Log, TEXT("USRAugmentSubsystem generated %d augment choices for cycle %d from %d candidates."),
-		CurrentChoices.Num(),
-		CurrentAugmentChoiceCycleIndex,
-		InitialCandidates.Num());
-
 	if (bPauseSimulationDuringChoice)
 	{
 		if (USRTimeControlSubsystem* TimeControlSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRTimeControlSubsystem>() : nullptr)
@@ -198,7 +202,6 @@ void USRAugmentSubsystem::GenerateAugmentChoices(int32 CycleIndex)
 			bPausedSimulationForCurrentChoice = true;
 		}
 	}
-
 	OnAugmentChoicesReady.Broadcast(CurrentChoices, CurrentAugmentChoiceCycleIndex);
 }
 
@@ -208,60 +211,28 @@ bool USRAugmentSubsystem::SelectAugmentChoiceByIndex(int32 ChoiceIndex)
 	{
 		return false;
 	}
-
 	const FSRAugmentChoice SelectedChoice = CurrentChoices[ChoiceIndex];
-	if (!UnlockStructure(SelectedChoice.StructureDataAsset.Get()))
+	USRRunModifierSubsystem* RunModifierSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr;
+	if (!IsValid(RunModifierSubsystem) || !RunModifierSubsystem->ApplyAugment(SelectedChoice.AugmentId))
 	{
 		return false;
 	}
-
 	OnAugmentChoiceSelected.Broadcast(SelectedChoice);
 	ClearPendingAugmentChoice();
 	ResumeSimulationAfterChoiceIfNeeded();
 	return true;
 }
 
-bool USRAugmentSubsystem::SelectAugmentChoiceByStructureId(FName StructureId)
+bool USRAugmentSubsystem::SelectAugmentChoiceByAugmentId(FName AugmentId)
 {
-	if (StructureId.IsNone())
-	{
-		return false;
-	}
-
 	for (int32 ChoiceIndex = 0; ChoiceIndex < CurrentChoices.Num(); ++ChoiceIndex)
 	{
-		if (CurrentChoices[ChoiceIndex].StructureId == StructureId)
+		if (CurrentChoices[ChoiceIndex].AugmentId == AugmentId)
 		{
 			return SelectAugmentChoiceByIndex(ChoiceIndex);
 		}
 	}
-
 	return false;
-}
-
-bool USRAugmentSubsystem::UnlockStructure(USRStructureDataAsset* StructureDataAsset)
-{
-	if (!IsValid(StructureDataAsset))
-	{
-		return false;
-	}
-
-	const FSRStructureData StructureData = StructureDataAsset->BuildData();
-	if (StructureData.StructureId.IsNone())
-	{
-		return false;
-	}
-
-	bool bAlreadyUnlocked = false;
-	UnlockedStructureIds.Add(StructureData.StructureId, &bAlreadyUnlocked);
-	if (bAlreadyUnlocked)
-	{
-		return true;
-	}
-
-	OnUnlockedStructuresChanged.Broadcast();
-	SR_LOG(Augment, LogTemp, Log, TEXT("USRAugmentSubsystem unlocked structure '%s'."), *StructureData.StructureId.ToString());
-	return true;
 }
 
 bool USRAugmentSubsystem::IsStructureUnlocked(const USRStructureDataAsset* StructureDataAsset) const
@@ -270,31 +241,27 @@ bool USRAugmentSubsystem::IsStructureUnlocked(const USRStructureDataAsset* Struc
 	{
 		return false;
 	}
-
 	const FSRStructureData StructureData = StructureDataAsset->BuildData();
 	if (StructureData.StructureId.IsNone())
 	{
 		return false;
 	}
-
 	const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
-	const bool bAvailableFacility = StructureData.bAvailableForConstruction
-		&& !StructureData.bIsResourceDeposit
-		&& IsValid(FacilityDataAsset);
-
-	if (bDebugUnlockAllFacilitiesWithoutAugments && bAvailableFacility)
+	const bool bAvailableFacility = StructureData.bAvailableForConstruction && !StructureData.bIsResourceDeposit && IsValid(FacilityDataAsset);
+	if (bDebugUnlockAllFacilitiesWithoutTechnology && bAvailableFacility)
 	{
 		return true;
 	}
-
-	if (!bAvailableFacility
-		|| FacilityDataAsset->FacilityKind != ESRFacilityKind::Standard
-		|| FacilityDataAsset->Rarity == ESRFacilityRarity::Starting)
+	if (!bAvailableFacility || FacilityDataAsset->FacilityKind != ESRFacilityKind::Standard || FacilityDataAsset->Rarity == ESRFacilityRarity::Starting)
 	{
 		return true;
 	}
-
-	return UnlockedStructureIds.Contains(StructureData.StructureId);
+	if (UnlockedStructureIds.Contains(StructureData.StructureId))
+	{
+		return true;
+	}
+	const USRRunModifierSubsystem* RunModifierSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr;
+	return IsValid(RunModifierSubsystem) && RunModifierSubsystem->IsStructureUnlockedByTechnology(StructureData.StructureId);
 }
 
 bool USRAugmentSubsystem::IsStructureUnlockedById(FName StructureId) const
@@ -303,29 +270,25 @@ bool USRAugmentSubsystem::IsStructureUnlockedById(FName StructureId) const
 	{
 		return false;
 	}
-
 	if (UnlockedStructureIds.Contains(StructureId))
 	{
 		return true;
 	}
-
-	if (bDebugUnlockAllFacilitiesWithoutAugments)
+	const USRRunModifierSubsystem* RunModifierSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr;
+	if (IsValid(RunModifierSubsystem) && RunModifierSubsystem->IsStructureUnlockedByTechnology(StructureId))
+	{
+		return true;
+	}
+	if (bDebugUnlockAllFacilitiesWithoutTechnology)
 	{
 		for (const USRStructureDataAsset* StructureDataAsset : RegisteredStructureDataAssets)
 		{
-			if (!IsValid(StructureDataAsset))
-			{
-				continue;
-			}
-
-			const FSRStructureData StructureData = StructureDataAsset->BuildData();
-			if (StructureData.StructureId == StructureId && IsDebugUnlockableFacility(StructureDataAsset))
+			if (IsValid(StructureDataAsset) && StructureDataAsset->BuildData().StructureId == StructureId && IsDebugUnlockableFacility(StructureDataAsset))
 			{
 				return true;
 			}
 		}
 	}
-
 	return false;
 }
 
@@ -354,6 +317,94 @@ float USRAugmentSubsystem::GetHighTechBonusChancePercent() const
 	return HighTechBonusChancePercent;
 }
 
+void USRAugmentSubsystem::ExportSaveData(FSRAugmentOfferSaveData& OutSaveData) const
+{
+	OutSaveData = FSRAugmentOfferSaveData();
+	OutSaveData.OfferCycleIndex = CurrentAugmentChoiceCycleIndex;
+	OutSaveData.EpicPityBonusChancePercent = HighTechBonusChancePercent;
+	OutSaveData.bPausedSimulationForOffer = bPausedSimulationForCurrentChoice;
+	for (const FSRAugmentChoice& Choice : CurrentChoices)
+	{
+		OutSaveData.OfferedAugmentIds.Add(Choice.AugmentId);
+	}
+}
+
+bool USRAugmentSubsystem::CanImportSaveData(
+	const FSRAugmentOfferSaveData& SaveData,
+	FString& OutFailureReason) const
+{
+	OutFailureReason.Reset();
+	if (!StarRovers::Save::AugmentOffer::IsSupportedVersion(SaveData.Version))
+	{
+		OutFailureReason = FString::Printf(TEXT("Unsupported Augment-offer save version %d."), SaveData.Version);
+		return false;
+	}
+	if (SaveData.OfferCycleIndex < 0
+		|| !FMath::IsFinite(SaveData.EpicPityBonusChancePercent)
+		|| SaveData.EpicPityBonusChancePercent < 0.0f
+		|| SaveData.EpicPityBonusChancePercent > FMath::Max(0.0f, HighTechPityCapPercent))
+	{
+		OutFailureReason = TEXT("Augment offer Cycle or pity state is invalid.");
+		return false;
+	}
+	if (SaveData.bPausedSimulationForOffer && SaveData.OfferedAugmentIds.IsEmpty())
+	{
+		OutFailureReason = TEXT("An Augment offer cannot pause the simulation without choices.");
+		return false;
+	}
+	if (SaveData.OfferedAugmentIds.IsEmpty() && SaveData.OfferCycleIndex != 0)
+	{
+		OutFailureReason = TEXT("An empty Augment offer must have Cycle index zero.");
+		return false;
+	}
+
+	const USRRunModifierSubsystem* RunModifiers = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr;
+	if (!IsValid(RunModifiers) && !SaveData.OfferedAugmentIds.IsEmpty())
+	{
+		OutFailureReason = TEXT("Augment offers require the run-modifier registry.");
+		return false;
+	}
+	TSet<FName> UniqueIds;
+	for (const FName AugmentId : SaveData.OfferedAugmentIds)
+	{
+		bool bDuplicate = false;
+		UniqueIds.Add(AugmentId, &bDuplicate);
+		const USRRunAugmentDataAsset* Augment = RunModifiers ? RunModifiers->FindAugmentDataAsset(AugmentId) : nullptr;
+		if (AugmentId.IsNone()
+			|| bDuplicate
+			|| !IsValid(Augment))
+		{
+			OutFailureReason = FString::Printf(TEXT("Saved Augment offer '%s' is unresolved or duplicated."), *AugmentId.ToString());
+			return false;
+		}
+	}
+	return true;
+}
+
+bool USRAugmentSubsystem::ImportSaveData(const FSRAugmentOfferSaveData& SaveData)
+{
+	FString FailureReason;
+	if (!CanImportSaveData(SaveData, FailureReason))
+	{
+		return false;
+	}
+	USRRunModifierSubsystem* RunModifiers = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr;
+	TArray<FSRAugmentChoice> ImportedChoices;
+	for (const FName AugmentId : SaveData.OfferedAugmentIds)
+	{
+		ImportedChoices.Add(BuildAugmentChoice(const_cast<USRRunAugmentDataAsset*>(RunModifiers->FindAugmentDataAsset(AugmentId))));
+	}
+	CurrentChoices = MoveTemp(ImportedChoices);
+	CurrentAugmentChoiceCycleIndex = SaveData.OfferCycleIndex;
+	HighTechBonusChancePercent = SaveData.EpicPityBonusChancePercent;
+	bPausedSimulationForCurrentChoice = SaveData.bPausedSimulationForOffer;
+	if (!CurrentChoices.IsEmpty())
+	{
+		OnAugmentChoicesReady.Broadcast(CurrentChoices, CurrentAugmentChoiceCycleIndex);
+	}
+	return true;
+}
+
 void USRAugmentSubsystem::HandleGameCycleAdvanced(int32 CurrentCycleIndex)
 {
 	const int32 SafeInterval = FMath::Max(1, AugmentIntervalCycles);
@@ -363,40 +414,45 @@ void USRAugmentSubsystem::HandleGameCycleAdvanced(int32 CurrentCycleIndex)
 	}
 }
 
+void USRAugmentSubsystem::HandleTechnologyUnlocked(FName TechnologyId)
+{
+	OnUnlockedStructuresChanged.Broadcast();
+}
+
 void USRAugmentSubsystem::BindTimeControlSubsystem()
 {
 	USRTimeControlSubsystem* TimeControlSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRTimeControlSubsystem>() : nullptr;
-	if (!TimeControlSubsystem)
+	if (IsValid(TimeControlSubsystem))
 	{
-		return;
+		TimeControlSubsystem->OnGameCycleAdvanced.RemoveDynamic(this, &USRAugmentSubsystem::HandleGameCycleAdvanced);
+		TimeControlSubsystem->OnGameCycleAdvanced.AddDynamic(this, &USRAugmentSubsystem::HandleGameCycleAdvanced);
 	}
-
-	TimeControlSubsystem->OnGameCycleAdvanced.RemoveDynamic(this, &USRAugmentSubsystem::HandleGameCycleAdvanced);
-	TimeControlSubsystem->OnGameCycleAdvanced.AddDynamic(this, &USRAugmentSubsystem::HandleGameCycleAdvanced);
 }
 
 void USRAugmentSubsystem::UnbindTimeControlSubsystem()
 {
 	USRTimeControlSubsystem* TimeControlSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRTimeControlSubsystem>() : nullptr;
-	if (TimeControlSubsystem)
+	if (IsValid(TimeControlSubsystem))
 	{
 		TimeControlSubsystem->OnGameCycleAdvanced.RemoveDynamic(this, &USRAugmentSubsystem::HandleGameCycleAdvanced);
 	}
 }
 
-TArray<USRStructureDataAsset*> USRAugmentSubsystem::GetEligibleAugmentCandidates() const
+TArray<USRRunAugmentDataAsset*> USRAugmentSubsystem::GetEligibleAugmentCandidates() const
 {
-	TArray<USRStructureDataAsset*> Candidates;
-	Candidates.Reserve(RegisteredStructureDataAssets.Num());
-
-	for (USRStructureDataAsset* StructureDataAsset : RegisteredStructureDataAssets)
+	TArray<USRRunAugmentDataAsset*> Candidates;
+	const USRRunModifierSubsystem* RunModifierSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr;
+	if (!IsValid(RunModifierSubsystem))
 	{
-		if (IsAugmentCandidate(StructureDataAsset))
+		return Candidates;
+	}
+	for (USRRunAugmentDataAsset* DataAsset : RunModifierSubsystem->GetRegisteredAugmentDataAssets())
+	{
+		if (IsAugmentCandidate(DataAsset))
 		{
-			Candidates.Add(StructureDataAsset);
+			Candidates.Add(DataAsset);
 		}
 	}
-
 	return Candidates;
 }
 
@@ -406,116 +462,71 @@ bool USRAugmentSubsystem::IsStructureUnlockControlled(const USRStructureDataAsse
 	{
 		return false;
 	}
-
 	const FSRStructureData StructureData = StructureDataAsset->BuildData();
 	const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
-	return StructureData.bAvailableForConstruction
-		&& !StructureData.bIsResourceDeposit
-		&& IsValid(FacilityDataAsset)
-		&& FacilityDataAsset->FacilityKind == ESRFacilityKind::Standard
-		&& FacilityDataAsset->Rarity != ESRFacilityRarity::Starting;
+	return StructureData.bAvailableForConstruction && !StructureData.bIsResourceDeposit && IsValid(FacilityDataAsset)
+		&& FacilityDataAsset->FacilityKind == ESRFacilityKind::Standard && FacilityDataAsset->Rarity != ESRFacilityRarity::Starting;
 }
 
 bool USRAugmentSubsystem::IsDebugUnlockableFacility(const USRStructureDataAsset* StructureDataAsset) const
 {
-	if (!bDebugUnlockAllFacilitiesWithoutAugments || !IsValid(StructureDataAsset))
+	if (!bDebugUnlockAllFacilitiesWithoutTechnology || !IsValid(StructureDataAsset))
 	{
 		return false;
 	}
-
 	const FSRStructureData StructureData = StructureDataAsset->BuildData();
-	return StructureData.bAvailableForConstruction
-		&& !StructureData.bIsResourceDeposit
-		&& IsValid(StructureData.FacilityDataAsset.Get());
+	return StructureData.bAvailableForConstruction && !StructureData.bIsResourceDeposit && IsValid(StructureData.FacilityDataAsset.Get());
 }
 
-bool USRAugmentSubsystem::IsAugmentCandidate(const USRStructureDataAsset* StructureDataAsset) const
+bool USRAugmentSubsystem::IsAugmentCandidate(const USRRunAugmentDataAsset* AugmentDataAsset) const
 {
-	if (!IsValid(StructureDataAsset))
-	{
-		return false;
-	}
-
-	const FSRStructureData StructureData = StructureDataAsset->BuildData();
-	const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
-	if (!StructureData.bAvailableForConstruction
-		|| StructureData.bIsResourceDeposit
-		|| !IsValid(FacilityDataAsset)
-		|| FacilityDataAsset->FacilityKind != ESRFacilityKind::Standard
-		|| FacilityDataAsset->Rarity == ESRFacilityRarity::Starting)
-	{
-		return false;
-	}
-
-	if (bDebugUnlockAllFacilitiesWithoutAugments)
-	{
-		return false;
-	}
-
-	return !StructureData.StructureId.IsNone()
-		&& !UnlockedStructureIds.Contains(StructureData.StructureId)
-		&& FacilityDataAsset->Rarity != ESRFacilityRarity::Innovation;
+	const USRRunModifierSubsystem* RunModifierSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr;
+	return IsValid(AugmentDataAsset)
+		&& !AugmentDataAsset->AugmentId.IsNone()
+		&& IsValid(RunModifierSubsystem)
+		&& RunModifierSubsystem->GetAugmentStackCount(AugmentDataAsset->AugmentId) < FMath::Max(1, AugmentDataAsset->MaximumStacks);
 }
 
-bool USRAugmentSubsystem::DrawCandidateIndex(const TArray<USRStructureDataAsset*>& Candidates, FRandomStream& RandomStream, int32& OutCandidateIndex) const
+bool USRAugmentSubsystem::DrawCandidateIndex(const TArray<USRRunAugmentDataAsset*>& Candidates, FRandomStream& RandomStream, int32& OutCandidateIndex) const
 {
 	OutCandidateIndex = INDEX_NONE;
 	if (Candidates.IsEmpty())
 	{
 		return false;
 	}
-
-	TArray<int32> BasicCandidateIndices;
-	TArray<int32> AdvancedCandidateIndices;
-	TArray<int32> HighTechCandidateIndices;
-	BasicCandidateIndices.Reserve(Candidates.Num());
-	AdvancedCandidateIndices.Reserve(Candidates.Num());
-	HighTechCandidateIndices.Reserve(Candidates.Num());
-
+	TArray<int32> CommonIndices;
+	TArray<int32> RareIndices;
+	TArray<int32> EpicIndices;
 	for (int32 CandidateIndex = 0; CandidateIndex < Candidates.Num(); ++CandidateIndex)
 	{
-		const USRStructureDataAsset* StructureDataAsset = Candidates[CandidateIndex];
-		if (!IsValid(StructureDataAsset))
+		const USRRunAugmentDataAsset* Candidate = Candidates[CandidateIndex];
+		if (!IsValid(Candidate))
 		{
 			continue;
 		}
-
-		const FSRStructureData StructureData = StructureDataAsset->BuildData();
-		const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
-		if (!IsValid(FacilityDataAsset))
+		switch (Candidate->Rarity)
 		{
-			continue;
-		}
-
-		switch (FacilityDataAsset->Rarity)
-		{
-		case ESRFacilityRarity::Basic:
-			BasicCandidateIndices.Add(CandidateIndex);
+		case ESRRunAugmentRarity::Common:
+			CommonIndices.Add(CandidateIndex);
 			break;
-		case ESRFacilityRarity::Advanced:
-			AdvancedCandidateIndices.Add(CandidateIndex);
+		case ESRRunAugmentRarity::Rare:
+			RareIndices.Add(CandidateIndex);
 			break;
-		case ESRFacilityRarity::HighTech:
-			HighTechCandidateIndices.Add(CandidateIndex);
+		case ESRRunAugmentRarity::Epic:
+			EpicIndices.Add(CandidateIndex);
 			break;
 		default:
 			break;
 		}
 	}
 
-	const float EffectiveHighTechChance = GetHighTechEffectiveChancePercent();
-	const float BasicAdvancedBaseTotal = FMath::Max(UE_SMALL_NUMBER, BasicChancePercent + AdvancedChancePercent);
-	const float RemainingNonHighTechChance = FMath::Max(0.0f, 100.0f - EffectiveHighTechChance);
-
-	const float BasicWeight = BasicCandidateIndices.IsEmpty()
-		? 0.0f
-		: RemainingNonHighTechChance * (FMath::Max(0.0f, BasicChancePercent) / BasicAdvancedBaseTotal);
-	const float AdvancedWeight = AdvancedCandidateIndices.IsEmpty()
-		? 0.0f
-		: RemainingNonHighTechChance * (FMath::Max(0.0f, AdvancedChancePercent) / BasicAdvancedBaseTotal);
-	const float HighTechWeight = HighTechCandidateIndices.IsEmpty() ? 0.0f : EffectiveHighTechChance;
-	const float TotalWeight = BasicWeight + AdvancedWeight + HighTechWeight;
-
+	const float EffectiveEpicChance = GetHighTechEffectiveChancePercent();
+	const float CommonRareTotal = FMath::Max(UE_SMALL_NUMBER, BasicChancePercent + AdvancedChancePercent);
+	const float NonEpicChance = FMath::Max(0.0f, 100.0f - EffectiveEpicChance);
+	const float CommonWeight = CommonIndices.IsEmpty() ? 0.0f : NonEpicChance * FMath::Max(0.0f, BasicChancePercent) / CommonRareTotal;
+	const float RareWeight = RareIndices.IsEmpty() ? 0.0f : NonEpicChance * FMath::Max(0.0f, AdvancedChancePercent) / CommonRareTotal;
+	const float EpicWeight = EpicIndices.IsEmpty() ? 0.0f : EffectiveEpicChance;
+	const float TotalWeight = CommonWeight + RareWeight + EpicWeight;
 	if (TotalWeight <= UE_SMALL_NUMBER)
 	{
 		OutCandidateIndex = RandomStream.RandRange(0, Candidates.Num() - 1);
@@ -523,87 +534,65 @@ bool USRAugmentSubsystem::DrawCandidateIndex(const TArray<USRStructureDataAsset*
 	}
 
 	const float Roll = RandomStream.FRandRange(0.0f, TotalWeight);
-	const TArray<int32>* SelectedCandidateIndices = nullptr;
-	float AccumulatedWeight = BasicWeight;
-	if (Roll <= AccumulatedWeight && !BasicCandidateIndices.IsEmpty())
+	const TArray<int32>* SelectedIndices = nullptr;
+	if (Roll <= CommonWeight && !CommonIndices.IsEmpty())
 	{
-		SelectedCandidateIndices = &BasicCandidateIndices;
+		SelectedIndices = &CommonIndices;
 	}
-	else
+	else if (Roll <= CommonWeight + RareWeight && !RareIndices.IsEmpty())
 	{
-		AccumulatedWeight += AdvancedWeight;
-		if (Roll <= AccumulatedWeight && !AdvancedCandidateIndices.IsEmpty())
-		{
-			SelectedCandidateIndices = &AdvancedCandidateIndices;
-		}
-		else if (!HighTechCandidateIndices.IsEmpty())
-		{
-			SelectedCandidateIndices = &HighTechCandidateIndices;
-		}
+		SelectedIndices = &RareIndices;
 	}
-
-	if (!SelectedCandidateIndices || SelectedCandidateIndices->IsEmpty())
+	else if (!EpicIndices.IsEmpty())
 	{
-		if (!BasicCandidateIndices.IsEmpty())
-		{
-			SelectedCandidateIndices = &BasicCandidateIndices;
-		}
-		else if (!AdvancedCandidateIndices.IsEmpty())
-		{
-			SelectedCandidateIndices = &AdvancedCandidateIndices;
-		}
-		else if (!HighTechCandidateIndices.IsEmpty())
-		{
-			SelectedCandidateIndices = &HighTechCandidateIndices;
-		}
+		SelectedIndices = &EpicIndices;
 	}
-
-	if (!SelectedCandidateIndices || SelectedCandidateIndices->IsEmpty())
+	else if (!CommonIndices.IsEmpty())
+	{
+		SelectedIndices = &CommonIndices;
+	}
+	else if (!RareIndices.IsEmpty())
+	{
+		SelectedIndices = &RareIndices;
+	}
+	if (!SelectedIndices || SelectedIndices->IsEmpty())
 	{
 		return false;
 	}
-
-	const int32 RarityLocalIndex = RandomStream.RandRange(0, SelectedCandidateIndices->Num() - 1);
-	OutCandidateIndex = (*SelectedCandidateIndices)[RarityLocalIndex];
+	OutCandidateIndex = (*SelectedIndices)[RandomStream.RandRange(0, SelectedIndices->Num() - 1)];
 	return true;
 }
 
-FSRAugmentChoice USRAugmentSubsystem::BuildAugmentChoice(USRStructureDataAsset* StructureDataAsset) const
+FSRAugmentChoice USRAugmentSubsystem::BuildAugmentChoice(USRRunAugmentDataAsset* AugmentDataAsset) const
 {
 	FSRAugmentChoice Choice;
-	if (!IsValid(StructureDataAsset))
+	if (!IsValid(AugmentDataAsset))
 	{
 		return Choice;
 	}
-
-	const FSRStructureData StructureData = StructureDataAsset->BuildData();
-	const USRFacilityDataAsset* FacilityDataAsset = StructureData.FacilityDataAsset.Get();
-
-	Choice.StructureId = StructureData.StructureId;
-	Choice.DisplayName = StructureData.DisplayName;
-	Choice.Description = StructureData.Description;
-	Choice.StructureDataAsset = StructureDataAsset;
-	Choice.Rarity = IsValid(FacilityDataAsset) ? FacilityDataAsset->Rarity : ESRFacilityRarity::Basic;
+	const USRRunModifierSubsystem* RunModifierSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRRunModifierSubsystem>() : nullptr;
+	Choice.AugmentId = AugmentDataAsset->AugmentId;
+	Choice.DisplayName = AugmentDataAsset->DisplayName;
+	Choice.Description = AugmentDataAsset->Description;
+	Choice.AugmentDataAsset = AugmentDataAsset;
+	Choice.Rarity = AugmentDataAsset->Rarity;
+	Choice.OfferRole = AugmentDataAsset->OfferRole;
+	Choice.CurrentStacks = IsValid(RunModifierSubsystem) ? RunModifierSubsystem->GetAugmentStackCount(AugmentDataAsset->AugmentId) : 0;
+	Choice.MaximumStacks = FMath::Max(1, AugmentDataAsset->MaximumStacks);
 	return Choice;
 }
 
-void USRAugmentSubsystem::UpdateHighTechBonusAfterOffer(const TArray<USRStructureDataAsset*>& InitialCandidates, const TArray<FSRAugmentChoice>& GeneratedChoices)
+void USRAugmentSubsystem::UpdateHighTechBonusAfterOffer(const TArray<USRRunAugmentDataAsset*>& InitialCandidates, const TArray<FSRAugmentChoice>& GeneratedChoices)
 {
-	if (HasRarity(GeneratedChoices, ESRFacilityRarity::HighTech))
+	if (HasRarity(GeneratedChoices, ESRRunAugmentRarity::Epic))
 	{
 		HighTechBonusChancePercent = 0.0f;
 		return;
 	}
-
-	if (!HasRarity(InitialCandidates, ESRFacilityRarity::HighTech))
+	if (HasRarity(InitialCandidates, ESRRunAugmentRarity::Epic))
 	{
-		return;
+		HighTechBonusChancePercent = FMath::Clamp(HighTechBonusChancePercent + FMath::Max(0.0f, HighTechPityIncreasePercent), 0.0f, FMath::Max(0.0f, HighTechPityCapPercent));
 	}
-
-	HighTechBonusChancePercent = FMath::Clamp(
-		HighTechBonusChancePercent + FMath::Max(0.0f, HighTechPityIncreasePercent),
-		0.0f,
-		FMath::Max(0.0f, HighTechPityCapPercent));
 }
 
 void USRAugmentSubsystem::ClearPendingAugmentChoice()
@@ -618,11 +607,9 @@ void USRAugmentSubsystem::ResumeSimulationAfterChoiceIfNeeded()
 	{
 		return;
 	}
-
 	if (USRTimeControlSubsystem* TimeControlSubsystem = GetWorld() ? GetWorld()->GetSubsystem<USRTimeControlSubsystem>() : nullptr)
 	{
 		TimeControlSubsystem->SetSimulationPaused(false);
 	}
-
 	bPausedSimulationForCurrentChoice = false;
 }

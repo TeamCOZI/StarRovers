@@ -9,21 +9,21 @@ namespace
 		float DefaultLayerHeight,
 		float BeltSurfaceOffset,
 		float ItemLabelHeightOffset,
-		float ItemEnergyLabelWorldSize,
-		float ItemEnergyLabelMaxScale,
-		const FLinearColor& ItemEnergyLowColor,
-		const FLinearColor& ItemEnergyHighColor,
-		const FLinearColor& ItemEnergyNegativeColor)
+		float ItemPatternLabelWorldSize,
+		float ItemPatternLabelMaxScale,
+		const FLinearColor& ItemPatternSparseColor,
+		const FLinearColor& ItemPatternDenseColor,
+		const FLinearColor& ItemPatternSpecialColor)
 	{
 		StarRovers::Conveyor::FSRConveyorItemLabelSettings Settings;
 		Settings.DefaultLayerHeight = DefaultLayerHeight;
 		Settings.BeltSurfaceOffset = BeltSurfaceOffset;
 		Settings.ItemLabelHeightOffset = ItemLabelHeightOffset;
-		Settings.ItemEnergyLabelWorldSize = ItemEnergyLabelWorldSize;
-		Settings.ItemEnergyLabelMaxScale = ItemEnergyLabelMaxScale;
-		Settings.ItemEnergyLowColor = ItemEnergyLowColor;
-		Settings.ItemEnergyHighColor = ItemEnergyHighColor;
-		Settings.ItemEnergyNegativeColor = ItemEnergyNegativeColor;
+		Settings.ItemPatternLabelWorldSize = ItemPatternLabelWorldSize;
+		Settings.ItemPatternLabelMaxScale = ItemPatternLabelMaxScale;
+		Settings.ItemPatternSparseColor = ItemPatternSparseColor;
+		Settings.ItemPatternDenseColor = ItemPatternDenseColor;
+		Settings.ItemPatternSpecialColor = ItemPatternSpecialColor;
 		return Settings;
 	}
 }
@@ -34,11 +34,11 @@ void USRConveyorNetworkComponent::RefreshConveyorItemLabels(USRPlanetSurfaceGrid
 		DefaultLayerHeight,
 		BeltSurfaceOffset,
 		ItemLabelHeightOffset,
-		ItemEnergyLabelWorldSize,
-		ItemEnergyLabelMaxScale,
-		ItemEnergyLowColor,
-		ItemEnergyHighColor,
-		ItemEnergyNegativeColor);
+		ItemPatternLabelWorldSize,
+		ItemPatternLabelMaxScale,
+		ItemPatternSparseColor,
+		ItemPatternDenseColor,
+		ItemPatternSpecialColor);
 	StarRovers::Conveyor::FSRConveyorItemLabelUpdater::Refresh(
 		GetOwner(),
 		this,

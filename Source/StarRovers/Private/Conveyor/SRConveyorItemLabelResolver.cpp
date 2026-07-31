@@ -6,9 +6,27 @@
 
 namespace
 {
-	FString FormatEnergyValue(double Value)
+	ESRGlyphType ResolveDominantGlyph(const FSRPattern& Pattern)
 	{
-		return FString::Printf(TEXT("%.1f"), Value);
+		int32 GlyphCounts[6] = {};
+		for (const ESRGlyphType Glyph : Pattern.Cells)
+		{
+			const int32 GlyphIndex = static_cast<int32>(Glyph);
+			if (GlyphIndex > 0 && GlyphIndex < UE_ARRAY_COUNT(GlyphCounts))
+			{
+				++GlyphCounts[GlyphIndex];
+			}
+		}
+
+		int32 BestGlyphIndex = 0;
+		for (int32 GlyphIndex = 1; GlyphIndex < UE_ARRAY_COUNT(GlyphCounts); ++GlyphIndex)
+		{
+			if (GlyphCounts[GlyphIndex] > GlyphCounts[BestGlyphIndex])
+			{
+				BestGlyphIndex = GlyphIndex;
+			}
+		}
+		return static_cast<ESRGlyphType>(BestGlyphIndex);
 	}
 
 	bool ResolveOutwardNormal(
@@ -221,21 +239,36 @@ bool StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveWorldLocation(
 FText StarRovers::Conveyor::FSRConveyorItemLabelResolver::BuildLabelText(
 	const FSRResourceInstance& ResourceInstance)
 {
-	return FText::FromString(FString::Printf(TEXT("E %s"), *FormatEnergyValue(ResourceInstance.EnergyValue)));
+	return FText::FromString(FString::Printf(
+		TEXT("P %08X"),
+		ResourceInstance.Pattern.GetStableHash()));
 }
 
 FColor StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveLabelColor(
 	const FSRResourceInstance& ResourceInstance,
 	const FSRConveyorItemLabelSettings& Settings)
 {
-	if (ResourceInstance.EnergyValue < 0.0)
+	switch (ResolveDominantGlyph(ResourceInstance.Pattern))
 	{
-		return Settings.ItemEnergyNegativeColor.ToFColor(true);
+	case ESRGlyphType::Metal:
+		return Settings.ItemPatternSparseColor.ToFColor(true);
+	case ESRGlyphType::Organic:
+		return FLinearColor::LerpUsingHSV(
+			Settings.ItemPatternSparseColor,
+			Settings.ItemPatternDenseColor,
+			0.33f).ToFColor(true);
+	case ESRGlyphType::Crystal:
+		return FLinearColor::LerpUsingHSV(
+			Settings.ItemPatternSparseColor,
+			Settings.ItemPatternDenseColor,
+			0.66f).ToFColor(true);
+	case ESRGlyphType::Fluid:
+		return Settings.ItemPatternDenseColor.ToFColor(true);
+	case ESRGlyphType::Plasma:
+		return Settings.ItemPatternSpecialColor.ToFColor(true);
+	default:
+		return FLinearColor::White.ToFColor(true);
 	}
-
-	const double EnergyMagnitude = FMath::Abs(ResourceInstance.EnergyValue);
-	const float Alpha = FMath::Clamp(static_cast<float>(FMath::Loge(1.0 + EnergyMagnitude) / FMath::Loge(101.0)), 0.0f, 1.0f);
-	return FLinearColor::LerpUsingHSV(Settings.ItemEnergyLowColor, Settings.ItemEnergyHighColor, Alpha).ToFColor(true);
 }
 
 float StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveLabelWorldSize(
@@ -244,13 +277,21 @@ float StarRovers::Conveyor::FSRConveyorItemLabelResolver::ResolveLabelWorldSize(
 	float TimeSeconds,
 	const FSRConveyorItemLabelSettings& Settings)
 {
-	const double EnergyMagnitude = FMath::Abs(ResourceInstance.EnergyValue);
-	const float EnergyScale = FMath::Clamp(
-		1.0f + static_cast<float>(FMath::Loge(1.0 + EnergyMagnitude)) * 0.18f,
+	const float DensityAlpha = FMath::Clamp(
+		static_cast<float>(ResourceInstance.Pattern.GetOccupiedCellCount())
+			/ static_cast<float>(StarRovers::Pattern::CellCount),
+		0.0f,
+		1.0f);
+	const float PatternScale = FMath::Clamp(
+		FMath::Lerp(1.0f, Settings.ItemPatternLabelMaxScale, DensityAlpha),
 		1.0f,
-		FMath::Max(1.0f, Settings.ItemEnergyLabelMaxScale));
-	const float PulseStrength = FMath::Clamp((EnergyScale - 1.0f) / FMath::Max(0.01f, Settings.ItemEnergyLabelMaxScale - 1.0f), 0.0f, 1.0f);
+		FMath::Max(1.0f, Settings.ItemPatternLabelMaxScale));
+	const float PulseStrength = FMath::Clamp(
+		(PatternScale - 1.0f)
+			/ FMath::Max(0.01f, Settings.ItemPatternLabelMaxScale - 1.0f),
+		0.0f,
+		1.0f);
 	const float LanePhase = static_cast<float>(GetTypeHash(LaneKey) % 97) * 0.17f;
 	const float PulseScale = 1.0f + FMath::Sin(TimeSeconds * 6.0f + LanePhase) * 0.08f * PulseStrength;
-	return FMath::Max(1.0f, Settings.ItemEnergyLabelWorldSize * EnergyScale * PulseScale);
+	return FMath::Max(1.0f, Settings.ItemPatternLabelWorldSize * PatternScale * PulseScale);
 }

@@ -135,7 +135,7 @@ UTextRenderComponent* StarRovers::Conveyor::FSRConveyorItemLabelUpdater::EnsureL
 	const FName ComponentName = MakeUniqueObjectName(
 		OwnerActor,
 		UTextRenderComponent::StaticClass(),
-		FName(TEXT("ConveyorItemEnergyLabel")));
+		FName(TEXT("ConveyorItemPatternLabel")));
 	UTextRenderComponent* LabelComponent = NewObject<UTextRenderComponent>(OwnerActor, ComponentName);
 	if (!IsValid(LabelComponent))
 	{
@@ -149,13 +149,13 @@ UTextRenderComponent* StarRovers::Conveyor::FSRConveyorItemLabelUpdater::EnsureL
 	LabelComponent->SetCastShadow(false);
 	LabelComponent->SetHorizontalAlignment(EHTA_Center);
 	LabelComponent->SetVerticalAlignment(EVRTA_TextCenter);
-	LabelComponent->SetWorldSize(FMath::Max(1.0f, LabelSettings.ItemEnergyLabelWorldSize));
-	LabelComponent->SetTextRenderColor(LabelSettings.ItemEnergyLowColor.ToFColor(true));
-	LabelComponent->SetText(FText::FromString(TEXT("E 0.00")));
+	LabelComponent->SetWorldSize(FMath::Max(1.0f, LabelSettings.ItemPatternLabelWorldSize));
+	LabelComponent->SetTextRenderColor(LabelSettings.ItemPatternSparseColor.ToFColor(true));
+	LabelComponent->SetText(FText::FromString(TEXT("P 00000000")));
 	LabelComponent->SetVisibility(true);
 	LabelComponent->SetHiddenInGame(false);
 	LabelComponent->SetTranslucentSortPriority(100);
-	LabelComponent->ComponentTags.AddUnique(TEXT("StarRovers.ConveyorItemEnergyLabel"));
+	LabelComponent->ComponentTags.AddUnique(TEXT("StarRovers.ConveyorItemPatternLabel"));
 
 	OwnerActor->AddInstanceComponent(LabelComponent);
 	LabelComponent->RegisterComponent();

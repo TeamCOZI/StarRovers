@@ -253,6 +253,52 @@ FVector USROrbit::ComputeOrbitLocationAtCurrentPhase() const
 	return ComputeOrbitLocationAtAngle(ComputeOrbitAngleRadians());
 }
 
+void USROrbit::ExportSaveData(FSROrbitSaveData& OutSaveData) const
+{
+	OutSaveData = FSROrbitSaveData();
+	OutSaveData.ElapsedTimeSeconds = OrbitElapsedTimeSeconds;
+	OutSaveData.AnchorLocation = OrbitAnchorLocation;
+}
+
+bool USROrbit::CanImportSaveData(const FSROrbitSaveData& SaveData, FString& OutFailureReason) const
+{
+	OutFailureReason.Reset();
+	if (!StarRovers::Save::Orbit::IsSupportedVersion(SaveData.Version))
+	{
+		OutFailureReason = FString::Printf(TEXT("Unsupported orbit save version %d."), SaveData.Version);
+		return false;
+	}
+	if (!FMath::IsFinite(SaveData.ElapsedTimeSeconds)
+		|| SaveData.ElapsedTimeSeconds < 0.0f
+		|| SaveData.AnchorLocation.ContainsNaN())
+	{
+		OutFailureReason = TEXT("Orbit save contains non-finite or negative runtime state.");
+		return false;
+	}
+	return true;
+}
+
+bool USROrbit::ImportSaveData(const FSROrbitSaveData& SaveData)
+{
+	FString FailureReason;
+	if (!CanImportSaveData(SaveData, FailureReason))
+	{
+		return false;
+	}
+	OrbitElapsedTimeSeconds = SaveData.ElapsedTimeSeconds;
+	OrbitAnchorLocation = SaveData.AnchorLocation;
+	if (AActor* Owner = GetOwner(); IsValid(Owner) && HasOrbit())
+	{
+		Owner->SetActorLocation(
+			ComputeOrbitLocationAtCurrentPhase(),
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+	}
+	RefreshOrbitLineVisual();
+	return true;
+}
+
 USRTimeControlSubsystem* USROrbit::FindTimeControlSubsystem() const
 {
 	if (CachedTimeControlSubsystem.IsValid())

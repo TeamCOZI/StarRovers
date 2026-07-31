@@ -235,24 +235,10 @@ FSRCelestialBodyFocusInfo USRCelestialBodyRuntimeLibrary::BuildCelestialBodyFocu
 	FocusInfo.bCanConstruct = GetCelestialCanConstruct(Actor);
 	if (const ASRStar* Star = Cast<ASRStar>(Actor))
 	{
-		const FSRStellarFuelState FuelState = Star->GetStellarFuelState();
-		FocusInfo.bHasStarFuelInfo = true;
-		FocusInfo.StarFuelInfo.bIsValid = true;
-		FocusInfo.StarFuelInfo.EvolutionStage = FuelState.EvolutionStage;
-		FocusInfo.StarFuelInfo.StoredFuel = FuelState.StoredFuel;
-		FocusInfo.StarFuelInfo.InitialStageFuel = FuelState.InitialStageFuel;
-		FocusInfo.StarFuelInfo.InitialFuelDecreasePerSecond = FuelState.InitialFuelDecreasePerSecond;
-		FocusInfo.StarFuelInfo.RequiredFuelPerCycle = FuelState.RequiredFuelPerCycle;
-		FocusInfo.StarFuelInfo.RequirementGrowthPerCycle = FuelState.RequirementGrowthPerCycle;
-		FocusInfo.StarFuelInfo.LastFuelDecreaseRateCycleIndex = FuelState.LastFuelDecreaseRateCycleIndex;
-		FocusInfo.StarFuelInfo.RedGiantPressure = FuelState.RedGiantPressure;
-		FocusInfo.StarFuelInfo.RedGiantPressurePerMissingFuel = FuelState.RedGiantPressurePerMissingFuel;
-		FocusInfo.StarFuelInfo.LastSettledSecondIndex = FuelState.LastSettledSecondIndex;
-		FocusInfo.StarFuelInfo.LastSecondFuelConsumed = FuelState.LastSecondFuelConsumed;
-		FocusInfo.StarFuelInfo.LastSecondFuelDecrease = FuelState.LastSecondFuelDecrease;
-		FocusInfo.StarFuelInfo.LastSecondFuelDeficit = FuelState.LastSecondFuelDeficit;
-		FocusInfo.StarFuelInfo.bLastSecondSurvived = FuelState.bLastSecondSurvived;
-		FocusInfo.StarFuelInfo.bSupernovaGameOver = FuelState.bSupernovaGameOver;
+		FocusInfo.bHasStellarContractInfo = true;
+		FocusInfo.StellarContractInfo.bIsValid = true;
+		FocusInfo.StellarContractInfo.Contract = Star->GetStellarPatternContract();
+		FocusInfo.StellarContractInfo.State = Star->GetStellarContractState();
 	}
 	if (USRPlanetSurfaceGrid* SurfaceGrid = FindPlanetSurfaceGrid(Actor))
 	{

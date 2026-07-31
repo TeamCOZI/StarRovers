@@ -300,7 +300,7 @@ protected:
 	TObjectPtr<UHorizontalBox> InputResourceSlotBox;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UTextBlock> EffectsTextBlock;
+	TObjectPtr<UTextBlock> OperationTextBlock;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UProgressBar> ProcessProgressBar;

@@ -13,6 +13,7 @@ enum class ESRPlayerUILayer : uint8
     StructureSelection UMETA(DisplayName = "Structure Selection"),
     HubShortcut UMETA(DisplayName = "Hub Shortcut"),
     FacilityControl UMETA(DisplayName = "Facility Control"),
+    StellarContractHUD UMETA(DisplayName = "Stellar Contract HUD"),
     GameOver UMETA(DisplayName = "Game Over")
 };
 

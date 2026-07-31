@@ -40,11 +40,13 @@ private:
 
 	static bool TryTakeFuelCargoFromHub(
 		const FSRSpaceLogisticsHubEndpoint& SourceHub,
+		const ASRStar& TargetStar,
 		FSRResourceInstance& OutCargo);
 
 	static bool TryTakeFuelCargoFromHubInputPort(
 		const FSRSpaceLogisticsHubEndpoint& SourceHub,
 		int32 InputPortIndex,
+		const ASRStar& TargetStar,
 		FSRResourceInstance& OutCargo);
 
 	static void ApplyMissileFlightSettings(

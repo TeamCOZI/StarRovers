@@ -158,6 +158,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|GenerationSeed", meta = (DisplayName = "bRandomizeGenerationSeedEachRun"))
 	bool bRandomizeGenerationSeedEachRun;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Pattern Environment", meta = (DisplayName = "PatternEnvironment"))
+	FSRPatternEnvironmentSpec PatternEnvironment;
+
 	UPROPERTY()
 	TObjectPtr<USRPlanetTerrainProfileDataAsset> TerrainProfileDataAsset = nullptr;
 

@@ -54,9 +54,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star", meta = (DisplayName = "StarPointLightColor"))
 	FLinearColor StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "InitialStoredStellarFuel", ClampMin = "0.0", ToolTip = "Fuel health for each stellar evolution stage. The star starts as a main sequence star with this fuel, then refills to this amount when it becomes a red giant."))
-	double InitialStoredStellarFuel = 0.0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Fuel", meta = (DisplayName = "InitialStellarFuelDecreasePerSecond", ClampMin = "0.0", ToolTip = "Fuel health removed on the first one-second stellar fuel tick. Later ticks multiply the previous decrease by (200 + previous second index) percent."))
-	double InitialStellarFuelDecreasePerSecond = 50.0;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Star|Pattern Contract", meta = (DisplayName = "DefaultStellarPatternContract", ToolTip = "Fallback contract used when the solar-system Pattern Generation Profile does not provide a solvable candidate contract."))
+	FSRStellarPatternContract DefaultStellarPatternContract;
 };

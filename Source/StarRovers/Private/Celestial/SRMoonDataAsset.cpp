@@ -3,6 +3,7 @@
 #include "Utility/SRLog.h"
 #include "Celestial/SRCelestialBodyCategory.h"
 #include "Celestial/SRPlanetShapeDataAsset.h"
+#include "Pattern/SRPatternEnvironmentDataAsset.h"
 #include "Surface/SRPlanetTerrainProfileDataAsset.h"
 
 USRMoonDataAsset::USRMoonDataAsset()
@@ -87,6 +88,9 @@ FSRCelestialBodyData USRMoonDataAsset::BuildData() const
 	Result.ProfileNaturalStructureSpawnRuleOverrides = ProfileNaturalStructureSpawnRuleOverrides;
 	Result.GenerationSeed = Result.DynamicMeshGeneration.GenerationSeed;
 	Result.bRandomizeGenerationSeedEachRun = Result.DynamicMeshGeneration.bRandomizeGenerationSeedEachRun;
+	Result.PatternEnvironment = IsValid(PatternEnvironmentDataAsset.Get())
+		? PatternEnvironmentDataAsset->BuildEnvironmentSpec()
+		: FSRPatternEnvironmentSpec();
 	Result.bHasOcean = bHasOcean;
 	Result.OceanDynamicMeshBaseDataAsset = ShapeOceanDynamicMeshBaseDataAsset;
 	Result.OceanMaterial = OceanMaterial;

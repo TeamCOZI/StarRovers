@@ -1,82 +1,29 @@
 #include "SRFacilityProcessingRuleEvaluator.h"
 
 #include "Automation/SRFacilityDataAsset.h"
-#include "Automation/SRResourceDataAsset.h"
 #include "SRFacilityMiningTargetResolver.h"
-#include "SRFacilityEffectConditionEvaluator.h"
 #include "SRFacilityOutputResourceBuilder.h"
-#include "SRFacilityProcessContextResolver.h"
 #include "SRFacilityProcessingInventoryRouter.h"
+#include "SRFacilityRunModifierResolver.h"
 
 namespace
 {
-	bool DoesProcessingResourceRequireColdTemperature(const FSRResourceInstance& ResourceInstance)
-	{
-		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
-		{
-			if (TagStack.Tag == ESRResourceProcessTag::Supercooled && TagStack.StackCount > 0)
-			{
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	bool CanResourcesAdvanceAtTemperature(
-		const TArray<FSRResourceInstance>& ResourceInstances,
-		ESRFacilityTemperatureState TemperatureState)
-	{
-		if (TemperatureState == ESRFacilityTemperatureState::Cold)
-		{
-			return true;
-		}
-
-		for (const FSRResourceInstance& ResourceInstance : ResourceInstances)
-		{
-			if (DoesProcessingResourceRequireColdTemperature(ResourceInstance))
-			{
-				return false;
-			}
-		}
-
-		return true;
-	}
-
 	bool CanAdvanceProcessingWithResources(
 		const FSRFacilityInstance& FacilityInstance,
 		const TArray<FSRResourceInstance>& ResourceInstances)
 	{
+		(void)ResourceInstances;
 		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-		if (!IsValid(FacilityDataAsset))
-		{
-			return false;
-		}
-
-		if (FacilityDataAsset->FacilityKind == ESRFacilityKind::Hub)
-		{
-			return false;
-		}
-
-		if (!FacilityInstance.bProcessEnabled)
-		{
-			return false;
-		}
-
-		const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
-			StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, ResourceInstances);
-		const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
-		if (EffectiveTemperatureState == ESRFacilityTemperatureState::Frozen
-			|| EffectiveTemperatureState == ESRFacilityTemperatureState::Overheated)
-		{
-			return false;
-		}
-
-		return CanResourcesAdvanceAtTemperature(ResourceInstances, EffectiveTemperatureState);
+		return IsValid(FacilityDataAsset)
+			&& FacilityDataAsset->FacilityKind == ESRFacilityKind::Standard
+			&& FacilityInstance.bProcessEnabled
+			&& FacilityInstance.TemperatureState != ESRFacilityTemperatureState::Frozen
+			&& FacilityInstance.TemperatureState != ESRFacilityTemperatureState::Overheated;
 	}
 }
 
-bool FSRFacilityProcessingRuleEvaluator::CanAdvanceProcessing(const FSRFacilityInstance& FacilityInstance)
+bool FSRFacilityProcessingRuleEvaluator::CanAdvanceProcessing(
+	const FSRFacilityInstance& FacilityInstance)
 {
 	return CanAdvanceProcessingWithResources(FacilityInstance, FacilityInstance.ProcessingInventory);
 }
@@ -97,28 +44,27 @@ bool FSRFacilityProcessingRuleEvaluator::CanRun(
 	}
 
 	TArray<FSRResourceInstance> InputResources;
-	if (!FSRFacilityProcessingInventoryRouter::GatherPendingInputResources(FacilityInstance, InputResources))
-	{
-		return false;
-	}
-
-	if (!CanAdvanceProcessingWithResources(FacilityInstance, InputResources))
-	{
-		return false;
-	}
-
-	if (!FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(FacilityDataAsset, InputResources, FacilityInstance.TemperatureState))
+	if (!FSRFacilityProcessingInventoryRouter::GatherPendingInputResources(
+		FacilityInstance,
+		InputResources)
+		|| !CanAdvanceProcessingWithResources(FacilityInstance, InputResources)
+		|| !FSRFacilityOutputResourceBuilder::DoesInputSetMatchOperation(
+			FacilityDataAsset,
+			InputResources,
+			FacilityInstance.TemperatureState))
 	{
 		return false;
 	}
 
 	TArray<FSRResourceInstance> OutputResources;
-	FSRFacilityOutputResourceBuilder::BuildOutputResources(FacilityInstance, InputResources, OutputResources);
-	if (OutputResources.IsEmpty())
-	{
-		return FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(FacilityInstance);
-	}
-	return FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(FacilityInstance, OutputResources);
+	FSRFacilityOutputResourceBuilder::BuildOutputResources(
+		FacilityInstance,
+		InputResources,
+		OutputResources);
+	return !OutputResources.IsEmpty()
+		&& FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(
+			FacilityInstance,
+			OutputResources);
 }
 
 bool FSRFacilityProcessingRuleEvaluator::CanMiningRun(
@@ -127,50 +73,56 @@ bool FSRFacilityProcessingRuleEvaluator::CanMiningRun(
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
 	if (!IsValid(FacilityDataAsset)
+		|| FacilityDataAsset->FacilityKind != ESRFacilityKind::Standard
 		|| FacilityDataAsset->OperationKind != ESRFacilityOperationKind::Mine)
 	{
 		return false;
 	}
 
 	FSRResourceDepositInstance ResourceDeposit;
-	if (!FSRFacilityMiningTargetResolver::FindTargetDeposit(OwnerComponent, FacilityInstance, ResourceDeposit))
-	{
-		return false;
-	}
-
-	if (!IsValid(ResourceDeposit.ResourceDataAsset.Get()))
+	if (!FSRFacilityMiningTargetResolver::FindTargetDeposit(
+		OwnerComponent,
+		FacilityInstance,
+		ResourceDeposit)
+		|| !ResourceDeposit.IsPatternSourceValid())
 	{
 		return false;
 	}
 
 	TArray<FSRResourceInstance> MiningConditionResources;
-	MiningConditionResources.Add(ResourceDeposit.ResourceDataAsset->BuildDefaultInstance());
+	MiningConditionResources.Add(ResourceDeposit.BuildResourceInstance());
 	if (!CanAdvanceProcessingWithResources(FacilityInstance, MiningConditionResources))
 	{
 		return false;
 	}
 
 	TArray<FSRResourceInstance> OutputResources;
-	const FSRResourceInstance MinedResource = MiningConditionResources[0];
 	FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 		FacilityInstance,
 		TArray<FSRResourceInstance>(),
-		MinedResource,
+		MiningConditionResources[0],
 		OutputResources);
-	if (OutputResources.IsEmpty())
-	{
-		return FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(FacilityInstance);
-	}
-	return FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(FacilityInstance, OutputResources);
+	return !OutputResources.IsEmpty()
+		&& FSRFacilityProcessingInventoryRouter::CanStoreOutputResources(
+			FacilityInstance,
+			OutputResources);
 }
 
-float FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(const FSRFacilityInstance& FacilityInstance)
+float FSRFacilityProcessingRuleEvaluator::ResolveProcessSeconds(
+	const FSRFacilityInstance& FacilityInstance)
 {
 	const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-	const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
-		StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, FacilityInstance.ProcessingInventory);
-	return StarRovers::FacilityProcessing::ResolveFacilityProcessSeconds(
-		FacilityDataAsset,
-		ProcessContext.EffectiveTemperatureState,
+	if (!IsValid(FacilityDataAsset))
+	{
+		return 0.01f;
+	}
+
+	const FSRResolvedRunModifiers Modifiers = FSRFacilityRunModifierResolver::Resolve(
+		FacilityInstance,
 		FacilityInstance.ProcessingInventory);
+	return FMath::Max(
+		0.01f,
+		static_cast<float>(
+			static_cast<double>(FacilityDataAsset->BaseProcessSeconds)
+			* Modifiers.FacilityProcessTimeMultiplier));
 }

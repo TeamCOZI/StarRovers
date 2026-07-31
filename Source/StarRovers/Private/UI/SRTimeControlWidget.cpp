@@ -563,14 +563,17 @@ namespace
 		}
 	}
 
-	bool TryGetPrimaryStarFuelState(const UWorld* World, FSRStellarFuelState& OutFuelState)
+	bool TryGetPrimaryStarContractState(
+		const UWorld* World,
+		FSRStellarContractState& OutContractState)
 	{
 		if (!World)
 		{
 			return false;
 		}
 
-		const USRCelestialBodyRegistrySubsystem* RegistrySubsystem = World->GetSubsystem<USRCelestialBodyRegistrySubsystem>();
+		const USRCelestialBodyRegistrySubsystem* RegistrySubsystem =
+			World->GetSubsystem<USRCelestialBodyRegistrySubsystem>();
 		if (!IsValid(RegistrySubsystem))
 		{
 			return false;
@@ -582,21 +585,16 @@ namespace
 			return false;
 		}
 
-		OutFuelState = PrimaryStar->GetStellarFuelState();
+		OutContractState = PrimaryStar->GetStellarContractState();
 		return true;
 	}
 
-	FString FormatStarFuelAmount(double FuelAmount)
-	{
-		return FString::Printf(TEXT("%.0f"), FMath::Max(0.0, FuelAmount));
-	}
-
-	FString BuildStarFuelText(const FSRStellarFuelState& FuelState)
+	FString BuildStarHealthText(const FSRStellarContractState& ContractState)
 	{
 		return FString::Printf(
-			TEXT("%s / %s"),
-			*FormatStarFuelAmount(FuelState.StoredFuel),
-			*FormatStarFuelAmount(FuelState.InitialStageFuel));
+			TEXT("%.0f / %.0f"),
+			FMath::Max(0.0, ContractState.CurrentStellarHealth),
+			FMath::Max(0.0, ContractState.MaximumStellarHealth));
 	}
 }
 
@@ -829,48 +827,48 @@ void USRTimeControlWidget::BuildTimeControlWidgetTree()
 		TopLeftControlsSlot->SetOffsets(FMargin(0.0f));
 	}
 
-	FuelSupplyProgressContainer = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("FuelSupplyProgressContainer"));
-	FuelSupplyProgressContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	if (UCanvasPanelSlot* FuelSupplyProgressContainerSlot = TopBarCanvasPanel->AddChildToCanvas(FuelSupplyProgressContainer))
+	StellarHealthProgressContainer = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("StellarHealthProgressContainer"));
+	StellarHealthProgressContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	if (UCanvasPanelSlot* StellarHealthProgressContainerSlot = TopBarCanvasPanel->AddChildToCanvas(StellarHealthProgressContainer))
 	{
-		FuelSupplyProgressContainerSlot->SetAnchors(FAnchors(0.25f, 0.0f, 0.75f, 0.5f));
-		FuelSupplyProgressContainerSlot->SetAlignment(FVector2D(0.0f, 0.0f));
-		FuelSupplyProgressContainerSlot->SetOffsets(FMargin(0.0f));
+		StellarHealthProgressContainerSlot->SetAnchors(FAnchors(0.25f, 0.0f, 0.75f, 0.5f));
+		StellarHealthProgressContainerSlot->SetAlignment(FVector2D(0.0f, 0.0f));
+		StellarHealthProgressContainerSlot->SetOffsets(FMargin(0.0f));
 	}
 
-	FuelSupplyProgressBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("FuelSupplyProgressBar"));
-	if (FuelSupplyProgressBar)
+	StellarHealthProgressBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("StellarHealthProgressBar"));
+	if (StellarHealthProgressBar)
 	{
-		FuelSupplyProgressBar->SetVisibility(ESlateVisibility::HitTestInvisible);
-		FuelSupplyProgressBar->SetFillColorAndOpacity(FLinearColor(1.0f, 0.68f, 0.08f, 1.0f));
-		FuelSupplyProgressBar->SetPercent(0.0f);
-		AddProgressBarToContainer(FuelSupplyProgressContainer, FuelSupplyProgressBar, ProgressBarHeightRatio);
+		StellarHealthProgressBar->SetVisibility(ESlateVisibility::HitTestInvisible);
+		StellarHealthProgressBar->SetFillColorAndOpacity(FLinearColor(0.20f, 0.78f, 0.42f, 1.0f));
+		StellarHealthProgressBar->SetPercent(0.0f);
+		AddProgressBarToContainer(StellarHealthProgressContainer, StellarHealthProgressBar, ProgressBarHeightRatio);
 	}
 
-	FuelSupplyProgressTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("FuelSupplyProgressTextBlock"));
-	USizeBox* FuelSupplyProgressTextSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("FuelSupplyProgressTextSizeBox"));
-	if (FuelSupplyProgressTextSizeBox && FuelSupplyProgressTextBlock)
+	StellarHealthProgressTextBlock = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StellarHealthProgressTextBlock"));
+	USizeBox* StellarHealthProgressTextSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("StellarHealthProgressTextSizeBox"));
+	if (StellarHealthProgressTextSizeBox && StellarHealthProgressTextBlock)
 	{
-		FSlateFontInfo FuelSupplyProgressFont = FuelSupplyProgressTextBlock->GetFont();
-		FuelSupplyProgressFont.Size = 13;
-		FuelSupplyProgressTextBlock->SetFont(FuelSupplyProgressFont);
-		FuelSupplyProgressTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
-		FuelSupplyProgressTextBlock->SetJustification(ETextJustify::Center);
-		FuelSupplyProgressTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::Black));
-		FuelSupplyProgressTextBlock->SetAutoWrapText(false);
-		FuelSupplyProgressTextBlock->SetText(FText::FromString(TEXT("0 / 0")));
-		FuelSupplyProgressTextSizeBox->AddChild(FuelSupplyProgressTextBlock);
-		if (USizeBoxSlot* FuelSupplyProgressTextBlockSlot = Cast<USizeBoxSlot>(FuelSupplyProgressTextBlock->Slot))
+		FSlateFontInfo StellarHealthProgressFont = StellarHealthProgressTextBlock->GetFont();
+		StellarHealthProgressFont.Size = 13;
+		StellarHealthProgressTextBlock->SetFont(StellarHealthProgressFont);
+		StellarHealthProgressTextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
+		StellarHealthProgressTextBlock->SetJustification(ETextJustify::Center);
+		StellarHealthProgressTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor::Black));
+		StellarHealthProgressTextBlock->SetAutoWrapText(false);
+		StellarHealthProgressTextBlock->SetText(FText::FromString(TEXT("0 / 0")));
+		StellarHealthProgressTextSizeBox->AddChild(StellarHealthProgressTextBlock);
+		if (USizeBoxSlot* StellarHealthProgressTextBlockSlot = Cast<USizeBoxSlot>(StellarHealthProgressTextBlock->Slot))
 		{
-			FuelSupplyProgressTextBlockSlot->SetHorizontalAlignment(HAlign_Center);
-			FuelSupplyProgressTextBlockSlot->SetVerticalAlignment(VAlign_Center);
-			FuelSupplyProgressTextBlockSlot->SetPadding(FMargin(0.0f));
+			StellarHealthProgressTextBlockSlot->SetHorizontalAlignment(HAlign_Center);
+			StellarHealthProgressTextBlockSlot->SetVerticalAlignment(VAlign_Center);
+			StellarHealthProgressTextBlockSlot->SetPadding(FMargin(0.0f));
 		}
-		if (UCanvasPanelSlot* FuelSupplyProgressTextSlot = FuelSupplyProgressContainer->AddChildToCanvas(FuelSupplyProgressTextSizeBox))
+		if (UCanvasPanelSlot* StellarHealthProgressTextSlot = StellarHealthProgressContainer->AddChildToCanvas(StellarHealthProgressTextSizeBox))
 		{
-			FuelSupplyProgressTextSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
-			FuelSupplyProgressTextSlot->SetAlignment(FVector2D(0.0f, 0.0f));
-			FuelSupplyProgressTextSlot->SetOffsets(FMargin(0.0f));
+			StellarHealthProgressTextSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+			StellarHealthProgressTextSlot->SetAlignment(FVector2D(0.0f, 0.0f));
+			StellarHealthProgressTextSlot->SetOffsets(FMargin(0.0f));
 		}
 	}
 
@@ -1190,28 +1188,46 @@ void USRTimeControlWidget::RefreshProgressState()
 {
 	const USRTimeControlSubsystem* TimeControlSubsystem = GetTimeControlSubsystem();
 	const bool bHasTimeControlSubsystem = IsValid(TimeControlSubsystem);
-	FSRStellarFuelState PrimaryStarFuelState;
-	const bool bHasPrimaryStarFuelState = TryGetPrimaryStarFuelState(GetWorld(), PrimaryStarFuelState);
-	const double MaxStarFuel = bHasPrimaryStarFuelState ? FMath::Max(0.0, PrimaryStarFuelState.InitialStageFuel) : 0.0;
-	const float FuelSupplyProgressRatio = MaxStarFuel > UE_DOUBLE_SMALL_NUMBER
-		? FMath::Clamp(static_cast<float>(PrimaryStarFuelState.StoredFuel / MaxStarFuel), 0.0f, 1.0f)
+	FSRStellarContractState PrimaryStarContractState;
+	const bool bHasPrimaryStarContractState = TryGetPrimaryStarContractState(
+		GetWorld(),
+		PrimaryStarContractState);
+	const double MaximumStellarHealth = bHasPrimaryStarContractState
+		? FMath::Max(0.0, PrimaryStarContractState.MaximumStellarHealth)
+		: 0.0;
+	const float StellarHealthProgressRatio = MaximumStellarHealth > UE_DOUBLE_SMALL_NUMBER
+		? FMath::Clamp(
+			static_cast<float>(PrimaryStarContractState.CurrentStellarHealth / MaximumStellarHealth),
+			0.0f,
+			1.0f)
 		: 0.0f;
-	const FString FuelSupplyTextString = bHasPrimaryStarFuelState
-		? BuildStarFuelText(PrimaryStarFuelState)
+	const FString StellarHealthTextString = bHasPrimaryStarContractState
+		? BuildStarHealthText(PrimaryStarContractState)
 		: FString(TEXT("0 / 0"));
 	const float CycleProgressRatio = bHasTimeControlSubsystem ? TimeControlSubsystem->GetCycleProgressRatio() : 0.0f;
 	const int32 CurrentCycleIndex = bHasTimeControlSubsystem ? TimeControlSubsystem->GetCurrentCycleIndex() : 0;
 
-	if (FuelSupplyProgressBar && !FMath::IsNearlyEqual(LastFuelSupplyProgressRatio, FuelSupplyProgressRatio, 0.0001f))
+	if (StellarHealthProgressBar
+		&& !FMath::IsNearlyEqual(
+			LastStellarHealthProgressRatio,
+			StellarHealthProgressRatio,
+			0.0001f))
 	{
-		FuelSupplyProgressBar->SetPercent(FuelSupplyProgressRatio);
-		LastFuelSupplyProgressRatio = FuelSupplyProgressRatio;
+		StellarHealthProgressBar->SetPercent(StellarHealthProgressRatio);
+		StellarHealthProgressBar->SetFillColorAndOpacity(
+			StellarHealthProgressRatio > 0.50f
+				? FLinearColor(0.20f, 0.78f, 0.42f, 1.0f)
+				: (StellarHealthProgressRatio > 0.25f
+					? FLinearColor(0.95f, 0.62f, 0.16f, 1.0f)
+					: FLinearColor(0.94f, 0.18f, 0.13f, 1.0f)));
+		LastStellarHealthProgressRatio = StellarHealthProgressRatio;
 	}
 
-	if (FuelSupplyProgressTextBlock && LastFuelSupplyTextString != FuelSupplyTextString)
+	if (StellarHealthProgressTextBlock
+		&& LastStellarHealthTextString != StellarHealthTextString)
 	{
-		FuelSupplyProgressTextBlock->SetText(FText::FromString(FuelSupplyTextString));
-		LastFuelSupplyTextString = FuelSupplyTextString;
+		StellarHealthProgressTextBlock->SetText(FText::FromString(StellarHealthTextString));
+		LastStellarHealthTextString = StellarHealthTextString;
 	}
 
 	if (CycleProgressBar && !FMath::IsNearlyEqual(LastCycleProgressRatio, CycleProgressRatio, 0.0001f))
@@ -1514,9 +1530,9 @@ void USRTimeControlWidget::SynchronizeTopBarLayout()
 		}
 	};
 
-	ApplyTopCenterContainerLayout(FuelSupplyProgressContainer, 0.0f, 0.5f);
+	ApplyTopCenterContainerLayout(StellarHealthProgressContainer, 0.0f, 0.5f);
 	ApplyTopCenterContainerLayout(CycleProgressContainer, 0.5f, 1.0f);
-	ApplyProgressBarLayout(FuelSupplyProgressBar);
+	ApplyProgressBarLayout(StellarHealthProgressBar);
 	ApplyProgressBarLayout(CycleProgressBar);
 
 	if (CycleCountTextSizeBox)

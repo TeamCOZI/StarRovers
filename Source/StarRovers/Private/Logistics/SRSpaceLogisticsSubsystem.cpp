@@ -197,9 +197,11 @@ bool USRSpaceLogisticsSubsystem::SetHubRouteReturnEmptyWhenNoCargo(FName RouteId
 		HubRoutes);
 }
 
-bool USRSpaceLogisticsSubsystem::SetHubRouteCargoResourceId(FName RouteId, FName CargoResourceId)
+bool USRSpaceLogisticsSubsystem::SetHubRouteCargoFilter(
+	FName RouteId,
+	const FSRPatternRoutingFilter& CargoFilter)
 {
-	return FSRSpaceLogisticsRouteRegistry::SetHubRouteCargoResourceId(RouteId, CargoResourceId, HubRoutes);
+	return FSRSpaceLogisticsRouteRegistry::SetHubRouteCargoFilter(RouteId, CargoFilter, HubRoutes);
 }
 
 bool USRSpaceLogisticsSubsystem::LaunchStarFuelMissileFromHub(
@@ -266,6 +268,13 @@ void USRSpaceLogisticsSubsystem::ExportSaveData(FSRSpaceLogisticsSaveData& OutSa
 		StarFuelMissiles,
 		NextStarFuelMissileSequence,
 		OutSaveData);
+}
+
+bool USRSpaceLogisticsSubsystem::CanImportSaveData(const FSRSpaceLogisticsSaveData& SaveData) const
+{
+	return FSRSpaceLogisticsSaveAdapter::CanImportSaveData(
+		*const_cast<USRSpaceLogisticsSubsystem*>(this),
+		SaveData);
 }
 
 bool USRSpaceLogisticsSubsystem::ImportSaveData(const FSRSpaceLogisticsSaveData& SaveData)

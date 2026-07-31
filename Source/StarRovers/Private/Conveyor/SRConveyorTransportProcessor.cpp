@@ -3,6 +3,7 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 #include "Conveyor/SRConveyorConnectionQuery.h"
 #include "Conveyor/SRConveyorNetworkGeometry.h"
+#include "Pattern/SRPatternRoutingFilter.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
 
 namespace
@@ -92,6 +93,12 @@ void StarRovers::Conveyor::FSRConveyorTransportProcessor::Process(
 
 		FSRConveyorItem Item = *ExistingItem;
 		Item.CurrentLane = LaneKey;
+		if (!StarRovers::PatternRouting::IsValidPatternPayload(Item.ResourceInstance))
+		{
+			// Corrupt or pre-Pattern cargo remains visible in place and is never silently consumed.
+			NextItemsByLane.Add(LaneKey, Item);
+			continue;
+		}
 		Item.Progress = FMath::Min(1.0f, Item.Progress + ProgressDelta);
 		if (Item.Progress >= 1.0f)
 		{

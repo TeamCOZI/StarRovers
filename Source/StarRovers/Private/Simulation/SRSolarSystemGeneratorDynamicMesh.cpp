@@ -102,9 +102,9 @@ void ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation()
 		LogAsyncGenerationStageTiming(TEXT("PrepareRuntimeGeneratedDynamicMeshes"), GetSolarSystemGenerationElapsedMilliseconds(AsyncDynamicMeshTotalStart));
 
 		AsyncNaturalStructureRandomStream = FRandomStream(AsyncRuntimeGenerationSeed + 7919);
-		AsyncNaturalPlanetIndex = 0;
-		AsyncNaturalPlanetCount = 0;
-		AsyncNaturalPlanetTotalMs = 0.0;
+		AsyncNaturalBodyIndex = 0;
+		AsyncNaturalBodyCount = 0;
+		AsyncNaturalBodyTotalMs = 0.0;
 		AsyncNaturalSlowestBodyMs = 0.0;
 		AsyncNaturalSlowestBodyName = TEXT("None");
 		AsyncNaturalStructuresTotalStart = GetSolarSystemGenerationTimingSeconds();
@@ -211,9 +211,9 @@ void ASRSolarSystemGenerator::ContinueRuntimeDynamicMeshPreparation()
 	LogAsyncGenerationStageTiming(TEXT("PrepareRuntimeGeneratedDynamicMeshes"), GetSolarSystemGenerationElapsedMilliseconds(AsyncDynamicMeshTotalStart));
 
 	AsyncNaturalStructureRandomStream = FRandomStream(AsyncRuntimeGenerationSeed + 7919);
-	AsyncNaturalPlanetIndex = 0;
-	AsyncNaturalPlanetCount = 0;
-	AsyncNaturalPlanetTotalMs = 0.0;
+	AsyncNaturalBodyIndex = 0;
+	AsyncNaturalBodyCount = 0;
+	AsyncNaturalBodyTotalMs = 0.0;
 	AsyncNaturalSlowestBodyMs = 0.0;
 	AsyncNaturalSlowestBodyName = TEXT("None");
 	AsyncNaturalStructuresTotalStart = GetSolarSystemGenerationTimingSeconds();

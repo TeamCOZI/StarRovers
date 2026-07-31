@@ -4,6 +4,7 @@
 #include "SRFacilityHubCargoRouter.h"
 #include "SRFacilityResourceOperations.h"
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
+#include "Pattern/SRPatternRoutingFilter.h"
 #include "Utility/SRLog.h"
 
 bool USRFacilityNetworkComponent::AddInputResource(FName OccupantId, const FSRResourceInstance& ResourceInstance)
@@ -334,9 +335,7 @@ void USRFacilityNetworkComponent::TryAutoLaunchStarFuelMissilesFromInputPort(FSR
 		const FSRFacilityPortInventory& InputPortInventory = FacilityInstance.InputPortInventories[InputPortIndex];
 		for (const FSRResourceInstance& ResourceInstance : InputPortInventory.Inventory)
 		{
-			if (!ResourceInstance.ResourceId.IsNone()
-				&& ResourceInstance.StackCount > 0
-				&& FMath::Max(0.0, ResourceInstance.EnergyValue) * static_cast<double>(FMath::Max(1, ResourceInstance.StackCount)) > UE_DOUBLE_SMALL_NUMBER)
+			if (StarRovers::PatternRouting::IsValidPatternPayload(ResourceInstance))
 			{
 				return true;
 			}

@@ -4,6 +4,7 @@
 #include "SRFacilityOutputResourceBuilder.h"
 #include "SRFacilityProcessingInventoryRouter.h"
 #include "SRFacilityProcessingRuleEvaluator.h"
+#include "SRFacilityRunModifierResolver.h"
 
 namespace
 {
@@ -12,6 +13,7 @@ namespace
 		FacilityInstance.ProcessingInventory.Reset();
 		FacilityInstance.bProcessing = false;
 		FacilityInstance.ProcessProgressSeconds = 0.0f;
+		FacilityInstance.RunModifierContext = FSRRunModifierContext();
 	}
 }
 
@@ -24,6 +26,8 @@ bool FSRFacilityProcessingStepExecutor::TryStartProcessing(
 	{
 		*OutStartResult = FSRFacilityProcessingStartResult();
 	}
+
+	FSRFacilityRunModifierResolver::SnapshotCurrentContext(OwnerComponent, FacilityInstance);
 
 	if (!FSRFacilityProcessingRuleEvaluator::CanRun(OwnerComponent, FacilityInstance))
 	{

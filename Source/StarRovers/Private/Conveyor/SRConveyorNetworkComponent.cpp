@@ -39,11 +39,11 @@ USRConveyorNetworkComponent::USRConveyorNetworkComponent()
 	MaxItemTransfersPerTick = 128;
 	bShowTransportItemLabels = true;
 	ItemLabelHeightOffset = 180.0f;
-	ItemEnergyLabelWorldSize = 120.0f;
-	ItemEnergyLabelMaxScale = 2.5f;
-	ItemEnergyLowColor = FLinearColor(0.1f, 0.75f, 1.0f, 1.0f);
-	ItemEnergyHighColor = FLinearColor(1.0f, 0.55f, 0.05f, 1.0f);
-	ItemEnergyNegativeColor = FLinearColor(0.85f, 0.1f, 1.0f, 1.0f);
+	ItemPatternLabelWorldSize = 120.0f;
+	ItemPatternLabelMaxScale = 2.5f;
+	ItemPatternSparseColor = FLinearColor(0.1f, 0.75f, 1.0f, 1.0f);
+	ItemPatternDenseColor = FLinearColor(1.0f, 0.55f, 0.05f, 1.0f);
+	ItemPatternSpecialColor = FLinearColor(0.85f, 0.1f, 1.0f, 1.0f);
 	BeltMeshComponent = nullptr;
 	PathDebugLineBatchComponent = nullptr;
 }

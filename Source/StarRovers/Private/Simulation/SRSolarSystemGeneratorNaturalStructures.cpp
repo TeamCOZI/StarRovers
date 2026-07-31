@@ -22,42 +22,45 @@ void ASRSolarSystemGenerator::ContinueRuntimeNaturalStructureGeneration()
 		return;
 	}
 
-	if (RuntimePlanetBodies.IsValidIndex(AsyncNaturalPlanetIndex))
+	const int32 TotalBodyCount = RuntimePlanetBodies.Num() + RuntimeMoonBodies.Num();
+	if (AsyncNaturalBodyIndex < TotalBodyCount)
 	{
-		ASRCelestialBody* PlanetBody = RuntimePlanetBodies[AsyncNaturalPlanetIndex].Get();
-		if (IsValid(PlanetBody))
+		ASRCelestialBody* Body = AsyncNaturalBodyIndex < RuntimePlanetBodies.Num()
+			? RuntimePlanetBodies[AsyncNaturalBodyIndex].Get()
+			: RuntimeMoonBodies[AsyncNaturalBodyIndex - RuntimePlanetBodies.Num()].Get();
+		if (IsValid(Body))
 		{
 			const double BodyStart = GetSolarSystemGenerationTimingSeconds();
 			{
 				FSRTimingLogScopedSuppress SuppressBodyDetailLogs;
-				GenerateNaturalStructuresForBody(PlanetBody, AsyncNaturalStructureRandomStream);
+				GenerateNaturalStructuresForBody(Body, AsyncNaturalStructureRandomStream);
 			}
 			const double BodyMs = GetSolarSystemGenerationElapsedMilliseconds(BodyStart);
-			AsyncNaturalPlanetTotalMs += BodyMs;
-			++AsyncNaturalPlanetCount;
+			AsyncNaturalBodyTotalMs += BodyMs;
+			++AsyncNaturalBodyCount;
 			if (BodyMs > AsyncNaturalSlowestBodyMs)
 			{
 				AsyncNaturalSlowestBodyMs = BodyMs;
-				AsyncNaturalSlowestBodyName = GetNameSafe(PlanetBody);
+				AsyncNaturalSlowestBodyName = GetNameSafe(Body);
 			}
 		}
 
-		++AsyncNaturalPlanetIndex;
-		const float NaturalProgress = RuntimePlanetBodies.IsEmpty()
+		++AsyncNaturalBodyIndex;
+		const float NaturalProgress = TotalBodyCount <= 0
 			? 1.0f
-			: static_cast<float>(AsyncNaturalPlanetIndex) / static_cast<float>(RuntimePlanetBodies.Num());
+			: static_cast<float>(AsyncNaturalBodyIndex) / static_cast<float>(TotalBodyCount);
 		UpdateLoadingProgress(
 			FMath::Lerp(0.84f, 0.96f, NaturalProgress),
-			FText::FromString(FString::Printf(TEXT("Placing natural structures... %d / %d"), FMath::Min(AsyncNaturalPlanetIndex, RuntimePlanetBodies.Num()), RuntimePlanetBodies.Num())));
+			FText::FromString(FString::Printf(TEXT("Placing natural structures... %d / %d"), FMath::Min(AsyncNaturalBodyIndex, TotalBodyCount), TotalBodyCount)));
 		ScheduleLoadingGenerationStep(&ASRSolarSystemGenerator::ContinueRuntimeNaturalStructureGeneration);
 		return;
 	}
 
 	FSRTimingLog::AddLine(FString::Printf(
-		TEXT("GenerateRuntimeNaturalStructures.Total %.2f ms Planets=%d PlanetTotal=%.2f ms Slowest=%s SlowestMs=%.2f"),
+		TEXT("GenerateRuntimeNaturalStructures.Total %.2f ms Bodies=%d BodyTotal=%.2f ms Slowest=%s SlowestMs=%.2f"),
 		GetSolarSystemGenerationElapsedMilliseconds(AsyncNaturalStructuresTotalStart),
-		AsyncNaturalPlanetCount,
-		AsyncNaturalPlanetTotalMs,
+		AsyncNaturalBodyCount,
+		AsyncNaturalBodyTotalMs,
 		*AsyncNaturalSlowestBodyName,
 		AsyncNaturalSlowestBodyMs));
 	LogAsyncGenerationStageTiming(TEXT("GenerateRuntimeNaturalStructures"), GetSolarSystemGenerationElapsedMilliseconds(AsyncNaturalStructuresTotalStart));
@@ -77,34 +80,40 @@ void ASRSolarSystemGenerator::GenerateRuntimeNaturalStructures(int32 RuntimeGene
 	}
 
 	FRandomStream NaturalStructureRandomStream(RuntimeGenerationSeed + 7919);
-	int32 PlanetCount = 0;
-	double PlanetTotalMs = 0.0;
+	int32 BodyCount = 0;
+	double BodyTotalMs = 0.0;
 	double SlowestBodyMs = 0.0;
 	FString SlowestBodyName(TEXT("None"));
-	for (TObjectPtr<ASRCelestialBody>& PlanetBody : RuntimePlanetBodies)
+	auto GenerateForBodies = [this, &NaturalStructureRandomStream, &BodyCount, &BodyTotalMs, &SlowestBodyMs, &SlowestBodyName](
+		TArray<TObjectPtr<ASRCelestialBody>>& Bodies)
 	{
-		if (IsValid(PlanetBody))
+		for (TObjectPtr<ASRCelestialBody>& Body : Bodies)
 		{
-			const double BodyStart = GetSolarSystemGenerationTimingSeconds();
+			if (IsValid(Body))
 			{
-				FSRTimingLogScopedSuppress SuppressBodyDetailLogs;
-				GenerateNaturalStructuresForBody(PlanetBody, NaturalStructureRandomStream);
-			}
-			const double BodyMs = GetSolarSystemGenerationElapsedMilliseconds(BodyStart);
-			PlanetTotalMs += BodyMs;
-			++PlanetCount;
-			if (BodyMs > SlowestBodyMs)
-			{
-				SlowestBodyMs = BodyMs;
-				SlowestBodyName = GetNameSafe(PlanetBody.Get());
+				const double BodyStart = GetSolarSystemGenerationTimingSeconds();
+				{
+					FSRTimingLogScopedSuppress SuppressBodyDetailLogs;
+					GenerateNaturalStructuresForBody(Body, NaturalStructureRandomStream);
+				}
+				const double BodyMs = GetSolarSystemGenerationElapsedMilliseconds(BodyStart);
+				BodyTotalMs += BodyMs;
+				++BodyCount;
+				if (BodyMs > SlowestBodyMs)
+				{
+					SlowestBodyMs = BodyMs;
+					SlowestBodyName = GetNameSafe(Body.Get());
+				}
 			}
 		}
-	}
+	};
+	GenerateForBodies(RuntimePlanetBodies);
+	GenerateForBodies(RuntimeMoonBodies);
 	FSRTimingLog::AddLine(FString::Printf(
-		TEXT("GenerateRuntimeNaturalStructures.Total %.2f ms Planets=%d PlanetTotal=%.2f ms Slowest=%s SlowestMs=%.2f"),
+		TEXT("GenerateRuntimeNaturalStructures.Total %.2f ms Bodies=%d BodyTotal=%.2f ms Slowest=%s SlowestMs=%.2f"),
 		GetSolarSystemGenerationElapsedMilliseconds(TotalStart),
-		PlanetCount,
-		PlanetTotalMs,
+		BodyCount,
+		BodyTotalMs,
 		*SlowestBodyName,
 		SlowestBodyMs));
 }
@@ -112,7 +121,9 @@ void ASRSolarSystemGenerator::GenerateRuntimeNaturalStructures(int32 RuntimeGene
 void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody* Body, FRandomStream& RandomStream)
 {
 	const double TotalStart = GetSolarSystemGenerationTimingSeconds();
-	if (!IsValid(Body) || Body->GetBodyCategory() != ESRCelestialBodyCategory::Planet)
+	if (!IsValid(Body)
+		|| (Body->GetBodyCategory() != ESRCelestialBodyCategory::Planet
+			&& Body->GetBodyCategory() != ESRCelestialBodyCategory::Moon))
 	{
 		return;
 	}
@@ -128,25 +139,38 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 	FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateNaturalStructuresForBody.GetCellsRef '%s' %.2f ms Cells=%d"), *GetNameSafe(Body), GetSolarSystemGenerationElapsedMilliseconds(StageStart), Cells.Num()));
 
 	TMap<FName, TArray<int32>> CandidateCellIndicesByBiomeId;
-	auto GetBiomeCandidateCellIndices = [&Cells, &CandidateCellIndicesByBiomeId](FName BiomeId) -> const TArray<int32>&
+	TMap<FName, TArray<int32>> DryCandidateCellIndicesByBiomeId;
+	auto GetBiomeCandidateCellIndices = [&Cells, &CandidateCellIndicesByBiomeId, &DryCandidateCellIndicesByBiomeId](
+		FName BiomeId,
+		bool bRequireDryLand) -> const TArray<int32>&
 	{
-		if (const TArray<int32>* ExistingCandidateCellIndices = CandidateCellIndicesByBiomeId.Find(BiomeId))
+		TMap<FName, TArray<int32>>& CandidateCache = bRequireDryLand
+			? DryCandidateCellIndicesByBiomeId
+			: CandidateCellIndicesByBiomeId;
+		if (const TArray<int32>* ExistingCandidateCellIndices = CandidateCache.Find(BiomeId))
 		{
 			return *ExistingCandidateCellIndices;
 		}
 
 		const double BuildStart = GetSolarSystemGenerationTimingSeconds();
-		TArray<int32>& CandidateCellIndices = CandidateCellIndicesByBiomeId.Add(BiomeId);
+		TArray<int32>& CandidateCellIndices = CandidateCache.Add(BiomeId);
 		CandidateCellIndices.Reserve(Cells.Num());
 		for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
 		{
 			const FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
-			if (Cell.BiomeId == BiomeId && !Cell.bOccupied)
+			if (Cell.BiomeId == BiomeId
+				&& !Cell.bOccupied
+				&& (!bRequireDryLand || Cell.WaterRole == ESRBiomeWaterRole::None))
 			{
 				CandidateCellIndices.Add(CellIndex);
 			}
 		}
-		FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateNaturalStructuresForBody.BuildBiomeIdCandidateIndices '%s' %.2f ms Candidates=%d"), *BiomeId.ToString(), GetSolarSystemGenerationElapsedMilliseconds(BuildStart), CandidateCellIndices.Num()));
+		FSRTimingLog::AddLine(FString::Printf(
+			TEXT("GenerateNaturalStructuresForBody.BuildBiomeIdCandidateIndices '%s' %.2f ms Candidates=%d DryOnly=%s"),
+			*BiomeId.ToString(),
+			GetSolarSystemGenerationElapsedMilliseconds(BuildStart),
+			CandidateCellIndices.Num(),
+			bRequireDryLand ? TEXT("true") : TEXT("false")));
 		return CandidateCellIndices;
 	};
 
@@ -207,40 +231,29 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 			PlacedOriginCellIds.Reserve(ExpectedPlacedCount);
 		}
 		int32 PlacedCount = 0;
-		for (const int32 CandidateCellIndex : CandidateIterationIndices)
+		auto TryPlaceCandidate = [this, SurfaceGrid, StructureInstanceManager, StructureDataAsset, &Cells, &PlacedOriginCellIds, SafeMinCellSpacing, &PlacedCount](
+			int32 CandidateCellIndex)
 		{
-			if (SafeMaxCount > 0 && PlacedCount >= SafeMaxCount)
-			{
-				break;
-			}
-
 			if (!Cells.IsValidIndex(CandidateCellIndex))
 			{
-				continue;
+				return false;
 			}
 			const FSRPlanetSurfaceGridCell& CandidateCell = Cells[CandidateCellIndex];
-
-			if (SafeSpawnChancePerCell < 1.0f && RandomStream.FRand() > SafeSpawnChancePerCell)
+			if (CandidateCell.bOccupied)
 			{
-				continue;
+				return false;
 			}
 
 			if (SafeMinCellSpacing > 0)
 			{
-				bool bTooCloseToPlacedStructure = false;
 				for (const FSRPlanetSurfaceGridCellId& PlacedOriginCellId : PlacedOriginCellIds)
 				{
 					if (PlacedOriginCellId.Face == CandidateCell.CellId.Face
 						&& FMath::Abs(PlacedOriginCellId.CellX - CandidateCell.CellId.CellX) <= SafeMinCellSpacing
 						&& FMath::Abs(PlacedOriginCellId.CellY - CandidateCell.CellId.CellY) <= SafeMinCellSpacing)
 					{
-						bTooCloseToPlacedStructure = true;
-						break;
+						return false;
 					}
-				}
-				if (bTooCloseToPlacedStructure)
-				{
-					continue;
 				}
 			}
 
@@ -248,13 +261,24 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 			if (StructureInstanceManager)
 			{
 				FName OccupantId = NAME_None;
-				bPlacedStructure = StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(SurfaceGrid, CandidateCell.CellId, StructureDataAsset, OccupantId, true, true);
+				bPlacedStructure = StructureInstanceManager->TryPlaceStructureOnSurfaceGrid(
+					SurfaceGrid,
+					CandidateCell.CellId,
+					StructureDataAsset,
+					OccupantId,
+					true,
+					true);
 			}
 
 			if (!bPlacedStructure)
 			{
 				AActor* PlacedStructureActor = nullptr;
-				bPlacedStructure = USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(SurfaceGrid, CandidateCell.CellId, StructureDataAsset, PlacedStructureActor, true);
+				bPlacedStructure = USRStructurePlacementLibrary::TryPlaceStructureOnSurfaceGrid(
+					SurfaceGrid,
+					CandidateCell.CellId,
+					StructureDataAsset,
+					PlacedStructureActor,
+					true);
 				if (bPlacedStructure)
 				{
 					RuntimeNaturalStructureActors.Add(PlacedStructureActor);
@@ -269,18 +293,49 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 				}
 				++PlacedCount;
 			}
+			return bPlacedStructure;
+		};
+
+		for (const int32 CandidateCellIndex : CandidateIterationIndices)
+		{
+			if (SafeMaxCount > 0 && PlacedCount >= SafeMaxCount)
+			{
+				break;
+			}
+
+			if (SafeSpawnChancePerCell < 1.0f && RandomStream.FRand() > SafeSpawnChancePerCell)
+			{
+				continue;
+			}
+			TryPlaceCandidate(CandidateCellIndex);
+		}
+
+		bool bUsedMandatoryDepositFallback = false;
+		if (PlacedCount == 0 && StructureDataAsset->bIsResourceDeposit)
+		{
+			// Resource availability is gameplay-critical. Random chance may vary the
+			// count, but an enabled deposit rule must place at least one visible seam.
+			for (const int32 CandidateCellIndex : CandidateCellIndices)
+			{
+				if (TryPlaceCandidate(CandidateCellIndex))
+				{
+					bUsedMandatoryDepositFallback = true;
+					break;
+				}
+			}
 		}
 		FSRTimingLog::AddLine(FString::Printf(
-			TEXT("GenerateNaturalStructuresForBody.Rule '%s' %.2f ms Candidates=%d Iteration=%d Placed=%d Shuffle=%.2f ms"),
+			TEXT("GenerateNaturalStructuresForBody.Rule '%s' %.2f ms Candidates=%d Iteration=%d Placed=%d Shuffle=%.2f ms MandatoryFallback=%s"),
 			*GetNameSafe(StructureDataAsset),
 			GetSolarSystemGenerationElapsedMilliseconds(RuleStart),
 			InitialCandidateCount,
 			CandidateIterationIndices.Num(),
 			PlacedCount,
-			ShuffleMs));
+			ShuffleMs,
+			bUsedMandatoryDepositFallback ? TEXT("true") : TEXT("false")));
 	};
 
-	auto BuildProfileCandidateCellIndices = [&Cells]()
+	auto BuildProfileCandidateCellIndices = [&Cells](bool bRequireDryLand)
 	{
 		const double BuildStart = GetSolarSystemGenerationTimingSeconds();
 		TArray<int32> CandidateCellIndices;
@@ -288,12 +343,17 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 		for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
 		{
 			const FSRPlanetSurfaceGridCell& Cell = Cells[CellIndex];
-			if (!Cell.bOccupied)
+			if (!Cell.bOccupied
+				&& (!bRequireDryLand || Cell.WaterRole == ESRBiomeWaterRole::None))
 			{
 				CandidateCellIndices.Add(CellIndex);
 			}
 		}
-		FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateNaturalStructuresForBody.BuildProfileCandidateIndices %.2f ms Candidates=%d"), GetSolarSystemGenerationElapsedMilliseconds(BuildStart), CandidateCellIndices.Num()));
+		FSRTimingLog::AddLine(FString::Printf(
+			TEXT("GenerateNaturalStructuresForBody.BuildProfileCandidateIndices %.2f ms Candidates=%d DryOnly=%s"),
+			GetSolarSystemGenerationElapsedMilliseconds(BuildStart),
+			CandidateCellIndices.Num(),
+			bRequireDryLand ? TEXT("true") : TEXT("false")));
 		return CandidateCellIndices;
 	};
 
@@ -323,7 +383,8 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 		}
 
 		GenerateRuleForCandidateCells(
-			BuildProfileCandidateCellIndices(),
+			BuildProfileCandidateCellIndices(
+				IsValid(Rule.StructureDataAsset.Get()) && Rule.StructureDataAsset->bIsResourceDeposit),
 			Rule.StructureDataAsset.Get(),
 			RuleOverride ? RuleOverride->SpawnChancePerCell : Rule.SpawnChancePerCell,
 			RuleOverride ? RuleOverride->MaxCount : Rule.MaxCount,
@@ -343,7 +404,9 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 		}
 
 		GenerateRuleForCandidateCells(
-			GetBiomeCandidateCellIndices(BiomeId),
+			GetBiomeCandidateCellIndices(
+				BiomeId,
+				IsValid(Rule.StructureDataAsset.Get()) && Rule.StructureDataAsset->bIsResourceDeposit),
 			Rule.StructureDataAsset.Get(),
 			RuleOverride ? RuleOverride->SpawnChancePerCell : Rule.SpawnChancePerCell,
 			RuleOverride ? RuleOverride->MaxCount : Rule.MaxCount,
@@ -377,20 +440,25 @@ void ASRSolarSystemGenerator::GenerateNaturalStructuresForBody(ASRCelestialBody*
 
 void ASRSolarSystemGenerator::DestroyRuntimeNaturalStructures()
 {
-	for (TObjectPtr<ASRCelestialBody>& PlanetBody : RuntimePlanetBodies)
+	auto ClearForBodies = [](TArray<TObjectPtr<ASRCelestialBody>>& Bodies)
 	{
-		if (!IsValid(PlanetBody))
+		for (TObjectPtr<ASRCelestialBody>& Body : Bodies)
 		{
-			continue;
-		}
+			if (!IsValid(Body))
+			{
+				continue;
+			}
 
-		ASRCelestialBody* PlanetBodyActor = PlanetBody.Get();
-		USRPlanetSurfaceGrid* SurfaceGrid = PlanetBodyActor->GetSurfaceGrid();
-		if (USRStructureInstanceManagerComponent* StructureInstanceManager = PlanetBodyActor->FindComponentByClass<USRStructureInstanceManagerComponent>())
-		{
-			StructureInstanceManager->ClearNaturalStructures(SurfaceGrid);
+			ASRCelestialBody* BodyActor = Body.Get();
+			USRPlanetSurfaceGrid* SurfaceGrid = BodyActor->GetSurfaceGrid();
+			if (USRStructureInstanceManagerComponent* StructureInstanceManager = BodyActor->FindComponentByClass<USRStructureInstanceManagerComponent>())
+			{
+				StructureInstanceManager->ClearNaturalStructures(SurfaceGrid);
+			}
 		}
-	}
+	};
+	ClearForBodies(RuntimePlanetBodies);
+	ClearForBodies(RuntimeMoonBodies);
 
 	if (UWorld* World = GetWorld())
 	{

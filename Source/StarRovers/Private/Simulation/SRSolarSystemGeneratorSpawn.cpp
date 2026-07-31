@@ -37,7 +37,9 @@ ASRCelestialBody* ASRSolarSystemGenerator::SpawnPrimaryStar(FRandomStream& Rando
 	StarCelestialBodyRequest.BodyData.InitialAngle = 0.0f;
 	if (ShouldRandomizeBodyGenerationSeed(StarCelestialBodyRequest.BodyData))
 	{
-		ApplyResolvedGenerationSeed(StarCelestialBodyRequest.BodyData, CreateRuntimeRandomGenerationSeed());
+		ApplyResolvedGenerationSeed(
+			StarCelestialBodyRequest.BodyData,
+			RandomStream.RandRange(1, TNumericLimits<int32>::Max() - 1));
 	}
 
 	return SpawnOrbitingBody(ResolvedPrimaryStarClass, StarCelestialBodyRequest, nullptr);
@@ -112,9 +114,7 @@ void ASRSolarSystemGenerator::BuildOrbitingBodyRequests(
 	{
 		CandidateCelestialBodies[Index].BodyData.OrbitRadius = PackedOrbitRadii[Index];
 		CandidateCelestialBodies[Index].BodyData.InitialAngle = RandomStream.FRandRange(0.0f, 360.0f);
-		const int32 ResolvedGenerationSeed = ShouldRandomizeBodyGenerationSeed(CandidateCelestialBodies[Index].BodyData)
-			? CreateRuntimeRandomGenerationSeed()
-			: RandomStream.RandRange(1, TNumericLimits<int32>::Max() - 1);
+		const int32 ResolvedGenerationSeed = RandomStream.RandRange(1, TNumericLimits<int32>::Max() - 1);
 		ApplyResolvedGenerationSeed(CandidateCelestialBodies[Index].BodyData, ResolvedGenerationSeed);
 	}
 
@@ -252,7 +252,14 @@ void ASRSolarSystemGenerator::SpawnPlanets(ASRCelestialBody* ParentStar, const U
 
 	const int32 ResolvedMinPlanetCount = FMath::Max(0, MinPlanet);
 	const int32 ResolvedMaxPlanetCount = FMath::Max(ResolvedMinPlanetCount, MaxPlanet);
-	const int32 RequestedPlanetCount = RandomStream.RandRange(ResolvedMinPlanetCount, ResolvedMaxPlanetCount);
+	// A run should expose every configured planetary environment whenever the
+	// configured maximum count can contain them. Previously each slot sampled
+	// with replacement, so three slots could all become the same planet and make
+	// a contract glyph (notably Metal) unavailable for the entire run.
+	const int32 RequiredUniquePlanetCount = FMath::Min(PlanetDataAssets.Num(), ResolvedMaxPlanetCount);
+	const int32 RequestedPlanetCount = RandomStream.RandRange(
+		FMath::Max(ResolvedMinPlanetCount, RequiredUniquePlanetCount),
+		ResolvedMaxPlanetCount);
 	if (RequestedPlanetCount <= 0)
 	{
 		return;
@@ -266,9 +273,34 @@ void ASRSolarSystemGenerator::SpawnPlanets(ASRCelestialBody* ParentStar, const U
 		return;
 	}
 
+	TArray<USRPlanetDataAsset*> RemainingPlanetDataAssets;
+	auto RefillPlanetDataPool = [this, &RemainingPlanetDataAssets]()
+	{
+		RemainingPlanetDataAssets.Reset(PlanetDataAssets.Num());
+		for (const TObjectPtr<USRPlanetDataAsset>& PlanetDataAsset : PlanetDataAssets)
+		{
+			if (IsValid(PlanetDataAsset.Get()))
+			{
+				RemainingPlanetDataAssets.Add(PlanetDataAsset.Get());
+			}
+		}
+	};
+
 	for (int32 PlanetIndex = 0; PlanetIndex < RequestedPlanetCount; ++PlanetIndex)
 	{
-		const USRPlanetDataAsset* SelectedPlanetData = ResolveRandomDataAssetStrict(PlanetDataAssets, RandomStream, TEXT("planet"));
+		if (RemainingPlanetDataAssets.IsEmpty())
+		{
+			RefillPlanetDataPool();
+		}
+		if (RemainingPlanetDataAssets.IsEmpty())
+		{
+			SR_LOG(SolarSystem, LogTemp, Error, TEXT("Solar system generation has no valid planet Data Assets."));
+			return;
+		}
+
+		const int32 SelectedPlanetDataIndex = RandomStream.RandRange(0, RemainingPlanetDataAssets.Num() - 1);
+		const USRPlanetDataAsset* SelectedPlanetData = RemainingPlanetDataAssets[SelectedPlanetDataIndex];
+		RemainingPlanetDataAssets.RemoveAtSwap(SelectedPlanetDataIndex, 1, EAllowShrinking::No);
 		if (!IsValid(SelectedPlanetData))
 		{
 			return;

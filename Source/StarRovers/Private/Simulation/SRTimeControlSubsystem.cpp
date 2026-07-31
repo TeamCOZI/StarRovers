@@ -128,3 +128,64 @@ float USRTimeControlSubsystem::GetCycleProgressRatio() const
 		? FMath::Clamp(CycleProgressSeconds / SecondsPerPeriod, 0.0f, 1.0f)
 		: 0.0f;
 }
+
+void USRTimeControlSubsystem::ExportSaveData(FSRTimeControlSaveData& OutSaveData) const
+{
+	OutSaveData = FSRTimeControlSaveData();
+	OutSaveData.TimeScale = TimeScale;
+	OutSaveData.SecondsPerPeriod = SecondsPerPeriod;
+	OutSaveData.CycleProgressSeconds = CycleProgressSeconds;
+	OutSaveData.CurrentCycleIndex = CurrentCycleIndex;
+	OutSaveData.bSimulationPaused = bSimulationPaused;
+}
+
+bool USRTimeControlSubsystem::CanImportSaveData(
+	const FSRTimeControlSaveData& SaveData,
+	FString& OutFailureReason) const
+{
+	OutFailureReason.Reset();
+	if (!StarRovers::Save::TimeControl::IsSupportedVersion(SaveData.Version))
+	{
+		OutFailureReason = FString::Printf(TEXT("Unsupported time-control save version %d."), SaveData.Version);
+		return false;
+	}
+	if (!FMath::IsFinite(SaveData.TimeScale) || SaveData.TimeScale < 0.0f)
+	{
+		OutFailureReason = TEXT("Time scale must be finite and non-negative.");
+		return false;
+	}
+	if (!FMath::IsFinite(SaveData.SecondsPerPeriod) || SaveData.SecondsPerPeriod <= UE_SMALL_NUMBER)
+	{
+		OutFailureReason = TEXT("Seconds per Cycle must be finite and positive.");
+		return false;
+	}
+	if (!FMath::IsFinite(SaveData.CycleProgressSeconds)
+		|| SaveData.CycleProgressSeconds < 0.0f
+		|| SaveData.CycleProgressSeconds >= SaveData.SecondsPerPeriod)
+	{
+		OutFailureReason = TEXT("Cycle progress must be within the saved Cycle duration.");
+		return false;
+	}
+	if (SaveData.CurrentCycleIndex < 0)
+	{
+		OutFailureReason = TEXT("Current Cycle index cannot be negative.");
+		return false;
+	}
+	return true;
+}
+
+bool USRTimeControlSubsystem::ImportSaveData(const FSRTimeControlSaveData& SaveData)
+{
+	FString FailureReason;
+	if (!CanImportSaveData(SaveData, FailureReason))
+	{
+		return false;
+	}
+
+	TimeScale = SaveData.TimeScale;
+	SecondsPerPeriod = SaveData.SecondsPerPeriod;
+	CycleProgressSeconds = SaveData.CycleProgressSeconds;
+	CurrentCycleIndex = SaveData.CurrentCycleIndex;
+	bSimulationPaused = SaveData.bSimulationPaused;
+	return true;
+}

@@ -56,47 +56,6 @@ bool USRFacilityNetworkComponent::DebugAddInputResourceFromDataAsset(
 	return bAdded;
 }
 
-bool USRFacilityNetworkComponent::DebugAddRawEnergyInputResource(
-	FName OccupantId,
-	FName ResourceId,
-	double EnergyValue,
-	int32 RemainingProcessLimit,
-	int32 StackCount)
-{
-	if (ResourceId.IsNone())
-	{
-		SR_LOG(FacilityNetwork,
-			LogTemp,
-			Warning,
-			TEXT("[FacilityNetwork][Debug] AddRawEnergyInput failed: OccupantId=%s Owner=%s Reason=InvalidResourceId"),
-			*OccupantId.ToString(),
-			*GetNameSafe(GetOwner()));
-		return false;
-	}
-
-	FSRResourceInstance ResourceInstance;
-	ResourceInstance.ResourceInstanceId = FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits));
-	ResourceInstance.ResourceId = ResourceId;
-	ResourceInstance.EnergyValue = EnergyValue;
-	ResourceInstance.RemainingProcessLimit = FMath::Max(0, RemainingProcessLimit);
-	ResourceInstance.ProcessCount = 0;
-	ResourceInstance.EnergyChangeCount = 0;
-	ResourceInstance.StackCount = FMath::Max(1, StackCount);
-
-	const bool bAdded = AddInputResource(OccupantId, ResourceInstance);
-	if (bAdded)
-	{
-		SR_LOG(FacilityNetwork,
-			LogTemp,
-			Display,
-			TEXT("[FacilityNetwork][Debug] Added raw energy input: OccupantId=%s %s Owner=%s"),
-			*OccupantId.ToString(),
-			*StarRovers::FacilityResources::BuildResourceDebugString(ResourceInstance),
-			*GetNameSafe(GetOwner()));
-	}
-	return bAdded;
-}
-
 bool USRFacilityNetworkComponent::DebugStepFacilities(float DeltaTime, int32 StepCount)
 {
 	const int32 SafeStepCount = FMath::Max(1, StepCount);

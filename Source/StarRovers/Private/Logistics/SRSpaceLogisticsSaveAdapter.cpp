@@ -28,6 +28,14 @@ void FSRSpaceLogisticsSaveAdapter::ExportSaveData(
 		{
 			OutSaveData.HubRoutes.Add(RouteSaveData);
 		}
+		else
+		{
+			SR_LOG(SpaceLogistics,
+				LogTemp,
+				Error,
+				TEXT("[SpaceLogistics] Pattern route omitted from save because its endpoint, filter, or cargo payload is invalid: RouteId=%s"),
+				*HubRoute.RouteId.ToString());
+		}
 	}
 
 	for (const FSRSpaceLogisticsStarFuelMissile& Missile : StarFuelMissiles)
@@ -36,6 +44,14 @@ void FSRSpaceLogisticsSaveAdapter::ExportSaveData(
 		if (BuildMissileSaveData(SpaceLogisticsSubsystem, Missile, MissileSaveData))
 		{
 			OutSaveData.StarFuelMissiles.Add(MissileSaveData);
+		}
+		else
+		{
+			SR_LOG(SpaceLogistics,
+				LogTemp,
+				Error,
+				TEXT("[SpaceLogistics] Pattern missile omitted from save because its endpoint or cargo payload is invalid: MissileId=%s"),
+				*Missile.MissileId.ToString());
 		}
 	}
 }
@@ -51,36 +67,54 @@ bool FSRSpaceLogisticsSaveAdapter::ImportSaveData(
 	TMap<FName, TObjectPtr<ASRSpaceshipActor>>& StarFuelMissileActorsByMissileId,
 	TMap<FString, FSRSpaceLogisticsHubEndpointMotionSample>& HubEndpointMotionSamples)
 {
-	FSRSpaceLogisticsRouteVisualController::Clear(SpaceshipActorsByRouteId);
-	FSRSpaceLogisticsRouteVisualController::Clear(StarFuelMissileActorsByMissileId);
-	HubRoutes.Reset();
-	StarFuelMissiles.Reset();
-	HubEndpointMotionSamples.Reset();
-	NextHubRouteSequence = FMath::Max(1, SaveData.NextHubRouteSequence);
-	NextStarFuelMissileSequence = FMath::Max(1, SaveData.NextStarFuelMissileSequence);
+	if (!StarRovers::SpaceLogistics::PatternSave::IsSupportedVersion(SaveData.Version))
+	{
+		SR_LOG(SpaceLogistics,
+			LogTemp,
+			Error,
+			TEXT("[SpaceLogistics] Save import rejected: unsupported Pattern logistics version %d"),
+			SaveData.Version);
+		return false;
+	}
+
+	TArray<FSRSpaceLogisticsHubRoute> ImportedHubRoutes;
+	ImportedHubRoutes.Reserve(SaveData.HubRoutes.Num());
+	TArray<FSRSpaceLogisticsStarFuelMissile> ImportedStarFuelMissiles;
+	ImportedStarFuelMissiles.Reserve(SaveData.StarFuelMissiles.Num());
 
 	int32 ImportedRouteCount = 0;
 	for (const FSRSpaceLogisticsHubRouteSaveData& RouteSaveData : SaveData.HubRoutes)
 	{
-		if (ImportRoute(SpaceLogisticsSubsystem, RouteSaveData, HubRoutes))
+		if (!ImportRoute(SpaceLogisticsSubsystem, SaveData.Version, RouteSaveData, ImportedHubRoutes))
 		{
-			++ImportedRouteCount;
+			return false;
 		}
+		++ImportedRouteCount;
 	}
 
 	int32 ImportedMissileCount = 0;
 	for (const FSRSpaceLogisticsStarFuelMissileSaveData& MissileSaveData : SaveData.StarFuelMissiles)
 	{
-		if (ImportMissile(SpaceLogisticsSubsystem, MissileSaveData, StarFuelMissiles))
+		if (!ImportMissile(SpaceLogisticsSubsystem, MissileSaveData, ImportedStarFuelMissiles))
 		{
-			++ImportedMissileCount;
+			return false;
 		}
+		++ImportedMissileCount;
 	}
+
+	FSRSpaceLogisticsRouteVisualController::Clear(SpaceshipActorsByRouteId);
+	FSRSpaceLogisticsRouteVisualController::Clear(StarFuelMissileActorsByMissileId);
+	HubRoutes = MoveTemp(ImportedHubRoutes);
+	StarFuelMissiles = MoveTemp(ImportedStarFuelMissiles);
+	HubEndpointMotionSamples.Reset();
+	NextHubRouteSequence = FMath::Max(1, SaveData.NextHubRouteSequence);
+	NextStarFuelMissileSequence = FMath::Max(1, SaveData.NextStarFuelMissileSequence);
 
 	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
-		TEXT("[SpaceLogistics] Save data imported: ImportedRoutes=%d SavedRoutes=%d ImportedMissiles=%d SavedMissiles=%d NextRouteSequence=%d NextMissileSequence=%d"),
+		TEXT("[SpaceLogistics] Pattern save data imported atomically: Version=%d ImportedRoutes=%d SavedRoutes=%d ImportedMissiles=%d SavedMissiles=%d NextRouteSequence=%d NextMissileSequence=%d"),
+		SaveData.Version,
 		ImportedRouteCount,
 		SaveData.HubRoutes.Num(),
 		ImportedMissileCount,
@@ -97,8 +131,37 @@ bool FSRSpaceLogisticsSaveAdapter::ImportSaveData(
 		SpaceLogisticsSubsystem.GetWorld(),
 		StarFuelMissiles,
 		StarFuelMissileActorsByMissileId);
-	return (ImportedRouteCount > 0 || SaveData.HubRoutes.IsEmpty())
-		&& (ImportedMissileCount > 0 || SaveData.StarFuelMissiles.IsEmpty());
+	return true;
+}
+
+bool FSRSpaceLogisticsSaveAdapter::CanImportSaveData(
+	USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+	const FSRSpaceLogisticsSaveData& SaveData)
+{
+	if (!StarRovers::SpaceLogistics::PatternSave::IsSupportedVersion(SaveData.Version)
+		|| SaveData.NextHubRouteSequence < 1
+		|| SaveData.NextStarFuelMissileSequence < 1)
+	{
+		return false;
+	}
+
+	TArray<FSRSpaceLogisticsHubRoute> ImportedHubRoutes;
+	for (const FSRSpaceLogisticsHubRouteSaveData& RouteSaveData : SaveData.HubRoutes)
+	{
+		if (!ImportRoute(SpaceLogisticsSubsystem, SaveData.Version, RouteSaveData, ImportedHubRoutes))
+		{
+			return false;
+		}
+	}
+	TArray<FSRSpaceLogisticsStarFuelMissile> ImportedMissiles;
+	for (const FSRSpaceLogisticsStarFuelMissileSaveData& MissileSaveData : SaveData.StarFuelMissiles)
+	{
+		if (!ImportMissile(SpaceLogisticsSubsystem, MissileSaveData, ImportedMissiles))
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 bool FSRSpaceLogisticsSaveAdapter::BuildRouteSaveData(
@@ -108,7 +171,8 @@ bool FSRSpaceLogisticsSaveAdapter::BuildRouteSaveData(
 {
 	OutRouteSaveData = FSRSpaceLogisticsHubRouteSaveData();
 	OutRouteSaveData.RouteId = HubRoute.RouteId;
-	if (!SpaceLogisticsSubsystem.BuildHubEndpointSaveData(HubRoute.SourceHub, OutRouteSaveData.SourceHub)
+	if (!HubRoute.IsValid()
+		|| !SpaceLogisticsSubsystem.BuildHubEndpointSaveData(HubRoute.SourceHub, OutRouteSaveData.SourceHub)
 		|| !SpaceLogisticsSubsystem.BuildHubEndpointSaveData(HubRoute.DestinationHub, OutRouteSaveData.DestinationHub))
 	{
 		return false;
@@ -117,7 +181,8 @@ bool FSRSpaceLogisticsSaveAdapter::BuildRouteSaveData(
 	OutRouteSaveData.bEnabled = HubRoute.bEnabled;
 	OutRouteSaveData.bReturnEmptyWhenNoCargo = HubRoute.bReturnEmptyWhenNoCargo;
 	OutRouteSaveData.MaxCargoStackCount = HubRoute.MaxCargoStackCount;
-	OutRouteSaveData.CargoResourceId = HubRoute.CargoResourceId;
+	OutRouteSaveData.CargoFilter = HubRoute.CargoFilter;
+	OutRouteSaveData.CargoResourceId = HubRoute.CargoFilter.ResourceId;
 	OutRouteSaveData.bDebugLocalOrbit = HubRoute.bDebugLocalOrbit;
 	OutRouteSaveData.Phase = HubRoute.Phase;
 	OutRouteSaveData.CurrentDockSide = HubRoute.CurrentDockSide;
@@ -136,10 +201,21 @@ bool FSRSpaceLogisticsSaveAdapter::BuildRouteSaveData(
 
 bool FSRSpaceLogisticsSaveAdapter::ImportRoute(
 	USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+	int32 SaveVersion,
 	const FSRSpaceLogisticsHubRouteSaveData& RouteSaveData,
 	TArray<FSRSpaceLogisticsHubRoute>& HubRoutes)
 {
 	if (!RouteSaveData.IsValid())
+	{
+		return false;
+	}
+	const FSRPatternRoutingFilter CargoFilter =
+		StarRovers::SpaceLogistics::PatternSave::ResolveRouteCargoFilter(
+			SaveVersion,
+			RouteSaveData.CargoFilter,
+			RouteSaveData.CargoResourceId);
+	if (!CargoFilter.IsCanonical()
+		|| !StarRovers::PatternRouting::IsValidOrEmptyPatternPayload(RouteSaveData.Cargo))
 	{
 		return false;
 	}
@@ -161,7 +237,7 @@ bool FSRSpaceLogisticsSaveAdapter::ImportRoute(
 	HubRoute.bEnabled = RouteSaveData.bEnabled;
 	HubRoute.bReturnEmptyWhenNoCargo = RouteSaveData.bReturnEmptyWhenNoCargo;
 	HubRoute.MaxCargoStackCount = FMath::Max(1, RouteSaveData.MaxCargoStackCount);
-	HubRoute.CargoResourceId = RouteSaveData.CargoResourceId;
+	HubRoute.CargoFilter = CargoFilter;
 	HubRoute.bDebugLocalOrbit = RouteSaveData.bDebugLocalOrbit;
 	HubRoute.Phase = RouteSaveData.Phase;
 	HubRoute.CurrentDockSide = RouteSaveData.CurrentDockSide;
@@ -191,8 +267,7 @@ bool FSRSpaceLogisticsSaveAdapter::BuildMissileSaveData(
 	if (!SpaceLogisticsSubsystem.BuildHubEndpointSaveData(Missile.SourceHub, OutMissileSaveData.SourceHub)
 		|| !IsValid(TargetStarActor)
 		|| !USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(TargetStarActor)
-		|| Missile.Cargo.ResourceId.IsNone()
-		|| Missile.Cargo.StackCount <= 0)
+		|| !StarRovers::PatternRouting::IsValidPatternPayload(Missile.Cargo))
 	{
 		return false;
 	}
@@ -223,6 +298,13 @@ bool FSRSpaceLogisticsSaveAdapter::ImportMissile(
 	{
 		return false;
 	}
+	for (const FSRSpaceLogisticsStarFuelMissile& ExistingMissile : StarFuelMissiles)
+	{
+		if (ExistingMissile.MissileId == MissileSaveData.MissileId)
+		{
+			return false;
+		}
+	}
 
 	FSRSpaceLogisticsHubEndpoint SourceHub;
 	AActor* TargetStarActor = ResolveSavedStarActor(
@@ -232,8 +314,7 @@ bool FSRSpaceLogisticsSaveAdapter::ImportMissile(
 	if (!SpaceLogisticsSubsystem.ResolveSavedHubEndpoint(MissileSaveData.SourceHub, SourceHub)
 		|| !IsValid(TargetStarActor)
 		|| !USRCelestialBodyRuntimeLibrary::IsCelestialStarActor(TargetStarActor)
-		|| MissileSaveData.Cargo.ResourceId.IsNone()
-		|| MissileSaveData.Cargo.StackCount <= 0)
+		|| !StarRovers::PatternRouting::IsValidPatternPayload(MissileSaveData.Cargo))
 	{
 		return false;
 	}

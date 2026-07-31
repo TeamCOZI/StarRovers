@@ -127,7 +127,7 @@ public:
 		FSRResourceInstance& OutPrimaryOutput,
 		TArray<FSRResourceInstance>& OutAdditionalOutputs,
 		int32& OutOutputCount,
-		TArray<FString>& OutEnergyFormulaTexts) const;
+		TArray<FString>& OutOperationTraceTexts) const;
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Mining")
 	bool GetFacilityMiningTarget(FName OccupantId, FSRResourceDepositInstance& OutResourceDeposit) const;
@@ -141,18 +141,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Facility|Debug")
 	void GetRegisteredFacilityOccupantIds(TArray<FName>& OutOccupantIds) const;
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Save|Facility")
+	void ExportSaveData(FSRFacilityNetworkSaveData& OutSaveData) const;
+
+	bool CanImportSaveData(const FSRFacilityNetworkSaveData& SaveData, FString& OutFailureReason) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Save|Facility")
+	bool ImportSaveData(const FSRFacilityNetworkSaveData& SaveData);
+
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
 	bool DebugAddInputResourceFromDataAsset(
 		FName OccupantId,
 		USRResourceDataAsset* ResourceDataAsset,
-		int32 StackCount = 1);
-
-	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
-	bool DebugAddRawEnergyInputResource(
-		FName OccupantId,
-		FName ResourceId,
-		double EnergyValue,
-		int32 RemainingProcessLimit = 3,
 		int32 StackCount = 1);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
@@ -163,9 +163,6 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
 	bool DebugExtractAndLogOutputResource(FName OccupantId, FSRResourceInstance& OutResourceInstance);
-
-	UFUNCTION(BlueprintCallable, Category = "StarRovers|Facility|Debug")
-	int32 DebugApplyGameCyclesToResources(int32 CycleCount = 1);
 
 protected:
 	virtual void BeginPlay() override;

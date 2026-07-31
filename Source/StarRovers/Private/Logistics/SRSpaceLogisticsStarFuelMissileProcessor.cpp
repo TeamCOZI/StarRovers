@@ -6,6 +6,7 @@
 #include "Components/SphereComponent.h"
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
 #include "SRSpaceLogisticsRoutePathResolver.h"
+#include "Simulation/SRRunModifierSubsystem.h"
 #include "SRSpaceLogisticsRouteVisualController.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Utility/SRLog.h"
@@ -14,22 +15,12 @@ namespace StarRovers::SpaceLogistics::StarFuelMissiles
 {
 	bool HasValidMissileCargo(const FSRResourceInstance& Cargo)
 	{
-		return !Cargo.ResourceId.IsNone() && Cargo.StackCount > 0;
+		return StarRovers::PatternRouting::IsValidPatternPayload(Cargo);
 	}
 
-	double CalculateMissileFuelValue(const FSRResourceInstance& Cargo)
+	bool CanUseAsMissileFuelCargo(const ASRStar& TargetStar, const FSRResourceInstance& Cargo)
 	{
-		if (!HasValidMissileCargo(Cargo))
-		{
-			return 0.0;
-		}
-
-		return FMath::Max(0.0, Cargo.EnergyValue) * static_cast<double>(FMath::Max(1, Cargo.StackCount));
-	}
-
-	bool CanUseAsMissileFuelCargo(const FSRResourceInstance& Cargo)
-	{
-		return CalculateMissileFuelValue(Cargo) > UE_DOUBLE_SMALL_NUMBER;
+		return HasValidMissileCargo(Cargo) && TargetStar.CanAcceptStellarFuelResource(Cargo);
 	}
 
 	bool IsClickSphereCollision(const USphereComponent& SphereComponent)
@@ -73,7 +64,7 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::LaunchFromHub(
 	}
 
 	FSRResourceInstance Cargo;
-	if (!TryTakeFuelCargoFromHub(ResolvedSourceHub, Cargo))
+	if (!TryTakeFuelCargoFromHub(ResolvedSourceHub, *TargetStar, Cargo))
 	{
 		return false;
 	}
@@ -82,19 +73,20 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::LaunchFromHub(
 	OutMissileId = Missile.MissileId;
 	StarFuelMissiles.Add(Missile);
 
-	double FuelAmount = 0.0;
-	FuelAmount = StarRovers::SpaceLogistics::StarFuelMissiles::CalculateMissileFuelValue(Cargo);
+	const FSRStellarPatternScoreResult ScorePreview = TargetStar->PreviewStellarPatternSubmission(Cargo);
 	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
-		TEXT("[SpaceLogistics] Star fuel missile launched: MissileId=%s Source=%s/%s TargetStar=%s ResourceId=%s StackCount=%d FuelValue=%.3f Duration=%.2f"),
+		TEXT("[SpaceLogistics] Stellar Pattern missile launched: MissileId=%s Source=%s/%s TargetStar=%s ResourceId=%s StackCount=%d Contract=%s Score=%lld Bonus=%lld Duration=%.2f"),
 		*OutMissileId.ToString(),
 		*GetNameSafe(ResolvedSourceHub.BodyActor.Get()),
 		*ResolvedSourceHub.HubOccupantId.ToString(),
 		*GetNameSafe(TargetStar),
 		*Cargo.ResourceId.ToString(),
 		Cargo.StackCount,
-		FuelAmount,
+		*TargetStar->GetStellarPatternContract().ContractId.ToString(),
+		static_cast<long long>(ScorePreview.TotalScore),
+		static_cast<long long>(ScorePreview.BonusScorePerPattern * static_cast<int64>(Cargo.StackCount)),
 		Missile.TravelDurationSeconds);
 	return true;
 }
@@ -135,7 +127,7 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::LaunchFromHubInputPort(
 	}
 
 	FSRResourceInstance Cargo;
-	if (!TryTakeFuelCargoFromHubInputPort(ResolvedSourceHub, InputPortIndex, Cargo))
+	if (!TryTakeFuelCargoFromHubInputPort(ResolvedSourceHub, InputPortIndex, *TargetStar, Cargo))
 	{
 		return false;
 	}
@@ -144,11 +136,11 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::LaunchFromHubInputPort(
 	OutMissileId = Missile.MissileId;
 	StarFuelMissiles.Add(Missile);
 
-	const double FuelAmount = StarRovers::SpaceLogistics::StarFuelMissiles::CalculateMissileFuelValue(Cargo);
+	const FSRStellarPatternScoreResult ScorePreview = TargetStar->PreviewStellarPatternSubmission(Cargo);
 	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
-		TEXT("[SpaceLogistics] Star fuel missile launched from input port: MissileId=%s Source=%s/%s InputPortIndex=%d TargetStar=%s ResourceId=%s StackCount=%d FuelValue=%.3f Duration=%.2f"),
+		TEXT("[SpaceLogistics] Stellar Pattern missile launched from input port: MissileId=%s Source=%s/%s InputPortIndex=%d TargetStar=%s ResourceId=%s StackCount=%d Contract=%s Score=%lld Bonus=%lld Duration=%.2f"),
 		*OutMissileId.ToString(),
 		*GetNameSafe(ResolvedSourceHub.BodyActor.Get()),
 		*ResolvedSourceHub.HubOccupantId.ToString(),
@@ -156,7 +148,9 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::LaunchFromHubInputPort(
 		*GetNameSafe(TargetStar),
 		*Cargo.ResourceId.ToString(),
 		Cargo.StackCount,
-		FuelAmount,
+		*TargetStar->GetStellarPatternContract().ContractId.ToString(),
+		static_cast<long long>(ScorePreview.TotalScore),
+		static_cast<long long>(ScorePreview.BonusScorePerPattern * static_cast<int64>(Cargo.StackCount)),
 		Missile.TravelDurationSeconds);
 	return true;
 }
@@ -227,6 +221,7 @@ ASRStar* FSRSpaceLogisticsStarFuelMissileProcessor::ResolvePrimaryStar(
 
 bool FSRSpaceLogisticsStarFuelMissileProcessor::TryTakeFuelCargoFromHub(
 	const FSRSpaceLogisticsHubEndpoint& SourceHub,
+	const ASRStar& TargetStar,
 	FSRResourceInstance& OutCargo)
 {
 	OutCargo = FSRResourceInstance();
@@ -242,9 +237,9 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::TryTakeFuelCargoFromHub(
 	return FacilityNetwork->TryTakeHubOutboundCargoMatching(
 		SourceHub.HubOccupantId,
 		1,
-		[](const FSRResourceInstance& CandidateCargo)
+		[&TargetStar](const FSRResourceInstance& CandidateCargo)
 		{
-			return StarRovers::SpaceLogistics::StarFuelMissiles::CanUseAsMissileFuelCargo(CandidateCargo);
+			return StarRovers::SpaceLogistics::StarFuelMissiles::CanUseAsMissileFuelCargo(TargetStar, CandidateCargo);
 		},
 		OutCargo);
 }
@@ -252,6 +247,7 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::TryTakeFuelCargoFromHub(
 bool FSRSpaceLogisticsStarFuelMissileProcessor::TryTakeFuelCargoFromHubInputPort(
 	const FSRSpaceLogisticsHubEndpoint& SourceHub,
 	int32 InputPortIndex,
+	const ASRStar& TargetStar,
 	FSRResourceInstance& OutCargo)
 {
 	OutCargo = FSRResourceInstance();
@@ -268,9 +264,9 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::TryTakeFuelCargoFromHubInputPort
 		SourceHub.HubOccupantId,
 		InputPortIndex,
 		1,
-		[](const FSRResourceInstance& CandidateCargo)
+		[&TargetStar](const FSRResourceInstance& CandidateCargo)
 		{
-			return StarRovers::SpaceLogistics::StarFuelMissiles::CanUseAsMissileFuelCargo(CandidateCargo);
+			return StarRovers::SpaceLogistics::StarFuelMissiles::CanUseAsMissileFuelCargo(TargetStar, CandidateCargo);
 		},
 		OutCargo);
 }
@@ -339,9 +335,13 @@ bool FSRSpaceLogisticsStarFuelMissileProcessor::StartMissileTravel(
 		return false;
 	}
 
-	Missile.TravelDurationSeconds = FSRSpaceLogisticsRoutePathResolver::ResolveStarFuelMissileTravelDurationSeconds(
+	const float BaseTravelDurationSeconds = FSRSpaceLogisticsRoutePathResolver::ResolveStarFuelMissileTravelDurationSeconds(
 		SpaceLogisticsSubsystem,
 		Missile);
+	const FSRResolvedRunModifiers RunModifiers = USRRunModifierSubsystem::ResolveForObject(&SpaceLogisticsSubsystem);
+	Missile.TravelDurationSeconds = FMath::Max(
+		FSRSpaceLogisticsRoutePathResolver::GetMinimumTravelDurationSeconds(),
+		static_cast<float>(static_cast<double>(BaseTravelDurationSeconds) * RunModifiers.LogisticsTravelTimeMultiplier));
 	return true;
 }
 
@@ -365,24 +365,27 @@ void FSRSpaceLogisticsStarFuelMissileProcessor::AdvanceMissile(
 	}
 
 	ASRStar* TargetStar = Cast<ASRStar>(Missile.TargetStarActor.Get());
-	const double DeliveredFuelAmount = StarRovers::SpaceLogistics::StarFuelMissiles::CalculateMissileFuelValue(Missile.Cargo);
-	const bool bDeliveredFuel = IsValid(TargetStar)
-		&& DeliveredFuelAmount > UE_DOUBLE_SMALL_NUMBER;
-	if (bDeliveredFuel)
+	FSRStellarPatternScoreResult ScoreResult;
+	const bool bSubmittedPattern = IsValid(TargetStar)
+		&& TargetStar->SubmitStellarPatternResource(Missile.Cargo, ScoreResult);
+	if (!IsValid(TargetStar))
 	{
-		TargetStar->AddStellarFuel(DeliveredFuelAmount);
+		ScoreResult.FailureReason = TEXT("The target star no longer exists.");
 	}
 
 	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
-		TEXT("[SpaceLogistics] Star fuel missile impacted: MissileId=%s TargetStar=%s ResourceId=%s StackCount=%d DeliveredFuel=%.3f Success=%s"),
+		TEXT("[SpaceLogistics] Stellar Pattern missile impacted: MissileId=%s TargetStar=%s ResourceId=%s StackCount=%d DemandMatch=%s Score=%lld Hands=%d Success=%s Failure=%s"),
 		*Missile.MissileId.ToString(),
 		*GetNameSafe(TargetStar),
 		*Missile.Cargo.ResourceId.ToString(),
 		Missile.Cargo.StackCount,
-		DeliveredFuelAmount,
-		bDeliveredFuel ? TEXT("true") : TEXT("false"));
+		ScoreResult.bMatchesDemand ? TEXT("true") : TEXT("false"),
+		static_cast<long long>(ScoreResult.TotalScore),
+		ScoreResult.HandMatches.Num(),
+		bSubmittedPattern ? TEXT("true") : TEXT("false"),
+		*ScoreResult.FailureReason);
 
 	FSRSpaceLogisticsRouteVisualController::DestroyRouteActor(Missile.MissileId, MissileActorsByMissileId);
 	OutImpactedMissileIndices.Add(MissileIndex);

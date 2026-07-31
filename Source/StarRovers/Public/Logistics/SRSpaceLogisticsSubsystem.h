@@ -69,7 +69,7 @@ public:
 	bool SetHubRouteReturnEmptyWhenNoCargo(FName RouteId, bool bReturnEmptyWhenNoCargo);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Route")
-	bool SetHubRouteCargoResourceId(FName RouteId, FName CargoResourceId);
+	bool SetHubRouteCargoFilter(FName RouteId, const FSRPatternRoutingFilter& CargoFilter);
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Missile")
 	bool LaunchStarFuelMissileFromHub(
@@ -100,6 +100,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Save")
 	void ExportSaveData(FSRSpaceLogisticsSaveData& OutSaveData) const;
+
+	bool CanImportSaveData(const FSRSpaceLogisticsSaveData& SaveData) const;
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Space Logistics|Save")
 	bool ImportSaveData(const FSRSpaceLogisticsSaveData& SaveData);

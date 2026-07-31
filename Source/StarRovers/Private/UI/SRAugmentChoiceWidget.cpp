@@ -14,6 +14,53 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Styling/SlateColor.h"
 
+namespace
+{
+	const TCHAR* GetRunModifierEffectLabel(ESRRunModifierEffectKind EffectKind)
+	{
+		switch (EffectKind)
+		{
+		case ESRRunModifierEffectKind::FacilityProcessTimeMultiplier: return TEXT("Facility process time");
+		case ESRRunModifierEffectKind::TransformOrganicGrowthDelta: return TEXT("Organic growth");
+		case ESRRunModifierEffectKind::EnvironmentIntensityDelta: return TEXT("Environment intensity");
+		case ESRRunModifierEffectKind::StellarBaseScoreMultiplier: return TEXT("Stellar base score");
+		case ESRRunModifierEffectKind::StellarBonusScoreMultiplier: return TEXT("Stellar bonus score");
+		case ESRRunModifierEffectKind::StellarRequiredScoreMultiplier: return TEXT("Stellar requirement");
+		case ESRRunModifierEffectKind::StellarHealthDamageMultiplier: return TEXT("Stellar health damage");
+		case ESRRunModifierEffectKind::StellarHealthRecoveryMultiplier: return TEXT("Stellar health recovery");
+		case ESRRunModifierEffectKind::LogisticsTravelTimeMultiplier: return TEXT("Logistics travel time");
+		default: return TEXT("Modifier");
+		}
+	}
+
+	const TCHAR* GetFacilityScopeLabel(ESRRunModifierFacilityScope Scope)
+	{
+		switch (Scope)
+		{
+		case ESRRunModifierFacilityScope::Transform: return TEXT("Transform");
+		case ESRRunModifierFacilityScope::Synthesis: return TEXT("Synthesis");
+		case ESRRunModifierFacilityScope::Separation: return TEXT("Separation");
+		case ESRRunModifierFacilityScope::Mining: return TEXT("Mining");
+		case ESRRunModifierFacilityScope::Any:
+		default: return TEXT("All facilities");
+		}
+	}
+
+	const TCHAR* GetGlyphLabel(ESRGlyphType Glyph)
+	{
+		switch (Glyph)
+		{
+		case ESRGlyphType::Metal: return TEXT("Metal");
+		case ESRGlyphType::Organic: return TEXT("Organic");
+		case ESRGlyphType::Crystal: return TEXT("Crystal");
+		case ESRGlyphType::Fluid: return TEXT("Fluid");
+		case ESRGlyphType::Plasma: return TEXT("Plasma");
+		case ESRGlyphType::Empty:
+		default: return TEXT("Any glyph");
+		}
+	}
+}
+
 void USRAugmentChoiceButtonAction::Initialize(USRAugmentChoiceWidget* InOwnerWidget, int32 InChoiceIndex)
 {
 	OwnerWidget = InOwnerWidget;
@@ -265,7 +312,7 @@ void USRAugmentChoiceWidget::RebuildChoiceButtons()
 		UTextBlock* NameTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("AugmentChoiceNameTextBlock%d"), ChoiceIndex + 1)));
-		NameTextBlock->SetText(Choice.DisplayName.IsEmpty() ? FText::FromName(Choice.StructureId) : Choice.DisplayName);
+		NameTextBlock->SetText(Choice.DisplayName.IsEmpty() ? FText::FromName(Choice.AugmentId) : Choice.DisplayName);
 		NameTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor(0.94f, 0.98f, 1.0f, 1.0f)));
 		NameTextBlock->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* NameSlot = ChoiceContentBox->AddChildToVerticalBox(NameTextBlock))
@@ -276,7 +323,12 @@ void USRAugmentChoiceWidget::RebuildChoiceButtons()
 		UTextBlock* RarityTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(),
 			FName(*FString::Printf(TEXT("AugmentChoiceRarityTextBlock%d"), ChoiceIndex + 1)));
-		RarityTextBlock->SetText(FormatRarityText(Choice.Rarity));
+		RarityTextBlock->SetText(FText::Format(
+			FTextFormat(NSLOCTEXT("StarRoversAugmentChoice", "ChoiceMetaFormat", "{0} · {1} · Stack {2}/{3}")),
+			FormatRarityText(Choice.Rarity),
+			FormatOfferRoleText(Choice.OfferRole),
+			FText::AsNumber(Choice.CurrentStacks + 1),
+			FText::AsNumber(FMath::Max(1, Choice.MaximumStacks))));
 		RarityTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor(0.56f, 0.80f, 0.82f, 1.0f)));
 		if (UVerticalBoxSlot* RaritySlot = ChoiceContentBox->AddChildToVerticalBox(RarityTextBlock))
 		{
@@ -291,7 +343,18 @@ void USRAugmentChoiceWidget::RebuildChoiceButtons()
 		DescriptionTextBlock->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* DescriptionSlot = ChoiceContentBox->AddChildToVerticalBox(DescriptionTextBlock))
 		{
-			DescriptionSlot->SetPadding(FMargin(12.0f, 0.0f, 12.0f, 8.0f));
+			DescriptionSlot->SetPadding(FMargin(12.0f, 0.0f, 12.0f, 4.0f));
+		}
+
+		UTextBlock* EffectTextBlock = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			FName(*FString::Printf(TEXT("AugmentChoiceEffectTextBlock%d"), ChoiceIndex + 1)));
+		EffectTextBlock->SetText(FormatEffectPreviewText(Choice));
+		EffectTextBlock->SetColorAndOpacity(FSlateColor(FLinearColor(0.64f, 0.90f, 0.76f, 1.0f)));
+		EffectTextBlock->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* EffectSlot = ChoiceContentBox->AddChildToVerticalBox(EffectTextBlock))
+		{
+			EffectSlot->SetPadding(FMargin(12.0f, 0.0f, 12.0f, 8.0f));
 		}
 
 		ChoiceButton->AddChild(ChoiceContentBox);
@@ -311,21 +374,70 @@ FText USRAugmentChoiceWidget::FormatCycleText() const
 		: FText::GetEmpty();
 }
 
-FText USRAugmentChoiceWidget::FormatRarityText(ESRFacilityRarity Rarity) const
+FText USRAugmentChoiceWidget::FormatRarityText(ESRRunAugmentRarity Rarity) const
 {
 	switch (Rarity)
 	{
-	case ESRFacilityRarity::Basic:
-		return NSLOCTEXT("StarRoversAugmentChoice", "BasicRarity", "Basic");
-	case ESRFacilityRarity::Advanced:
-		return NSLOCTEXT("StarRoversAugmentChoice", "AdvancedRarity", "Advanced");
-	case ESRFacilityRarity::HighTech:
-		return NSLOCTEXT("StarRoversAugmentChoice", "HighTechRarity", "High Tech");
-	case ESRFacilityRarity::Innovation:
-		return NSLOCTEXT("StarRoversAugmentChoice", "InnovationRarity", "Innovation");
-	case ESRFacilityRarity::Starting:
-		return NSLOCTEXT("StarRoversAugmentChoice", "StartingRarity", "Starting");
+	case ESRRunAugmentRarity::Common:
+		return NSLOCTEXT("StarRoversAugmentChoice", "CommonRarity", "Common");
+	case ESRRunAugmentRarity::Rare:
+		return NSLOCTEXT("StarRoversAugmentChoice", "RareRarity", "Rare");
+	case ESRRunAugmentRarity::Epic:
+		return NSLOCTEXT("StarRoversAugmentChoice", "EpicRarity", "Epic");
 	default:
 		return FText::GetEmpty();
 	}
+}
+
+FText USRAugmentChoiceWidget::FormatOfferRoleText(ESRRunAugmentOfferRole OfferRole) const
+{
+	switch (OfferRole)
+	{
+	case ESRRunAugmentOfferRole::Immediate:
+		return NSLOCTEXT("StarRoversAugmentChoice", "ImmediateRole", "Immediate");
+	case ESRRunAugmentOfferRole::Synergy:
+		return NSLOCTEXT("StarRoversAugmentChoice", "SynergyRole", "Synergy");
+	case ESRRunAugmentOfferRole::Pivot:
+		return NSLOCTEXT("StarRoversAugmentChoice", "PivotRole", "Pivot");
+	default:
+		return FText::GetEmpty();
+	}
+}
+
+FText USRAugmentChoiceWidget::FormatEffectPreviewText(const FSRAugmentChoice& Choice) const
+{
+	const USRRunAugmentDataAsset* DataAsset = Choice.AugmentDataAsset.Get();
+	if (!IsValid(DataAsset) || DataAsset->Effects.IsEmpty())
+	{
+		return NSLOCTEXT("StarRoversAugmentChoice", "NoConcreteEffects", "No active modifier effects");
+	}
+
+	TArray<FString> Lines;
+	Lines.Reserve(DataAsset->Effects.Num());
+	for (const FSRRunModifierEffect& Effect : DataAsset->Effects)
+	{
+		FString MagnitudeText = FSRRunModifierResolver::IsMultiplierEffect(Effect.EffectKind)
+			? FString::Printf(TEXT("x%.2f"), Effect.Magnitude)
+			: FString::Printf(TEXT("%+d"), FMath::RoundToInt(Effect.Magnitude));
+		FString Conditions;
+		if (Effect.EffectKind == ESRRunModifierEffectKind::FacilityProcessTimeMultiplier
+			|| Effect.EffectKind == ESRRunModifierEffectKind::TransformOrganicGrowthDelta
+			|| Effect.EffectKind == ESRRunModifierEffectKind::EnvironmentIntensityDelta)
+		{
+			Conditions = FString::Printf(
+				TEXT(" [%s, %s]"),
+				GetFacilityScopeLabel(Effect.FacilityScope),
+				GetGlyphLabel(Effect.AffectedGlyph));
+		}
+		else if (!Effect.ContractId.IsNone())
+		{
+			Conditions = FString::Printf(TEXT(" [Contract %s]"), *Effect.ContractId.ToString());
+		}
+		Lines.Add(FString::Printf(
+			TEXT("%s: %s%s"),
+			GetRunModifierEffectLabel(Effect.EffectKind),
+			*MagnitudeText,
+			*Conditions));
+	}
+	return FText::FromString(FString::Join(Lines, TEXT("\n")));
 }

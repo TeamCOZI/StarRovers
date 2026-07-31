@@ -13,6 +13,7 @@
 #include "Surface/SRPlanetSurfaceGrid.h"
 #include "TimerManager.h"
 #include "UI/SRLoadingScreenWidget.h"
+#include "Utility/SRLog.h"
 #include "Utility/SRMemoryDiagnostics.h"
 #include "Utility/SRTimingLog.h"
 void ASRSolarSystemGenerator::EnsureMemoryDiagnosticTrackedClasses() const
@@ -72,4 +73,9 @@ void ASRSolarSystemGenerator::LogAsyncGenerationStageTiming(const TCHAR* StageNa
 {
 	AsyncGenerationStageTimings.Add({ FString(StageName), Milliseconds });
 	FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeSystem.%s %.2f ms%s"), StageName, Milliseconds, *Suffix));
+	SR_LOG(SolarSystem, LogTemp, Log,
+		TEXT("Solar system generation stage '%s' completed in %.2f ms%s"),
+		StageName,
+		Milliseconds,
+		*Suffix);
 }

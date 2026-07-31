@@ -4,6 +4,7 @@
 #include "Automation/SRFacilityDataAsset.h"
 #include "Engine/DataAsset.h"
 #include "GameFramework/Actor.h"
+#include "Pattern/SRPatternRoutingFilter.h"
 #include "SRStructureDataAsset.generated.h"
 
 class UMaterialInterface;
@@ -48,6 +49,10 @@ struct STARROVERS_API FSRStructurePortSpec
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Structure|Port", meta = (DisplayName = "Direction"))
 	ESRStructurePortDirection Direction = ESRStructurePortDirection::Left;
+
+	// Pattern coordinates remain canonical when the physical structure port is rotated.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Structure|Port", meta = (DisplayName = "RoutingFilter", ShowOnlyInnerProperties))
+	FSRPatternRoutingFilter RoutingFilter;
 };
 
 USTRUCT(BlueprintType)

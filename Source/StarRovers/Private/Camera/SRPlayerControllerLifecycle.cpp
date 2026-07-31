@@ -59,5 +59,6 @@ void FSRPlayerControllerLifecycle::InitializeWidgets(ASRPlayerController& Player
 	PlayerController.RefreshFacilityControlWidget();
 	PlayerController.CreateFocusedHubShortcutWidget();
 	PlayerController.RefreshFocusedHubShortcutWidget(true);
+	PlayerController.CreateStellarContractHUDWidget();
 	PlayerController.CreateGameOverWidget();
 }

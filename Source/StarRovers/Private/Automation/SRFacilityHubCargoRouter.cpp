@@ -82,7 +82,8 @@ bool FSRFacilityHubCargoRouter::TryTakeOutboundCargoMatching(
 		{
 			FSRResourceInstance& StoredResource = InputPortInventory.Inventory[ResourceIndex];
 			const int32 StoredStackCount = StarRovers::FacilityResources::GetResourceStackCount(StoredResource);
-			if (StoredResource.ResourceId.IsNone() || StoredStackCount <= 0)
+			if (!StarRovers::PatternRouting::IsValidPatternPayload(StoredResource)
+				|| StoredStackCount <= 0)
 			{
 				continue;
 			}
@@ -148,7 +149,8 @@ bool FSRFacilityHubCargoRouter::TryTakeOutboundCargoMatchingFromInputPort(
 	{
 		FSRResourceInstance& StoredResource = InputPortInventory.Inventory[ResourceIndex];
 		const int32 StoredStackCount = StarRovers::FacilityResources::GetResourceStackCount(StoredResource);
-		if (StoredResource.ResourceId.IsNone() || StoredStackCount <= 0)
+		if (!StarRovers::PatternRouting::IsValidPatternPayload(StoredResource)
+			|| StoredStackCount <= 0)
 		{
 			continue;
 		}
@@ -202,7 +204,7 @@ void FSRFacilityHubCargoRouter::GetOutboundCargoResourceIds(
 		for (const FSRResourceInstance& ResourceInstance : InputPortInventory.Inventory)
 		{
 			const FName ResourceId = ResourceInstance.ResourceId;
-			if (ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
+			if (!StarRovers::PatternRouting::IsValidPatternPayload(ResourceInstance))
 			{
 				continue;
 			}
@@ -221,7 +223,8 @@ bool FSRFacilityHubCargoRouter::CanStoreInboundCargo(
 	const FSRFacilityInstance& FacilityInstance,
 	const FSRResourceInstance& Cargo)
 {
-	if (!IsHubFacility(FacilityInstance) || Cargo.ResourceId.IsNone() || Cargo.StackCount <= 0)
+	if (!IsHubFacility(FacilityInstance)
+		|| !StarRovers::PatternRouting::IsValidPatternPayload(Cargo))
 	{
 		return false;
 	}

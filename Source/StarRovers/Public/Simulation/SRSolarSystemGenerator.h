@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
 #include "Celestial/SRCelestialBodyData.h"
+#include "Pattern/SRPatternGenerationValidator.h"
 #include "SRSolarSystemGenerator.generated.h"
 
 class ASRCelestialBody;
@@ -11,6 +12,7 @@ class USRMoonDataAsset;
 class USRPlanetDataAsset;
 class USRStarDataAsset;
 class USRLoadingScreenWidget;
+class USRPatternGenerationProfileDataAsset;
 class USceneComponent;
 
 USTRUCT()
@@ -51,7 +53,42 @@ public:
 	ASRCelestialBody* GenerateRuntimeSystem();
 
 	UFUNCTION(BlueprintCallable, Category = "StarRovers|Generation")
+	ASRCelestialBody* GenerateRuntimeSystemWithSeed(int32 RuntimeGenerationSeed);
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Generation")
 	void ClearRuntimeGeneratedBodies();
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Generation")
+	bool GetLastCompletedGenerationSeed(int32& OutRuntimeGenerationSeed) const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Generation")
+	bool IsRuntimeGenerationInProgress() const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Generation|Pattern")
+	bool GetLastPatternGenerationValidationResult(
+		FSRPatternGenerationValidationResult& OutValidationResult) const;
+
+	UFUNCTION(BlueprintPure, Category = "StarRovers|Generation|Pattern")
+	bool ValidatePatternContentConfiguration(FString& OutFailureReason) const;
+
+#if WITH_EDITOR
+	void ConfigurePatternContentForEditor(
+		USRPatternGenerationProfileDataAsset* InPatternGenerationProfile,
+		TSubclassOf<ASRCelestialBody> InStarClass,
+		TSubclassOf<ASRCelestialBody> InPlanetClass,
+		const TArray<USRStarDataAsset*>& InStarDataAssets,
+		const TArray<USRPlanetDataAsset*>& InPlanetDataAssets,
+		const TArray<USRMoonDataAsset*>& InMoonDataAssets,
+		int32 InGenerationSeed);
+
+	bool MatchesPatternContentForEditor(
+		const USRPatternGenerationProfileDataAsset* InPatternGenerationProfile,
+		TSubclassOf<ASRCelestialBody> InStarClass,
+		TSubclassOf<ASRCelestialBody> InPlanetClass,
+		const TArray<USRStarDataAsset*>& InStarDataAssets,
+		const TArray<USRPlanetDataAsset*>& InPlanetDataAssets,
+		const TArray<USRMoonDataAsset*>& InMoonDataAssets) const;
+#endif
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "SceneRoot"))
@@ -111,6 +148,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Natural Structures", meta = (DisplayName = "bGenerateNaturalStructures"))
 	bool bGenerateNaturalStructures;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Pattern Generation", meta = (DisplayName = "PatternGenerationProfileDataAsset"))
+	TObjectPtr<USRPatternGenerationProfileDataAsset> PatternGenerationProfileDataAsset = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StarRovers|Loading", meta = (DisplayName = "LoadingScreenWidgetClass"))
 	TSubclassOf<USRLoadingScreenWidget> LoadingScreenWidgetClass;
 
@@ -134,6 +174,9 @@ private:
 	};
 
 	void StartRuntimeSystemGenerationWithLoadingScreen();
+	ASRCelestialBody* GenerateRuntimeSystemInternal(int32 RuntimeGenerationSeed);
+	int32 ResolveRuntimeGenerationSeed() const;
+	void MarkRuntimeGenerationCompleted(int32 RuntimeGenerationSeed);
 	void GenerateRuntimeSystemDeferred();
 	void BeginRuntimeSystemGenerationDeferred();
 	void ContinueRuntimeSystemGenerationAfterClear();
@@ -148,6 +191,7 @@ private:
 	void EnsureMemoryDiagnosticTrackedClasses() const;
 	void LogMemoryDiagnosticsSnapshot(const FString& Label) const;
 	void NormalizeOrbitPeriodSettings();
+	bool EnsurePatternContentLoadedFromClassDefaults();
 	float ResolvePlanetOrbitPeriod(int32 PlanetIndex) const;
 	float ResolveMoonOrbitPeriod(int32 MoonIndex) const;
 	ASRCelestialBody* SpawnPrimaryStar(FRandomStream& RandomStream, const USRStarDataAsset*& OutSelectedStarDataAsset);
@@ -166,6 +210,7 @@ private:
 	void PrepareRuntimeGeneratedDynamicMeshes();
 	void GenerateRuntimeNaturalStructures(int32 RuntimeGenerationSeed);
 	void GenerateNaturalStructuresForBody(ASRCelestialBody* Body, FRandomStream& RandomStream);
+	void ValidateRuntimePatternGeneration(int32 RuntimeGenerationSeed);
 	void DestroyRuntimeNaturalStructures();
 	void DestroyTrackedActor(TObjectPtr<ASRCelestialBody>& ActorToDestroy);
 	void DestroyTrackedActors(TArray<TObjectPtr<ASRCelestialBody>>& ActorsToDestroy);
@@ -184,6 +229,17 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USRLoadingScreenWidget> LoadingScreenWidget;
+
+	UPROPERTY(Transient)
+	FSRPatternGenerationValidationResult LastPatternGenerationValidationResult;
+
+	UPROPERTY(Transient)
+	int32 LastCompletedGenerationSeed = 0;
+
+	UPROPERTY(Transient)
+	bool bHasCompletedGenerationSeed = false;
+
+	bool bHasPatternGenerationValidationResult = false;
 
 	FTimerHandle DeferredGenerateRuntimeSystemTimerHandle;
 	bool bRuntimeGenerationInProgress = false;
@@ -205,9 +261,9 @@ private:
 	FString AsyncPrepareSlowestBodyName;
 	TArray<FString> AsyncPrepareSlowestBodyDetailLines;
 	TArray<FSRPreparedBodyTimingDetail> AsyncPrepareBodyTimingDetails;
-	int32 AsyncNaturalPlanetIndex = 0;
-	int32 AsyncNaturalPlanetCount = 0;
-	double AsyncNaturalPlanetTotalMs = 0.0;
+	int32 AsyncNaturalBodyIndex = 0;
+	int32 AsyncNaturalBodyCount = 0;
+	double AsyncNaturalBodyTotalMs = 0.0;
 	double AsyncNaturalSlowestBodyMs = 0.0;
 	FString AsyncNaturalSlowestBodyName;
 };

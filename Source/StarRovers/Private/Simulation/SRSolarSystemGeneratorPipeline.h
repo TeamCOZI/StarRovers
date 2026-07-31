@@ -156,12 +156,6 @@ namespace StarRovers::Simulation::SolarSystemGeneration
 		OutData.OrbitPeriod = FMath::Max(0.0f, DataAssetData.OrbitPeriod);
 		OutData.StarPointLightIntensity = DataAssetData.StarPointLightIntensity;
 		OutData.StarPointLightColor = DataAssetData.StarPointLightColor;
-		OutData.InitialStoredStellarFuel = FMath::Max(0.0, DataAssetData.InitialStoredStellarFuel);
-		OutData.InitialStellarFuelDecreasePerSecond = FMath::Max(0.0, DataAssetData.InitialStellarFuelDecreasePerSecond);
-		OutData.RequiredStellarFuelPerCycle = FMath::Max(0.0, DataAssetData.RequiredStellarFuelPerCycle);
-		OutData.StellarFuelRequirementGrowthPerCycle = FMath::Max(0.0, DataAssetData.StellarFuelRequirementGrowthPerCycle);
-		OutData.InitialRedGiantPressure = FMath::Max(0.0, DataAssetData.InitialRedGiantPressure);
-		OutData.RedGiantPressurePerMissingFuel = FMath::Max(0.0, DataAssetData.RedGiantPressurePerMissingFuel);
 		return true;
 	}
 

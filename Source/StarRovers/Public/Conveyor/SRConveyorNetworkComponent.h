@@ -59,6 +59,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor|Transport")
 	int32 GetConveyorItemCount() const;
 
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Save|Conveyor")
+	void ExportSaveData(FSRConveyorNetworkSaveData& OutSaveData) const;
+
+	bool CanImportSaveData(
+		USRPlanetSurfaceGrid* SurfaceGrid,
+		const FSRConveyorNetworkSaveData& SaveData,
+		FString& OutFailureReason) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Save|Conveyor")
+	bool ImportSaveData(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorNetworkSaveData& SaveData);
+
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Conveyor|PCG")
 	FName GetConveyorActorSplineComponentTag() const;
 
@@ -212,20 +223,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemLabelHeightOffset", ClampMin = "0.0"))
 	float ItemLabelHeightOffset;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemEnergyLabelWorldSize", ClampMin = "1.0"))
-	float ItemEnergyLabelWorldSize;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemPatternLabelWorldSize", ClampMin = "1.0"))
+	float ItemPatternLabelWorldSize;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemEnergyLabelMaxScale", ClampMin = "1.0"))
-	float ItemEnergyLabelMaxScale;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemPatternLabelMaxScale", ClampMin = "1.0"))
+	float ItemPatternLabelMaxScale;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemEnergyLowColor"))
-	FLinearColor ItemEnergyLowColor;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemPatternSparseColor"))
+	FLinearColor ItemPatternSparseColor;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemEnergyHighColor"))
-	FLinearColor ItemEnergyHighColor;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemPatternDenseColor"))
+	FLinearColor ItemPatternDenseColor;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemEnergyNegativeColor"))
-	FLinearColor ItemEnergyNegativeColor;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Conveyor|Transport Label", meta = (DisplayName = "ItemPatternSpecialColor"))
+	FLinearColor ItemPatternSpecialColor;
 
 	TMap<FSRConveyorLaneKey, FSRConveyorSegment> Segments;
 	TArray<FSRConveyorBeltPath> BeltPaths;
@@ -246,6 +257,7 @@ protected:
 	TWeakObjectPtr<USRPlanetSurfaceGrid> PendingConveyorActorRefreshSurfaceGrid;
 
 private:
+	bool ApplySaveDataUnchecked(USRPlanetSurfaceGrid* SurfaceGrid, const FSRConveyorNetworkSaveData& SaveData);
 	void DestroyPlacedConveyorActors();
 	void ScheduleDirtyConveyorActorGroupRefresh(USRPlanetSurfaceGrid* SurfaceGrid);
 	bool RefreshDirtyConveyorActorGroups(USRPlanetSurfaceGrid* SurfaceGrid, int32 MaxGroupCount = INDEX_NONE);

@@ -146,13 +146,13 @@ protected:
 	TObjectPtr<UCanvasPanel> TopLeftControlsCanvasPanel;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UCanvasPanel> FuelSupplyProgressContainer;
+	TObjectPtr<UCanvasPanel> StellarHealthProgressContainer;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UProgressBar> FuelSupplyProgressBar;
+	TObjectPtr<UProgressBar> StellarHealthProgressBar;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UTextBlock> FuelSupplyProgressTextBlock;
+	TObjectPtr<UTextBlock> StellarHealthProgressTextBlock;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasPanel> CycleProgressContainer;
@@ -332,10 +332,10 @@ protected:
 	FString LastFocusedBodyNameString;
 
 	UPROPERTY(Transient)
-	FString LastFuelSupplyTextString;
+	FString LastStellarHealthTextString;
 
 	UPROPERTY(Transient)
-	float LastFuelSupplyProgressRatio = -1.0f;
+	float LastStellarHealthProgressRatio = -1.0f;
 
 	UPROPERTY(Transient)
 	float LastCycleProgressRatio = -1.0f;

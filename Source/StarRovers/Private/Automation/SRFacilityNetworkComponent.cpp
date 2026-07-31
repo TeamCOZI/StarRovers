@@ -1,7 +1,7 @@
 #include "Automation/SRFacilityNetworkComponent.h"
 
+#include "Celestial/SRCelestialBody.h"
 #include "Utility/SRLog.h"
-#include "SRFacilityCellTemperatureEffectApplier.h"
 #include "SRFacilityPortInventoryBuilder.h"
 #include "SRFacilityTemperatureSynchronizer.h"
 #include "SRFacilityResourceOperations.h"
@@ -91,6 +91,12 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 	FacilityInstance.FootprintCellIds = FootprintCellIds;
 	FacilityInstance.PlacementRotationSteps = StarRovers::Structure::NormalizePlacementRotationSteps(PlacementRotationSteps);
 	FacilityInstance.TemperatureState = ESRFacilityTemperatureState::Normal;
+	FacilityInstance.PatternEnvironment = FSRPatternEnvironmentSpec();
+	if (const ASRCelestialBody* CelestialBody = Cast<ASRCelestialBody>(GetOwner()))
+	{
+		FacilityInstance.PatternEnvironment = CelestialBody->GetData().PatternEnvironment;
+		FacilityInstance.PatternEnvironment.Normalize();
+	}
 	FacilityInstance.ProcessProgressSeconds = 0.0f;
 	FacilityInstance.bProcessing = false;
 	FacilityInstance.bProcessEnabled = StructureData.bProcessReady;
@@ -99,13 +105,6 @@ bool USRFacilityNetworkComponent::RegisterFacility(
 	FacilityInstance.ProcessingInventory.Reset();
 	FSRFacilityPortInventoryBuilder::Initialize(FacilityInstance);
 	RefreshFacilityTemperatureFromSurface(OccupantId);
-	const int32 AppliedCellTemperatureEffects = FSRFacilityCellTemperatureEffectApplier::ApplyInstallationEffects(
-		this,
-		FacilityInstance);
-	if (AppliedCellTemperatureEffects > 0)
-	{
-		RefreshFacilityTemperaturesFromSurface();
-	}
 
 	SetComponentTickEnabled(bAutoProcessFacilities);
 	if (bLogFacilityNetworkEvents)
@@ -129,16 +128,9 @@ bool USRFacilityNetworkComponent::UnregisterFacility(FName OccupantId)
 	const bool bRemoved = RuntimeState.FacilityInstancesByOccupantId.RemoveAndCopyValue(
 		OccupantId,
 		RemovedFacilityInstance);
-	const int32 RemovedCellTemperatureEffects = bRemoved
-		? FSRFacilityCellTemperatureEffectApplier::RemoveInstallationEffects(this, RemovedFacilityInstance)
-		: 0;
 	if (RuntimeState.FacilityInstancesByOccupantId.IsEmpty())
 	{
 		SetComponentTickEnabled(false);
-	}
-	else if (RemovedCellTemperatureEffects > 0)
-	{
-		RefreshFacilityTemperaturesFromSurface();
 	}
 	if (bRemoved && bLogFacilityNetworkEvents)
 	{

@@ -88,6 +88,7 @@ void ASRCelestialBody::CopyBodyDataFields(const FSRCelestialBodyData& NewData)
 	FocusZoomMultiplier = NewData.FocusZoomMultiplier;
 	GenerationSeed = NewData.GenerationSeed;
 	bRandomizeGenerationSeedEachRun = NewData.bRandomizeGenerationSeedEachRun;
+	PatternEnvironment = NewData.PatternEnvironment;
 	TerrainProfileDataAsset = NewData.TerrainProfileDataAsset;
 	ProfileNaturalStructureSpawnRuleOverrides = NewData.ProfileNaturalStructureSpawnRuleOverrides;
 	DynamicMeshGeneration = NewData.DynamicMeshGeneration;
@@ -140,6 +141,7 @@ void ASRCelestialBody::SanitizeBodyRuntimeValues()
 	GravityLineSegments = FMath::Max(3, GravityLineSegments);
 	GravityLineThickness = FMath::Max(0.0f, GravityLineThickness);
 	FocusZoomMultiplier = FMath::Max(0.0f, FocusZoomMultiplier);
+	PatternEnvironment.Normalize();
 }
 
 void ASRCelestialBody::ApplyBodyMeshTransforms()
@@ -183,6 +185,7 @@ FSRCelestialBodyData ASRCelestialBody::BuildBodyDataSnapshot() const
 	CurrentData.FocusZoomMultiplier = FocusZoomMultiplier;
 	CurrentData.GenerationSeed = GenerationSeed;
 	CurrentData.bRandomizeGenerationSeedEachRun = bRandomizeGenerationSeedEachRun;
+	CurrentData.PatternEnvironment = PatternEnvironment;
 	CurrentData.TerrainProfileDataAsset = TerrainProfileDataAsset;
 	CurrentData.ProfileNaturalStructureSpawnRuleOverrides = ProfileNaturalStructureSpawnRuleOverrides;
 	CurrentData.DynamicMeshGeneration = DynamicMeshGeneration;

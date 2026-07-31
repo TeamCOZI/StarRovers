@@ -25,6 +25,10 @@ public:
 		TMap<FName, TObjectPtr<ASRSpaceshipActor>>& StarFuelMissileActorsByMissileId,
 		TMap<FString, FSRSpaceLogisticsHubEndpointMotionSample>& HubEndpointMotionSamples);
 
+	static bool CanImportSaveData(
+		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		const FSRSpaceLogisticsSaveData& SaveData);
+
 private:
 	static bool BuildRouteSaveData(
 		const USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
@@ -33,6 +37,7 @@ private:
 
 	static bool ImportRoute(
 		USRSpaceLogisticsSubsystem& SpaceLogisticsSubsystem,
+		int32 SaveVersion,
 		const FSRSpaceLogisticsHubRouteSaveData& RouteSaveData,
 		TArray<FSRSpaceLogisticsHubRoute>& HubRoutes);
 

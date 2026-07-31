@@ -3,15 +3,11 @@
 #include "CoreMinimal.h"
 #include "Automation/SRFacilityDataAsset.h"
 #include "Automation/SRFacilityRuntimeData.h"
+#include "Pattern/SRPatternRoutingFilter.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 
 namespace StarRovers::FacilityResources
 {
-	constexpr int32 HalfLifeDefaultCycles = 3;
-	constexpr int32 ChargeStacksPerProcessingSecond = 1;
-	constexpr int32 ChargeRequiredStacks = 5;
-	constexpr double ChargeEnergyBonus = 3.0;
-
 	inline FString BuildFacilityCellDebugString(const FSRPlanetSurfaceGridCellId& CellId)
 	{
 		return FString::Printf(
@@ -24,14 +20,13 @@ namespace StarRovers::FacilityResources
 	inline FString BuildResourceDebugString(const FSRResourceInstance& ResourceInstance)
 	{
 		return FString::Printf(
-			TEXT("ResourceId=%s Energy=%.3f RemainingProcessLimit=%d ProcessCount=%d EnergyChangeCount=%d StackCount=%d Tags=%d"),
+			TEXT("ResourceId=%s SourcePatternId=%s SourcePatternSeed=%d Pattern=%s PatternHash=%u StackCount=%d"),
 			*ResourceInstance.ResourceId.ToString(),
-			ResourceInstance.EnergyValue,
-			ResourceInstance.RemainingProcessLimit,
-			ResourceInstance.ProcessCount,
-			ResourceInstance.EnergyChangeCount,
-			ResourceInstance.StackCount,
-			ResourceInstance.Tags.Num());
+			*ResourceInstance.SourcePatternId.ToString(),
+			ResourceInstance.SourcePatternSeed,
+			*ResourceInstance.Pattern.ToCompactString(),
+			ResourceInstance.Pattern.GetStableHash(),
+			ResourceInstance.StackCount);
 	}
 
 	inline int32 GetResourceStackCount(const FSRResourceInstance& ResourceInstance)
@@ -49,58 +44,20 @@ namespace StarRovers::FacilityResources
 		return StackCount;
 	}
 
-	inline bool AreResourceTagStacksEquivalent(const TArray<FSRResourceTagStack>& LeftTags, const TArray<FSRResourceTagStack>& RightTags)
-	{
-		TArray<const FSRResourceTagStack*> LeftValidTags;
-		TArray<const FSRResourceTagStack*> RightValidTags;
-		for (const FSRResourceTagStack& LeftTag : LeftTags)
-		{
-			if (LeftTag.StackCount > 0)
-			{
-				LeftValidTags.Add(&LeftTag);
-			}
-		}
-		for (const FSRResourceTagStack& RightTag : RightTags)
-		{
-			if (RightTag.StackCount > 0)
-			{
-				RightValidTags.Add(&RightTag);
-			}
-		}
-
-		if (LeftValidTags.Num() != RightValidTags.Num())
-		{
-			return false;
-		}
-
-		for (int32 TagIndex = 0; TagIndex < LeftValidTags.Num(); ++TagIndex)
-		{
-			const FSRResourceTagStack& LeftTag = *LeftValidTags[TagIndex];
-			const FSRResourceTagStack& RightTag = *RightValidTags[TagIndex];
-			if (LeftTag.Tag != RightTag.Tag
-				|| LeftTag.StackCount != RightTag.StackCount
-				|| LeftTag.RemainingCycles != RightTag.RemainingCycles)
-			{
-				return false;
-			}
-		}
-
-		return true;
-	}
-
 	inline bool AreResourceInstancesStackEquivalent(const FSRResourceInstance& Left, const FSRResourceInstance& Right)
 	{
-		return Left.ResourceId == Right.ResourceId
-			&& Left.ResourceDataAsset == Right.ResourceDataAsset
-			&& FMath::IsNearlyEqual(Left.EnergyValue, Right.EnergyValue)
-			&& Left.RemainingProcessLimit == Right.RemainingProcessLimit
-			&& Left.ProcessCount == Right.ProcessCount
-			&& Left.EnergyChangeCount == Right.EnergyChangeCount
-			&& AreResourceTagStacksEquivalent(Left.Tags, Right.Tags);
+		return StarRovers::ResourcePatterns::ArePatternPayloadsEquivalent(Left, Right);
 	}
 
 	inline bool CanInventorySlotAcceptResource(const FSRFacilityPortInventory& PortInventory, const FSRResourceInstance& ResourceInstance)
 	{
+		if (!StarRovers::PatternRouting::MatchesRoutingFilter(
+			ResourceInstance,
+			PortInventory.PortSpec.RoutingFilter))
+		{
+			return false;
+		}
+
 		const int32 ExistingStackCount = GetInventorySlotStackCount(PortInventory);
 		if (ExistingStackCount >= FMath::Max(1, PortInventory.Capacity))
 		{
@@ -150,7 +107,7 @@ namespace StarRovers::FacilityResources
 		for (int32 ResourceIndex = 0; ResourceIndex < PortInventory.Inventory.Num(); ++ResourceIndex)
 		{
 			FSRResourceInstance& StoredResource = PortInventory.Inventory[ResourceIndex];
-			if (StoredResource.StackCount <= 0)
+			if (!StarRovers::PatternRouting::IsValidPatternPayload(StoredResource))
 			{
 				continue;
 			}
@@ -189,7 +146,8 @@ namespace StarRovers::FacilityResources
 		{
 			FSRResourceInstance& StoredResource = PortInventory.Inventory[ResourceIndex];
 			const int32 StoredStackCount = GetResourceStackCount(StoredResource);
-			if (StoredResource.ResourceId.IsNone() || StoredStackCount <= 0)
+			if (!StarRovers::PatternRouting::IsValidPatternPayload(StoredResource)
+				|| StoredStackCount <= 0)
 			{
 				continue;
 			}
@@ -220,7 +178,7 @@ namespace StarRovers::FacilityResources
 	{
 		for (const FSRResourceInstance& ResourceInstance : PortInventory.Inventory)
 		{
-			if (ResourceInstance.StackCount > 0)
+			if (StarRovers::PatternRouting::IsValidPatternPayload(ResourceInstance))
 			{
 				FSRResourceInstance Result = ResourceInstance;
 				Result.StackCount = 1;
@@ -233,7 +191,8 @@ namespace StarRovers::FacilityResources
 	inline int32 TryAddResourceToInventorySlots(TArray<FSRFacilityPortInventory>& PortInventories, const FSRResourceInstance& ResourceInstance)
 	{
 		int32 RemainingStackCount = GetResourceStackCount(ResourceInstance);
-		if (RemainingStackCount <= 0 || ResourceInstance.ResourceId.IsNone())
+		if (RemainingStackCount <= 0
+			|| !StarRovers::PatternRouting::IsValidPatternPayload(ResourceInstance))
 		{
 			return 0;
 		}

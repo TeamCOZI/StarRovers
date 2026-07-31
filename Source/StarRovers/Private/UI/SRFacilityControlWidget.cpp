@@ -2,9 +2,9 @@
 
 #include "Utility/SRLog.h"
 #include "Automation/SRFacilityNetworkComponent.h"
-#include "Automation/SRFacilityProcessContextResolver.h"
 #include "Automation/SRFacilityProcessingRuleEvaluator.h"
 #include "Automation/SRFacilityResourceOperations.h"
+#include "../Automation/SRFacilityPatternOperatorExecutor.h"
 #include "Blueprint/WidgetTree.h"
 #include "Camera/SRPlayerController.h"
 #include "Celestial/SRCelestialBodyRuntimeLibrary.h"
@@ -29,15 +29,14 @@
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
 #include "Simulation/SRCelestialBodyRegistrySubsystem.h"
 #include "Structure/SRStructureDataAsset.h"
+#include "UI/SRPatternGridWidget.h"
+#include "UObject/UObjectGlobals.h"
 
 namespace
 {
 	constexpr int32 FacilityInventoryGridColumnCount = 4;
-
-	FString FormatFacilityEnergyDisplayValue(double Value)
-	{
-		return FString::Printf(TEXT("%.1f"), Value);
-	}
+	USRResourceDataAsset* LoadDebugResourceDataAsset(FName ResourceId);
+	FSRResourceInstance MakeDebugPatternResource(FName ResourceId);
 
 	const TCHAR* GetFacilityTemperatureLabel(ESRFacilityTemperatureState TemperatureState)
 	{
@@ -56,273 +55,6 @@ namespace
 		default:
 			return TEXT("Unknown");
 		}
-	}
-
-	const TCHAR* GetResourceProcessTagLabel(ESRResourceProcessTag ResourceTag)
-	{
-		switch (ResourceTag)
-		{
-		case ESRResourceProcessTag::Responsive:
-			return TEXT("HeatResponsive");
-		case ESRResourceProcessTag::HalfLife:
-			return TEXT("HalfLife");
-		case ESRResourceProcessTag::Volatile:
-			return TEXT("Volatile");
-		case ESRResourceProcessTag::Supercooled:
-			return TEXT("Supercooled");
-		case ESRResourceProcessTag::HyperReactive:
-			return TEXT("HyperReactive");
-		case ESRResourceProcessTag::Charge:
-			return TEXT("Charge");
-		default:
-			return TEXT("Tag");
-		}
-	}
-
-	const TCHAR* GetResourceProcessTagShortLabel(ESRResourceProcessTag ResourceTag)
-	{
-		switch (ResourceTag)
-		{
-		case ESRResourceProcessTag::Responsive:
-			return TEXT("He");
-		case ESRResourceProcessTag::HalfLife:
-			return TEXT("H");
-		case ESRResourceProcessTag::Volatile:
-			return TEXT("V");
-		case ESRResourceProcessTag::Supercooled:
-			return TEXT("Su");
-		case ESRResourceProcessTag::HyperReactive:
-			return TEXT("Hy");
-		case ESRResourceProcessTag::Charge:
-			return TEXT("C");
-		default:
-			return TEXT("T");
-		}
-	}
-
-	const TCHAR* GetEffectKindLabel(ESRFacilityEffectKind EffectKind)
-	{
-		switch (EffectKind)
-		{
-		case ESRFacilityEffectKind::AdjustEnergy:
-			return TEXT("Adjust Catalyst");
-		case ESRFacilityEffectKind::AdjustProcessLimit:
-			return TEXT("Adjust Limit");
-		case ESRFacilityEffectKind::RemoveResource:
-			return TEXT("Remove Resource");
-		case ESRFacilityEffectKind::AttachTag:
-			return TEXT("Attach Tag");
-		case ESRFacilityEffectKind::ProduceWaste:
-			return TEXT("Produce Waste");
-		case ESRFacilityEffectKind::AdjustCellTemperature:
-			return TEXT("Adjust Cell Temp");
-		case ESRFacilityEffectKind::InvertHeat:
-			return TEXT("Invert Heat");
-		case ESRFacilityEffectKind::InvertTagEffects:
-			return TEXT("Invert Catalyst");
-		case ESRFacilityEffectKind::DoubleTagEffects:
-			return TEXT("Double Catalyst");
-		case ESRFacilityEffectKind::DuplicateInputResource:
-			return TEXT("Duplicate Input");
-		case ESRFacilityEffectKind::OverrideProcessTemperature:
-			return TEXT("Override Process Temp");
-		case ESRFacilityEffectKind::TriggerTagEffect:
-			return TEXT("Trigger Tag Effect");
-		case ESRFacilityEffectKind::AdjustProcessTime:
-			return TEXT("Adjust Process Time");
-		case ESRFacilityEffectKind::RemoveTag:
-			return TEXT("Remove Tag");
-		case ESRFacilityEffectKind::ChangeResourceType:
-			return TEXT("Change Resource Type");
-		case ESRFacilityEffectKind::TransferTagsToWaste:
-			return TEXT("Transfer Tags To Waste");
-		default:
-			return TEXT("Effect");
-		}
-	}
-
-	const TCHAR* GetAttachTagSourceLabel(ESRFacilityAttachTagSource AttachTagSource)
-	{
-		switch (AttachTagSource)
-		{
-		case ESRFacilityAttachTagSource::SpecificTag:
-			return TEXT("Specific");
-		case ESRFacilityAttachTagSource::LastAttachedTag:
-			return TEXT("Last Tag");
-		case ESRFacilityAttachTagSource::MissingTags:
-			return TEXT("Missing Tags");
-		case ESRFacilityAttachTagSource::AttachedTags:
-			return TEXT("Attached Tags");
-		default:
-			return TEXT("Tag Source");
-		}
-	}
-
-	const TCHAR* GetEffectTagTargetLabel(ESRFacilityEffectTagTarget TagTarget)
-	{
-		switch (TagTarget)
-		{
-		case ESRFacilityEffectTagTarget::SpecificTag:
-			return TEXT("Specific");
-		case ESRFacilityEffectTagTarget::LastAttachedTag:
-			return TEXT("Last Tag");
-		case ESRFacilityEffectTagTarget::AllTags:
-			return TEXT("Attached Tags");
-		default:
-			return TEXT("Tag Target");
-		}
-	}
-
-	FString BuildRemoveTagAmountSummary(const FSRFacilityEffectSpec& EffectSpec)
-	{
-		return EffectSpec.RemoveTagAmountMode == ESRFacilityRemoveTagAmountMode::Count
-			? FString::Printf(TEXT(" x%d"), FMath::Max(1, EffectSpec.Count))
-			: FString(TEXT(" All"));
-	}
-
-	const TCHAR* GetEnergyValueSourceLabel(ESRFacilityEnergyAdjustmentValueSource ValueSource)
-	{
-		switch (ValueSource)
-		{
-		case ESRFacilityEnergyAdjustmentValueSource::FixedValue:
-			return TEXT("Fixed");
-		case ESRFacilityEnergyAdjustmentValueSource::RemainingProcessLimit:
-			return TEXT("Limit");
-		case ESRFacilityEnergyAdjustmentValueSource::TagStackCount:
-			return TEXT("Tag Stack");
-		case ESRFacilityEnergyAdjustmentValueSource::EnergyChangeCount:
-			return TEXT("Energy Changes");
-		case ESRFacilityEnergyAdjustmentValueSource::TagEffectEnergyChangeAmount:
-			return TEXT("Energy (B)");
-		case ESRFacilityEnergyAdjustmentValueSource::ProcessCount:
-			return TEXT("Process Count");
-		case ESRFacilityEnergyAdjustmentValueSource::TagKindCount:
-			return TEXT("Tag Kinds");
-		default:
-			return TEXT("Value");
-		}
-	}
-
-	const TCHAR* GetTagStackCountTargetLabel(ESRFacilityTagStackCountTarget TagStackCountTarget)
-	{
-		return TagStackCountTarget == ESRFacilityTagStackCountTarget::All ? TEXT("All") : TEXT("Specific");
-	}
-
-	const TCHAR* GetEnergyAdjustmentModeLabel(ESRFacilityEnergyAdjustmentMode AdjustmentMode)
-	{
-		switch (AdjustmentMode)
-		{
-		case ESRFacilityEnergyAdjustmentMode::Multiply:
-			return TEXT("*");
-		case ESRFacilityEnergyAdjustmentMode::Subtract:
-			return TEXT("-");
-		case ESRFacilityEnergyAdjustmentMode::Add:
-		default:
-			return TEXT("+");
-		}
-	}
-
-	FString BuildProcessLimitAdjustmentSummary(const FSRFacilityEffectSpec& EffectSpec)
-	{
-		switch (EffectSpec.ProcessLimitMode)
-		{
-		case ESRFacilityProcessLimitAdjustmentMode::SetValue:
-			return FString::Printf(TEXT("= %d"), FMath::RoundToInt(EffectSpec.Value));
-		case ESRFacilityProcessLimitAdjustmentMode::Multiply:
-			return FString::Printf(TEXT("x%s"), *FormatFacilityEnergyDisplayValue(EffectSpec.Value));
-		case ESRFacilityProcessLimitAdjustmentMode::AddValue:
-		default:
-			return FString::Printf(TEXT("%+d"), FMath::RoundToInt(EffectSpec.Value));
-		}
-	}
-
-	FString BuildEnergyValueMultiplierSummary(const FSRFacilityEffectSpec& EffectSpec)
-	{
-		if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue
-			|| FMath::IsNearlyEqual(EffectSpec.EnergyValueMultiplier, 1.0))
-		{
-			return FString();
-		}
-		return FString::Printf(TEXT(" x%s"), *FormatFacilityEnergyDisplayValue(EffectSpec.EnergyValueMultiplier));
-	}
-
-	const TCHAR* GetProcessTimeModeLabel(ESRFacilityProcessTimeAdjustmentMode ProcessTimeMode)
-	{
-		return ProcessTimeMode == ESRFacilityProcessTimeAdjustmentMode::Multiply ? TEXT("*") : TEXT("+");
-	}
-
-	const TCHAR* GetProcessTimeValueSourceLabel(ESRFacilityProcessTimeAdjustmentValueSource ValueSource)
-	{
-		switch (ValueSource)
-		{
-		case ESRFacilityProcessTimeAdjustmentValueSource::TagStackCount:
-			return TEXT("Tag Stack");
-		case ESRFacilityProcessTimeAdjustmentValueSource::FixedValue:
-		default:
-			return TEXT("Fixed");
-		}
-	}
-
-	const TCHAR* GetEffectConditionKindLabel(ESRFacilityEffectConditionKind ConditionKind)
-	{
-		switch (ConditionKind)
-		{
-		case ESRFacilityEffectConditionKind::EnergyAtLeast:
-			return TEXT("Energy >=");
-		case ESRFacilityEffectConditionKind::EnergyAtMost:
-			return TEXT("Energy <=");
-		case ESRFacilityEffectConditionKind::EnergyGreaterThan:
-			return TEXT("Energy >");
-		case ESRFacilityEffectConditionKind::EnergyLessThan:
-			return TEXT("Energy <");
-		case ESRFacilityEffectConditionKind::EnergyIncreased:
-			return TEXT("Energy Increased");
-		case ESRFacilityEffectConditionKind::EnergyDecreased:
-			return TEXT("Energy Decreased");
-		case ESRFacilityEffectConditionKind::Tag:
-			return TEXT("Tag");
-		case ESRFacilityEffectConditionKind::TemperatureState:
-			return TEXT("Temp");
-		case ESRFacilityEffectConditionKind::ProcessCountEquals:
-			return TEXT("Process Count >=");
-		case ESRFacilityEffectConditionKind::PrimeEnergy:
-			return TEXT("Prime Energy");
-		default:
-			return TEXT("Condition");
-		}
-	}
-
-	const TCHAR* GetTagConditionModeLabel(ESRFacilityTagConditionMode TagMode)
-	{
-		switch (TagMode)
-		{
-		case ESRFacilityTagConditionMode::HasTag:
-			return TEXT("Has");
-		case ESRFacilityTagConditionMode::MissingTag:
-			return TEXT("Missing");
-		case ESRFacilityTagConditionMode::StackCountAtLeast:
-			return TEXT("Stacks >=");
-		default:
-			return TEXT("Tag");
-		}
-	}
-
-	const TCHAR* GetTagConditionTargetLabel(ESRFacilityTagConditionTarget TagTarget)
-	{
-		switch (TagTarget)
-		{
-		case ESRFacilityTagConditionTarget::SpecificTag:
-			return TEXT("Specific");
-		case ESRFacilityTagConditionTarget::AllTags:
-			return TEXT("All Tags");
-		default:
-			return TEXT("Tag Target");
-		}
-	}
-
-	const TCHAR* GetConditionLogicLabel(ESRFacilityConditionLogic ConditionLogic)
-	{
-		return ConditionLogic == ESRFacilityConditionLogic::Or ? TEXT("||") : TEXT("&&");
 	}
 
 	const TCHAR* GetHubRoutePhaseLabel(ESRSpaceLogisticsHubRoutePhase Phase)
@@ -557,13 +289,6 @@ namespace
 		return Cast<ASRStar>(PrimaryStarActor);
 	}
 
-	bool CanUseAsStarFuelMissileCargo(const FSRResourceInstance& ResourceInstance)
-	{
-		return !ResourceInstance.ResourceId.IsNone()
-			&& ResourceInstance.StackCount > 0
-			&& ResourceInstance.EnergyValue > UE_DOUBLE_SMALL_NUMBER;
-	}
-
 	int32 CountAvailableStarFuelMissileCargoStacks(const FSRFacilityInstance& FacilityInstance, const ASRStar* TargetStar)
 	{
 		if (!IsValid(TargetStar))
@@ -576,7 +301,7 @@ namespace
 		{
 			for (const FSRResourceInstance& ResourceInstance : InputPortInventory.Inventory)
 			{
-				if (CanUseAsStarFuelMissileCargo(ResourceInstance))
+				if (TargetStar->CanAcceptStellarFuelResource(ResourceInstance))
 				{
 					MissileCargoStackCount += FMath::Max(0, ResourceInstance.StackCount);
 				}
@@ -643,18 +368,14 @@ namespace
 			return TEXT("None");
 		}
 
-		FString Summary = FString::Printf(
-			TEXT("%s x%d\nEnergy Total: %s\nLimit: %d"),
+		return FString::Printf(
+			TEXT("%s x%d\nPattern: %08X\nOccupied: %d/%d\n%s"),
 			*BuildResourceDisplayName(ResourceInstance),
 			FMath::Max(0, ResourceInstance.StackCount),
-			*FormatFacilityEnergyDisplayValue(ResourceInstance.EnergyValue),
-			ResourceInstance.RemainingProcessLimit);
-
-		if (!ResourceInstance.Tags.IsEmpty())
-		{
-			Summary += FString::Printf(TEXT("\nTags: %d"), ResourceInstance.Tags.Num());
-		}
-		return Summary;
+			ResourceInstance.Pattern.GetStableHash(),
+			ResourceInstance.Pattern.GetOccupiedCellCount(),
+			StarRovers::Pattern::CellCount,
+			*ResourceInstance.Pattern.ToCompactString());
 	}
 
 	FString BuildCompactResourceSummary(const FSRResourceInstance* ResourceInstance)
@@ -664,16 +385,12 @@ namespace
 			return TEXT("Empty");
 		}
 
-		FString Summary = BuildResourceDisplayName(*ResourceInstance);
-		Summary += FString::Printf(
-			TEXT("\nEnergy Total: %s  Limit: %d"),
-			*FormatFacilityEnergyDisplayValue(ResourceInstance->EnergyValue),
-			ResourceInstance->RemainingProcessLimit);
-		if (!ResourceInstance->Tags.IsEmpty())
-		{
-			Summary += FString::Printf(TEXT("\nTags: %d"), ResourceInstance->Tags.Num());
-		}
-		return Summary;
+		return FString::Printf(
+			TEXT("%s x%d\nPattern: %08X\n%s"),
+			*BuildResourceDisplayName(*ResourceInstance),
+			FMath::Max(0, ResourceInstance->StackCount),
+			ResourceInstance->Pattern.GetStableHash(),
+			*ResourceInstance->Pattern.ToCompactString());
 	}
 
 	FString BuildResourceSlotText(
@@ -694,50 +411,10 @@ namespace
 
 	FString BuildResourceTagCardLabel(const FSRResourceInstance& ResourceInstance)
 	{
-		TArray<FString> TagLabels;
-		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
-		{
-			if (TagStack.StackCount <= 0)
-			{
-				continue;
-			}
-
-			FString TagLabel;
-			if (TagStack.Tag == ESRResourceProcessTag::HalfLife)
-			{
-				const int32 RemainingCycles = TagStack.RemainingCycles > 0
-					? TagStack.RemainingCycles
-					: StarRovers::FacilityResources::HalfLifeDefaultCycles;
-				TagLabel = FString::Printf(
-					TEXT("%s %d/%d"),
-					GetResourceProcessTagShortLabel(TagStack.Tag),
-					RemainingCycles,
-					StarRovers::FacilityResources::HalfLifeDefaultCycles);
-			}
-			else if (TagStack.Tag == ESRResourceProcessTag::Charge)
-			{
-				TagLabel = FString::Printf(
-					TEXT("%s %d"),
-					GetResourceProcessTagShortLabel(TagStack.Tag),
-					FMath::Max(0, TagStack.RemainingCycles));
-			}
-			else
-			{
-				TagLabel = GetResourceProcessTagShortLabel(TagStack.Tag);
-			}
-
-			for (int32 StackIndex = 0; StackIndex < TagStack.StackCount; ++StackIndex)
-			{
-				TagLabels.Add(TagLabel);
-			}
-		}
-
-		if (TagLabels.IsEmpty())
-		{
-			return TEXT("No Tag");
-		}
-
-		return FString::Join(TagLabels, TEXT(" "));
+		return FString::Printf(
+			TEXT("P:%08X G:%d"),
+			ResourceInstance.Pattern.GetStableHash(),
+			ResourceInstance.Pattern.GetOccupiedCellCount());
 	}
 
 	FString BuildInventoryCardPortLabel(const FSRFacilityPortInventory& PortInventory, int32 SlotIndex, const TCHAR* FallbackLabel)
@@ -757,21 +434,11 @@ namespace
 		for (const FSRResourceInstance& ResourceInstance : PortInventory.Inventory)
 		{
 			Signature += FString::Printf(
-				TEXT("|%s:%.3f:%d:%d:%d:%d"),
+				TEXT("|%s:P%08X:%s:%d"),
 				*ResourceInstance.ResourceId.ToString(),
-				ResourceInstance.EnergyValue,
-				ResourceInstance.RemainingProcessLimit,
-				ResourceInstance.ProcessCount,
-				ResourceInstance.EnergyChangeCount,
+				ResourceInstance.Pattern.GetStableHash(),
+				*ResourceInstance.Pattern.ToCompactString(),
 				ResourceInstance.StackCount);
-			for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
-			{
-				Signature += FString::Printf(
-					TEXT(":T%d/%d/%d"),
-					static_cast<int32>(TagStack.Tag),
-					TagStack.StackCount,
-					TagStack.RemainingCycles);
-			}
 		}
 		return Signature;
 	}
@@ -807,9 +474,10 @@ namespace
 		}
 
 		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-		const int32 RequiredInputCount = IsValid(FacilityDataAsset)
-			&& FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Process
-			? FMath::Min(1, FacilityInstance.InputPortInventories.Num())
+		const int32 PatternInputCount = FSRFacilityPatternOperatorExecutor::ResolveRequiredInputCount(
+			FacilityDataAsset);
+		const int32 RequiredInputCount = PatternInputCount > 0
+			? FMath::Min(PatternInputCount, FacilityInstance.InputPortInventories.Num())
 			: FacilityInstance.InputPortInventories.Num();
 		for (int32 InputIndex = 0; InputIndex < RequiredInputCount; ++InputIndex)
 		{
@@ -824,9 +492,11 @@ namespace
 
 	FString BuildInlineResourceSummary(const FSRResourceInstance& ResourceInstance)
 	{
-		FString Summary = BuildResourceDisplayName(ResourceInstance);
-		Summary += FString::Printf(TEXT("  Energy Total: %s"), *FormatFacilityEnergyDisplayValue(ResourceInstance.EnergyValue));
-		return Summary;
+		return FString::Printf(
+			TEXT("%s  P:%08X G:%d"),
+			*BuildResourceDisplayName(ResourceInstance),
+			ResourceInstance.Pattern.GetStableHash(),
+			ResourceInstance.Pattern.GetOccupiedCellCount());
 	}
 
 	FString BuildInventorySummary(const TCHAR* Label, const TArray<FSRResourceInstance>& Inventory)
@@ -932,364 +602,69 @@ namespace
 		return Summary;
 	}
 
-	FString BuildFacilityEffectSummary(const FSRFacilityEffectSpec& EffectSpec)
+	const TCHAR* GetFacilityOperationLabel(ESRFacilityOperationKind OperationKind)
 	{
-		auto BuildConditionSummary = [](const FSRFacilityEffectConditionSpec& ConditionSpec)
+		switch (OperationKind)
 		{
-			switch (ConditionSpec.ConditionKind)
-			{
-			case ESRFacilityEffectConditionKind::EnergyAtLeast:
-			case ESRFacilityEffectConditionKind::EnergyAtMost:
-			case ESRFacilityEffectConditionKind::EnergyGreaterThan:
-			case ESRFacilityEffectConditionKind::EnergyLessThan:
-				return FString::Printf(
-					TEXT("%s %s"),
-					GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
-					*FormatFacilityEnergyDisplayValue(ConditionSpec.EnergyValue));
-			case ESRFacilityEffectConditionKind::EnergyIncreased:
-			case ESRFacilityEffectConditionKind::EnergyDecreased:
-			case ESRFacilityEffectConditionKind::PrimeEnergy:
-				return FString(GetEffectConditionKindLabel(ConditionSpec.ConditionKind));
-			case ESRFacilityEffectConditionKind::Tag:
-				if (ConditionSpec.TagTarget == ESRFacilityTagConditionTarget::AllTags)
-				{
-					if (ConditionSpec.TagMode == ESRFacilityTagConditionMode::StackCountAtLeast)
-					{
-						return FString::Printf(
-							TEXT("%s %s %d"),
-							GetTagConditionTargetLabel(ConditionSpec.TagTarget),
-							GetTagConditionModeLabel(ConditionSpec.TagMode),
-							FMath::Max(1, ConditionSpec.TagStackCount));
-					}
-					return FString::Printf(
-						TEXT("%s %s"),
-						GetTagConditionModeLabel(ConditionSpec.TagMode),
-						GetTagConditionTargetLabel(ConditionSpec.TagTarget));
-				}
-				if (ConditionSpec.TagMode == ESRFacilityTagConditionMode::StackCountAtLeast)
-				{
-					return FString::Printf(
-						TEXT("%s %s %d"),
-						GetResourceProcessTagLabel(ConditionSpec.ResourceTag),
-						GetTagConditionModeLabel(ConditionSpec.TagMode),
-						FMath::Max(1, ConditionSpec.TagStackCount));
-				}
-				return FString::Printf(
-					TEXT("%s %s"),
-					GetTagConditionModeLabel(ConditionSpec.TagMode),
-					GetResourceProcessTagLabel(ConditionSpec.ResourceTag));
-			case ESRFacilityEffectConditionKind::TemperatureState:
-				return FString::Printf(
-					TEXT("%s %s"),
-					GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
-					GetFacilityTemperatureLabel(ConditionSpec.TemperatureState));
-			case ESRFacilityEffectConditionKind::ProcessCountEquals:
-				return FString::Printf(
-					TEXT("%s %d"),
-					GetEffectConditionKindLabel(ConditionSpec.ConditionKind),
-					FMath::Max(0, ConditionSpec.ProcessCount));
-			default:
-				return FString(GetEffectConditionKindLabel(ConditionSpec.ConditionKind));
-			}
-		};
-
-		auto BuildConditionListSummary = [&BuildConditionSummary](
-			const TArray<FSRFacilityEffectConditionSpec>& Conditions,
-			ESRFacilityConditionLogic ConditionLogic)
-		{
-			FString Summary;
-			const int32 VisibleConditionCount = FMath::Min(Conditions.Num(), 2);
-			for (int32 ConditionIndex = 0; ConditionIndex < VisibleConditionCount; ++ConditionIndex)
-			{
-				if (ConditionIndex > 0)
-				{
-					Summary += FString::Printf(TEXT(" %s "), GetConditionLogicLabel(ConditionLogic));
-				}
-				Summary += BuildConditionSummary(Conditions[ConditionIndex]);
-			}
-
-			if (Conditions.Num() > VisibleConditionCount)
-			{
-				Summary += FString::Printf(TEXT(" +%d"), Conditions.Num() - VisibleConditionCount);
-			}
-			return Summary;
-		};
-
-		auto AppendConditions = [&EffectSpec, &BuildConditionListSummary](FString BaseSummary)
-		{
-			TArray<FString> RequiredConditionParts;
-			if (!EffectSpec.Conditions.IsEmpty())
-			{
-				RequiredConditionParts.Add(BuildConditionListSummary(
-					EffectSpec.Conditions,
-					ESRFacilityConditionLogic::And));
-			}
-
-			TArray<FString> GroupParts;
-			int32 ActiveGroupCount = 0;
-			for (const FSRFacilityEffectConditionGroupSpec& ConditionGroup : EffectSpec.ConditionGroups)
-			{
-				if (ConditionGroup.Conditions.IsEmpty())
-				{
-					continue;
-				}
-
-				++ActiveGroupCount;
-				if (GroupParts.Num() >= 2)
-				{
-					continue;
-				}
-
-				FString GroupSummary = BuildConditionListSummary(
-					ConditionGroup.Conditions,
-					ConditionGroup.ConditionLogic);
-				if (ConditionGroup.Conditions.Num() > 1)
-				{
-					GroupSummary = FString::Printf(TEXT("(%s)"), *GroupSummary);
-				}
-				GroupParts.Add(GroupSummary);
-			}
-
-			if (!GroupParts.IsEmpty())
-			{
-				FString GroupSummary = FString::Join(GroupParts, *FString::Printf(
-					TEXT(" %s "),
-					GetConditionLogicLabel(EffectSpec.ConditionGroupLogic)));
-				if (ActiveGroupCount > GroupParts.Num())
-				{
-					GroupSummary += FString::Printf(TEXT(" +%d"), ActiveGroupCount - GroupParts.Num());
-				}
-				RequiredConditionParts.Add(GroupSummary);
-			}
-
-			if (RequiredConditionParts.IsEmpty())
-			{
-				return BaseSummary;
-			}
-
-			BaseSummary += TEXT(" if ");
-			BaseSummary += FString::Join(RequiredConditionParts, TEXT(" && "));
-			return BaseSummary;
-		};
-
-		FString EffectSummary;
-		switch (EffectSpec.EffectKind)
-		{
-		case ESRFacilityEffectKind::AdjustEnergy:
-			if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::FixedValue)
-			{
-				if (EffectSpec.EnergyAdjustmentMode == ESRFacilityEnergyAdjustmentMode::Multiply)
-				{
-					EffectSummary = FString::Printf(
-						TEXT("%s * %s"),
-						GetEffectKindLabel(EffectSpec.EffectKind),
-						*FormatFacilityEnergyDisplayValue(EffectSpec.Value));
-				}
-				else if (EffectSpec.EnergyAdjustmentMode == ESRFacilityEnergyAdjustmentMode::Subtract)
-				{
-					EffectSummary = FString::Printf(
-						TEXT("%s - %s"),
-						GetEffectKindLabel(EffectSpec.EffectKind),
-						*FormatFacilityEnergyDisplayValue(FMath::Abs(EffectSpec.Value)));
-				}
-				else
-				{
-					EffectSummary = FString::Printf(TEXT("%s %+.1f"), GetEffectKindLabel(EffectSpec.EffectKind), EffectSpec.Value);
-				}
-			}
-			else if (EffectSpec.EnergyValueSource == ESRFacilityEnergyAdjustmentValueSource::TagStackCount)
-			{
-				const TCHAR* TagStackTargetLabel = EffectSpec.TagStackCountTarget == ESRFacilityTagStackCountTarget::All
-					? GetTagStackCountTargetLabel(EffectSpec.TagStackCountTarget)
-					: GetResourceProcessTagLabel(EffectSpec.ResourceTag);
-				const FString MultiplierSummary = BuildEnergyValueMultiplierSummary(EffectSpec);
-				EffectSummary = FString::Printf(
-					TEXT("%s %s %s %s%s"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetEnergyAdjustmentModeLabel(EffectSpec.EnergyAdjustmentMode),
-					GetEnergyValueSourceLabel(EffectSpec.EnergyValueSource),
-					TagStackTargetLabel,
-					*MultiplierSummary);
-			}
-			else
-			{
-				const FString MultiplierSummary = BuildEnergyValueMultiplierSummary(EffectSpec);
-				EffectSummary = FString::Printf(
-					TEXT("%s %s %s%s"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetEnergyAdjustmentModeLabel(EffectSpec.EnergyAdjustmentMode),
-					GetEnergyValueSourceLabel(EffectSpec.EnergyValueSource),
-					*MultiplierSummary);
-			}
-			break;
-		case ESRFacilityEffectKind::AdjustProcessLimit:
-			EffectSummary = FString::Printf(
-				TEXT("%s %s"),
-				GetEffectKindLabel(EffectSpec.EffectKind),
-				*BuildProcessLimitAdjustmentSummary(EffectSpec));
-			break;
-		case ESRFacilityEffectKind::RemoveResource:
-			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
-			break;
-		case ESRFacilityEffectKind::AttachTag:
-			if (EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::MissingTags
-				|| EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::AttachedTags)
-			{
-				EffectSummary = FString::Printf(
-					TEXT("%s %s"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetAttachTagSourceLabel(EffectSpec.AttachTagSource));
-			}
-			else if (EffectSpec.AttachTagSource == ESRFacilityAttachTagSource::LastAttachedTag)
-			{
-				EffectSummary = FString::Printf(
-					TEXT("%s %s x%d"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetAttachTagSourceLabel(EffectSpec.AttachTagSource),
-					FMath::Max(1, EffectSpec.Count));
-			}
-			else
-			{
-				EffectSummary = FString::Printf(
-					TEXT("%s %s x%d"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetResourceProcessTagLabel(EffectSpec.ResourceTag),
-					FMath::Max(1, EffectSpec.Count));
-			}
-			break;
-		case ESRFacilityEffectKind::ProduceWaste:
-			EffectSummary = FString::Printf(
-				TEXT("%s %s x%d"),
-				GetEffectKindLabel(EffectSpec.EffectKind),
-				IsValid(EffectSpec.ProducedResource.Get())
-					? *EffectSpec.ProducedResource->ResourceId.ToString()
-					: TEXT("None"),
-				FMath::Max(1, EffectSpec.Count));
-			break;
-		case ESRFacilityEffectKind::TransferTagsToWaste:
-			EffectSummary = FString::Printf(
-				TEXT("%s %s -> %s"),
-				GetEffectKindLabel(EffectSpec.EffectKind),
-				EffectSpec.TagTarget == ESRFacilityEffectTagTarget::SpecificTag
-					? GetResourceProcessTagLabel(EffectSpec.ResourceTag)
-					: GetEffectTagTargetLabel(EffectSpec.TagTarget),
-				IsValid(EffectSpec.ProducedResource.Get())
-					? *EffectSpec.ProducedResource->ResourceId.ToString()
-					: TEXT("None"));
-			break;
-		case ESRFacilityEffectKind::AdjustCellTemperature:
-			EffectSummary = FString::Printf(
-				TEXT("%s %+d R%d"),
-				GetEffectKindLabel(EffectSpec.EffectKind),
-				EffectSpec.TemperatureStepDelta,
-				FMath::Max(1, EffectSpec.TileRange));
-			break;
-		case ESRFacilityEffectKind::InvertHeat:
-		case ESRFacilityEffectKind::InvertTagEffects:
-		case ESRFacilityEffectKind::DoubleTagEffects:
-			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
-			break;
-		case ESRFacilityEffectKind::DuplicateInputResource:
-			EffectSummary = FString::Printf(
-				TEXT("%s x%d"),
-				GetEffectKindLabel(EffectSpec.EffectKind),
-				FMath::Max(1, EffectSpec.Count));
-			break;
-		case ESRFacilityEffectKind::OverrideProcessTemperature:
-			EffectSummary = FString::Printf(
-				TEXT("%s %s"),
-				GetEffectKindLabel(EffectSpec.EffectKind),
-				GetFacilityTemperatureLabel(EffectSpec.ProcessTemperatureState));
-			break;
-		case ESRFacilityEffectKind::TriggerTagEffect:
-			EffectSummary = EffectSpec.TagTarget == ESRFacilityEffectTagTarget::SpecificTag
-				? FString::Printf(
-					TEXT("%s %s"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetResourceProcessTagLabel(EffectSpec.ResourceTag))
-				: FString::Printf(
-					TEXT("%s %s"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetEffectTagTargetLabel(EffectSpec.TagTarget));
-			break;
-		case ESRFacilityEffectKind::AdjustProcessTime:
-			if (EffectSpec.ProcessTimeValueSource == ESRFacilityProcessTimeAdjustmentValueSource::TagStackCount)
-			{
-				const TCHAR* TagStackTargetLabel = EffectSpec.TagStackCountTarget == ESRFacilityTagStackCountTarget::All
-					? GetTagStackCountTargetLabel(EffectSpec.TagStackCountTarget)
-					: GetResourceProcessTagLabel(EffectSpec.ResourceTag);
-				EffectSummary = FString::Printf(
-					TEXT("%s %s %s %s"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetProcessTimeModeLabel(EffectSpec.ProcessTimeMode),
-					GetProcessTimeValueSourceLabel(EffectSpec.ProcessTimeValueSource),
-					TagStackTargetLabel);
-			}
-			else
-			{
-				EffectSummary = FString::Printf(
-					TEXT("%s %s %.2f"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetProcessTimeModeLabel(EffectSpec.ProcessTimeMode),
-					EffectSpec.Value);
-			}
-			break;
-		case ESRFacilityEffectKind::RemoveTag:
-		{
-			const FString AmountSummary = BuildRemoveTagAmountSummary(EffectSpec);
-			EffectSummary = EffectSpec.TagTarget == ESRFacilityEffectTagTarget::SpecificTag
-				? FString::Printf(
-					TEXT("%s %s%s"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetResourceProcessTagLabel(EffectSpec.ResourceTag),
-					*AmountSummary)
-				: FString::Printf(
-					TEXT("%s %s%s"),
-					GetEffectKindLabel(EffectSpec.EffectKind),
-					GetEffectTagTargetLabel(EffectSpec.TagTarget),
-					*AmountSummary);
-			break;
-		}
-		case ESRFacilityEffectKind::ChangeResourceType:
-			EffectSummary = FString::Printf(
-				TEXT("%s %s"),
-				GetEffectKindLabel(EffectSpec.EffectKind),
-				IsValid(EffectSpec.TargetResource.Get())
-					? *EffectSpec.TargetResource->ResourceId.ToString()
-					: TEXT("None"));
-			break;
+		case ESRFacilityOperationKind::Process:
+			return TEXT("Transform");
+		case ESRFacilityOperationKind::Synthesize:
+			return TEXT("Synthesis");
+		case ESRFacilityOperationKind::Separate:
+			return TEXT("Separation");
+		case ESRFacilityOperationKind::Mine:
+			return TEXT("Mining");
 		default:
-			EffectSummary = FString(GetEffectKindLabel(EffectSpec.EffectKind));
-			break;
+			return TEXT("Invalid");
 		}
-		return AppendConditions(EffectSummary);
 	}
 
-	FString BuildEffectsSummary(const USRFacilityDataAsset* FacilityDataAsset)
+	FString BuildPatternOperationSummary(const USRFacilityDataAsset* FacilityDataAsset)
 	{
 		if (!IsValid(FacilityDataAsset))
 		{
-			return TEXT("Effects\nNone");
+			return TEXT("Pattern Operation\nNone");
+		}
+		if (FacilityDataAsset->FacilityKind == ESRFacilityKind::Hub)
+		{
+			return TEXT("Pattern Routing Hub\nMoves cargo through Pattern-filtered routes.");
 		}
 
-		FString Summary = TEXT("Effects / Tags");
-		if (FacilityDataAsset->Effects.IsEmpty())
+		FString Summary = FString::Printf(
+			TEXT("Pattern Operation\n%s\nBase Time: %.2f sec"),
+			GetFacilityOperationLabel(FacilityDataAsset->OperationKind),
+			FacilityDataAsset->BaseProcessSeconds);
+		switch (FacilityDataAsset->OperationKind)
 		{
-			Summary += TEXT("\nNone");
-			return Summary;
-		}
-
-		const int32 VisibleCount = FMath::Min(FacilityDataAsset->Effects.Num(), 5);
-		for (int32 EffectIndex = 0; EffectIndex < VisibleCount; ++EffectIndex)
+		case ESRFacilityOperationKind::Process:
 		{
-			const FSRFacilityEffectSpec& EffectSpec = FacilityDataAsset->Effects[EffectIndex];
+			const UEnum* DirectionEnum = StaticEnum<ESRPatternDirection>();
+			const FString DirectionLabel = IsValid(DirectionEnum)
+				? DirectionEnum->GetDisplayNameTextByValue(
+					static_cast<int64>(FacilityDataAsset->TransformOperator.Direction)).ToString()
+				: FString::FromInt(static_cast<int32>(FacilityDataAsset->TransformOperator.Direction));
 			Summary += FString::Printf(
-				TEXT("\n- %s"),
-				*BuildFacilityEffectSummary(EffectSpec));
+				TEXT("\nMask Cells: %d  Direction: %s\nOrganic Growth: %d"),
+				FacilityDataAsset->TransformOperator.SelectionMask.GetActiveCellCount(),
+				*DirectionLabel,
+				FacilityDataAsset->TransformOperator.OrganicGrowthsPerComponent);
+			break;
 		}
-		if (FacilityDataAsset->Effects.Num() > VisibleCount)
-		{
-			Summary += FString::Printf(TEXT("\n... +%d"), FacilityDataAsset->Effects.Num() - VisibleCount);
+		case ESRFacilityOperationKind::Synthesize:
+			Summary += FString::Printf(
+				TEXT("\nInputs: 2  Output: %s"),
+				*BuildResourceDataAssetDisplayName(FacilityDataAsset->SynthesisOutputResource.Get()));
+			break;
+		case ESRFacilityOperationKind::Separate:
+			Summary += FString::Printf(
+				TEXT("\nPrimary Mask Cells: %d  Outputs: 2"),
+				FacilityDataAsset->SeparationOperator.PrimaryOutputMask.GetActiveCellCount());
+			break;
+		case ESRFacilityOperationKind::Mine:
+			Summary += TEXT("\nCopies the deposit's stored Pattern.");
+			break;
+		default:
+			break;
 		}
 		return Summary;
 	}
@@ -1301,27 +676,19 @@ namespace
 
 	bool CanToggleProcess(const FSRFacilityInstance& FacilityInstance, FString& OutReason)
 	{
-		const USRFacilityDataAsset* FacilityDataAsset = FacilityInstance.FacilityDataAsset.Get();
-		if (!IsValid(FacilityDataAsset))
+		if (!IsValid(FacilityInstance.FacilityDataAsset.Get()))
 		{
 			OutReason = TEXT("Invalid facility");
 			return false;
 		}
 
-		const StarRovers::FacilityProcessing::FSRFacilityProcessContext ProcessContext =
-			StarRovers::FacilityProcessing::ResolveProcessContext(FacilityInstance, FacilityInstance.ProcessingInventory);
-		const ESRFacilityTemperatureState EffectiveTemperatureState = ProcessContext.EffectiveTemperatureState;
-		if (EffectiveTemperatureState == ESRFacilityTemperatureState::Frozen
-			|| EffectiveTemperatureState == ESRFacilityTemperatureState::Overheated)
+		if (FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Frozen
+			|| FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Overheated)
 		{
-			OutReason = FString::Printf(TEXT("Blocked by %s"), GetFacilityTemperatureLabel(EffectiveTemperatureState));
+			OutReason = FString::Printf(
+				TEXT("Blocked by %s"),
+				GetFacilityTemperatureLabel(FacilityInstance.TemperatureState));
 			return false;
-		}
-
-		if (EffectiveTemperatureState != FacilityInstance.TemperatureState)
-		{
-			OutReason = FString::Printf(TEXT("Ready as %s"), GetFacilityTemperatureLabel(EffectiveTemperatureState));
-			return true;
 		}
 
 		OutReason = TEXT("Ready");
@@ -1495,8 +862,8 @@ namespace
 			Center = BuildResourceDisplayName(*ResourceInstance);
 			CardColor = FLinearColor(0.125f, 0.175f, 0.160f, 0.98f);
 			TopLeft = BuildResourceTagCardLabel(*ResourceInstance);
-			TopRight = FString::Printf(TEXT("E:%s"), *FormatFacilityEnergyDisplayValue(ResourceInstance->EnergyValue));
-			BottomLeft = FString::Printf(TEXT("L:%d"), ResourceInstance->RemainingProcessLimit);
+			TopRight = FString::Printf(TEXT("x%d"), SlotStackCount);
+			BottomLeft = FString::Printf(TEXT("G:%d"), ResourceInstance->Pattern.GetOccupiedCellCount());
 			BottomRight = FString::Printf(TEXT("%d/%d"), SlotStackCount, Capacity);
 		}
 
@@ -1528,31 +895,36 @@ namespace
 			return;
 		}
 
-		const bool bHasResource = !ResourceInstance.ResourceId.IsNone();
-		const FString TopLeft = bHasResource ? BuildResourceTagCardLabel(ResourceInstance) : TEXT("-");
+		const bool bHasResource = !ResourceInstance.ResourceId.IsNone() && ResourceInstance.Pattern.IsCanonical();
+		const FString TopLeft = bHasResource ? BuildResourceDisplayName(ResourceInstance) : TEXT("Empty");
 		const FString TopRight = bHasResource
-			? FString::Printf(TEXT("E:%s"), *FormatFacilityEnergyDisplayValue(ResourceInstance.EnergyValue))
+			? FString::Printf(TEXT("x%d"), FMath::Max(0, ResourceInstance.StackCount))
 			: TEXT("-");
-		const FString Center = bHasResource ? BuildResourceDisplayName(ResourceInstance) : TEXT("Empty");
 		const FString BottomLeft = bHasResource
-			? FString::Printf(TEXT("L:%d"), ResourceInstance.RemainingProcessLimit)
+			? FString::Printf(TEXT("Pattern %08X"), ResourceInstance.Pattern.GetStableHash())
 			: FString();
-		const FString BottomRight = bHasResource ? TEXT("Energy") : FString();
 		const FLinearColor CardColor = !bHasResource
 			? FLinearColor(0.145f, 0.170f, 0.190f, 0.98f)
 			: FLinearColor(0.125f, 0.175f, 0.160f, 0.98f);
 		const FLinearColor MainTextColor = FLinearColor(0.90f, 0.94f, 0.96f, 1.0f);
 
 		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
-		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(7.0f, 5.0f), FVector2D(60.0f, 18.0f), TopLeft.Len() > 9 ? 8 : 9, AccentColor);
-		AddInventoryCardText(WidgetTree, CardCanvas, TopRight, FVector2D(58.0f, 5.0f), FVector2D(46.0f, 18.0f), 9, AccentColor, ETextJustify::Right);
-		AddInventoryCardText(WidgetTree, CardCanvas, Center, FVector2D(8.0f, 34.0f), FVector2D(96.0f, 24.0f), 12, MainTextColor, ETextJustify::Center);
-		AddInventoryCardText(WidgetTree, CardCanvas, BottomLeft, FVector2D(7.0f, 68.0f), FVector2D(54.0f, 18.0f), 9, MainTextColor);
-		AddInventoryCardText(WidgetTree, CardCanvas, BottomRight, FVector2D(43.0f, 68.0f), FVector2D(61.0f, 18.0f), 9, MainTextColor, ETextJustify::Right);
+		AddInventoryCardText(WidgetTree, CardCanvas, TopLeft, FVector2D(7.0f, 5.0f), FVector2D(82.0f, 18.0f), TopLeft.Len() > 12 ? 8 : 9, AccentColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, TopRight, FVector2D(88.0f, 5.0f), FVector2D(32.0f, 18.0f), 9, AccentColor, ETextJustify::Right);
+		if (bHasResource)
+		{
+			USRPatternGridWidget* PatternGrid = WidgetTree->ConstructWidget<USRPatternGridWidget>(
+				USRPatternGridWidget::StaticClass(),
+				NAME_None);
+			PatternGrid->SetCellSize(17.0f);
+			PatternGrid->SetPattern(ResourceInstance.Pattern);
+			AddWidgetToCanvas(CardCanvas, PatternGrid, FVector2D(10.0f, 27.0f), FVector2D(105.0f, 105.0f));
+		}
+		AddInventoryCardText(WidgetTree, CardCanvas, BottomLeft, FVector2D(7.0f, 132.0f), FVector2D(113.0f, 16.0f), 8, MainTextColor, ETextJustify::Center);
 
 		USizeBox* CardSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		CardSizeBox->SetWidthOverride(112.0f);
-		CardSizeBox->SetHeightOverride(90.0f);
+		CardSizeBox->SetWidthOverride(126.0f);
+		CardSizeBox->SetHeightOverride(152.0f);
 		CardSizeBox->AddChild(CardCanvas);
 
 		UBorder* InnerBorder = ConstructSectionBorder(WidgetTree, NAME_None, CardSizeBox, CardColor, FMargin(0.0f));
@@ -1564,7 +936,7 @@ namespace
 		}
 	}
 
-	void AddEnergyFormulaCard(
+	void AddOperationTraceCard(
 		UWidgetTree* WidgetTree,
 		UHorizontalBox* SlotBox,
 		const FString& FormulaText,
@@ -1576,7 +948,7 @@ namespace
 		}
 
 		UCanvasPanel* CardCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
-		AddInventoryCardText(WidgetTree, CardCanvas, TEXT("Energy Formula"), FVector2D(7.0f, 5.0f), FVector2D(266.0f, 18.0f), 9, AccentColor);
+		AddInventoryCardText(WidgetTree, CardCanvas, TEXT("Operation Trace"), FVector2D(7.0f, 5.0f), FVector2D(266.0f, 18.0f), 9, AccentColor);
 
 		UTextBlock* FormulaTextBlock = ConstructTextBlock(WidgetTree, NAME_None, 9, FLinearColor(0.90f, 0.94f, 0.96f, 1.0f));
 		FormulaTextBlock->SetText(FText::FromString(FormulaText));
@@ -2095,26 +1467,19 @@ namespace
 		{
 			FName ResourceId;
 			FText Label;
-			double EnergyValue = 0.0;
-			int32 RemainingProcessLimit = 0;
 		};
 		const FSRFacilityInputDebugButtonSpec ButtonSpecs[] =
 		{
-			{ TEXT("Territe"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddTerrite", "+T"), 1.0, 3 },
-			{ TEXT("Aquid"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddAquid", "+A"), 0.0, 5 },
-			{ TEXT("Nitain"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddNitain", "+N"), 3.0, 2 },
-			{ TEXT("Waste"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddWaste", "+W"), 0.1, 3 },
+			{ TEXT("Territe"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddTerrite", "+T") },
+			{ TEXT("Aquid"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddAquid", "+A") },
+			{ TEXT("Nitain"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddNitain", "+N") },
+			{ TEXT("Waste"), NSLOCTEXT("StarRoversFacilityControl", "SlotAddWaste", "+W") },
 		};
 
 		for (int32 ButtonIndex = 0; ButtonIndex < UE_ARRAY_COUNT(ButtonSpecs); ++ButtonIndex)
 		{
 			const FSRFacilityInputDebugButtonSpec& ButtonSpec = ButtonSpecs[ButtonIndex];
-			FSRResourceInstance CandidateResource;
-			CandidateResource.ResourceInstanceId = FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits));
-			CandidateResource.ResourceId = ButtonSpec.ResourceId;
-			CandidateResource.EnergyValue = ButtonSpec.EnergyValue;
-			CandidateResource.RemainingProcessLimit = ButtonSpec.RemainingProcessLimit;
-			CandidateResource.StackCount = 1;
+			const FSRResourceInstance CandidateResource = MakeDebugPatternResource(ButtonSpec.ResourceId);
 
 			UButton* Button = ConstructDebugInputButton(WidgetTree, NAME_None, ButtonSpec.Label);
 			Button->SetIsEnabled(StarRovers::FacilityResources::CanInventorySlotAcceptResource(PortInventory, CandidateResource));
@@ -2151,15 +1516,41 @@ namespace
 		AddWidgetToInventoryGrid(WidgetTree, SlotBox, OuterBorder, InputPortIndex);
 	}
 
-	FSRResourceInstance MakeDebugEnergyResource(FName ResourceId, double EnergyValue, int32 RemainingProcessLimit)
+	USRResourceDataAsset* LoadDebugResourceDataAsset(FName ResourceId)
 	{
-		FSRResourceInstance ResourceInstance;
+		const TCHAR* ObjectPath = nullptr;
+		if (ResourceId == FName(TEXT("Territe")))
+		{
+			ObjectPath = TEXT("/Game/StarRovers/Automation/DataAssets/Resources/DA_Resource_Territe.DA_Resource_Territe");
+		}
+		else if (ResourceId == FName(TEXT("Aquid")))
+		{
+			ObjectPath = TEXT("/Game/StarRovers/Automation/DataAssets/Resources/DA_Resource_Aquid.DA_Resource_Aquid");
+		}
+		else if (ResourceId == FName(TEXT("Nitain")))
+		{
+			ObjectPath = TEXT("/Game/StarRovers/Automation/DataAssets/Resources/DA_Resource_Nitain.DA_Resource_Nitain");
+		}
+		else if (ResourceId == FName(TEXT("Waste"))
+			|| ResourceId == FName(TEXT("PatternResidue")))
+		{
+			ObjectPath = TEXT("/Game/StarRovers/Automation/DataAssets/Resources/DA_Resource_Waste.DA_Resource_Waste");
+		}
+		return ObjectPath
+			? LoadObject<USRResourceDataAsset>(nullptr, ObjectPath)
+			: nullptr;
+	}
+
+	FSRResourceInstance MakeDebugPatternResource(FName ResourceId)
+	{
+		USRResourceDataAsset* ResourceDataAsset = LoadDebugResourceDataAsset(ResourceId);
+		if (!IsValid(ResourceDataAsset))
+		{
+			return FSRResourceInstance();
+		}
+
+		FSRResourceInstance ResourceInstance = ResourceDataAsset->BuildDefaultInstance();
 		ResourceInstance.ResourceInstanceId = FName(*FGuid::NewGuid().ToString(EGuidFormats::Digits));
-		ResourceInstance.ResourceId = ResourceId;
-		ResourceInstance.EnergyValue = EnergyValue;
-		ResourceInstance.RemainingProcessLimit = FMath::Max(0, RemainingProcessLimit);
-		ResourceInstance.ProcessCount = 0;
-		ResourceInstance.EnergyChangeCount = 0;
 		ResourceInstance.StackCount = 1;
 		return ResourceInstance;
 	}
@@ -2744,29 +2135,16 @@ bool USRFacilityControlWidget::AddDebugInputResourceToPort(int32 InputPortIndex,
 		return false;
 	}
 
-	FSRResourceInstance ResourceInstance;
-	if (ResourceId == FName(TEXT("Territe")))
-	{
-		ResourceInstance = MakeDebugEnergyResource(TEXT("Territe"), 1.0, 3);
-	}
-	else if (ResourceId == FName(TEXT("Aquid")))
-	{
-		ResourceInstance = MakeDebugEnergyResource(TEXT("Aquid"), 0.0, 5);
-	}
-	else if (ResourceId == FName(TEXT("Nitain")))
-	{
-		ResourceInstance = MakeDebugEnergyResource(TEXT("Nitain"), 3.0, 2);
-	}
-	else if (ResourceId == FName(TEXT("Waste")))
-	{
-		ResourceInstance = MakeDebugEnergyResource(TEXT("Waste"), 0.1, 3);
-	}
-	else
+	const FSRResourceInstance ResourceInstance = MakeDebugPatternResource(ResourceId);
+	if (ResourceInstance.ResourceId.IsNone())
 	{
 		return false;
 	}
 
-	const bool bAdded = FacilityNetwork->AddInputResourceToPort(FocusedOccupantId, InputPortIndex, ResourceInstance);
+	const bool bAdded = FacilityNetwork->AddInputResourceToPort(
+		FocusedOccupantId,
+		InputPortIndex,
+		ResourceInstance);
 	RefreshControlText();
 	return bAdded;
 }
@@ -3103,7 +2481,9 @@ bool USRFacilityControlWidget::SetHubRouteCargoResourceId(FName RouteId, FName C
 		return false;
 	}
 
-	const bool bUpdated = SpaceLogisticsSubsystem->SetHubRouteCargoResourceId(RouteId, CargoResourceId);
+	FSRPatternRoutingFilter CargoFilter;
+	CargoFilter.ResourceId = CargoResourceId;
+	const bool bUpdated = SpaceLogisticsSubsystem->SetHubRouteCargoFilter(RouteId, CargoFilter);
 	LastHubRouteStatus = bUpdated
 		? FString::Printf(TEXT("Cargo filter: %s"), CargoResourceId.IsNone() ? TEXT("Any") : *CargoResourceId.ToString())
 		: FString::Printf(TEXT("Cargo filter failed: %s"), *RouteId.ToString());
@@ -3192,7 +2572,7 @@ void USRFacilityControlWidget::HandleDebugAddTerriteClicked()
 
 	FacilityNetwork->AddInputResource(
 		FocusedOccupantId,
-		MakeDebugEnergyResource(TEXT("Territe"), 1.0, 3));
+		MakeDebugPatternResource(TEXT("Territe")));
 	RefreshControlText();
 }
 
@@ -3208,7 +2588,7 @@ void USRFacilityControlWidget::HandleDebugAddAquidClicked()
 
 	FacilityNetwork->AddInputResource(
 		FocusedOccupantId,
-		MakeDebugEnergyResource(TEXT("Aquid"), 0.0, 5));
+		MakeDebugPatternResource(TEXT("Aquid")));
 	RefreshControlText();
 }
 
@@ -3224,7 +2604,7 @@ void USRFacilityControlWidget::HandleDebugAddNitainClicked()
 
 	FacilityNetwork->AddInputResource(
 		FocusedOccupantId,
-		MakeDebugEnergyResource(TEXT("Nitain"), 3.0, 2));
+		MakeDebugPatternResource(TEXT("Nitain")));
 	RefreshControlText();
 }
 
@@ -3240,7 +2620,7 @@ void USRFacilityControlWidget::HandleDebugAddWasteClicked()
 
 	FacilityNetwork->AddInputResource(
 		FocusedOccupantId,
-		MakeDebugEnergyResource(TEXT("Waste"), 0.1, 3));
+		MakeDebugPatternResource(TEXT("Waste")));
 	RefreshControlText();
 }
 
@@ -3260,7 +2640,7 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		ProcessStatusTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessStatusTextBlock"))));
 		InputResourceTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputResourceTextBlock"))));
 		InputResourceSlotBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(FName(TEXT("FacilityControlInputResourceSlotBox"))));
-		EffectsTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlEffectsTextBlock"))));
+		OperationTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOperationTextBlock"))));
 		ProcessProgressBar = Cast<UProgressBar>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessProgressBar"))));
 		ProcessTimeTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlProcessTimeTextBlock"))));
 		OutputPreviewTextBlock = Cast<UTextBlock>(WidgetTree->FindWidget(FName(TEXT("FacilityControlOutputPreviewTextBlock"))));
@@ -3355,7 +2735,7 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		InputResourceSlotBoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
 
-	EffectsTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlEffectsTextBlock"), 13, FLinearColor(0.96f, 0.90f, 0.72f, 1.0f));
+	OperationTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlOperationTextBlock"), 13, FLinearColor(0.96f, 0.90f, 0.72f, 1.0f));
 	UVerticalBox* OutputResourceSectionBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FacilityControlOutputResourceSectionBox"));
 	OutputPreviewTextBlock = ConstructTextBlock(WidgetTree, TEXT("FacilityControlOutputPreviewTextBlock"), 13, FLinearColor(0.78f, 1.0f, 0.86f, 1.0f));
 	if (UVerticalBoxSlot* OutputResourceTitleSlot = OutputResourceSectionBox->AddChildToVerticalBox(OutputPreviewTextBlock))
@@ -3379,7 +2759,7 @@ void USRFacilityControlWidget::BuildFacilityControlWidgetTree()
 		FVector2D(266.0f, 190.0f));
 	AddWidgetToCanvas(
 		PanelCanvas,
-		ConstructSectionBorder(WidgetTree, TEXT("FacilityControlEffectsBorder"), EffectsTextBlock, FLinearColor(0.085f, 0.080f, 0.060f, 0.96f)),
+		ConstructSectionBorder(WidgetTree, TEXT("FacilityControlOperationBorder"), OperationTextBlock, FLinearColor(0.085f, 0.080f, 0.060f, 0.96f)),
 		FVector2D(308.0f, 166.0f),
 		FVector2D(264.0f, 122.0f));
 	AddWidgetToCanvas(
@@ -3632,9 +3012,9 @@ void USRFacilityControlWidget::RefreshInputResourceSlots(USRFacilityNetworkCompo
 		FSRResourceDepositInstance MiningTarget;
 		if (IsValid(FacilityNetwork)
 			&& FacilityNetwork->GetFacilityMiningTarget(FacilityInstance.OccupantId, MiningTarget)
-			&& IsValid(MiningTarget.ResourceDataAsset.Get()))
+			&& MiningTarget.IsPatternSourceValid())
 		{
-			PreviewResources.Add(MiningTarget.ResourceDataAsset->BuildDefaultInstance());
+			PreviewResources.Add(MiningTarget.BuildResourceInstance());
 		}
 		PreviewResourceCount = PreviewResources.Num();
 		EmptyText = BuildMiningTargetSummary(FacilityNetwork, FacilityInstance.OccupantId);
@@ -3694,28 +3074,28 @@ void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComp
 	}
 
 	TArray<FSRResourceInstance> PreviewOutputs;
-	TArray<FString> PreviewOutputEnergyFormulas;
+	TArray<FString> PreviewOutputOperationTraces;
 	if (IsValid(FacilityNetwork))
 	{
 		FSRResourceInstance PrimaryOutput;
 		TArray<FSRResourceInstance> AdditionalOutputs;
 		int32 OutputCount = 0;
-		TArray<FString> EnergyFormulaTexts;
+		TArray<FString> OperationTraceTexts;
 		if (FacilityNetwork->GetFacilityOutputPreview(
 			FocusedOccupantId,
 			PrimaryOutput,
 			AdditionalOutputs,
 			OutputCount,
-			EnergyFormulaTexts))
+			OperationTraceTexts))
 		{
 			const int32 PrimaryOutputCount = FMath::Max(0, OutputCount);
 			PreviewOutputs.Reserve(PrimaryOutputCount + AdditionalOutputs.Num());
-			PreviewOutputEnergyFormulas.Reserve(PrimaryOutputCount + AdditionalOutputs.Num());
+			PreviewOutputOperationTraces.Reserve(PrimaryOutputCount + AdditionalOutputs.Num());
 			for (int32 OutputIndex = 0; OutputIndex < PrimaryOutputCount; ++OutputIndex)
 			{
 				PreviewOutputs.Add(PrimaryOutput);
-				PreviewOutputEnergyFormulas.Add(EnergyFormulaTexts.IsValidIndex(OutputIndex)
-					? EnergyFormulaTexts[OutputIndex]
+				PreviewOutputOperationTraces.Add(OperationTraceTexts.IsValidIndex(OutputIndex)
+					? OperationTraceTexts[OutputIndex]
 					: FString());
 			}
 			const int32 AdditionalFormulaOffset = PrimaryOutputCount;
@@ -3723,8 +3103,8 @@ void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComp
 			for (int32 AdditionalOutputIndex = 0; AdditionalOutputIndex < AdditionalOutputs.Num(); ++AdditionalOutputIndex)
 			{
 				const int32 FormulaIndex = AdditionalFormulaOffset + AdditionalOutputIndex;
-				PreviewOutputEnergyFormulas.Add(EnergyFormulaTexts.IsValidIndex(FormulaIndex)
-					? EnergyFormulaTexts[FormulaIndex]
+				PreviewOutputOperationTraces.Add(OperationTraceTexts.IsValidIndex(FormulaIndex)
+					? OperationTraceTexts[FormulaIndex]
 					: FString());
 			}
 		}
@@ -3746,8 +3126,8 @@ void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComp
 		NewSignature += TEXT("|");
 		NewSignature += BuildResourceSlotText(TEXT("Output"), PreviewIndex, NAME_None, &PreviewOutputs[PreviewIndex], TEXT("No Preview"));
 		NewSignature += TEXT("|F:");
-		NewSignature += PreviewOutputEnergyFormulas.IsValidIndex(PreviewIndex)
-			? PreviewOutputEnergyFormulas[PreviewIndex]
+		NewSignature += PreviewOutputOperationTraces.IsValidIndex(PreviewIndex)
+			? PreviewOutputOperationTraces[PreviewIndex]
 			: FString();
 	}
 	if (OutputResourcePanelSignature == NewSignature)
@@ -3775,12 +3155,12 @@ void USRFacilityControlWidget::RefreshOutputResourceSlots(USRFacilityNetworkComp
 			OutputResourceSlotBox,
 			PreviewOutput,
 			FLinearColor(0.84f, 1.0f, 0.90f, 1.0f));
-		if (PreviewOutputEnergyFormulas.IsValidIndex(PreviewIndex))
+		if (PreviewOutputOperationTraces.IsValidIndex(PreviewIndex))
 		{
-			AddEnergyFormulaCard(
+			AddOperationTraceCard(
 				WidgetTree,
 				OutputResourceSlotBox,
-				PreviewOutputEnergyFormulas[PreviewIndex],
+				PreviewOutputOperationTraces[PreviewIndex],
 				FLinearColor(0.78f, 1.0f, 0.86f, 1.0f));
 		}
 	}
@@ -4096,7 +3476,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 			HubRoute.bDebugLocalOrbit ? 1 : 0,
 			HubRoute.MaxCargoStackCount,
 			HubRoute.bReturnEmptyWhenNoCargo ? 1 : 0,
-			*HubRoute.CargoResourceId.ToString());
+			*HubRoute.CargoFilter.ResourceId.ToString());
 	}
 
 	if (HubRoutePanelSignature == NewSignature)
@@ -4187,7 +3567,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 				HubRouteSettingActions,
 				ExistingRoute->RouteId,
 				!ExistingRoute->bReturnEmptyWhenNoCargo);
-			if (!ExistingRoute->CargoResourceId.IsNone())
+			if (!ExistingRoute->CargoFilter.ResourceId.IsNone())
 			{
 				AddHubRouteCargoResourceButton(
 					WidgetTree,
@@ -4199,7 +3579,7 @@ void USRFacilityControlWidget::RefreshHubRouteSection(USRFacilityNetworkComponen
 			}
 			for (const FName AvailableCargoResourceId : AvailableCargoResourceIds)
 			{
-				if (AvailableCargoResourceId.IsNone() || AvailableCargoResourceId == ExistingRoute->CargoResourceId)
+				if (AvailableCargoResourceId.IsNone() || AvailableCargoResourceId == ExistingRoute->CargoFilter.ResourceId)
 				{
 					continue;
 				}
@@ -4360,9 +3740,9 @@ void USRFacilityControlWidget::RefreshControlText()
 			*ProcessReason)));
 	}
 	RefreshInputResourceSlots(FacilityNetwork, FacilityInstance);
-	if (EffectsTextBlock)
+	if (OperationTextBlock)
 	{
-		EffectsTextBlock->SetText(FText::FromString(BuildEffectsSummary(FacilityDataAsset)));
+		OperationTextBlock->SetText(FText::FromString(BuildPatternOperationSummary(FacilityDataAsset)));
 	}
 	if (ProcessProgressBar)
 	{

@@ -13,6 +13,7 @@ namespace
 	{
 		FacilityInstance.bProcessing = false;
 		FacilityInstance.ProcessProgressSeconds = 0.0f;
+		FacilityInstance.RunModifierContext = FSRRunModifierContext();
 	}
 
 	void ResetMiningState(FSRFacilityInstance& FacilityInstance)
@@ -40,9 +41,9 @@ bool FSRFacilityMiningProcessor::TryStartMining(
 
 	FacilityInstance.MiningTargetDepositOccupantId = ResourceDeposit.OccupantId;
 	FacilityInstance.ProcessingInventory.Reset();
-	if (IsValid(ResourceDeposit.ResourceDataAsset.Get()))
+	if (ResourceDeposit.IsPatternSourceValid())
 	{
-		FacilityInstance.ProcessingInventory.Add(ResourceDeposit.ResourceDataAsset->BuildDefaultInstance());
+		FacilityInstance.ProcessingInventory.Add(ResourceDeposit.BuildResourceInstance());
 	}
 	FacilityInstance.bProcessing = true;
 	FacilityInstance.ProcessProgressSeconds = 0.0f;
@@ -77,13 +78,13 @@ bool FSRFacilityMiningProcessor::TryCompleteMining(
 		return false;
 	}
 
-	if (!IsValid(ResourceDeposit.ResourceDataAsset.Get()))
+	if (!ResourceDeposit.IsPatternSourceValid())
 	{
 		ResetMiningState(FacilityInstance);
 		return false;
 	}
 
-	const FSRResourceInstance PreviewMinedResource = ResourceDeposit.ResourceDataAsset->BuildDefaultInstance();
+	const FSRResourceInstance PreviewMinedResource = ResourceDeposit.BuildResourceInstance();
 	TArray<FSRResourceInstance> PreviewOutputResources;
 	FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 		FacilityInstance,

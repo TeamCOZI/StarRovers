@@ -130,7 +130,7 @@ At the start of a run, the game generates a star system.
 
 Celestial bodies provide different automation locations:
 
-- Star: the stellar fuel delivery target and the center of run pressure.
+- Star: the stellar fuel delivery target and the run's shared health clock.
 - Planet: the main automation infrastructure location.
 - Moon: a secondary automation location for auxiliary resources, special environments, or extra constraints.
 
@@ -203,16 +203,19 @@ Resources produced on planets/moons move through Hub-based space logistics.
 - Logistics efficiency affected by orbit, gravity zones, and distance
 - Route timing optimized against stellar fuel cycle timing
 
-Space logistics is the higher-level layer connecting surface automation to star maintenance. Hub routes are reusable transport links, while star-fuel missiles directly deliver carried Energy to the parent star.
+Space logistics is the higher-level layer connecting surface automation to star maintenance. Hub routes are reusable transport links, while star-fuel missiles deliver accepted Pattern cargo and its resolved score to the parent star.
 
-### 4.5 Star Maintenance / Red Giant Pressure
+### 4.5 Star Maintenance / Stellar Health
 
 The parent star demands stellar fuel every cycle.
 
-- Per-cycle stellar fuel requirement
-- Expansion pressure increase when supply is insufficient
-- Main-sequence maintenance when supply meets or exceeds demand
-- Requirement escalation as the run progresses
+- Per-Period Pattern score target
+- A fresh runtime generation seed per Run, with 16 stellar-contract candidates shuffled reproducibly from that seed
+- Solvability validation before the shuffled target Pattern becomes active
+- Continuous stellar-health decrease using simulation time and time controls
+- Per-second health-decrease rate multiplied at every Period boundary
+- Immediate health restoration from every accepted Pattern's resolved score
+- Main Sequence depletion refills health and advances to Red Giant; Red Giant depletion causes Supernova Game Over
 - Failure or crisis states
 
 The player's goal is to scale automation and space logistics fast enough to keep up with rising demand.

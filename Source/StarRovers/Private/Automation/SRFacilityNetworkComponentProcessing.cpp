@@ -181,7 +181,7 @@ bool USRFacilityNetworkComponent::GetFacilityOutputPreview(
 	FSRResourceInstance& OutPrimaryOutput,
 	TArray<FSRResourceInstance>& OutAdditionalOutputs,
 	int32& OutOutputCount,
-	TArray<FString>& OutEnergyFormulaTexts) const
+	TArray<FString>& OutOperationTraceTexts) const
 {
 	return FSRFacilityOutputPreviewQuery::GetOutputPreview(
 		this,
@@ -190,7 +190,7 @@ bool USRFacilityNetworkComponent::GetFacilityOutputPreview(
 		OutPrimaryOutput,
 		OutAdditionalOutputs,
 		OutOutputCount,
-		OutEnergyFormulaTexts);
+		OutOperationTraceTexts);
 }
 
 bool USRFacilityNetworkComponent::GetFacilityMiningTarget(

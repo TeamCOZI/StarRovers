@@ -45,7 +45,7 @@ private:
 	static bool TryLoadCargoFromHub(
 		const FSRSpaceLogisticsHubEndpoint& HubEndpoint,
 		int32 MaxStackCount,
-		FName CargoResourceId,
+		const FSRPatternRoutingFilter& CargoFilter,
 		FSRResourceInstance& OutCargo);
 
 	static bool TryUnloadCargoToHub(const FSRSpaceLogisticsHubEndpoint& HubEndpoint, const FSRResourceInstance& Cargo);

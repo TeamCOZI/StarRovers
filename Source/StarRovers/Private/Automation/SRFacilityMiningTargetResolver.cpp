@@ -38,7 +38,7 @@ bool FSRFacilityMiningTargetResolver::FindTargetDeposit(
 
 	if (!FacilityInstance.MiningTargetDepositOccupantId.IsNone()
 		&& StructureInstanceManager->GetResourceDepositInstance(FacilityInstance.MiningTargetDepositOccupantId, OutResourceDeposit)
-		&& IsValid(OutResourceDeposit.ResourceDataAsset.Get()))
+		&& OutResourceDeposit.CanHarvestResource())
 	{
 		return true;
 	}

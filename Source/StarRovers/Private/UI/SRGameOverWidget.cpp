@@ -177,7 +177,7 @@ void USRGameOverWidget::RefreshGameOverText()
 
 	if (SubtitleTextBlock)
 	{
-		SubtitleTextBlock->SetText(NSLOCTEXT("StarRoversGameOver", "Subtitle", "The primary star has gone supernova."));
+		SubtitleTextBlock->SetText(NSLOCTEXT("StarRoversGameOver", "Subtitle", "The primary star's fuel reserve has collapsed."));
 	}
 
 	if (!DetailTextBlock)
@@ -191,13 +191,17 @@ void USRGameOverWidget::RefreshGameOverText()
 		DetailTextBlock->SetText(NSLOCTEXT(
 			"StarRoversGameOver",
 			"DefaultDetail",
-			"Stored fuel reached 0 and the stellar state collapsed completely."));
+			"Stellar health reached zero and the star went supernova."));
 		return;
 	}
 
-	const FSRStellarFuelState FuelState = Star->GetStellarFuelState();
+	const FSRStellarContractState ContractState = Star->GetStellarContractState();
 	DetailTextBlock->SetText(FText::FromString(FString::Printf(
-		TEXT("Stored Fuel: %.0f / %.0f\nFinal State: Supernova\nThe colony can no longer survive."),
-		FMath::Max(0.0, FuelState.StoredFuel),
-		FMath::Max(0.0, FuelState.InitialStageFuel))));
+		TEXT("Final Period Score: %lld / %lld\nStellar Health: %.2f / %.2f\nFinal Health Drain: %.3f / second\nSurvived Health Seconds: %lld\nFinal State: Supernova\nThe colony can no longer survive."),
+		static_cast<long long>(ContractState.CurrentCycleScore),
+		static_cast<long long>(ContractState.RequiredScoreThisCycle),
+		ContractState.CurrentStellarHealth,
+		ContractState.MaximumStellarHealth,
+		ContractState.CurrentStellarHealthDecreasePerSecond,
+		static_cast<long long>(ContractState.LastSettledHealthSecondIndex))));
 }

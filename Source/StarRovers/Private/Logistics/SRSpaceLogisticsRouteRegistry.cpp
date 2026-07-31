@@ -63,7 +63,7 @@ bool FSRSpaceLogisticsRouteRegistry::CreateHubRoute(
 	HubRoute.bEnabled = true;
 	HubRoute.bReturnEmptyWhenNoCargo = bReturnEmptyWhenNoCargo;
 	HubRoute.MaxCargoStackCount = FMath::Max(1, MaxCargoStackCount);
-	HubRoute.CargoResourceId = NAME_None;
+	HubRoute.CargoFilter = FSRPatternRoutingFilter();
 	HubRoute.Phase = ESRSpaceLogisticsHubRoutePhase::WaitingForCargo;
 	HubRoute.CurrentDockSide = ESRSpaceLogisticsHubRouteDockSide::Source;
 	ApplyHubRouteFlightSettings(SpaceLogisticsSubsystem, HubRoute, InitialSpeedUnitsPerSecond, LaunchAccelerationUnitsPerSecondSquared);
@@ -121,7 +121,7 @@ bool FSRSpaceLogisticsRouteRegistry::CreateDebugLocalOrbitRoute(
 	HubRoute.bEnabled = true;
 	HubRoute.bReturnEmptyWhenNoCargo = true;
 	HubRoute.MaxCargoStackCount = 1;
-	HubRoute.CargoResourceId = NAME_None;
+	HubRoute.CargoFilter = FSRPatternRoutingFilter();
 	HubRoute.bDebugLocalOrbit = true;
 	HubRoute.Phase = ESRSpaceLogisticsHubRoutePhase::TravelingToDestination;
 	HubRoute.CurrentDockSide = ESRSpaceLogisticsHubRouteDockSide::Source;
@@ -227,24 +227,25 @@ bool FSRSpaceLogisticsRouteRegistry::SetHubRouteReturnEmptyWhenNoCargo(
 	return true;
 }
 
-bool FSRSpaceLogisticsRouteRegistry::SetHubRouteCargoResourceId(
+bool FSRSpaceLogisticsRouteRegistry::SetHubRouteCargoFilter(
 	FName RouteId,
-	FName CargoResourceId,
+	const FSRPatternRoutingFilter& CargoFilter,
 	TArray<FSRSpaceLogisticsHubRoute>& HubRoutes)
 {
 	FSRSpaceLogisticsHubRoute* HubRoute = FindMutableRoute(RouteId, HubRoutes);
-	if (!HubRoute)
+	if (!HubRoute || !CargoFilter.IsCanonical())
 	{
 		return false;
 	}
 
-	HubRoute->CargoResourceId = CargoResourceId;
+	HubRoute->CargoFilter = CargoFilter;
 	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Display,
-		TEXT("[SpaceLogistics] Hub route cargo resource filter updated: RouteId=%s CargoResourceId=%s"),
+		TEXT("[SpaceLogistics] Hub route Pattern cargo filter updated: RouteId=%s ResourceId=%s MatchMode=%d"),
 		*RouteId.ToString(),
-		HubRoute->CargoResourceId.IsNone() ? TEXT("Any") : *HubRoute->CargoResourceId.ToString());
+		HubRoute->CargoFilter.ResourceId.IsNone() ? TEXT("Any") : *HubRoute->CargoFilter.ResourceId.ToString(),
+		static_cast<int32>(HubRoute->CargoFilter.MatchMode));
 	return true;
 }
 

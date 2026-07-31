@@ -1,11 +1,23 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Automation/SRResourceDataAsset.h"
+#include "Pattern/SRPatternRoutingFilter.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
 #include "SRSpaceLogisticsTypes.generated.h"
 
 class AActor;
+
+namespace StarRovers::SpaceLogistics::PatternSave
+{
+	inline constexpr int32 LegacyResourceFilterVersion = 1;
+	inline constexpr int32 CurrentVersion = 2;
+
+	STARROVERS_API bool IsSupportedVersion(int32 Version);
+	STARROVERS_API FSRPatternRoutingFilter ResolveRouteCargoFilter(
+		int32 Version,
+		const FSRPatternRoutingFilter& PatternFilter,
+		FName LegacyCargoResourceId);
+}
 
 UENUM(BlueprintType)
 enum class ESRSpaceLogisticsHubRoutePhase : uint8
@@ -101,8 +113,8 @@ struct STARROVERS_API FSRSpaceLogisticsHubRoute
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "MaxCargoStackCount"))
 	int32 MaxCargoStackCount = 1;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "CargoResourceId"))
-	FName CargoResourceId = NAME_None;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "CargoFilter", ShowOnlyInnerProperties))
+	FSRPatternRoutingFilter CargoFilter;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Space Logistics", meta = (DisplayName = "bDebugLocalOrbit"))
 	bool bDebugLocalOrbit = false;
@@ -145,7 +157,11 @@ struct STARROVERS_API FSRSpaceLogisticsHubRoute
 
 	bool IsValid() const
 	{
-		return !RouteId.IsNone() && SourceHub.IsValid() && DestinationHub.IsValid();
+		return !RouteId.IsNone()
+			&& SourceHub.IsValid()
+			&& DestinationHub.IsValid()
+			&& CargoFilter.IsCanonical()
+			&& StarRovers::PatternRouting::IsValidOrEmptyPatternPayload(Cargo);
 	}
 };
 
@@ -201,8 +217,7 @@ struct STARROVERS_API FSRSpaceLogisticsStarFuelMissile
 		return !MissileId.IsNone()
 			&& SourceHub.IsValid()
 			&& ::IsValid(TargetStarActor)
-			&& !Cargo.ResourceId.IsNone()
-			&& Cargo.StackCount > 0;
+			&& StarRovers::PatternRouting::IsValidPatternPayload(Cargo);
 	}
 };
 
@@ -229,7 +244,11 @@ struct STARROVERS_API FSRSpaceLogisticsHubRouteSaveData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "MaxCargoStackCount"))
 	int32 MaxCargoStackCount = 1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "CargoResourceId"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "CargoFilter", ShowOnlyInnerProperties))
+	FSRPatternRoutingFilter CargoFilter;
+
+	// Version 1 compatibility only. Version 2 stores CargoFilter.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "CargoResourceId_V1"))
 	FName CargoResourceId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "bDebugLocalOrbit"))
@@ -332,8 +351,7 @@ struct STARROVERS_API FSRSpaceLogisticsStarFuelMissileSaveData
 		return !MissileId.IsNone()
 			&& SourceHub.IsValid()
 			&& (!TargetStarActorName.IsNone() || !TargetStarVariableName.IsEmpty())
-			&& !Cargo.ResourceId.IsNone()
-			&& Cargo.StackCount > 0;
+			&& StarRovers::PatternRouting::IsValidPatternPayload(Cargo);
 	}
 };
 
@@ -343,7 +361,7 @@ struct STARROVERS_API FSRSpaceLogisticsSaveData
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "Version"))
-	int32 Version = 1;
+	int32 Version = StarRovers::SpaceLogistics::PatternSave::CurrentVersion;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Space Logistics|Save", meta = (DisplayName = "NextHubRouteSequence"))
 	int32 NextHubRouteSequence = 1;

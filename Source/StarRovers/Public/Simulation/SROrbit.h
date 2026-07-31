@@ -4,6 +4,27 @@
 #include "Components/ActorComponent.h"
 #include "SROrbit.generated.h"
 
+namespace StarRovers::Save::Orbit
+{
+	inline constexpr int32 CurrentVersion = 1;
+	inline bool IsSupportedVersion(int32 Version) { return Version == CurrentVersion; }
+}
+
+USTRUCT(BlueprintType)
+struct STARROVERS_API FSROrbitSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Orbit")
+	int32 Version = StarRovers::Save::Orbit::CurrentVersion;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Orbit")
+	float ElapsedTimeSeconds = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "StarRovers|Save|Orbit")
+	FVector AnchorLocation = FVector::ZeroVector;
+};
+
 class USRTimeControlSubsystem;
 class USRCelestialRingMeshComponent;
 class ULineBatchComponent;
@@ -74,6 +95,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "StarRovers|Orbit")
 	FVector ComputeOrbitLocationAtCurrentPhase() const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Save|Orbit")
+	void ExportSaveData(FSROrbitSaveData& OutSaveData) const;
+
+	bool CanImportSaveData(const FSROrbitSaveData& SaveData, FString& OutFailureReason) const;
+
+	UFUNCTION(BlueprintCallable, Category = "StarRovers|Save|Orbit")
+	bool ImportSaveData(const FSROrbitSaveData& SaveData);
 
 private:
 	void EnsureOrbitRingVisual();

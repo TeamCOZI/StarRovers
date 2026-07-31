@@ -4,6 +4,7 @@
 #include "SRPlayerControllerLifecycle.h"
 #include "UI/SRFocusedHubShortcutWidget.h"
 #include "UI/SRGameOverWidget.h"
+#include "UI/SRStellarContractHUDWidget.h"
 
 ASRPlayerController::ASRPlayerController()
 {
@@ -29,10 +30,26 @@ ASRPlayerController::ASRPlayerController()
 	FocusedHubShortcutWidgetClass = USRFocusedHubShortcutWidget::StaticClass();
 	FocusedHubShortcutRefreshInterval = 0.20f;
 	GameOverWidgetClass = USRGameOverWidget::StaticClass();
+	StellarContractHUDWidgetClass = USRStellarContractHUDWidget::StaticClass();
 
 	AssemblyComponent = CreateDefaultSubobject<USRAssemblyComponent>(TEXT("AssemblyComponent"));
 	AssemblyComponent->ConfigurePlacementPerformance(MaxStructurePlacementsPerFrame, MaxQueuedStructurePlacements);
 }
+
+#if WITH_EDITOR
+void ASRPlayerController::ConfigureAvailableStructureDataAssetsForEditor(
+	const FSRAvailableStructureDataAssetCategories& InAvailableStructureDataAssets)
+{
+	Modify();
+	AvailableStructureDataAssets = InAvailableStructureDataAssets;
+	MarkPackageDirty();
+}
+
+const FSRAvailableStructureDataAssetCategories& ASRPlayerController::GetAvailableStructureDataAssetsForEditor() const
+{
+	return AvailableStructureDataAssets;
+}
+#endif
 
 void ASRPlayerController::BeginPlay()
 {

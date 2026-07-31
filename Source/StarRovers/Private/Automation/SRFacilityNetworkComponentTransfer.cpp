@@ -3,34 +3,11 @@
 #include "Utility/SRLog.h"
 #include "Conveyor/SRConveyorNetworkComponent.h"
 #include "GameFramework/Actor.h"
+#include "Pattern/SRPatternRoutingFilter.h"
 #include "SRFacilityConveyorPortConnector.h"
 #include "SRFacilityPortInventoryBuilder.h"
 #include "SRFacilityResourceOperations.h"
 #include "Surface/SRPlanetSurfaceGrid.h"
-
-namespace
-{
-	bool HasActiveResourceTag(const FSRResourceInstance& ResourceInstance, ESRResourceProcessTag Tag)
-	{
-		for (const FSRResourceTagStack& TagStack : ResourceInstance.Tags)
-		{
-			if (TagStack.Tag == Tag && TagStack.StackCount > 0)
-			{
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	bool CanFacilityAcceptConveyorInputResource(
-		const FSRFacilityInstance& FacilityInstance,
-		const FSRResourceInstance& ResourceInstance)
-	{
-		return !HasActiveResourceTag(ResourceInstance, ESRResourceProcessTag::Supercooled)
-			|| FacilityInstance.TemperatureState == ESRFacilityTemperatureState::Cold;
-	}
-}
 
 bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 	USRPlanetSurfaceGrid* SurfaceGrid,
@@ -38,7 +15,8 @@ bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 	const FSRResourceInstance& ResourceInstance,
 	FName SourceFacilityOccupantId)
 {
-	if (!IsValid(SurfaceGrid) || ResourceInstance.ResourceId.IsNone() || ResourceInstance.StackCount <= 0)
+	if (!IsValid(SurfaceGrid)
+		|| !StarRovers::PatternRouting::IsValidPatternPayload(ResourceInstance))
 	{
 		return false;
 	}
@@ -54,7 +32,6 @@ bool USRFacilityNetworkComponent::TryAcceptInputResourceFromConveyorCell(
 			ResourceInstance);
 		if (!IsValid(FacilityDataAsset)
 			|| !InputPortInventory
-			|| !CanFacilityAcceptConveyorInputResource(FacilityInstance, ResourceInstance)
 			|| (!SourceFacilityOccupantId.IsNone() && FacilityInstance.OccupantId == SourceFacilityOccupantId))
 		{
 			continue;

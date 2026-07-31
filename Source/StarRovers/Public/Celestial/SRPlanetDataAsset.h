@@ -6,6 +6,7 @@
 #include "SRPlanetDataAsset.generated.h"
 
 class UMaterialInterface;
+class USRPatternEnvironmentDataAsset;
 class USRPlanetShapeDataAsset;
 class USRPlanetTerrainProfileDataAsset;
 
@@ -53,6 +54,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Surface", meta = (DisplayName = "SurfaceGridHeightOffset", ClampMin = "0.0"))
 	float SurfaceGridHeightOffset = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Pattern Environment", meta = (DisplayName = "PatternEnvironmentDataAsset"))
+	TObjectPtr<USRPatternEnvironmentDataAsset> PatternEnvironmentDataAsset = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StarRovers|Dynamic Mesh Generation", meta = (DisplayName = "Dynamic Mesh Generation", ShowOnlyInnerProperties))
 	FSRDynamicMeshGeneration DynamicMeshGeneration;

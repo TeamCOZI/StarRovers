@@ -12,6 +12,7 @@
 #include "UI/SRFacilityControlWidget.h"
 #include "UI/SRFocusedHubShortcutWidget.h"
 #include "UI/SRGameOverWidget.h"
+#include "UI/SRStellarContractHUDWidget.h"
 #include "UI/SRStructureSelectionWidget.h"
 #include "UI/SRTimeControlWidget.h"
 
@@ -91,6 +92,11 @@ USRFocusedHubShortcutWidget* ASRPlayerController::GetFocusedHubShortcutWidget() 
 USRGameOverWidget* ASRPlayerController::GetGameOverWidget() const
 {
 	return GameOverWidget;
+}
+
+USRStellarContractHUDWidget* ASRPlayerController::GetStellarContractHUDWidget() const
+{
+	return StellarContractHUDWidget;
 }
 
 bool ASRPlayerController::IsPointerOverFacilityControlWidget() const
@@ -510,6 +516,30 @@ void ASRPlayerController::CreateGameOverWidget()
 
 	GameOverWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::GameOver));
 	GameOverWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void ASRPlayerController::CreateStellarContractHUDWidget()
+{
+	if (!IsLocalController() || StellarContractHUDWidget)
+	{
+		return;
+	}
+
+	TSubclassOf<USRStellarContractHUDWidget> WidgetClass = StellarContractHUDWidgetClass;
+	if (!WidgetClass)
+	{
+		WidgetClass = USRStellarContractHUDWidget::StaticClass();
+	}
+
+	StellarContractHUDWidget = CreateWidget<USRStellarContractHUDWidget>(this, WidgetClass);
+	if (!StellarContractHUDWidget)
+	{
+		SR_LOG(Camera, LogTemp, Error, TEXT("ASRPlayerController failed to create StellarContractHUDWidget from '%s'."), *GetNameSafe(WidgetClass));
+		return;
+	}
+
+	StellarContractHUDWidget->AddToViewport(ResolveWidgetLayerZOrder(ESRPlayerUILayer::StellarContractHUD));
+	StellarContractHUDWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
 
 void ASRPlayerController::ShowGameOverScreen(ASRStar* Star)

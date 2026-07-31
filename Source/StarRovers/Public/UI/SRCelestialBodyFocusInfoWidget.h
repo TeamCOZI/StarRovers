@@ -12,6 +12,7 @@ class USizeBox;
 class UTextBlock;
 class UWidget;
 class SWidget;
+class USRPatternGridWidget;
 
 DECLARE_MULTICAST_DELEGATE(FSRStarRoversAssemblyModeRequestedSignature);
 
@@ -84,6 +85,9 @@ protected:
 	TObjectPtr<UScrollBox> HoveredCellScrollBox;
 
 	UPROPERTY(Transient)
+	TObjectPtr<USRPatternGridWidget> StellarDemandPatternGrid;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UButton> AssemblyModeButton;
 
 	UPROPERTY(Transient)
@@ -97,7 +101,7 @@ private:
 	void EnsureHoveredCellTextBlock(UWidget* HoveredCellTextBlockParent);
 	void EnsureAssemblyModeButton(UWidget* AssemblyModeButtonParent);
 	void BindAssemblyModeButtonHandler();
-	bool RefreshStarFuelInfoFromFocusedActor();
+	bool RefreshStellarContractInfoFromFocusedActor();
 	void RefreshFocusInfoText();
 	void RefreshAssemblyModeButton();
 	bool IsScreenPositionOverFocusInfoUI(const FVector2D& ScreenPosition) const;

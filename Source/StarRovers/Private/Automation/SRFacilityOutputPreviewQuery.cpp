@@ -5,6 +5,7 @@
 #include "SRFacilityMiningTargetResolver.h"
 #include "SRFacilityOutputResourceBuilder.h"
 #include "SRFacilityProcessingInventoryRouter.h"
+#include "SRFacilityRunModifierResolver.h"
 
 bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 	const UActorComponent* OwnerComponent,
@@ -13,39 +14,45 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 	FSRResourceInstance& OutPrimaryOutput,
 	TArray<FSRResourceInstance>& OutAdditionalOutputs,
 	int32& OutOutputCount,
-	TArray<FString>& OutEnergyFormulaTexts)
+	TArray<FString>& OutOperationTraceTexts)
 {
 	OutPrimaryOutput = FSRResourceInstance();
 	OutAdditionalOutputs.Reset();
 	OutOutputCount = 0;
-	OutEnergyFormulaTexts.Reset();
+	OutOperationTraceTexts.Reset();
 
-	const FSRFacilityInstance* FacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
-	if (!FacilityInstance || !IsValid(FacilityInstance->FacilityDataAsset.Get()))
+	const FSRFacilityInstance* StoredFacilityInstance = RuntimeState.FacilityInstancesByOccupantId.Find(OccupantId);
+	if (!StoredFacilityInstance || !IsValid(StoredFacilityInstance->FacilityDataAsset.Get()))
 	{
 		return false;
 	}
+	FSRFacilityInstance PreviewFacilityInstance = *StoredFacilityInstance;
+	if (!PreviewFacilityInstance.bProcessing)
+	{
+		FSRFacilityRunModifierResolver::SnapshotCurrentContext(OwnerComponent, PreviewFacilityInstance);
+	}
+	const FSRFacilityInstance* FacilityInstance = &PreviewFacilityInstance;
 
 	if (FacilityInstance->FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Mine)
 	{
 		FSRResourceDepositInstance ResourceDeposit;
 		if (!FSRFacilityMiningTargetResolver::FindTargetDeposit(OwnerComponent, *FacilityInstance, ResourceDeposit)
-			|| !IsValid(ResourceDeposit.ResourceDataAsset.Get()))
+			|| !ResourceDeposit.IsPatternSourceValid())
 		{
 			return false;
 		}
 
 		TArray<FSRResourceInstance> PreviewOutputs;
-		TArray<FString> PreviewEnergyFormulaTexts;
+		TArray<FString> PreviewOperationTraceTexts;
 		int32 PrimaryOutputCount = 0;
 		FSRFacilityOutputResourceBuilder::BuildOutputResourcesFromPrimaryResource(
 			*FacilityInstance,
 			TArray<FSRResourceInstance>(),
-			ResourceDeposit.ResourceDataAsset->BuildDefaultInstance(),
+			ResourceDeposit.BuildResourceInstance(),
 			PreviewOutputs,
 			&PrimaryOutputCount,
 			nullptr,
-			&PreviewEnergyFormulaTexts);
+			&PreviewOperationTraceTexts);
 		if (PreviewOutputs.IsEmpty())
 		{
 			OutOutputCount = 0;
@@ -58,7 +65,7 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 			OutAdditionalOutputs.Add(PreviewOutputs[OutputIndex]);
 		}
 		OutOutputCount = PrimaryOutputCount;
-		OutEnergyFormulaTexts = MoveTemp(PreviewEnergyFormulaTexts);
+		OutOperationTraceTexts = MoveTemp(PreviewOperationTraceTexts);
 		return !OutPrimaryOutput.ResourceId.IsNone();
 	}
 
@@ -84,7 +91,7 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 	}
 
 	TArray<FSRResourceInstance> PreviewOutputs;
-	TArray<FString> PreviewEnergyFormulaTexts;
+	TArray<FString> PreviewOperationTraceTexts;
 	int32 PrimaryOutputCount = 0;
 	FSRFacilityOutputResourceBuilder::BuildOutputResources(
 		*FacilityInstance,
@@ -92,7 +99,7 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 		PreviewOutputs,
 		&PrimaryOutputCount,
 		nullptr,
-		&PreviewEnergyFormulaTexts);
+		&PreviewOperationTraceTexts);
 	if (PreviewOutputs.IsEmpty())
 	{
 		if (FSRFacilityOutputResourceBuilder::AllowsEmptyOutput(*FacilityInstance))
@@ -109,6 +116,6 @@ bool FSRFacilityOutputPreviewQuery::GetOutputPreview(
 		OutAdditionalOutputs.Add(PreviewOutputs[OutputIndex]);
 	}
 	OutOutputCount = PrimaryOutputCount;
-	OutEnergyFormulaTexts = MoveTemp(PreviewEnergyFormulaTexts);
+	OutOperationTraceTexts = MoveTemp(PreviewOperationTraceTexts);
 	return true;
 }

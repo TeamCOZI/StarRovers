@@ -58,9 +58,7 @@ void ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear()
 
 	LogAsyncGenerationStageTiming(TEXT("WaitAfterClearForGC"), GetSolarSystemGenerationElapsedMilliseconds(AsyncCurrentStageStart));
 
-	AsyncRuntimeGenerationSeed = bRandomizeGenerationSeedEachRun
-		? CreateRuntimeRandomGenerationSeed()
-		: GenerationSeed;
+	AsyncRuntimeGenerationSeed = ResolveRuntimeGenerationSeed();
 	FSRTimingLog::AddLine(FString::Printf(
 		TEXT("GenerateRuntimeSystem.Seed Configured=%d Runtime=%d Randomized=%s"),
 		GenerationSeed,
@@ -105,6 +103,14 @@ void ASRSolarSystemGenerator::ContinueRuntimeSystemGenerationAfterClear()
 void ASRSolarSystemGenerator::FinishRuntimeSystemGeneration()
 {
 	UpdateLoadingProgress(0.98f, NSLOCTEXT("StarRoversLoadingScreen", "Finalizing", "Finalizing star system..."));
+	if (IsValid(RuntimeStarBody))
+	{
+		AsyncCurrentStageStart = GetSolarSystemGenerationTimingSeconds();
+		ValidateRuntimePatternGeneration(AsyncRuntimeGenerationSeed);
+		LogAsyncGenerationStageTiming(
+			TEXT("ValidateRuntimePatternGeneration"),
+			GetSolarSystemGenerationElapsedMilliseconds(AsyncCurrentStageStart));
+	}
 	AsyncCurrentStageStart = GetSolarSystemGenerationTimingSeconds();
 	if (UWorld* World = GetWorld())
 	{
@@ -114,6 +120,10 @@ void ASRSolarSystemGenerator::FinishRuntimeSystemGeneration()
 		}
 	}
 	LogAsyncGenerationStageTiming(TEXT("Registry"), GetSolarSystemGenerationElapsedMilliseconds(AsyncCurrentStageStart));
+	if (IsValid(RuntimeStarBody))
+	{
+		MarkRuntimeGenerationCompleted(AsyncRuntimeGenerationSeed);
+	}
 
 	const FSRAsyncGenerationStageTiming* SlowestStageTiming = nullptr;
 	for (const FSRAsyncGenerationStageTiming& StageTiming : AsyncGenerationStageTimings)

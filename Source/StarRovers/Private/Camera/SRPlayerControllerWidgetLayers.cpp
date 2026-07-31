@@ -11,6 +11,7 @@ namespace
         ESRPlayerUILayer::StructureSelection,
         ESRPlayerUILayer::HubShortcut,
         ESRPlayerUILayer::FacilityControl,
+        ESRPlayerUILayer::StellarContractHUD,
         ESRPlayerUILayer::GameOver
     };
 

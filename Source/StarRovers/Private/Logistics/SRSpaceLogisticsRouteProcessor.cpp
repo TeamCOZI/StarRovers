@@ -4,6 +4,7 @@
 #include "Logistics/SRSpaceLogisticsSubsystem.h"
 #include "SRSpaceLogisticsRoutePathResolver.h"
 #include "SRSpaceLogisticsRouteVisualController.h"
+#include "Simulation/SRRunModifierSubsystem.h"
 #include "Utility/SRLog.h"
 
 namespace
@@ -15,7 +16,7 @@ namespace
 
 	bool HasCargo(const FSRResourceInstance& Cargo)
 	{
-		return !Cargo.ResourceId.IsNone() && Cargo.StackCount > 0;
+		return StarRovers::PatternRouting::IsValidPatternPayload(Cargo);
 	}
 
 	FSRSpaceLogisticsHubEndpoint SelectRouteProcessorHubEndpointByDockSide(const FSRSpaceLogisticsHubRoute& HubRoute, ESRSpaceLogisticsHubRouteDockSide DockSide)
@@ -44,6 +45,12 @@ void FSRSpaceLogisticsRouteProcessor::ProcessRoute(
 {
 	if (!HubRoute.bEnabled)
 	{
+		return;
+	}
+	if (!HubRoute.CargoFilter.IsCanonical()
+		|| !StarRovers::PatternRouting::IsValidOrEmptyPatternPayload(HubRoute.Cargo))
+	{
+		HubRoute.Phase = ESRSpaceLogisticsHubRoutePhase::Blocked;
 		return;
 	}
 
@@ -130,7 +137,7 @@ bool FSRSpaceLogisticsRouteProcessor::TryDepartFromDock(
 	HubRoute.CurrentDockSide = DockSide;
 	FSRResourceInstance LoadedCargo;
 	const FSRSpaceLogisticsHubEndpoint DockHub = SelectRouteProcessorHubEndpointByDockSide(HubRoute, DockSide);
-	if (TryLoadCargoFromHub(DockHub, HubRoute.MaxCargoStackCount, HubRoute.CargoResourceId, LoadedCargo))
+	if (TryLoadCargoFromHub(DockHub, HubRoute.MaxCargoStackCount, HubRoute.CargoFilter, LoadedCargo))
 	{
 		HubRoute.Cargo = LoadedCargo;
 		return StartTravel(
@@ -220,9 +227,13 @@ bool FSRSpaceLogisticsRouteProcessor::StartTravel(
 		? LaunchWorldVelocity
 		: FVector::ZeroVector;
 	HubRoute.bHasTravelStartWorldLocation = true;
-	HubRoute.TravelDurationSeconds = FSRSpaceLogisticsRoutePathResolver::ResolveTravelDurationSeconds(
+	const float BaseTravelDurationSeconds = FSRSpaceLogisticsRoutePathResolver::ResolveTravelDurationSeconds(
 		SpaceLogisticsSubsystem,
 		HubRoute);
+	const FSRResolvedRunModifiers RunModifiers = USRRunModifierSubsystem::ResolveForObject(&SpaceLogisticsSubsystem);
+	HubRoute.TravelDurationSeconds = FMath::Max(
+		FSRSpaceLogisticsRoutePathResolver::GetMinimumTravelDurationSeconds(),
+		static_cast<float>(static_cast<double>(BaseTravelDurationSeconds) * RunModifiers.LogisticsTravelTimeMultiplier));
 	SR_LOG(SpaceLogistics,
 		LogTemp,
 		Verbose,
@@ -293,7 +304,7 @@ void FSRSpaceLogisticsRouteProcessor::AdvanceTravel(
 bool FSRSpaceLogisticsRouteProcessor::TryLoadCargoFromHub(
 	const FSRSpaceLogisticsHubEndpoint& HubEndpoint,
 	int32 MaxStackCount,
-	FName CargoResourceId,
+	const FSRPatternRoutingFilter& CargoFilter,
 	FSRResourceInstance& OutCargo)
 {
 	OutCargo = FSRResourceInstance();
@@ -306,9 +317,21 @@ bool FSRSpaceLogisticsRouteProcessor::TryLoadCargoFromHub(
 		return false;
 	}
 
-	return CargoResourceId.IsNone()
-		? FacilityNetwork->TryTakeHubOutboundCargo(HubEndpoint.HubOccupantId, MaxStackCount, OutCargo)
-		: FacilityNetwork->TryTakeHubOutboundCargoByResource(HubEndpoint.HubOccupantId, CargoResourceId, MaxStackCount, OutCargo);
+	if (!CargoFilter.IsCanonical())
+	{
+		return false;
+	}
+
+	return FacilityNetwork->TryTakeHubOutboundCargoMatching(
+		HubEndpoint.HubOccupantId,
+		MaxStackCount,
+		[&CargoFilter](const FSRResourceInstance& CandidateCargo)
+		{
+			return StarRovers::PatternRouting::MatchesRoutingFilter(
+				CandidateCargo,
+				CargoFilter);
+		},
+		OutCargo);
 }
 
 bool FSRSpaceLogisticsRouteProcessor::TryUnloadCargoToHub(
@@ -320,5 +343,6 @@ bool FSRSpaceLogisticsRouteProcessor::TryUnloadCargoToHub(
 		? BodyActor->FindComponentByClass<USRFacilityNetworkComponent>()
 		: nullptr;
 	return IsValid(FacilityNetwork)
+		&& StarRovers::PatternRouting::IsValidPatternPayload(Cargo)
 		&& FacilityNetwork->TryStoreHubInboundCargo(HubEndpoint.HubOccupantId, Cargo);
 }

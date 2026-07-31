@@ -1,6 +1,7 @@
 #include "SRFacilityProcessingInventoryRouter.h"
 
 #include "Automation/SRFacilityDataAsset.h"
+#include "SRFacilityPatternOperatorExecutor.h"
 #include "SRFacilityResourceOperations.h"
 #include "SRFacilityPortInventoryBuilder.h"
 
@@ -14,15 +15,11 @@ namespace
 			return 0;
 		}
 
-		if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Process)
-		{
-			return FacilityInstance.InputPortInventories.IsEmpty() ? 0 : 1;
-		}
-		if (FacilityDataAsset->OperationKind == ESRFacilityOperationKind::Synthesize)
-		{
-			return FacilityInstance.InputPortInventories.Num();
-		}
-		return 0;
+		const int32 RequiredInputCount = FSRFacilityPatternOperatorExecutor::ResolveRequiredInputCount(
+			FacilityDataAsset);
+		return FacilityInstance.InputPortInventories.Num() >= RequiredInputCount
+			? RequiredInputCount
+			: 0;
 	}
 }
 

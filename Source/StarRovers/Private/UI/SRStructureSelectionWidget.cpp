@@ -1220,6 +1220,7 @@ void USRStructureSelectionWidget::RebuildCategorizedBuildOptions()
 			}
 			break;
 		case ESRFacilityOperationKind::Process:
+		case ESRFacilityOperationKind::Separate:
 			ProcessingBuildOptionIds.Add(BuildOption.StructureId);
 			break;
 		case ESRFacilityOperationKind::Synthesize:

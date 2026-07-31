@@ -60,7 +60,7 @@ protected:
 	FText TitleText = NSLOCTEXT("StarRoversAugmentChoice", "TitleText", "Choose Augment");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Augment", meta = (DisplayName = "SubtitleText"))
-	FText SubtitleText = NSLOCTEXT("StarRoversAugmentChoice", "SubtitleText", "Unlock one facility for construction.");
+	FText SubtitleText = NSLOCTEXT("StarRoversAugmentChoice", "SubtitleText", "Specialize this run with one modifier.");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StarRovers|Augment", meta = (DisplayName = "PanelColor"))
 	FLinearColor PanelColor = FLinearColor(0.018f, 0.022f, 0.028f, 0.96f);
@@ -85,7 +85,9 @@ private:
 	void CacheAugmentChoiceWidgetTree();
 	void RebuildChoiceButtons();
 	FText FormatCycleText() const;
-	FText FormatRarityText(ESRFacilityRarity Rarity) const;
+	FText FormatRarityText(ESRRunAugmentRarity Rarity) const;
+	FText FormatOfferRoleText(ESRRunAugmentOfferRole OfferRole) const;
+	FText FormatEffectPreviewText(const FSRAugmentChoice& Choice) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> PanelBorder;

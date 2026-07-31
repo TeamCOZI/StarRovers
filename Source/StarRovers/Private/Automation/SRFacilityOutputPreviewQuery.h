@@ -16,5 +16,5 @@ public:
 		FSRResourceInstance& OutPrimaryOutput,
 		TArray<FSRResourceInstance>& OutAdditionalOutputs,
 		int32& OutOutputCount,
-		TArray<FString>& OutEnergyFormulaTexts);
+		TArray<FString>& OutOperationTraceTexts);
 };

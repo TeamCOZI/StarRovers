@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Celestial/SRCelestialBodyCategory.h"
 #include "Celestial/SRStellarEvolutionTypes.h"
+#include "Pattern/SRPatternEnvironmentResolver.h"
+#include "Pattern/SRStellarPatternContract.h"
 #include "Simulation/SRNaturalStructureSpawnTypes.h"
 #include "Surface/SRPlanetTerrainTypes.h"
 #include "SRCelestialBodyData.generated.h"
@@ -123,28 +125,16 @@ struct STARROVERS_API FSRCelestialBodyData
 	FLinearColor StarPointLightColor = FLinearColor(1.0f, 0.956f, 0.84f, 1.0f);
 
 	UPROPERTY()
-	double InitialStoredStellarFuel = 0.0;
-
-	UPROPERTY()
-	double InitialStellarFuelDecreasePerSecond = 50.0;
-
-	UPROPERTY()
-	double RequiredStellarFuelPerCycle = 10.0;
-
-	UPROPERTY()
-	double StellarFuelRequirementGrowthPerCycle = 1.0;
-
-	UPROPERTY()
-	double InitialRedGiantPressure = 0.0;
-
-	UPROPERTY()
-	double RedGiantPressurePerMissingFuel = 1.0;
+	FSRStellarPatternContract StellarPatternContract;
 
 	UPROPERTY()
 	int32 GenerationSeed = 1000;
 
 	UPROPERTY()
 	bool bRandomizeGenerationSeedEachRun = false;
+
+	UPROPERTY()
+	FSRPatternEnvironmentSpec PatternEnvironment;
 
 	UPROPERTY()
 	FSRDynamicMeshGeneration DynamicMeshGeneration;

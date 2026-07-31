@@ -12,10 +12,38 @@
 using namespace StarRovers::Simulation::SolarSystemGeneration;
 ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 {
+	if (bRuntimeGenerationInProgress)
+	{
+		return nullptr;
+	}
+	bRuntimeGenerationInProgress = true;
+	ASRCelestialBody* Result = GenerateRuntimeSystemInternal(ResolveRuntimeGenerationSeed());
+	bRuntimeGenerationInProgress = false;
+	return Result;
+}
+
+ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystemWithSeed(int32 RuntimeGenerationSeed)
+{
+	if (RuntimeGenerationSeed < 0 || bRuntimeGenerationInProgress)
+	{
+		return nullptr;
+	}
+	bRuntimeGenerationInProgress = true;
+	ASRCelestialBody* Result = GenerateRuntimeSystemInternal(RuntimeGenerationSeed);
+	bRuntimeGenerationInProgress = false;
+	return Result;
+}
+
+ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystemInternal(int32 RuntimeGenerationSeed)
+{
 	FSRTimingLogSession TimingLogSession(TEXT("GenerateRuntimeSystem"));
 	const double TotalStart = GetSolarSystemGenerationTimingSeconds();
 	NormalizeOrbitPeriodSettings();
 	if (!GetWorld())
+	{
+		return nullptr;
+	}
+	if (!EnsurePatternContentLoadedFromClassDefaults())
 	{
 		return nullptr;
 	}
@@ -32,9 +60,6 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 	ClearRuntimeGeneratedBodies();
 	LogStageTiming(TEXT("ClearRuntimeGeneratedBodies"), GetSolarSystemGenerationElapsedMilliseconds(StageStart));
 
-	const int32 RuntimeGenerationSeed = bRandomizeGenerationSeedEachRun
-		? CreateRuntimeRandomGenerationSeed()
-		: GenerationSeed;
 	FSRTimingLog::AddLine(FString::Printf(
 		TEXT("GenerateRuntimeSystem.Seed Configured=%d Runtime=%d Randomized=%s"),
 		GenerationSeed,
@@ -61,6 +86,9 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 	GenerateRuntimeNaturalStructures(RuntimeGenerationSeed);
 	LogStageTiming(TEXT("GenerateRuntimeNaturalStructures"), GetSolarSystemGenerationElapsedMilliseconds(StageStart));
 	StageStart = GetSolarSystemGenerationTimingSeconds();
+	ValidateRuntimePatternGeneration(RuntimeGenerationSeed);
+	LogStageTiming(TEXT("ValidateRuntimePatternGeneration"), GetSolarSystemGenerationElapsedMilliseconds(StageStart));
+	StageStart = GetSolarSystemGenerationTimingSeconds();
 	if (USRCelestialBodyRegistrySubsystem* CelestialBodyRegistry = GetWorld()->GetSubsystem<USRCelestialBodyRegistrySubsystem>())
 	{
 		CelestialBodyRegistry->SetPrimaryStarActor(RuntimeStarBody);
@@ -80,8 +108,33 @@ ASRCelestialBody* ASRSolarSystemGenerator::GenerateRuntimeSystem()
 	}
 	FSRTimingLog::AddLine(FString::Printf(TEXT("GenerateRuntimeSystem.Total %.2f ms"), GetSolarSystemGenerationElapsedMilliseconds(TotalStart)));
 	LogMemoryDiagnosticsSnapshot(TEXT("GenerateRuntimeSystem.AfterComplete"));
+	MarkRuntimeGenerationCompleted(RuntimeGenerationSeed);
 
 	return RuntimeStarBody;
+}
+
+int32 ASRSolarSystemGenerator::ResolveRuntimeGenerationSeed() const
+{
+	return bRandomizeGenerationSeedEachRun
+		? CreateRuntimeRandomGenerationSeed()
+		: FMath::Max(0, GenerationSeed);
+}
+
+void ASRSolarSystemGenerator::MarkRuntimeGenerationCompleted(int32 RuntimeGenerationSeed)
+{
+	LastCompletedGenerationSeed = FMath::Max(0, RuntimeGenerationSeed);
+	bHasCompletedGenerationSeed = IsValid(RuntimeStarBody);
+}
+
+bool ASRSolarSystemGenerator::GetLastCompletedGenerationSeed(int32& OutRuntimeGenerationSeed) const
+{
+	OutRuntimeGenerationSeed = bHasCompletedGenerationSeed ? LastCompletedGenerationSeed : 0;
+	return bHasCompletedGenerationSeed && IsValid(RuntimeStarBody);
+}
+
+bool ASRSolarSystemGenerator::IsRuntimeGenerationInProgress() const
+{
+	return bRuntimeGenerationInProgress;
 }
 
 void ASRSolarSystemGenerator::ClearRuntimeGeneratedBodies()
@@ -98,6 +151,10 @@ void ASRSolarSystemGenerator::ClearRuntimeGeneratedBodies()
 		World->GetTimerManager().ClearTimer(DeferredGenerateRuntimeSystemTimerHandle);
 	}
 	DestroyRuntimeNaturalStructures();
+	bHasCompletedGenerationSeed = false;
+	LastCompletedGenerationSeed = 0;
+	bHasPatternGenerationValidationResult = false;
+	LastPatternGenerationValidationResult = FSRPatternGenerationValidationResult();
 	DestroyTrackedActors(RuntimeMoonBodies);
 	DestroyTrackedActors(RuntimePlanetBodies);
 	DestroyTrackedActor(RuntimeStarBody);

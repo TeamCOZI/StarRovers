@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Automation/SRFacilityDataAsset.h"
+#include "Celestial/SRStar.h"
 #include "Celestial/SRStellarEvolutionTypes.h"
 #include "Structure/SRStructureDataAsset.h"
 #include "Surface/SRPlanetSurfaceGridTypes.h"
@@ -74,57 +75,18 @@ struct STARROVERS_API FSRFocusedFacilityRuntimeInfo
 };
 
 USTRUCT(BlueprintType)
-struct STARROVERS_API FSRFocusedStarFuelInfo
+struct STARROVERS_API FSRFocusedStellarContractInfo
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bIsValid"))
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus|Stellar Contract", meta = (DisplayName = "bIsValid"))
 	bool bIsValid = false;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "EvolutionStage"))
-	ESRStellarEvolutionStage EvolutionStage = ESRStellarEvolutionStage::MainSequence;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus|Stellar Contract", meta = (DisplayName = "Contract"))
+	FSRStellarPatternContract Contract;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "StoredFuel"))
-	double StoredFuel = 0.0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "InitialStageFuel"))
-	double InitialStageFuel = 0.0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "InitialFuelDecreasePerSecond"))
-	double InitialFuelDecreasePerSecond = 0.0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "CurrentFuelDecreasePerSecond"))
-	double RequiredFuelPerCycle = 0.0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "NextFuelDecreaseMultiplier"))
-	double RequirementGrowthPerCycle = 0.0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastFuelDecreaseRateCycleIndex"))
-	int32 LastFuelDecreaseRateCycleIndex = 0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "RedGiantPressure"))
-	double RedGiantPressure = 0.0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "RedGiantPressurePerMissingFuel"))
-	double RedGiantPressurePerMissingFuel = 0.0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastSettledSecondIndex"))
-	int32 LastSettledSecondIndex = 0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastSecondFuelConsumed"))
-	double LastSecondFuelConsumed = 0.0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastSecondFuelDecrease"))
-	double LastSecondFuelDecrease = 0.0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "LastSecondFuelDeficit"))
-	double LastSecondFuelDeficit = 0.0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bLastSecondSurvived"))
-	bool bLastSecondSurvived = true;
-
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bSupernovaGameOver"))
-	bool bSupernovaGameOver = false;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus|Stellar Contract", meta = (DisplayName = "State"))
+	FSRStellarContractState State;
 };
 
 USTRUCT(BlueprintType)
@@ -210,11 +172,11 @@ struct STARROVERS_API FSRCelestialBodyFocusInfo
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "SelectedSurfaceStructureInfo"))
 	FSRFocusedSurfaceStructureInfo SelectedSurfaceStructureInfo;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bHasStarFuelInfo"))
-	bool bHasStarFuelInfo = false;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus|Stellar Contract", meta = (DisplayName = "bHasStellarContractInfo"))
+	bool bHasStellarContractInfo = false;
 
-	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "StarFuelInfo"))
-	FSRFocusedStarFuelInfo StarFuelInfo;
+	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus|Stellar Contract", meta = (DisplayName = "StellarContractInfo"))
+	FSRFocusedStellarContractInfo StellarContractInfo;
 
 	UPROPERTY(BlueprintReadOnly, Category = "StarRovers|Focus", meta = (DisplayName = "bIsValid"))
 	bool bIsValid = false;

@@ -24,7 +24,7 @@ public:
 		TArray<FSRResourceInstance>& OutOutputResources,
 		int32* OutPrimaryOutputCount = nullptr,
 		FSRResourceInstance* OutBaselinePrimaryResource = nullptr,
-		TArray<FString>* OutEnergyFormulaTexts = nullptr);
+		TArray<FString>* OutOperationTraceTexts = nullptr);
 
 	static void BuildOutputResourcesFromPrimaryResource(
 		const FSRFacilityInstance& FacilityInstance,
@@ -33,5 +33,5 @@ public:
 		TArray<FSRResourceInstance>& OutOutputResources,
 		int32* OutPrimaryOutputCount = nullptr,
 		FSRResourceInstance* OutBaselinePrimaryResource = nullptr,
-		TArray<FString>* OutEnergyFormulaTexts = nullptr);
+		TArray<FString>* OutOperationTraceTexts = nullptr);
 };
